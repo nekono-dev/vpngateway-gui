@@ -1,56 +1,73 @@
-# Phase 2: ネットワーク基盤移行＋透過ゲートウェイモード
+# Phase 2: 実VPNベンダーCLI統合・ログイン代行
+
+> 全体整合性の再評価により、当初計画（実VPNベンダーCLI統合は旧phase4）を前倒しした版である。詳細はwbs/README.md「フェーズ分割の考え方」参照。
 
 ## 目的
 
-proxyコンテナを`network_mode: host`へ移行し、ホストのネットワーク名前空間上でVPNトンネル（tun/wg系インターフェース）とLAN側インターフェースの両方を扱えるようにした上で、透過ゲートウェイモード（LAN機器がこのホストをデフォルトゲートウェイにした場合のNAT/MASQUERADE転送）とKill Switchの実処理を実装する。
+Phase1で構築したコマンド実行パイプライン（プレースホルダー検証→UDS送信→execFile実行）を、モックCLIから実際のVPNベンダーCLI（例: AdguardVPN CLI）に置き換え、実CLIの接続・切断・状態取得・ログイン代行を動作確認できる状態にする。
+
+`network_mode: host`への移行、透過ゲートウェイ、Kill Switch、明示的プロキシは本フェーズでは扱わず、プロキシコンテナ自身がVPNトンネルを確立・利用できることの確認に留める。これにより、「モックの決定的な状態遷移でロジックを先に検証してから実CLIに対応する」のではなく、実運用に近い実CLIの非決定的な挙動（ログイン、接続試行、レート制限等）に早期から向き合い、後続のネットワーク制御ロジック（phase3.md／phase4.md）の検証も、モックではなく実際のVPN接続状態を用いて行えるようにする。
 
 ## 前提
 
 - Phase1完了（web/api/proxyのUDS経由コマンド実行パイプラインがモックCLIで検証済み）。
-- インストールスクリプト（sysctl永続化・LANインターフェース検出）の実行対象ホスト環境（Debian/RaspberryPiOS, Ubuntu 24.04）が用意できていること。
+- 対象VPNベンダー（AdguardVPN等）の契約・CLIバイナリが利用可能であること。
 
 ## スコープ外
 
-- 明示的プロキシモード（3proxy）は次フェーズ（phase3.md）。
-- 実VPNベンダーCLIへの置換はしない（引き続きモックCLIを使い、モック側にトンネルIF名を疑似的に生成させる。実CLI統合はphase4.md）。
+| 項目 | 理由・先送り先 |
+|---|---|
+| `network_mode: host` | LAN機器へのゲートウェイ提供に必要だが、実CLI自体（コンテナ自身の通信）の動作確認には不要。→ phase3.md |
+| 透過ゲートウェイ・Kill Switch実処理 | ホストのネットワーク名前空間共有が前提。→ phase3.md |
+| 明示的プロキシモード（3proxy） | ホストのLAN側インターフェースへの直接bindが前提（`network_mode: host`必須）。→ phase4.md |
+| インストールスクリプト | ホストの永続変更はphase3.mdのネットワーク基盤移行と合わせて実施。 |
 
 ## 主要タスク
 
-### ネットワーク基盤移行
-- [ ] proxyサービスの`docker-compose.yml`定義を`network_mode: host`に変更し、`networks:`定義を除去（併用不可のため）。
-- [ ] `cap_add: [NET_ADMIN]`、`devices: ["/dev/net/tun:/dev/net/tun"]`を付与。
-- [ ] host化に伴うUDS疎通の再確認（ctl-socketボリュームはネットワークモードに依存しないため影響なしのはずだが、実機で確認する）。
+### Step 0: specs更新
+- [ ] `specs/apiserver/design.md`「Phase 1における具体プロファイル」節の「Phase 4で実CLI統合時に」等の記述を「Phase 2で」に更新する。
+- [ ] `specs/proxyserver/design.md`「Phase 1における縮小構成」表にPhase 2の列（実CLI・NET_ADMIN/tun付与・ネットワークはブリッジのまま）を追加する。
+- [ ] `specs/proxyserver/tasks.md`に「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」節を追加する。
+- [ ] `specs/apiserver/tasks.md`の`POST /v1/session`項目の参照先を`wbs/phase2.md`に更新する。
 
-### インストールスクリプト（最小限のホスト変更）
-- [ ] `/etc/sysctl.d/99-vpngwgui.conf`（`net.ipv4.ip_forward=1`）作成＋`sysctl --system`実行スクリプト作成。
-- [ ] LAN側インターフェース名の自動検出（デフォルトゲートウェイの逆引き等）＋`network.env`書き出し処理。
-- [ ] proxyコンテナ起動時、`/proc/sys/net/ipv4/ip_forward`が0であれば1に補正するフォールバック処理（インストールスクリプト未実行環境向け）。
+### Step 1: proxy — 実CLI同梱・権限付与
+- [ ] 実VPNベンダーCLIバイナリをproxyイメージに同梱（Dockerfile更新）。
+- [ ] `docker-compose.yml`のproxyサービスに`cap_add: [NET_ADMIN]`、`devices: ["/dev/net/tun:/dev/net/tun"]`を追加する（`networks: [app-net]`はこの時点では維持し、`network_mode: host`への変更はphase3.mdで行う）。
+- [ ] 実行可能バイナリ許可リスト（`proxy/src/allowlist.ts`）をモックCLIパスから実CLIパスに置換する。
 
-### 透過ゲートウェイモード（nftables）
-- [ ] `nft`コマンドラッパー実装（`iptables`は使わない。legacy/nftバックエンドの曖昧さ回避のため）。
-- [ ] 専用テーブル`inet vpngwgui`の作成・postrouting/forwardチェーン構成。
-- [ ] VPNトンネルインターフェース名の動的検出（`ip route show default`の出力解析）。
-- [ ] 再接続・国変更時の旧ルール撤去→新IFでの再適用処理。
-- [ ] コンテナ起動時の残骸ルール全撤去→再適用処理（`restart: always`による再起動時の冪等性確保）。
+### Step 2: api — プロファイル・パーサー差し替え
+- [ ] `api/config/vpn-profile.json`を実ベンダーの実argv体系に置き換える（Phase1のモック用argv・エラー注入用国コード`"zz"`を実際のコマンド体系・国コード一覧に更新）。
+- [ ] stdout/stderrパーサーの差し替え: `outputFormat`に実CLI用の値（例: `"text"`）を追加し、対応するパーサーを`api/src/profile/`に実装する（Phase1で見越して分離済みの、vendor非依存のレスポンス整形層とモック専用パーサーの分離構成を活かす）。
+- [ ] `POST /v1/session`実装（`login`アクション解決→実行→stdoutからログインURL等を抽出）。
+- [ ] 実CLIの非決定的挙動（ネットワーク遅延、認証エラー、レート制限等）に対するタイムアウト・リトライ方針の見直し。
 
-### Kill Switch実処理
-- [ ] `killSwitch=true`時の`forward`チェーン`policy drop`維持とacceptルール管理。
-- [ ] VPN切断検知時のacceptルール即時撤去。
-- [ ] `killSwitch=false`時のフェイルオープン用フォールバックルール。
-- [ ] ユーザ向け設定変更（API→proxy）をnftables再構成へ即時反映する経路の実装（下記「内部プロトコル拡張」参照）。
+## 完了基準（動作確認シナリオ）
 
-### 内部プロトコル拡張
-- [ ] proxyのUDSサーバに、Phase1で用意した`POST /exec`エンドポイントとは別に、設定反映専用の`POST /settings`（内部プロトコル、OpenAPI対象外）を追加する。APIサーバは`killSwitch`変更時にこのエンドポイントへ最新のユーザ向け設定全体を送信し、proxy側がnftables再構成を行う。
-- [ ] APIサーバの`proxy-client.ts`に`notifySettings()`関数を追加（Phase1の`executeVendorCommand()`とは別関数として分離する）。
+```bash
+docker compose build
+docker compose up -d
 
-### VPN接続状態監視
-- [ ] トンネル経路消失を検知する監視処理（`ip route show default`ポーリング等）とKill Switch/透過ゲートウェイ連携。
+# 実CLI経由での状態取得
+curl -s http://localhost:8080/api/v1/connection/countries
+curl -s http://localhost:8080/api/v1/connection                  # → {"status":"disconnected"}
 
-## 完了基準
+# ログイン未実施状態からのログイン代行
+curl -s -X POST http://localhost:8080/api/v1/session             # → ログインURL等を含むレスポンス
+# （表示されたURLで実際にログインを完了させる）
 
-- `docker compose up`後、LAN側の別端末（またはホストの別netnsを模したテスト環境）からこのホストをゲートウェイに設定し、VPNトンネル確立中はVPN経由の通信が成立し、`killSwitch=true`でトンネル切断時に通信が遮断されることを確認する。
-- `killSwitch=false`に変更した状態でトンネルを切断し、直接インターネットに抜けることを確認する。
-- proxyコンテナ再起動後、nftablesルールが重複・残骸なく再構成されることを確認する（`nft list ruleset`で確認）。
+# 実CLI経由での接続・切断
+curl -s -X PUT http://localhost:8080/api/v1/connection -H 'Content-Type: application/json' -d '{"connect":true,"country":"jp"}'
+curl -s http://localhost:8080/api/v1/connection                  # → 実際の接続状態を反映
+
+# コンテナ自身の通信が実際にVPNトンネル経由になっていることを確認
+docker compose exec proxy sh -c 'ip route show default'
+docker compose exec proxy sh -c 'curl -s https://<接続元IP確認用エンドポイント>/'   # 接続先国に応じたIPになることを確認
+
+curl -s -X PUT http://localhost:8080/api/v1/connection -H 'Content-Type: application/json' -d '{"connect":false}'
+```
+
+- Web UIから実際にVPN接続・切断・国変更ができ、`GET /v1/connection`が実際の接続状態を反映することを確認する。
+- 実CLIの認証エラー・接続失敗等が`422`として、タイムアウトが`504`としてAPI経由で正しくハンドリングされることを確認する。
 
 ## 次フェーズへの申し送り
 

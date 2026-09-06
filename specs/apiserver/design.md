@@ -43,6 +43,32 @@
 - `placeholders.<KEY>.pattern` は正規表現、`enumFrom` は同ファイル内の列挙値（例 `countries`）を指す。APIサーバはWeb UIから渡された値がこの許可条件を満たすかを必ず再検証する。
 - ベンダー追加時は、このJSONを1ファイル追加し、プロキシサーバ側の許可リストにバイナリパスを追加するだけで対応できる（詳細はproxyserver/design.md）。
 
+## Phase 1における具体プロファイル
+
+Phase 1（`wbs/phase1.md`）では実VPNベンダーCLIの代わりにモックCLIスクリプトを使用する。この段階でのプロファイルは以下の内容とし、`outputFormat`フィールド（Phase 1では`"json"`固定）を追加する。これはモックCLIのstdoutをJSON固定にしている割り切りをプロファイル側から表現するためのもので、Phase 2で実CLI統合時に`"text"`等の値を追加し対応するパーサーを実装する拡張点となる（実CLI統合はネットワーク基盤移行より前のPhase 2で行う。理由は`wbs/README.md`「フェーズ分割の考え方」参照）。
+
+```json
+{
+  "vendor": "adguardvpn",
+  "binary": "/usr/local/bin/adguardvpn-cli-mock",
+  "outputFormat": "json",
+  "actions": {
+    "connect": {
+      "argv": ["connection", "-l", "%COUNTRY%"],
+      "placeholders": {
+        "COUNTRY": { "pattern": "^[a-z]{2}$", "source": "enum", "enumFrom": "adguardvpn.countries" }
+      },
+      "timeoutMs": 15000
+    },
+    "disconnect": { "argv": ["connection", "-d"], "placeholders": {}, "timeoutMs": 10000 },
+    "status": { "argv": ["connection", "-s"], "placeholders": {}, "timeoutMs": 5000 }
+  },
+  "countries": ["jp", "us", "de", "sg", "zz"]
+}
+```
+
+`"zz"`はモックCLIのエラー注入用コード（proxyserver/design.md「Phase 1: モックVPN CLI仕様」参照）。プレースホルダー検証は`countries`（enumFrom参照先）に対する一致判定であるため、`zz`が`countries`に含まれていないとAPIサーバ側の入力検証（400）で弾かれ、プロキシ側の実行失敗（422）を再現できない。そのためPhase 1限定でテスト用コードとして`countries`に含めている（Web UIの国選択肢にも表示されるが、Phase 1はモックプロファイルでありWeb UIも本番運用しないため許容する）。Phase 2で実プロファイルに置き換える際はこのテスト用コードを含めない。
+
 # ユーザ向け設定の具体スキーマ
 
 Web UIから変更可能な運用設定（目的・意味は../requirements.md参照）。APIサーバが永続化（設定ファイルまたは軽量DB、例 SQLite）し、プロキシサーバへの反映が必要なものはUDS経由で通知する。

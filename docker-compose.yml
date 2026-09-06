@@ -1,0 +1,51 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "8080:8080"
+    networks:
+      - app-net
+    depends_on:
+      - api
+    environment:
+      API_ORIGIN: http://api:3000
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    networks:
+      - app-net
+    user: "10001:10001"
+    depends_on:
+      - proxy
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+      - ./api/config/vpn-profile.json:/etc/vpngwgui/vpn-profile.json:ro
+      - api-data:/var/lib/vpngwgui
+    environment:
+      VPN_PROFILE_PATH: /etc/vpngwgui/vpn-profile.json
+      PROXY_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
+      SETTINGS_FILE: /var/lib/vpngwgui/settings.json
+      AUDIT_LOG_FILE: /var/lib/vpngwgui/audit.log
+
+  proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    networks:
+      - app-net
+    user: "10001:10001"
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+    environment:
+      CTL_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
+
+networks:
+  app-net: {}
+
+volumes:
+  ctl-socket: {}
+  api-data: {}

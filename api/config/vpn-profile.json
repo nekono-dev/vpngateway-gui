@@ -1,0 +1,17 @@
+{
+  "vendor": "adguardvpn",
+  "binary": "/usr/local/bin/adguardvpn-cli-mock",
+  "outputFormat": "json",
+  "actions": {
+    "connect": {
+      "argv": ["connection", "-l", "%COUNTRY%"],
+      "placeholders": {
+        "COUNTRY": { "pattern": "^[a-z]{2}$", "source": "enum", "enumFrom": "adguardvpn.countries" }
+      },
+      "timeoutMs": 15000
+    },
+    "disconnect": { "argv": ["connection", "-d"], "placeholders": {}, "timeoutMs": 10000 },
+    "status": { "argv": ["connection", "-s"], "placeholders": {}, "timeoutMs": 5000 }
+  },
+  "countries": ["jp", "us", "de", "sg", "zz"]
+}

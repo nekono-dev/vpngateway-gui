@@ -2,6 +2,37 @@
 
 サービス全体設計（../design.md）で定義されたプロキシサーバの詳細設計を示す。3ファイルの中で最もホスト・ネットワークへの影響が大きく、実現難度が高い部分であるため、実装前に本ファイルの内容をレビューすること。
 
+# Phase 1における縮小構成
+
+実装は`wbs/phase1.md`から段階的に行う。Phase 1では以下のように構成を縮小する。
+
+| 項目 | 最終形（本ファイル） | Phase 1 | Phase 2 |
+|---|---|---|---|
+| ネットワーク | `network_mode: host` | 通常のDockerブリッジネットワーク（api/webと同一） | Phase 1と同じ（`network_mode: host`への移行はPhase 3） |
+| 権限 | `cap_add: [NET_ADMIN]`, `devices: [/dev/net/tun]` | 付与しない | 付与する（実CLIがトンネルを確立するために必要。コンテナ自身のnetns内で完結するためブリッジネットワークのままでも付与可能） |
+| VPNベンダーCLI | 実CLI | モックCLIスクリプト | 実CLI |
+| 透過ゲートウェイ／明示的プロキシ／Kill Switch | 実装する | 実装しない（設定は永続化のみ） | Phase 1と同じ（Phase 3/4で実装） |
+| インストールスクリプト | 実装する | 実装しない | Phase 1と同じ（Phase 3で実装） |
+
+実VPNベンダーCLIへの置換を、ネットワーク基盤移行（`network_mode: host`、透過ゲートウェイ、Kill Switch）より前のPhase 2で行う理由は`wbs/README.md`「フェーズ分割の考え方」を参照。
+
+## Phase 1: モックVPN CLI仕様
+
+実VPNベンダーCLIの代わりに、Node.jsスクリプト（shebang付き、`proxy/mock-cli/adguardvpn-cli-mock.mjs`）で代用する。状態は`/tmp/vpngwgui-mock-state.json`（環境変数`MOCK_STATE_FILE`で上書き可）に保存する。
+
+| argv | 動作 | stdout | exit |
+|---|---|---|---|
+| `connection -l <COUNTRY>` | 状態を`{"status":"connected","country":"<COUNTRY>"}`に更新 | 同JSON | 0 |
+| `connection -d` | 状態を`{"status":"disconnected"}`に更新 | 同JSON | 0 |
+| `connection -s` | 状態ファイルを読み取り出力（無ければdisconnected） | 状態JSON | 0 |
+| `connection -l zz`（エラー注入用の特殊国コード） | 変更なし | stderrに`ERROR: no server available for zz` | 1 |
+
+`connection -l zz`のエラー注入により、実CLIなしでAPI側の422ハンドリングを検証できる。stdoutはJSON固定とし、Phase 2で実CLI統合する際はベンダー別テキストパーサーに置換する（apiserver/design.md「Phase 1における具体プロファイル」の`outputFormat`参照）。
+
+**実装時に判明した注意点**: APIサーバはプレースホルダー値をプロファイルの`countries`（enumFrom参照先）に対して必ず列挙値チェックする（apiserver/design.md「入力検証・セキュリティ方針」）。そのため`zz`をプロファイルの`countries`に含めておかないと、この422検証用リクエストはプロキシに到達する前にAPIサーバの400（入力エラー）で弾かれてしまう。Phase 1のプロファイル（apiserver/design.md「Phase 1における具体プロファイル」）では`countries`に`"zz"`をテスト用として含めている。
+
+内部コマンド受信サーバの待受パスは`POST /exec`に固定する（Phase 3で設定反映用`POST /settings`を追加する際、既存仕様の変更ではなく追加で済むようにするため）。
+
 # ネットワーク構成
 
 ## `network_mode: host` の採用理由

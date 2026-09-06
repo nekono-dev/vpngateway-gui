@@ -6,8 +6,8 @@ webserver/requirements.mdで定義された画面のうち、Phase1で先送り�
 
 ## 前提
 
-- Phase2/3完了（`killSwitch`・`excludedDomains`・`transparentGatewayEnabled`・`explicitProxyEnabled`・`explicitProxyAllowedCidrs`がAPI経由で実際にproxyへ反映される状態）。
-- Phase4完了（ログイン代行APIが利用可能）。
+- Phase2完了（ログイン代行APIが利用可能）。
+- Phase3/4完了（`killSwitch`・`excludedDomains`・`transparentGatewayEnabled`・`explicitProxyEnabled`・`explicitProxyAllowedCidrs`がAPI経由で実際にproxyへ反映される状態）。
 
 ## スコープ外
 
@@ -31,4 +31,4 @@ webserver/requirements.mdで定義された画面のうち、Phase1で先送り�
 
 ## 次フェーズへの申し送り
 
-- （Phase4完了後に実装しながら追記する）
+- （Phase3/4完了後に実装しながら追記する）

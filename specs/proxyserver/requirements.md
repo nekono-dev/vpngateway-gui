@@ -1,3 +1,7 @@
+# Phase 1における縮小構成
+
+実装は`wbs/phase1.md`から段階的に行う。Phase 1では`network_mode: host`・`cap_add:[NET_ADMIN]`・`/dev/net/tun`は付与せず、透過ゲートウェイ・明示的プロキシ・Kill Switchの実処理・インストールスクリプトは実装しない。実VPNベンダーCLIの代わりにモックCLIスクリプトを使用する。詳細はproxyserver/design.md「Phase 1における縮小構成」を参照。
+
 # 責務の範囲
 
 - VPNベンダーCLI（AdguardVPN CLI / NordVPN CLI等）の実行・状態監視。

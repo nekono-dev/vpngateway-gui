@@ -1,24 +1,39 @@
 # 実装タスク
 
+Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタスクは最終形（Phase 2以降）を含めた全体像であり、Phase 1では下記「モックVPN CLI (Phase 1)」節と「内部コマンド受信サーバ」節のみを対象とする。実VPNベンダーCLIへの置換はネットワーク基盤移行より前のPhase 2で行う（`wbs/README.md`「フェーズ分割の考え方」参照）。
+
 ## プロジェクトセットアップ
 
-- [ ] Node.js/TSプロジェクト初期化
-- [ ] Dockerfile作成（VPNベンダーCLIバイナリ・3proxy同梱）
-- [ ] docker-compose設定（`network_mode: host`、`cap_add: [NET_ADMIN]`、`devices`、`ctl-socket`ボリューム）
-- [ ] API・プロキシ両コンテナの同一UID/GID起動設定
+- [x] Node.js/TSプロジェクト初期化
+- [x] Dockerfile作成（Phase 1: モックCLI同梱。Phase 2でVPNベンダーCLIバイナリに、Phase 4で3proxy同梱に置換）
+- [x] docker-compose設定（Phase 1: 通常のDockerブリッジネットワーク＋`ctl-socket`ボリューム。Phase 2で`cap_add: [NET_ADMIN]`・`devices`を追加、Phase 3で`network_mode: host`に変更）
+- [x] API・プロキシ両コンテナの同一UID/GID起動設定
+
+## モックVPN CLI (Phase 1)
+
+- [x] `proxy/mock-cli/adguardvpn-cli-mock.mjs` 作成（`connection -l/-d/-s`応答、エラー注入用`zz`国コード対応）
+- [x] Dockerfileへのモックスクリプト同梱・実行権限付与
+- [x] 実行可能バイナリ許可リストへのモックスクリプトパス登録
 
 ## 内部コマンド受信サーバ（UDS制御チャネル）
 
-- [ ] `http` 組み込みモジュールによるUDS listenサーバ実装
-- [ ] 起動時の残存ソケットファイル `unlink` 処理
-- [ ] `listen` 後の `chmodSync(0o770)` によるパーミッション制限実装
-- [ ] 実行可能バイナリ許可リストによる `binary` 照合・拒否処理実装
-- [ ] `execFile` によるコマンド実行実装（`timeoutMs` 対応、シェル不使用）
-- [ ] レスポンス（`exitCode`/`stdout`/`stderr`）実装
-- [ ] リクエスト/レスポンスのランタイムスキーマ検証実装
-- [ ] 実行要求・結果の構造化ログ記録実装
+- [x] `http` 組み込みモジュールによるUDS listenサーバ実装
+- [x] 起動時の残存ソケットファイル `unlink` 処理
+- [x] `listen` 後の `chmodSync(0o770)` によるパーミッション制限実装
+- [x] 実行可能バイナリ許可リストによる `binary` 照合・拒否処理実装
+- [x] `execFile` によるコマンド実行実装（`timeoutMs` 対応、シェル不使用）
+- [x] レスポンス（`exitCode`/`stdout`/`stderr`）実装
+- [x] リクエスト/レスポンスのランタイムスキーマ検証実装（受信リクエストの最小形状チェックのみ。TypeBox/zod等によるスキーマ定義までは行っていない）
+- [x] 実行要求・結果の構造化ログ記録実装
 
-## 透過ゲートウェイモード
+## 実VPNベンダーCLI統合・ログイン代行 (Phase 2)
+
+- [ ] 実VPNベンダーCLIバイナリのDockerイメージ同梱（モックCLIスクリプトから置換）
+- [ ] `cap_add: [NET_ADMIN]`・`devices: [/dev/net/tun]`の付与（`network_mode: host`への移行前だが、コンテナ自身のnetns内で完結するため付与可能。詳細はproxyserver/design.md「Phase 1における縮小構成」参照）
+- [ ] 実行可能バイナリ許可リストのモックCLIパスから実CLIパスへの置換
+- [ ] （apiserver側）stdout/stderrパーサーの実CLI用差し替え、`POST /v1/session`（ログイン代行）実装
+
+## 透過ゲートウェイモード (Phase 3以降)
 
 - [ ] IPフォワーディングの起動時チェック・フォールバック設定実装
 - [ ] `nft` コマンドによる専用テーブル（`inet vpngwgui`）管理実装（postrouting/forwardチェーン）
@@ -26,14 +41,14 @@
 - [ ] 再接続・国変更時のルール撤去・再適用処理実装
 - [ ] コンテナ起動時の残骸ルール全撤去・再適用処理実装
 
-## Kill Switch
+## Kill Switch (Phase 3以降)
 
 - [ ] `killSwitch` ON時の `forward` チェーン `policy drop` 維持・acceptルール管理実装
 - [ ] VPN切断検知時のacceptルール即時撤去処理実装
 - [ ] `killSwitch` OFF時のフェイルオープン用フォールバックルール実装
 - [ ] ユーザ向け設定変更通知受信によるnftables即時再構成実装
 
-## 明示的プロキシモード
+## 明示的プロキシモード (Phase 4以降)
 
 - [ ] 3proxy設定ファイルのテンプレート作成
 - [ ] ユーザ向け設定変更時の3proxy設定ファイル生成処理実装
@@ -51,7 +66,7 @@
 - [ ] ドメイン単位除外のDNS解決・ルーティング反映方式の詳細設計
 - [ ] 上記方式の実装（3proxy側／透過ゲートウェイ側それぞれ）
 
-## インストールスクリプト
+## インストールスクリプト (Phase 3以降)
 
 - [ ] `/etc/sysctl.d/99-vpngwgui.conf` 作成・`sysctl --system` 実行処理実装
 - [ ] LANインターフェース名検出・設定ファイル（`network.env`等）書き出し処理実装

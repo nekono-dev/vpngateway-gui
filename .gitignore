@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-server/
+*.tsbuildinfo
+
+# APIサーバが自動生成するOpenAPI仕様（ビルド時生成。webserver/design.md参照）
+api/openapi.json
+
+# orvalが自動生成するAPIクライアント（手動編集禁止、ビルド時生成）
+web/src/generated/
+
+# Phase1のユーザ向け設定・監査ログ永続化ファイル（ローカル実行時にホストへ書き出す場合）
+*.local.json

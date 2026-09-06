@@ -6,8 +6,8 @@
 
 ## 前提
 
-- Phase2完了（nftables `inet vpngwgui`テーブルが稼働中）。
-- Phase3完了（3proxyが稼働中）。
+- Phase3完了（nftables `inet vpngwgui`テーブルが稼働中）。
+- Phase4完了（3proxyが稼働中）。
 
 ## スコープ外
 
@@ -27,4 +27,4 @@
 
 ## 次フェーズへの申し送り
 
-- （Phase2/3完了後に実装しながら追記する）
+- （Phase3/4完了後に実装しながら追記する）

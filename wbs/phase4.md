@@ -1,32 +1,34 @@
-# Phase 4: 実VPNベンダーCLI統合・ログイン代行
+# Phase 4: 明示的プロキシモード（3proxy）
 
 ## 目的
 
-Phase1〜3で構築したパイプライン（プレースホルダー検証→UDS送信→execFile実行→nftables/3proxy連携）を、モックCLIから実際のVPNベンダーCLI（例: AdguardVPN CLI）に置き換える。ログイン代行（`POST /v1/session`）を実装する。
+3proxyを用いたSOCKS5/HTTPプロキシモードを実装し、`explicitProxyEnabled`・`explicitProxyAllowedCidrs`のユーザ向け設定をproxyコンテナへ反映できるようにする。
 
 ## 前提
 
-- Phase1〜3完了（コマンド実行パイプライン・透過ゲートウェイ・明示的プロキシがモックCLIで一通り検証済み）。
-- 対象VPNベンダーの契約・CLIバイナリが利用可能であること。
+- Phase2完了（実VPNベンダーCLIによる接続・切断が動作確認済み）。
+- Phase3完了（proxyコンテナが`network_mode: host`で稼働しており、LANインターフェースへ直接bindできる状態）。
+- Phase3で追加した内部プロトコル`POST /settings`（設定反映エンドポイント）が利用可能であること。
 
 ## スコープ外
 
-- 複数ベンダー同時対応の抽象化はしない（設計方針通り、1サーバにつき1ベンダー）。
+（なし。実VPNベンダーCLIへの置換はPhase2で完了済み）
 
 ## 主要タスク
 
-- [ ] 実VPNベンダーCLIバイナリをproxyイメージに同梱（Dockerfile更新）。
-- [ ] 実行可能バイナリ許可リストにモックCLIパスの代わりに実CLIパスを登録。
-- [ ] `api/config/vpn-profile.json`を実ベンダーの実argv体系に置き換え。
-- [ ] **stdout/stderrパーサーの差し替え**: Phase1でモックCLIの出力をJSON固定にした割り切りを解消し、ベンダー別テキスト出力をパースする関数を実装する（Phase1設計時点で、この差し替えを見越して`api`側のレスポンス整形処理をvendor非依存の関数として分離しておくこと。phase1.mdの「次フェーズへの申し送り」参照）。
-- [ ] `POST /v1/session`実装（`login`アクション解決→実行→stdoutからログインURL等を抽出）。
-- [ ] 実CLIの非決定的挙動（ネットワーク遅延、認証エラー、レート制限等）に対するタイムアウト・リトライ方針の見直し。
+- [ ] 3proxy設定ファイルのテンプレート作成（SOCKS5:1080, HTTP:8080相当）。
+- [ ] `POST /settings`受信時、`explicitProxyAllowedCidrs`から3proxy設定ファイルを再生成する処理。
+- [ ] `child_process.spawn`による3proxy起動・監視・異常終了時再起動（指数バックオフ）実装。
+- [ ] `explicitProxyEnabled`切替による3proxyプロセスの起動/停止。
+- [ ] VPN接続状態変化時は3proxyを再起動しない（ルーティングに自動追従するため。design.md記載の通り、独立して機能することを確認する）。
+- [ ] 3proxyクラッシュループ検知時のAPIサーバへのエラー状態通知（`GET /v1/connection`等のレスポンスに反映できるよう、proxy→api方向の状態通知経路を検討・実装）。
 
 ## 完了基準
 
-- Web UIから実際にVPN接続・切断・国変更ができ、`GET /v1/connection`が実際の接続状態を反映することを確認する。
-- ログイン未実施状態から`POST /v1/session`経由でログインURLを取得し、実際にログインが完了できることを確認する。
-- Phase2/3で検証したnftables/3proxy連携が実トンネルインターフェース名（`tun0`等、モックとは異なる実際の名称）でも問題なく動作することを確認する。
+- クライアント端末から本ホストのSOCKS5/HTTPポートへプロキシ設定し、`explicitProxyAllowedCidrs`に含まれるCIDRからのみ接続を許可、それ以外を拒否することを確認する。
+- `explicitProxyEnabled=false`にするとプロセスが停止し、ポートが閉じることを確認する。
+- 3proxyを強制終了（`kill`）した際、監視処理が自動再起動することを確認する。
+- Phase3で検証したnftables連携と、実際のトンネルインターフェース名（Phase2で統合済みの実CLIが確立するもの）の下で3proxyが独立して問題なく動作することを確認する。
 
 ## 次フェーズへの申し送り
 

@@ -42,3 +42,18 @@ Webサーバ用のAPIクライアントは、orvalのようなOpenAPIのクラ�
 APIサーバは Fastify + TypeBox + `@fastify/swagger` を用い、TypeBoxで定義したスキーマからリクエスト/レスポンスの検証とOpenAPI仕様を自動生成する構成とする。生成されたOpenAPI仕様をorvalがそのままWeb側のクライアント生成に利用する。
 
 ただし、APIサーバ⇄プロキシサーバ間の内部コマンド実行チャネル（UDS経由の内部専用HTTPサーバ）はこの限りではなく、OpenAPI仕様の対象外とする。
+
+# 実装フェーズ
+
+実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase7.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。
+
+| 項目 | 最終形（本ファイル） | Phase 1（wbs/phase1.md） |
+|---|---|---|
+| proxyのネットワーク | `network_mode: host` | 通常のDockerブリッジネットワーク（api/webと同一） |
+| proxyの権限 | `cap_add:[NET_ADMIN]`, `devices:[/dev/net/tun]` | 付与しない |
+| VPNベンダーCLI | 実CLI（adguardvpn-cli等） | モックCLIスクリプト |
+| 透過ゲートウェイ／明示的プロキシ／Kill Switch | 実装する | 実装しない（ユーザ向け設定APIは受理・永続化のみ行う） |
+| インストールスクリプト | 実装する | 実装しない |
+| Web UI | ダッシュボード＋接続操作＋設定ダイアログ＋接続ログ | ダッシュボード＋接続操作のみ |
+
+Phase 2以降で、本ファイルおよび各サービスdesign.mdに記載の最終形（host networking、nftables、3proxy、Kill Switch実処理、インストールスクリプト、実VPNベンダーCLI、Web設定ダイアログ・接続ログ画面）を段階的に実装する。
