@@ -8,7 +8,7 @@
 
 | 項目 | 最終形（本ファイル） | Phase 1 | Phase 2 |
 |---|---|---|---|
-| ネットワーク | `network_mode: host` | 通常のDockerブリッジネットワーク（api/webと同一） | Phase 1と同じ（`network_mode: host`への移行はPhase 3） |
+| ネットワーク | `network_mode: host` | 通常のDockerブリッジネットワーク（api/webと同一） | `network_mode: host`（当初計画はPhase 3で移行予定だったが、ブリッジネットワークがIPv6を透過せず実CLIの起動時バックエンド疎通が失敗し、コンテナ再作成のたびにログインセッションが失効する不具合が実機検証で発覚したため、この部分のみPhase 2へ前倒しした。透過ゲートウェイ・nftables等の残りはPhase 3のまま。wbs/phase2.md「次フェーズへの申し送り」参照） |
 | 権限 | `cap_add: [NET_ADMIN]`, `devices: [/dev/net/tun]` | 付与しない | 付与する（実CLIがトンネルを確立するために必要。コンテナ自身のnetns内で完結するためブリッジネットワークのままでも付与可能） |
 | VPNベンダーCLI | 実CLI | モックCLIスクリプト | 実CLI |
 | 透過ゲートウェイ／明示的プロキシ／Kill Switch | 実装する | 実装しない（設定は永続化のみ） | Phase 1と同じ（Phase 3/4で実装） |
@@ -111,10 +111,12 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 
 # 内部コマンド受信サーバの仕様
 
-- リクエスト（APIサーバから、apiserver/design.md参照）: `{ vendor, binary, resolvedArgv, timeoutMs }`
+- リクエスト（APIサーバから、apiserver/design.md参照）: `{ vendor, binary, resolvedArgv, timeoutMs, completionPattern? }`
 - **実行可能バイナリの許可リストによる内部防御**: 受信した `binary` を、プロキシコンテナ内にあらかじめ定義された既知のVPNベンダーCLIバイナリパスの許可リスト（例 `/usr/bin/adguardvpn-cli`, `/usr/bin/nordvpn`）と照合し、一致しない場合は実行を拒否する。この許可リストは、../requirements.mdで定義した「管理者向け設定」「ユーザ向け設定」とは別の、プロキシ実装内部にハードコードされたセキュリティ機構であり、両設定カテゴリとは独立して扱う。APIコンテナが将来何らかの理由で侵害・バグ混入した場合でも、プロキシ側が任意コマンド実行の踏み台にならないようにする最後の防波堤である。
-- 実行: `child_process.execFile(binary, resolvedArgv, { timeout: timeoutMs })`。シェル（`exec()`）は使用しない。
-- レスポンス: `{ exitCode, stdout, stderr }`。
+- 実行:
+  - `completionPattern`省略時（`connect`/`disconnect`/`status`）: `child_process.spawn(binary, resolvedArgv)`でプロセスを起動し、子プロセス自身の`'exit'`イベント（`timeoutMs`超過時はkillの上`exitCode: -1`）で完了と判定する。シェル（`exec()`）は使用しない。**`child_process.execFile`は使用しない**: execFileの完了判定は子プロセスの`'close'`イベント（stdout/stderrパイプが完全に閉じるまで）に依存するが、`connect`はバックグラウンドにVPNデーモン（孫プロセス）をforkして自身は先に終了するため、forkされたデーモンが標準出力/エラーのパイプを引き継いだまま存在し続け、`'close'`が永久に発火せずハングする不具合が実機検証で発覚した（`proxy/src/exec/command-runner.ts`の`runCommand`）。
+  - `completionPattern`指定時（`login`、Phase 2で追加）: `child_process.spawn(binary, resolvedArgv)`でプロセスを起動し、stdoutを蓄積しながら`completionPattern`（正規表現）との一致を都度判定する。一致した時点でプロセスをkillせず（`child.unref()`）、その時点までのstdout/stderrを添えて`exitCode: null`で応答する。一致せずプロセスが自然終了した場合は実際のexitCodeで応答し、一致せず`timeoutMs`を超過した場合はプロセスをkillし`exitCode: -1`（タイムアウトの既存表現）で応答する。ログイン代行のようにブラウザでの認証完了まで数分かかる長時間プロセスに、応答不要な待機区間だけ非同期に対応するための拡張点である（実装: `proxy/src/exec/command-runner.ts`の`runDetachableCommand`）。
+- レスポンス: `{ exitCode, stdout, stderr }`。`exitCode`は`completionPattern`一致時のみ`null`になりうる。
 - すべての実行要求と結果を構造化ログとして記録する（監査ログ、apiserver/design.md参照）。
 
 # VPNベンダーCLIの追加方法

@@ -28,10 +28,15 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 
 ## 実VPNベンダーCLI統合・ログイン代行 (Phase 2)
 
-- [ ] 実VPNベンダーCLIバイナリのDockerイメージ同梱（モックCLIスクリプトから置換）
-- [ ] `cap_add: [NET_ADMIN]`・`devices: [/dev/net/tun]`の付与（`network_mode: host`への移行前だが、コンテナ自身のnetns内で完結するため付与可能。詳細はproxyserver/design.md「Phase 1における縮小構成」参照）
-- [ ] 実行可能バイナリ許可リストのモックCLIパスから実CLIパスへの置換
-- [ ] （apiserver側）stdout/stderrパーサーの実CLI用差し替え、`POST /v1/session`（ログイン代行）実装
+- [x] 実VPNベンダーCLIバイナリのDockerイメージ同梱（モックCLIスクリプトから置換）
+- [x] `cap_add: [NET_ADMIN]`・`devices: [/dev/net/tun]`の付与（`network_mode: host`への移行前だが、コンテナ自身のnetns内で完結するため付与可能。詳細はproxyserver/design.md「Phase 1における縮小構成」参照）
+- [x] 実行可能バイナリ許可リストのモックCLIパスから実CLIパスへの置換
+- [x] （apiserver側）stdout/stderrパーサーの実CLI用差し替え、`POST /v1/session`（ログイン代行）実装
+- [x] 内部コマンド受信サーバへの`completionPattern`対応追加（`runDetachableCommand`、長時間プロセスの早期応答・バックグラウンド継続実行）
+- [x] 実機（対象ホスト・実VPN接続）での`connect`動作確認（2026-09-14実施。`adguardvpn-cli connect -l jp -y`でTOKYOへ接続し外部IPが`156.146.34.246`に変化することを確認、`disconnect`で復帰も確認。詳細はwbs/phase2.md「次フェーズへの申し送り」参照）
+- [x] Web UI経由（未ログイン→URL表示→ブラウザ認証→状態反映、接続/切断/国変更、504タイムアウト）のE2E確認（2026-09-14実施。詳細はwbs/phase2.md「次フェーズへの申し送り」参照）
+- [x] ログイン代行バックグラウンドプロセスが認証完了後もCPUを消費し続ける不具合の修正（stdinを`"pipe"`化、`backgroundTimeoutMs`による安全装置追加。`command-runner.ts`・`command-runner.test.ts`参照）
+- [x] ログイン情報永続化がコンテナ再作成で失われる不具合の修正（原因はDockerブリッジネットワークのIPv6非透過。`network_mode: host`への移行をPhase3から前倒し。`docker-compose.yml`・`docker-entrypoint.sh`参照）
 
 ## 透過ゲートウェイモード (Phase 3以降)
 

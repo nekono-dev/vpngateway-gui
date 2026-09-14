@@ -4,7 +4,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isAllowedBinary } from "./allowlist.js";
-import { runCommand } from "./exec/command-runner.js";
+import { runCommand, runDetachableCommand } from "./exec/command-runner.js";
 import { listenOnUnixSocket } from "./lib/socket-bootstrap.js";
 
 const SOCKET_PATH = process.env.CTL_SOCKET_PATH ?? "/var/run/vpngw-ctl/exec.sock";
@@ -16,13 +16,17 @@ interface ExecRequestBody {
   binary: string;
   resolvedArgv: string[];
   timeoutMs: number;
+  // 設定されている場合、プロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、
+  // プロセスはバックグラウンドで実行継続させる（`login`アクション用、command-runner.ts参照）。
+  completionPattern?: string;
 }
 
 /**
  * 目的: unknownな入力(JSONパース結果)がExecRequestBodyの最小要件を満たすかを検証する。
  * 入力: JSON.parse()の戻り値（unknown）。
  * 出力: 形状が正しければ true（TypeScriptの型ガードとしても機能する）。
- * 期待する入力形状: vendor/binaryが非空文字列、resolvedArgvが文字列配列、timeoutMsが正の数値。
+ * 期待する入力形状: vendor/binaryが非空文字列、resolvedArgvが文字列配列、timeoutMsが正の数値、
+ *                completionPatternは省略可能だが指定時は文字列。
  */
 function isValidExecRequestBody(value: unknown): value is ExecRequestBody {
   if (typeof value !== "object" || value === null) return false;
@@ -35,7 +39,8 @@ function isValidExecRequestBody(value: unknown): value is ExecRequestBody {
     Array.isArray(body.resolvedArgv) &&
     body.resolvedArgv.every((item) => typeof item === "string") &&
     typeof body.timeoutMs === "number" &&
-    body.timeoutMs > 0
+    body.timeoutMs > 0 &&
+    (body.completionPattern === undefined || typeof body.completionPattern === "string")
   );
 }
 
@@ -85,7 +90,22 @@ async function handleExec(req: IncomingMessage, res: ServerResponse): Promise<vo
     return;
   }
 
-  const result = await runCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs);
+  const result = parsed.completionPattern
+    ? await runDetachableCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs, parsed.completionPattern, {
+        // バックグラウンド継続後の最終的な終了（自然終了・強制kill問わず）を監査ログに残す。
+        // 呼び出し元へのレスポンスは既に返却済みのため、ここでは別途ログ出力のみ行う。
+        onBackgroundExit: (info) => {
+          logAuditEvent({
+            event: "background_exec_completed",
+            vendor: parsed.vendor,
+            binary: parsed.binary,
+            argv: parsed.resolvedArgv,
+            exitCode: info.exitCode,
+            killedByTimeout: info.killedByTimeout,
+          });
+        },
+      })
+    : await runCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs);
   logAuditEvent({
     event: "exec_completed",
     vendor: parsed.vendor,

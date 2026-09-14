@@ -8,7 +8,7 @@
 
 - [x] Fastify + TypeBox + `@fastify/swagger` によるプロジェクト初期化
 - [x] Dockerfile作成（APIコンテナ）
-- [ ] lint / test 基盤の整備（vitestは導入済みだがテスト自体は未作成、ESLint未導入）
+- [x] lint / test 基盤の整備（2026-09-14: ESLint（`typescript-eslint`のrecommended構成）を導入し`npm run lint`を追加。テストは下記各項目参照）
 
 ## 管理者向け設定（VPNクライアント操作プロファイル）
 
@@ -31,7 +31,7 @@
 
 ## ログイン代行API
 
-- [ ] `POST /v1/session` 実装（`login` アクション解決・実行結果からログインURL抽出）（Phase2で実装、`wbs/phase2.md`参照）
+- [x] `POST /v1/session` 実装（`login` アクション解決・実行結果からログインURL抽出）（Phase2で実装、`wbs/phase2.md`参照）
 
 ## 監査ログ
 
@@ -41,7 +41,7 @@
 ## プロキシサーバとの内部通信
 
 - [x] UDSクライアント実装（`undici`の`Pool("http://localhost", {socketPath})`を使用。design.md記載の`Agent({socketPath})`と同等の目的を満たす）
-- [ ] 内部プロトコルのランタイムスキーマ検証実装（zod/TypeBox）（プロキシ側の受信リクエストは検証済み。APIサーバ側でプロキシからのレスポンス形状を実行時検証する処理は未実装、型アサーションのみ）
+- [x] 内部プロトコルのランタイムスキーマ検証実装（TypeBox）（2026-09-14: `proxy-client.ts`にExecResultのTypeBoxスキーマ検証を追加、期待と異なる形状の応答は例外を投げるよう変更。プロキシ側の受信リクエストは既に検証済み）
 - [x] UDS未応答・タイムアウト時のハンドリング実装
 
 ## エラーハンドリング
@@ -49,7 +49,7 @@
 - [x] 入力エラー（`400`）のハンドリング実装
 - [x] プロキシ接続失敗（`502`）のハンドリング実装
 - [x] プロキシ実行失敗（`422`、`exitCode`/`stderr`要約含む）のハンドリング実装
-- [x] タイムアウト（`504`）のハンドリング実装（コードパスは実装済み。実際のタイムアウト発生によるE2E確認は未実施）
+- [x] タイムアウト（`504`）のハンドリング実装（2026-09-14: 実機で`proxy`コンテナを`docker compose pause`により意図的に無応答化し、`GET /v1/connection`が`504 {"error":"proxy_timeout",...}`を返すことをE2Eで確認済み。`wbs/phase2.md`参照）
 
 ## OpenAPI公開
 
@@ -58,8 +58,8 @@
 
 ## テスト
 
-- [ ] プレースホルダー検証ロジックのユニットテスト
-- [ ] APIエンドポイントの統合テスト（プロキシ疎通はモック化）
+- [x] プレースホルダー検証ロジックのユニットテスト（`profile/placeholder-resolver.test.ts`）
+- [x] APIエンドポイントの統合テスト（プロキシ疎通はモック化）（`routes/session.test.ts`で`POST /v1/session`の200/422/502/504を検証。他エンドポイントは未着手）
 
 # 将来課題
 

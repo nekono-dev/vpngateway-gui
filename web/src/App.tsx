@@ -6,6 +6,8 @@ import { useConnectionPolling } from "./hooks/useConnectionPolling";
 import { ConnectionStatusCard } from "./components/dashboard/ConnectionStatusCard";
 import { CountrySelect } from "./components/dashboard/CountrySelect";
 import { ConnectDisconnectButton } from "./components/dashboard/ConnectDisconnectButton";
+import { VpnLoginButton } from "./components/dashboard/VpnLoginButton";
+import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import {
   getV1Connection,
   putV1Connection,
@@ -17,6 +19,7 @@ export function App() {
   const [selectedCountry, setSelectedCountry] = useState<string>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string>();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const { connection, isLoading, error, refresh } = useConnectionPolling(async () => {
     const response = await getV1Connection();
@@ -76,6 +79,11 @@ export function App() {
     <main>
       <h1>VPNGateway-GUI</h1>
       <ConnectionStatusCard connection={connection} isLoading={isLoading} error={error} />
+      <button type="button" onClick={() => setIsSettingsOpen(true)}>
+        設定
+      </button>
+      <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} countries={countries} />
+      <VpnLoginButton />
       <CountrySelect
         countries={countries}
         value={selectedCountry}

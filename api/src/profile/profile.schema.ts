@@ -13,12 +13,17 @@ export const ActionDefSchema = Type.Object({
   argv: Type.Array(Type.String()),
   placeholders: Type.Record(Type.String(), PlaceholderDefSchema),
   timeoutMs: Type.Number(),
+  // 設定されている場合、プロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、
+  // プロセス自体はプロキシ側でバックグラウンド実行を継続させる。
+  // ログイン代行（`login`アクション）のように、ブラウザでの認証完了まで数分かかる長時間プロセスに対応するための拡張点
+  // （proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
+  completionPattern: Type.Optional(Type.String()),
 });
 export type ActionDef = Static<typeof ActionDefSchema>;
 
-// Phase 1では"json"のみ許可する。Phase 4で実VPNベンダーCLI統合時に"text"等を追加し、
-// 対応するパーサーをresponse-parser.tsに追加する（wbs/phase1.md「全体整合性レビューでの指摘」参照）。
-export const OutputFormatSchema = Type.Literal("json");
+// Phase 1では"json"固定（モックCLI）。Phase 2で実VPNベンダーCLI統合に伴い"text"を追加し、
+// 対応するパーサーをresponse-parser.tsに実装した（wbs/phase2.md参照）。
+export const OutputFormatSchema = Type.Union([Type.Literal("json"), Type.Literal("text")]);
 
 export const VendorProfileSchema = Type.Object({
   vendor: Type.String(),
@@ -28,6 +33,8 @@ export const VendorProfileSchema = Type.Object({
     connect: ActionDefSchema,
     disconnect: ActionDefSchema,
     status: ActionDefSchema,
+    // ログイン代行（`POST /v1/session`）用アクション。Phase 2で追加。
+    login: ActionDefSchema,
   }),
   countries: Type.Array(Type.String()),
 });

@@ -35,11 +35,27 @@ services:
     build:
       context: .
       dockerfile: proxy/Dockerfile
-    networks:
-      - app-net
+    # 本来はPhase3（wbs/phase3.md）で行う予定だった変更だが、実機検証でDockerブリッジネットワークが
+    # IPv6を透過しないためコンテナ再作成のたびに実CLIのログインセッションが失効する不具合が発覚し、
+    # host networkへの切替が唯一の解決策と確認できたため、この部分のみPhase2で前倒しする
+    # （wbs/phase2.md「次フェーズへの申し送り」参照）。透過ゲートウェイ・nftables・インストール
+    # スクリプト等、host化に付随する他のタスクはPhase3のまま。
+    network_mode: host
     user: "10001:10001"
+    # 実VPNベンダーCLIがトンネルを確立するために必要（Phase 2）。
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # 実CLIが内部でバックグラウンドプロセスをforkする（`connect`実行時等）ため、
+    # 孤児プロセスがゾンビ化しないようinitプロセス（tini相当）を挟む。
+    init: true
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
+      # 実CLIのログイン情報（および永続化したmachine-id、proxy/docker-entrypoint.sh参照）の永続化。
+      # 無ければコンテナ再作成のたびに再ログインが必要になる（上記network_mode: hostとあわせて必須。
+      # wbs/phase2.md「次フェーズへの申し送り」参照）。
+      - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
     environment:
       CTL_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
 
@@ -49,3 +65,4 @@ networks:
 volumes:
   ctl-socket: {}
   api-data: {}
+  adguard-data: {}

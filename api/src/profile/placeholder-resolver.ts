@@ -38,7 +38,7 @@ function resolveEnumFrom(profile: VendorProfile, enumFrom: string): string[] {
  */
 export function resolveArgv(
   profile: VendorProfile,
-  actionName: "connect" | "disconnect" | "status",
+  actionName: keyof VendorProfile["actions"],
   values: Record<string, string>,
 ): string[] {
   const action = profile.actions[actionName];

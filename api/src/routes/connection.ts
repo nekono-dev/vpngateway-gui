@@ -35,8 +35,11 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
         resolvedArgv: argv,
         timeoutMs: profile.actions.status.timeoutMs,
       });
-      if (result.exitCode !== 0) {
-        throw new CommandExecutionError("status command failed", result.exitCode, result.stderr);
+      // status/connect/disconnectはcompletionPatternを指定しないため、exitCodeがnull
+      // （プロセス実行継続中）になることはない。念のため-1（既存のタイムアウト表現）へ正規化する。
+      const exitCode = result.exitCode ?? -1;
+      if (exitCode !== 0) {
+        throw new CommandExecutionError("status command failed", exitCode, result.stderr);
       }
       return parseConnectionOutput(profile.outputFormat, result.stdout);
     },
@@ -73,10 +76,13 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
         timeoutMs: profile.actions[actionName].timeoutMs,
       });
 
-      appendAuditLog({ action: actionName, input: body, exitCode: result.exitCode });
+      // connect/disconnectはcompletionPatternを指定しないため、exitCodeがnull（プロセス実行継続中）
+      // になることはない。念のため-1（既存のタイムアウト表現）へ正規化する。
+      const exitCode = result.exitCode ?? -1;
+      appendAuditLog({ action: actionName, input: body, exitCode });
 
-      if (result.exitCode !== 0) {
-        throw new CommandExecutionError(`${actionName} command failed`, result.exitCode, result.stderr);
+      if (exitCode !== 0) {
+        throw new CommandExecutionError(`${actionName} command failed`, exitCode, result.stderr);
       }
       return parseConnectionOutput(profile.outputFormat, result.stdout);
     },

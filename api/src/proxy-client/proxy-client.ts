@@ -2,9 +2,20 @@
 // apiserver/design.md「プロキシとの内部通信仕様」参照。この経路はOpenAPI非公開の内部チャネル。
 
 import { Pool } from "undici";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { ProxyUnavailableError, ProxyTimeoutError } from "../errors.js";
 
 const SOCKET_PATH = process.env.PROXY_SOCKET_PATH ?? "/var/run/vpngw-ctl/exec.sock";
+
+// プロキシは別コンテナ・別プロセスで動くため、TypeScriptの型だけでは実際のレスポンス形状を保証できない
+// （バージョン不一致・実装ミス等でプロトコルが乖離する可能性がある）。UDS経由の内部通信とはいえ、
+// 誤った形状のレスポンスをそのままExecResultとして扱うと後続処理で不可解な失敗を招くため、実行時に検証する。
+const ExecResultSchema = Type.Object({
+  exitCode: Type.Union([Type.Number(), Type.Null()]),
+  stdout: Type.String(),
+  stderr: Type.String(),
+});
 
 // Unixドメインソケット経由の接続プール。TCPは使用しない。
 const pool = new Pool("http://localhost", { socketPath: SOCKET_PATH });
@@ -14,10 +25,14 @@ export interface ExecInput {
   binary: string;
   resolvedArgv: string[];
   timeoutMs: number;
+  // 設定した場合、プロキシ側はプロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答する
+  // （`login`アクション用、profile.schema.tsの`ActionDef.completionPattern`参照）。
+  completionPattern?: string;
 }
 
 export interface ExecResult {
-  exitCode: number;
+  // null: completionPatternに一致し応答した時点ではプロセスがまだ終了していないことを表す。
+  exitCode: number | null;
   stdout: string;
   stderr: string;
 }
@@ -41,8 +56,12 @@ export async function executeVendorCommand(input: ExecInput): Promise<ExecResult
       bodyTimeout,
       headersTimeout: bodyTimeout,
     });
-    const result = (await response.body.json()) as ExecResult;
-    return result;
+    const body: unknown = await response.body.json();
+    if (!Value.Check(ExecResultSchema, body)) {
+      const errors = [...Value.Errors(ExecResultSchema, body)].slice(0, 5);
+      throw new Error(`unexpected response shape from proxy: ${JSON.stringify(errors)}`);
+    }
+    return body;
   } catch (error) {
     throw toProxyClientError(error);
   }

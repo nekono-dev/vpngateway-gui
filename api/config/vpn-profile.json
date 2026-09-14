@@ -1,17 +1,31 @@
 {
   "vendor": "adguardvpn",
-  "binary": "/usr/local/bin/adguardvpn-cli-mock",
-  "outputFormat": "json",
+  "binary": "/usr/local/bin/adguardvpn-cli",
+  "outputFormat": "text",
   "actions": {
     "connect": {
-      "argv": ["connection", "-l", "%COUNTRY%"],
+      "argv": ["connect", "-l", "%COUNTRY%", "-y"],
       "placeholders": {
         "COUNTRY": { "pattern": "^[a-z]{2}$", "source": "enum", "enumFrom": "adguardvpn.countries" }
       },
-      "timeoutMs": 15000
+      "timeoutMs": 30000
     },
-    "disconnect": { "argv": ["connection", "-d"], "placeholders": {}, "timeoutMs": 10000 },
-    "status": { "argv": ["connection", "-s"], "placeholders": {}, "timeoutMs": 5000 }
+    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 15000 },
+    "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 8000 },
+    "login": {
+      "argv": ["login"],
+      "placeholders": {},
+      "timeoutMs": 15000,
+      "completionPattern": "https://auth\\.adguard\\.io/device_code\\?user_code=[A-Z0-9-]+"
+    }
   },
-  "countries": ["jp", "us", "de", "sg", "zz"]
+  "countries": [
+    "ae", "ar", "at", "au", "be", "bg", "br", "ca", "ch", "cl",
+    "cn", "co", "cy", "cz", "de", "dk", "ee", "eg", "es", "fi",
+    "fr", "gb", "gr", "hk", "hr", "hu", "id", "ie", "il", "in",
+    "it", "jp", "kh", "kr", "kz", "lt", "lu", "lv", "md", "mx",
+    "ng", "nl", "no", "np", "nz", "pe", "ph", "pl", "pt", "ro",
+    "rs", "ru", "se", "sg", "sk", "th", "tr", "tw", "ua", "us",
+    "vn", "za"
+  ]
 }

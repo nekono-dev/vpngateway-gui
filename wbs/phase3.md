@@ -9,8 +9,10 @@ Phase2で実VPNベンダーCLIへの置換が完了しているため、本フ�
 ## 前提
 
 - Phase1完了（web/api/proxyのUDS経由コマンド実行パイプラインがモックCLIで検証済み）。
-- Phase2完了（実VPNベンダーCLIによる接続・切断・状態取得・ログイン代行が、プロキシコンテナのブリッジネットワーク内で動作確認済み）。
+- Phase2完了（実VPNベンダーCLIによる接続・切断・状態取得・ログイン代行が動作確認済み）。
 - インストールスクリプト（sysctl永続化・LANインターフェース検出）の実行対象ホスト環境（Debian/RaspberryPiOS, Ubuntu 24.04）が用意できていること。
+
+**【2026-09-14追記】`network_mode: host`への移行はPhase2で前倒し実施済み。** 当初は本フェーズでまとめて行う予定だったが、Phase2の実機検証でDockerブリッジネットワークがIPv6を透過せず実CLIのログインセッションが再作成のたびに失効する不具合が発覚し、その解決策が`network_mode: host`への切替のみだったため、この部分だけ前倒しした（`docker-compose.yml`・`wbs/phase2.md`「次フェーズへの申し送り」参照）。本フェーズの主要タスクのうち「ネットワーク基盤移行」冒頭の`network_mode: host`変更・UDS疎通確認は完了済みとして扱う。
 
 ## スコープ外
 
@@ -19,8 +21,8 @@ Phase2で実VPNベンダーCLIへの置換が完了しているため、本フ�
 ## 主要タスク
 
 ### ネットワーク基盤移行
-- [ ] proxyサービスの`docker-compose.yml`定義を`network_mode: host`に変更し、`networks:`定義を除去（併用不可のため）。`cap_add: [NET_ADMIN]`、`devices: ["/dev/net/tun:/dev/net/tun"]`はPhase2で付与済みのため変更不要。
-- [ ] host化に伴うUDS疎通の再確認（ctl-socketボリュームはネットワークモードに依存しないため影響なしのはずだが、実機で確認する）。
+- [x] proxyサービスの`docker-compose.yml`定義を`network_mode: host`に変更し、`networks:`定義を除去（併用不可のため）。`cap_add: [NET_ADMIN]`、`devices: ["/dev/net/tun:/dev/net/tun"]`はPhase2で付与済みのため変更不要。（2026-09-14、Phase2で前倒し実施。上記「前提」参照）
+- [x] host化に伴うUDS疎通の再確認（ctl-socketボリュームはネットワークモードに依存しないため影響なしのはずだが、実機で確認する）。（2026-09-14、Phase2での前倒し実施時に実機で確認済み。`GET/PUT /v1/connection`等API経由の一連の操作が正常動作することを確認）
 
 ### インストールスクリプト（最小限のホスト変更）
 - [ ] `/etc/sysctl.d/99-vpngwgui.conf`（`net.ipv4.ip_forward=1`）作成＋`sysctl --system`実行スクリプト作成。

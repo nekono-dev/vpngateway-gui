@@ -7,6 +7,7 @@ import { registerConnectionCountriesRoute } from "./routes/connection-countries.
 import { registerConnectionRoute } from "./routes/connection.js";
 import { registerConnectionConfigRoute } from "./routes/connection-config.js";
 import { registerConnectionLogRoute } from "./routes/connection-log.js";
+import { registerSessionRoute } from "./routes/session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
 import { ProxyUnavailableError, ProxyTimeoutError, CommandExecutionError } from "./errors.js";
@@ -54,6 +55,7 @@ export function buildApp() {
   app.register(registerConnectionRoute);
   app.register(registerConnectionConfigRoute);
   app.register(registerConnectionLogRoute);
+  app.register(registerSessionRoute);
 
   return app;
 }

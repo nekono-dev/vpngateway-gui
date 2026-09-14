@@ -6,7 +6,7 @@ webserver/requirements.mdで定義された画面のうち、Phase1で先送り�
 
 ## 前提
 
-- Phase2完了（ログイン代行APIが利用可能）。
+- Phase2完了（ログイン代行APIが利用可能）。ログイン代行の簡易UI（ダッシュボードの「VPNベンダーへログイン」ボタン、`web/src/components/dashboard/VpnLoginButton.tsx`）自体はPhase2で前倒し実装済みのため、本フェーズで新規実装する必要はない（wbs/phase2.md「Step 3: web — 簡易ログインUIの前倒し実装」参照）。
 - Phase3/4完了（`killSwitch`・`excludedDomains`・`transparentGatewayEnabled`・`explicitProxyEnabled`・`explicitProxyAllowedCidrs`がAPI経由で実際にproxyへ反映される状態）。
 
 ## スコープ外
@@ -16,8 +16,8 @@ webserver/requirements.mdで定義された画面のうち、Phase1で先送り�
 
 ## 主要タスク
 
-- [ ] 設定ダイアログ（モーダル）実装: `killSwitch`トグル、`excludedDomains`リスト編集、`defaultCountry`ドロップダウン、`transparentGatewayEnabled`トグル、`explicitProxyEnabled`トグル、`explicitProxyAllowedCidrs`リスト編集（`explicitProxyEnabled=false`時disabled連動）。
-- [ ] ダイアログ内保存ボタンによる一括`PUT /v1/connection/config`実装。
+- [x] 設定ダイアログ（モーダル）実装: `killSwitch`トグル、`excludedDomains`リスト編集、`defaultCountry`ドロップダウン、`transparentGatewayEnabled`トグル、`explicitProxyEnabled`トグル、`explicitProxyAllowedCidrs`リスト編集（`explicitProxyEnabled=false`時disabled連動）。**2026-09-14、phase2の未完了項目解消の一環として前倒し実装済み**（`web/src/components/dashboard/SettingsDialog.tsx`）。ヘッドレスChromiumで開閉・トグル連動・保存後の永続化を確認済み。
+- [x] ダイアログ内保存ボタンによる一括`PUT /v1/connection/config`実装。（上記と同時に実装済み）
 - [ ] 接続ログ画面実装（`GET /v1/connection/log`の履歴表示）。
 - [ ] APIエラーレスポンスのトースト表示実装（詳細は折りたたみ表示、stderr等の生ログは要約のみを通常表示）。
 - [ ] 画面単位のコンポーネントテスト追加。
