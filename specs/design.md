@@ -108,7 +108,7 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 | ファイル | 必須 | 内容 |
 |---|---|---|
 | `profile.json` | ○ | VPNクライアント操作プロファイル（`apiserver/design.md`）。ファイル内の`vendor`とディレクトリ名は一致させる |
-| `compose.yml` | ○ | ランナーのcompose fragment。サービス名は`runner-<ベンダーID>`、ソケットは`CTL_SOCKET_PATH: /var/run/vpngw-ctl/runner-<ベンダーID>.sock`、ボリュームは`<ベンダーID>-`で始まる名前にする。`profiles`は使わない。ビルドは`context: .`・`dockerfile: vendors/<ベンダーID>/Dockerfile`のようにリポジトリルート基準で書く（複数のcomposeファイルを併用したとき、相対パスは最初のファイルの位置が基準になるため） |
+| `compose.yml` | ○ | ランナーのcompose fragment。サービス名は`runner-<ベンダーID>`、ソケットは`CTL_SOCKET_PATH: /var/run/vpngw-ctl/runner-<ベンダーID>.sock`、ボリュームは、他のバンドルと重複しない名前にする（既存のログイン情報のボリュームを引き継ぐため、名前は変えない）。`profiles`は使わない。ビルドは`context: .`・`dockerfile: vendors/<ベンダーID>/Dockerfile`のようにリポジトリルート基準で書く（複数のcomposeファイルを併用したとき、相対パスは最初のファイルの位置が基準になるため） |
 | `Dockerfile` | ○ | ランナーのイメージ（ベンダーCLIの導入、`RUNNER_ALLOWED_BINARY`の焼き込み。`specs/runner/design.md`） |
 | `entrypoint.sh` | 任意 | ランナーのエントリポイント（machine-idの復元、NetworkManagerの起動など、そのベンダー固有の起動処理）と付属の設定ファイル |
 | `install-host.sh` | 任意 | ベンダーのCLIがホスト（ベアメタル）へのアプリケーションの導入を要するときだけ置く、ホスト側の追加手順。契約は「インストーラと頒布」 |

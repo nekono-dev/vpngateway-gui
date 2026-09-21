@@ -9,7 +9,7 @@ export const LocationSchema = Type.Object({
   // ISO国コード（小文字。例: "us"）。
   country: Type.String(),
   countryName: Type.String(),
-  // ベンダーCLIが表示する都市名（例: "Shanghai (Virtual)"）。都市列を持たないプロバイダ（Proton VPNの国一覧）では省略する。
+  // CLIが表示する都市名。都市列を持たない一覧（国単位の一覧）では省略する。
   city: Type.Optional(Type.String()),
   // ping推定値（ミリ秒）。取得できなかった接続先では省略する。
   pingMs: Type.Optional(Type.Number()),

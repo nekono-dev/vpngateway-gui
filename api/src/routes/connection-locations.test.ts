@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { ProxyUnavailableError } from "../errors.js";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../config/profiles");
+process.env.VENDORS_DIR = join(import.meta.dirname, "../../../vendors");
 process.env.ENABLED_PROVIDERS = "adguardvpn";
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
 process.env.STATE_DIR = dir;

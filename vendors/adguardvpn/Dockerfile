@@ -50,7 +50,7 @@ RUN apk add --no-cache sudo iproute2 \
 WORKDIR /app
 COPY --from=build /repo/proxy/dist ./dist
 COPY --from=vpn-cli /opt/adguardvpn_cli/adguardvpn-cli /usr/local/bin/adguardvpn-cli
-COPY proxy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY vendors/adguardvpn/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN mkdir -p /var/run/vpngw-ctl \
   && chown vpngwgui:vpngwgui /var/run/vpngw-ctl \
   # AdGuard VPN CLIはログイン情報を$HOME/.local/share/adguardvpn-cliへ保存する。
@@ -60,7 +60,7 @@ RUN mkdir -p /var/run/vpngw-ctl \
   && chown -R vpngwgui:vpngwgui /home/vpngwgui \
   # 実CLIがログインセッションの妥当性検証に用いる/etc/machine-id・/var/lib/dbus/machine-idを、
   # 起動時にvpngwgui権限で書き換えられるよう、ファイル自体を事前にvpngwgui所有で用意しておく
-  # （親ディレクトリの所有権は変更しない。docker-entrypoint.sh参照）。
+  # （親ディレクトリの所有権は変更しない。entrypoint.sh参照）。
   && touch /etc/machine-id && chown vpngwgui:vpngwgui /etc/machine-id \
   && mkdir -p /var/lib/dbus && touch /var/lib/dbus/machine-id && chown vpngwgui:vpngwgui /var/lib/dbus/machine-id \
   && chmod +x /usr/local/bin/docker-entrypoint.sh

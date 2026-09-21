@@ -3,17 +3,18 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-const base = JSON.parse(readFileSync(join(import.meta.dirname, "../../test-fixtures/profiles/mockproton.json"), "utf8"));
+const base = JSON.parse(readFileSync(join(import.meta.dirname, "../../../e2e/vendors/mockproton/profile.json"), "utf8"));
 delete base.actions.logout;
 delete base.actions.listLocations;
 delete base.actions.login;
 delete base.actions.account;
-writeFileSync(join(dir, "mockproton.json"), JSON.stringify(base));
-process.env.VPN_PROFILES_DIR = dir;
+mkdirSync(join(dir, "mockproton"));
+writeFileSync(join(dir, "mockproton", "profile.json"), JSON.stringify(base));
+process.env.VENDORS_DIR = dir;
 process.env.ENABLED_PROVIDERS = "mockproton";
 process.env.STATE_DIR = dir;
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");

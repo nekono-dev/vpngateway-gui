@@ -1,7 +1,7 @@
-// 責務: ベンダーCLIの接続先一覧（固定幅の表）を、接続先（ロケーション）の配列へ変換し、ping昇順に並べる。
+// 責務: CLIの接続先一覧（固定幅の表）を、接続先（ロケーション）の配列へ変換し、ping昇順に並べる。
 // ベンダー非依存の整形層（profile/response-parser.ts）の兄弟にあたるが、接続状態ではなく接続先一覧を扱うため
-// locations/に置く。列名（ヘッダ行）はプロファイル（`listLocations.table`）から受け取り、AdGuard VPN・Proton VPN等の
-// 表を同じ処理で読む（apiserver/design.md「接続先一覧の汎用化」）。
+// locations/に置く。列名（ヘッダ行）と接続時の指定名の出典はプロファイル（`listLocations`）から受け取り、
+// どの表も同じ処理で読む（apiserver/design.md「接続先一覧の汎用化」）。
 
 import { stripAnsi } from "../lib/strip-ansi.js";
 import { toConnectName, toLocationId } from "./location-id.js";
@@ -12,9 +12,9 @@ export interface ParsedLocation {
   // ISO国コード（小文字。例: "jp"）。
   country: string;
   countryName: string;
-  // 一覧が表示する都市名（例: "Shanghai (Virtual)"）。都市列を持たない表（Proton VPNの国一覧）では省略する。
+  // 一覧が表示する都市名。都市列を持たない表（国単位の一覧）では省略する。
   city?: string;
-  // `%LOCATION%`へ代入する接続時の指定名（`connectNameFrom`に従い、都市名から"(Virtual)"を除いたもの、またはISO国コード）。
+  // `%LOCATION%`へ代入する接続時の指定名（`connectName`に従い、都市名から`stripPattern`の部分を除いたもの、またはISO国コード）。
   connectName: string;
   // ping推定値（ミリ秒）。列が無い・数値として読めなかった場合はundefined。
   pingMs?: number;
@@ -29,13 +29,10 @@ export interface LocationTableSpec {
 }
 
 export interface ParseLocationOptions {
-  // 省略時は従来のAdGuard VPN形式（ISO/COUNTRY/CITY/PING）。
-  table?: LocationTableSpec;
-  // 省略時は"city"。
-  connectNameFrom?: "city" | "iso";
+  table: LocationTableSpec;
+  // 接続時の指定名の出典（プロファイルの`listLocations.connectName`）。
+  connectName: { from: "city" | "iso"; stripPattern?: string };
 }
-
-const DEFAULT_TABLE: LocationTableSpec = { iso: "ISO", country: "COUNTRY", city: "CITY", ping: "PING" };
 
 // ISO国コード列の値として受理する形（英字2文字）。区切り行（`---`）や案内文はここで弾かれる。
 const ISO_CODE_PATTERN = /^[A-Za-z]{2}$/;
@@ -59,18 +56,18 @@ function isHeaderLine(line: string, names: string[]): boolean {
 /**
  * 目的: 接続先一覧の標準出力（表）を接続先の配列へ変換し、ping昇順に整列して返す。
  * 入力: stdout(exitCode=0の一覧コマンドの標準出力。ANSIエスケープを含んでよい),
- *       options(列名・接続時の指定名の出典。省略時はAdGuard VPN形式)。
+ *       options(列名・接続時の指定名の出典。どちらも必須)。
  *       期待する形状: ヘッダ行に`options.table`の列名を全て含み、以降のデータ行が各列をヘッダと同じ桁位置から始める
  *       （国名・都市名は空白を含むため空白区切りでは分割できない）。
  * 出力: ping昇順（pingなしは末尾。同値は元の出力順）の接続先配列。データ行が0件なら空配列。
  * 失敗時の方針: ヘッダ行が見つからない場合は例外を投げる（CLIの書式変更を黙って空一覧にしないため）。
  *              ISO列が英字2文字でない行（空行・区切り行・案内文）、国名（・都市列があれば都市名）が空の行は読み飛ばす。
- * 例: parseLocationList("ISO   COUNTRY   CITY   PING ESTIMATE\nJP    Japan     Tokyo  4  ")
+ * 例: parseLocationList("ISO   COUNTRY   CITY   PING ESTIMATE\nJP    Japan     Tokyo  4  ",
+ *       { table: { iso: "ISO", country: "COUNTRY", city: "CITY", ping: "PING" }, connectName: { from: "city" } })
  *     // => [{ id: "jp-tokyo", country: "jp", countryName: "Japan", city: "Tokyo", connectName: "Tokyo", pingMs: 4 }]
  */
-export function parseLocationList(stdout: string, options: ParseLocationOptions = {}): ParsedLocation[] {
-  const table = options.table ?? DEFAULT_TABLE;
-  const connectNameFrom = options.connectNameFrom ?? "city";
+export function parseLocationList(stdout: string, options: ParseLocationOptions): ParsedLocation[] {
+  const { table, connectName } = options;
   const lines = stripAnsi(stdout).split(/\r?\n/);
 
   const names = Object.values(table);
@@ -105,7 +102,7 @@ export function parseLocationList(stdout: string, options: ParseLocationOptions 
       country: isoCode.toLowerCase(),
       countryName,
       ...(cityName === undefined ? {} : { city: cityName }),
-      connectName: connectNameFrom === "iso" || cityName === undefined ? isoCode : toConnectName(cityName),
+      connectName: connectName.from === "iso" || cityName === undefined ? isoCode : toConnectName(cityName, connectName.stripPattern),
       ...(Number.isNaN(ping) ? {} : { pingMs: ping }),
     });
   }

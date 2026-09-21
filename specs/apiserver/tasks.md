@@ -113,13 +113,13 @@
 
 ## ベンダー非依存化（Phase 12）
 
-- [ ] プロファイルスキーマの明示化: `loginMethod`必須、text形式で`output.connectedPattern`・`output.locationPattern`必須、`listLocations.table`・`connectName`必須、`login.stdin`と`source: "secret"`（`optional`）。`enum`・`enumFrom`の削除。ロード時の検証（正規表現の妥当性、`secret`をargvに置かない、`secret`の`pattern`が制御文字を許さない）
-- [ ] コードから既定値・固有処理を除去: `location-list-parser.ts`（`DEFAULT_TABLE`）、`location-id.ts`（`(Virtual)`除去→`stripPattern`）、`response-parser.ts`（既定の判定・書式）、`profile-loader.ts`（`loginMethod`の既定）、`login-input.ts`（`login.stdin`の解決）、`placeholder-resolver.ts`（`enumFrom`）
-- [ ] 有効ベンダーの既定値の廃止（`provider-registry.ts`）、旧形式の状態移行（`migrateLegacyState`）の廃止
-- [ ] プロファイルの読み込みを`VENDORS_DIR/<ID>/profile.json`へ変更（`VPN_PROFILES_DIR`の廃止）
-- [ ] 既存2プロファイル（動作は不変）の明示化と、単体テストの追随
-- [ ] バンドルの適合テスト（`vendor-samples.test.ts`・各バンドルの`samples.json`）
-- [ ] コメント・エラーメッセージ例のベンダー固有名の除去
+- [x] プロファイルスキーマの明示化: `loginMethod`必須、text形式で`output.connectedPattern`・`output.locationPattern`必須、`listLocations.table`・`connectName`必須、`login.stdin`と`source: "secret"`（`optional`）。`enum`・`enumFrom`の削除。ロード時の検証（正規表現の妥当性、`secret`をargvに置かない、`secret`の`pattern`が制御文字を許さない）
+- [x] コードから既定値・固有処理を除去: `location-list-parser.ts`（`DEFAULT_TABLE`）、`location-id.ts`（`(Virtual)`除去→`stripPattern`）、`response-parser.ts`（既定の判定・書式）、`profile-loader.ts`（`loginMethod`の既定）、`login-input.ts`（`login.stdin`の解決）、`placeholder-resolver.ts`（`enumFrom`）
+- [x] 有効ベンダーの既定値の廃止（`provider-registry.ts`）、旧形式の状態移行（`migrateLegacyState`）の廃止
+- [x] プロファイルの読み込みを`VENDORS_DIR/<ID>/profile.json`へ変更（`VPN_PROFILES_DIR`の廃止）
+- [x] 既存2プロファイル（動作は不変）の明示化と、単体テストの追随
+- [x] バンドルの適合テスト（`vendor-samples.test.ts`・各バンドルの`samples.json`）
+- [x] コメント・エラーメッセージ例のベンダー固有名の除去
 
 # 将来課題
 

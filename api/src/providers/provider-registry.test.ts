@@ -2,7 +2,7 @@
 // ベンダー別の状態パスと旧形式からの移行（provider-state-paths.ts）の単体テスト。
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,9 +11,11 @@ const profilesDir = join(root, "profiles");
 const stateDirPath = join(root, "state");
 mkdirSync(profilesDir);
 mkdirSync(stateDirPath);
-copyFileSync(join(import.meta.dirname, "../../config/profiles/adguardvpn.json"), join(profilesDir, "adguardvpn.json"));
-copyFileSync(join(import.meta.dirname, "../../test-fixtures/profiles/mockproton.json"), join(profilesDir, "mockproton.json"));
-process.env.VPN_PROFILES_DIR = profilesDir;
+for (const [id, source] of [["adguardvpn", "../../../vendors/adguardvpn/profile.json"], ["mockproton", "../../../e2e/vendors/mockproton/profile.json"]]) {
+  mkdirSync(join(profilesDir, id));
+  copyFileSync(join(import.meta.dirname, source), join(profilesDir, id, "profile.json"));
+}
+process.env.VENDORS_DIR = profilesDir;
 process.env.STATE_DIR = stateDirPath;
 
 const registry = await import("./provider-registry.js");
@@ -35,10 +37,10 @@ describe("getProviders", () => {
     ]);
   });
 
-  it("未設定なら既定でadguardvpnのみ", () => {
+  it("未設定は起動失敗（既定のベンダーを持たない）", () => {
     delete process.env.ENABLED_PROVIDERS;
     registry.resetProviderRegistryForTest();
-    expect(registry.getProviders().map((p) => p.id)).toEqual(["adguardvpn"]);
+    expect(() => registry.getProviders()).toThrow("ENABLED_PROVIDERS is required");
   });
 
   it("有効なベンダーが0個・重複・不正なIDは起動失敗（例外）", () => {
@@ -53,11 +55,12 @@ describe("getProviders", () => {
   it("プロファイルが無い・ファイル内のvendorがファイル名と一致しない場合は起動失敗", () => {
     useProviders("noprofile");
     expect(() => registry.getProviders()).toThrow();
-    const mismatched = JSON.parse(readFileSync(join(profilesDir, "adguardvpn.json"), "utf8"));
+    const mismatched = JSON.parse(readFileSync(join(profilesDir, "adguardvpn", "profile.json"), "utf8"));
     mismatched.vendor = "other";
-    writeFileSync(join(profilesDir, "wrongname.json"), JSON.stringify(mismatched));
+    mkdirSync(join(profilesDir, "wrongname"));
+    writeFileSync(join(profilesDir, "wrongname", "profile.json"), JSON.stringify(mismatched));
     useProviders("wrongname");
-    expect(() => registry.getProviders()).toThrow("must equal the file name");
+    expect(() => registry.getProviders()).toThrow("must equal the directory name");
   });
 
   it("findProviderは有効でないIDにundefinedを返す", () => {
@@ -91,52 +94,8 @@ describe("選択中のベンダー（active-provider-store）", () => {
   });
 });
 
-describe("ベンダー別の状態パスと旧形式からの移行", () => {
+describe("ベンダー別の状態パス", () => {
   it("providers/<ID>/<ファイル名>を返す", () => {
     expect(paths.providerStatePath("adguardvpn", "last-location.json")).toBe(join(stateDirPath, "providers", "adguardvpn", "last-location.json"));
-  });
-
-  it("adguardvpnが有効なら、旧形式のファイルをproviders/adguardvpn/へ移し、冪等（再実行で何も起きない）", () => {
-    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-migrate-"));
-    const previous = process.env.STATE_DIR;
-    process.env.STATE_DIR = dir;
-    try {
-      writeFileSync(join(dir, "favorite-locations.json"), JSON.stringify({ ids: ["jp-tokyo"] }));
-      writeFileSync(join(dir, "last-location.json"), JSON.stringify({ id: "jp-tokyo" }));
-      expect(paths.migrateLegacyState(["adguardvpn", "mockproton"]).sort()).toEqual(["favorite-locations.json", "last-location.json"]);
-      expect(existsSync(join(dir, "favorite-locations.json"))).toBe(false);
-      expect(JSON.parse(readFileSync(join(dir, "providers", "adguardvpn", "favorite-locations.json"), "utf8"))).toEqual({ ids: ["jp-tokyo"] });
-      expect(paths.migrateLegacyState(["adguardvpn"])).toEqual([]);
-    } finally {
-      process.env.STATE_DIR = previous;
-    }
-  });
-
-  it("adguardvpnが有効でなければ移さない（別ベンダーの状態として誤って引き継がない）", () => {
-    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-migrate-"));
-    const previous = process.env.STATE_DIR;
-    process.env.STATE_DIR = dir;
-    try {
-      writeFileSync(join(dir, "last-location.json"), JSON.stringify({ id: "jp-tokyo" }));
-      expect(paths.migrateLegacyState(["mockproton"])).toEqual([]);
-      expect(existsSync(join(dir, "last-location.json"))).toBe(true);
-    } finally {
-      process.env.STATE_DIR = previous;
-    }
-  });
-
-  it("移動先に既にファイルがあれば上書きしない", () => {
-    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-migrate-"));
-    const previous = process.env.STATE_DIR;
-    process.env.STATE_DIR = dir;
-    try {
-      mkdirSync(join(dir, "providers", "adguardvpn"), { recursive: true });
-      writeFileSync(join(dir, "providers", "adguardvpn", "last-location.json"), JSON.stringify({ id: "us-new" }));
-      writeFileSync(join(dir, "last-location.json"), JSON.stringify({ id: "jp-old" }));
-      expect(paths.migrateLegacyState(["adguardvpn"])).toEqual([]);
-      expect(JSON.parse(readFileSync(join(dir, "providers", "adguardvpn", "last-location.json"), "utf8")).id).toBe("us-new");
-    } finally {
-      process.env.STATE_DIR = previous;
-    }
   });
 });

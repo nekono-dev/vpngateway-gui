@@ -21,7 +21,7 @@ const inFlightByProvider = new Map<string, Promise<SessionInfo>>();
  * 目的: `account`の実行結果（終了コード・出力）から、ログイン状態・プランを判定する。純粋関数。
  * 入力: account(`account`アクション定義), exitCode(終了コード。タイムアウト等は-1), output(標準出力・標準エラーの連結。ANSI除去済み)。
  * 出力: SessionInfo。
- *       - `notLoggedInPattern`に一致 → 未ログイン（終了コードは問わない。Proton VPNは未ログイン時に終了コード2）。
+ *       - `notLoggedInPattern`に一致 → 未ログイン（終了コードは問わない。未ログイン時に非ゼロで失敗するCLIがある）。
  *       - 一致せず終了コードが0以外 → 不明（空オブジェクト）。
  *       - 終了コード0 → ログイン済み。`plans`を先頭から評価し最初に一致した要素、無ければ`defaultPlan`。
  * 例: evaluateAccountOutput(account, 0, "... Upgrade to enable ...") // => { loggedIn: true, plan: { id: "free", ... } }

@@ -17,7 +17,7 @@ function activeFile(): string {
  * 出力: 保存されたIDに対応する有効なProvider。
  * 失敗時の方針: ファイルが無い・壊れている・有効でないID（管理者が無効化した等）の場合は例外にせず、
  *              有効なベンダーの先頭を選択中として返す（ベンダーが選べず操作不能になるのを避ける）。
- * 例: getActiveProvider().id // => "adguardvpn"
+ * 例: getActiveProvider().id // => "vendora"
  */
 export function getActiveProvider(): Provider {
   const file = activeFile();

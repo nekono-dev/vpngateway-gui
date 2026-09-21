@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../test-fixtures/profiles");
+process.env.VENDORS_DIR = join(import.meta.dirname, "../../../e2e/vendors");
 process.env.ENABLED_PROVIDERS = "mockproton";
 process.env.STATE_DIR = dir;
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");

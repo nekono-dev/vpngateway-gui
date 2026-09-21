@@ -1,0 +1,19 @@
+# 責務: E2E専用のモックベンダー（`mockproton`）のcompose fragment。実VPNベンダーCLIの代わりに、モックCLI
+# （protonvpn-mock.mjs。ある実CLIの挙動を模擬）を専用のランナー（runner-mockproton）で実行する。**本番では使わない**。
+# 実運用のバンドル（vendors/<ID>/）と同じ形で、同じ方式（COMPOSE_FILEの合成）で使う。規約は`vendors/`のfragmentと同じ。
+services:
+  runner-mockproton:
+    restart: always
+    build:
+      context: .
+      dockerfile: e2e/vendors/mockproton/Dockerfile
+    network_mode: host
+    user: "10001:10001"
+    init: true
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+      - ./e2e/vendors/mockproton/protonvpn-mock.mjs:/usr/local/bin/protonvpn-mock:ro
+    environment:
+      CTL_SOCKET_PATH: /var/run/vpngw-ctl/runner-mockproton.sock
+      RUNNER_ALLOWED_BINARY: /usr/local/bin/protonvpn-mock
+      MOCK_STATE_FILE: /tmp/protonvpn-mock-state.json

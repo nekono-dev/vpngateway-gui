@@ -21,19 +21,20 @@ services:
     networks:
       - app-net
     user: "10001:10001"
-    # ランナーは有効化したベンダーの分だけ起動する任意のサービスのため、依存に含めない
+    # ランナーは有効化したベンダーのバンドル（vendors/<ID>/compose.yml）が定義する任意のサービスのため、依存に含めない
     # （起動していないランナーは、APIが「利用不可」として扱う。specs/apiserver/design.md「ランナーの利用可否」）。
     depends_on:
       - proxy
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
-      # 管理者が用意したベンダーのプロファイル（ファイル名＝ベンダーID）。有効にするのは下のENABLED_PROVIDERS。
-      - ./api/config/profiles:/etc/vpngwgui/profiles:ro
+      # ベンダーバンドル（vendors/<ベンダーID>/profile.json）。有効にするのは下のENABLED_PROVIDERS。
+      - ./vendors:/etc/vpngwgui/vendors:ro
       - api-data:/var/lib/vpngwgui
     environment:
-      VPN_PROFILES_DIR: /etc/vpngwgui/profiles
-      # 有効なベンダー（カンマ区切り）。install/select-providers.shが.envのVPN_PROVIDERSとCOMPOSE_PROFILESを書く。
-      ENABLED_PROVIDERS: ${VPN_PROVIDERS:-adguardvpn}
+      VENDORS_DIR: /etc/vpngwgui/vendors
+      # 有効なベンダー（カンマ区切り）。既定は無い。install/install.shが.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なベンダーの
+      # compose fragment）を書く。
+      ENABLED_PROVIDERS: ${VPN_PROVIDERS:?VPN_PROVIDERSが未設定です。install/install.sh --providers <ベンダーID>,... で有効にするベンダーを指定してください}
       CTL_SOCKET_DIR: /var/run/vpngw-ctl
       STATE_DIR: /var/lib/vpngwgui
       SETTINGS_FILE: /var/lib/vpngwgui/settings.json
@@ -57,63 +58,12 @@ services:
       - ctl-socket:/var/run/vpngw-ctl
     environment:
       CTL_SOCKET_PATH: /var/run/vpngw-ctl/net.sock
-      # install/detect-lan-interface.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
+      # install/install.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
       # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
       # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
       LAN_IFACE: ${LAN_IFACE:-}
       # フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため通常は未設定のまま
       # LAN_IFACEを流用する（proxyserver/design.md「Kill Switch」参照）。
-
-  # AdGuard VPN用ランナー: AdGuard VPN CLIの実行環境。既定で起動する（profilesを付けない）。
-  runner-adguardvpn:
-    restart: always
-    build:
-      context: .
-      dockerfile: proxy/Dockerfile.runner-adguardvpn
-    # CLIが確立するトンネルをゲートウェイのネットワーク名前空間に作らせるため（Phase 2で前倒し。
-    # Dockerブリッジネットワークはコンテナ再作成のたびに実CLIのログインセッションが失効する不具合があった）。
-    network_mode: host
-    user: "10001:10001"
-    # 実VPNベンダーCLIがトンネルを確立するために必要（Phase 2）。
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    # 実CLIが内部でバックグラウンドプロセスをforkする（`connect`実行時等）ため、
-    # 孤児プロセスがゾンビ化しないようinitプロセス（tini相当）を挟む。
-    init: true
-    volumes:
-      - ctl-socket:/var/run/vpngw-ctl
-      # 実CLIのログイン情報（および永続化したmachine-id、proxy/docker-entrypoint.sh参照）の永続化。
-      # 無ければコンテナ再作成のたびに再ログインが必要になる（wbs/phase2.md「次フェーズへの申し送り」参照）。
-      - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
-
-  # Proton VPN用ランナー: Proton VPN CLIの実行環境（NetworkManager・D-Bus・keyringをコンテナ内で起動する）。
-  # Proton VPNを有効にした場合のみ起動する（`.env`のCOMPOSE_PROFILES。install/select-providers.shが書く）。
-  runner-protonvpn:
-    profiles: [protonvpn]
-    restart: always
-    build:
-      context: .
-      dockerfile: proxy/Dockerfile.runner-protonvpn
-    # NMが作るWireGuardトンネルをゲートウェイのネットワーク名前空間に作らせるため。
-    network_mode: host
-    # エントリポイントがroot権限でシステムD-Bus・NetworkManagerを起動し、ランナー本体はvpngwgui（10001）へ権限を落として起動する。
-    user: "0:0"
-    cap_add:
-      - NET_ADMIN
-    init: true
-    environment:
-      # NMが管理対象にする上り側NIC（未設定ならdefault経路のIF）。proxy（ネットワーク）と同じ値。
-      LAN_IFACE: ${LAN_IFACE:-}
-    volumes:
-      - ctl-socket:/var/run/vpngw-ctl
-      # CLIの設定・永続化したmachine-id
-      - proton-config:/home/vpngwgui/.config/Proton
-      # Secret Service（gnome-keyring）の実体。ログイン情報（トークン）はここに保存される。
-      - proton-keyrings:/home/vpngwgui/.local/share/keyrings
-      # サーバー一覧のキャッシュ（毎回の取得を避ける）
-      - proton-cache:/home/vpngwgui/.cache/Proton
 
 networks:
   app-net: {}
@@ -121,7 +71,3 @@ networks:
 volumes:
   ctl-socket: {}
   api-data: {}
-  adguard-data: {}
-  proton-config: {}
-  proton-keyrings: {}
-  proton-cache: {}

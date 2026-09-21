@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../config/profiles");
+process.env.VENDORS_DIR = join(import.meta.dirname, "../../../vendors");
 process.env.ENABLED_PROVIDERS = "adguardvpn";
 process.env.AUDIT_LOG_FILE = join(mkdtempSync(join(tmpdir(), "vpngwgui-test-")), "audit.log");
 

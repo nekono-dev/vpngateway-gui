@@ -90,7 +90,7 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       const actionName = body.connect ? "connect" : "disconnect";
       // 接続先はクライアントから都市名を直接受け取らず、IDを直前の`list-locations`の結果と照合して
       // 接続時の指定名へ解決する（任意の文字列がCLIへ渡らないようにするため。サーバ増減にも追従する）。
-      // locationIdが無い接続は、`connectAuto`（プロバイダが接続先を選ぶ。無料版のProton VPN等）を使う。
+      // locationIdが無い接続は、`connectAuto`（プロバイダが接続先を選ぶ。接続先を選べないプラン等）を使う。
       let target: ParsedLocation | undefined;
       let argv: string[];
       // 実行失敗時にプラン制限（403）かを判定するための、実際に実行するアクションとオペレーション。

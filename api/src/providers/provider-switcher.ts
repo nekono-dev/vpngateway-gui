@@ -80,7 +80,7 @@ async function disconnectIfConnected(current: Provider): Promise<void> {
  *              切替中の重複した切替はProviderSwitchingError（409）。現在のVPNの切断失敗はCommandExecutionError（422）で、
  *              その場合は選択を変えない。
  * 副作用: 選択の永続化、監査ログ（switch-provider）、ネットワークコンテナへの`POST /connection-checks`（失敗は無視）。
- * 例: await switchProvider("protonvpn")
+ * 例: await switchProvider("vendorb")
  */
 export async function switchProvider(providerId: string): Promise<Provider> {
   const target = findProvider(providerId);

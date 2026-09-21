@@ -1,0 +1,75 @@
+{
+  "description": "AdGuard VPN CLI 1.7.12の実出力（status・list-locations・license）。適合テスト（api/src/profile/vendor-samples.test.ts）が共通処理へ流す。",
+  "cases": [
+    {
+      "name": "status: 接続中（ANSI付き・接続先の都市名）",
+      "kind": "status",
+      "exitCode": 0,
+      "stdout": "Connected to \u001b[1mTOKYO\u001b[0m in \u001b[1mTUN\u001b[0m mode, running on \u001b[1mtun0\u001b[0m\n",
+      "expect": {
+        "status": "connected",
+        "location": "TOKYO"
+      }
+    },
+    {
+      "name": "status: 切断中",
+      "kind": "status",
+      "exitCode": 0,
+      "stdout": "VPN is disconnected\n",
+      "expect": {
+        "status": "disconnected"
+      }
+    },
+    {
+      "name": "listLocations: 表・ping昇順・注記付きの都市の指定名",
+      "kind": "listLocations",
+      "exitCode": 0,
+      "stdout": "\u001b[1mISO   COUNTRY              CITY                           PING ESTIMATE\n\u001b[0mJP    Japan                Tokyo                          4         \nCN    China                Shanghai (Virtual)             59        \nUS    United States        Las Vegas                      153       \n\nYou can connect to a location by running `adguardvpn-cli connect -l 'city, country or ISO code'`\n",
+      "expect": [
+        {
+          "id": "jp-tokyo",
+          "country": "jp",
+          "countryName": "Japan",
+          "city": "Tokyo",
+          "connectName": "Tokyo",
+          "pingMs": 4
+        },
+        {
+          "id": "cn-shanghai-virtual",
+          "country": "cn",
+          "countryName": "China",
+          "city": "Shanghai (Virtual)",
+          "connectName": "Shanghai",
+          "pingMs": 59
+        },
+        {
+          "id": "us-las-vegas",
+          "country": "us",
+          "countryName": "United States",
+          "city": "Las Vegas",
+          "connectName": "Las Vegas",
+          "pingMs": 153
+        }
+      ]
+    },
+    {
+      "name": "account: 有料版",
+      "kind": "account",
+      "exitCode": 0,
+      "output": "Logged in as user@example.test\nYou are using the PREMIUM version\n",
+      "expect": {
+        "loggedIn": true,
+        "planId": "premium"
+      }
+    },
+    {
+      "name": "account: 未ログイン",
+      "kind": "account",
+      "exitCode": 11,
+      "output": "Please log in to view your license info\n",
+      "expect": {
+        "loggedIn": false
+      }
+    }
+  ]
+}

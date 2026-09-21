@@ -17,7 +17,7 @@ const SOCKET_PATH = process.env.CTL_SOCKET_PATH;
 const SOCKET_MODE = 0o770;
 
 if (!SOCKET_PATH) {
-  throw new Error("CTL_SOCKET_PATH is required for the runner (e.g. /var/run/vpngw-ctl/runner-adguardvpn.sock)");
+  throw new Error("CTL_SOCKET_PATH is required for the runner (e.g. /var/run/vpngw-ctl/runner-<vendor-id>.sock)");
 }
 
 const server = createServer((req, res) => {

@@ -39,8 +39,8 @@ export function clearLearnedRestrictions(providerId: string): void {
  * 出力: 常に例外を投げる（戻らない）。
  * 失敗時の方針: `restriction`が無い、またはパターン不一致ならCommandExecutionError（422）。一致すれば
  *              OperationRestrictedError（403）。
- * 例: throwCommandFailure("protonvpn", "connect failed", 2, "Location selection is not available on the free plan.",
- *       { pattern: "not available on the free plan", operation: "connectToLocation" })
+ * 例: throwCommandFailure("vendora", "connect failed", 2, "Location selection is not available on this plan.",
+ *       { pattern: "not available on this plan", operation: "connectToLocation" })
  */
 export function throwCommandFailure(
   providerId: string,

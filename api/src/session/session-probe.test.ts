@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
 
-process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../test-fixtures/profiles");
+process.env.VENDORS_DIR = join(import.meta.dirname, "../../../e2e/vendors");
 process.env.ENABLED_PROVIDERS = "mockproton";
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));

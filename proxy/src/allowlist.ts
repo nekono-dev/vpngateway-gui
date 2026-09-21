@@ -11,8 +11,8 @@
  * 入力: 実行対象バイナリの絶対パス文字列。
  * 出力: `RUNNER_ALLOWED_BINARY`（絶対パス）に完全一致すれば true。環境変数が未設定・相対パスなら常に false
  *      （許可バイナリが決まらない構成では何も実行させない）。環境変数は呼び出しごとに読む（テストで切り替えるため）。
- * 例: // RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn
- *     isAllowedBinary("/usr/bin/protonvpn") // => true
+ * 例: // RUNNER_ALLOWED_BINARY=/usr/bin/vendor-cli
+ *     isAllowedBinary("/usr/bin/vendor-cli") // => true
  *     isAllowedBinary("/bin/sh") // => false
  */
 export function isAllowedBinary(binary: string): boolean {

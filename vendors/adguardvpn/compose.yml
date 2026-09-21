@@ -1,0 +1,30 @@
+# 責務: このベンダーのランナー（`runner-adguardvpn`）のcompose fragment。`.env`の`COMPOSE_FILE`へ、docker-compose.yml（本体）の
+# 後ろに並べて合成する（install/install.shが書く）。有効にしないベンダーのfragmentは並べないため、そのランナーは起動もビルドもされない。
+# 規約（specs/design.md「ベンダーバンドル」）: サービス名は`runner-<ベンダーID>`、ソケットは`runner-<ベンダーID>.sock`、
+# ビルドのパスは（本体のcomposeの位置が基準になるため）リポジトリルート基準で書く。`profiles`は使わない。
+services:
+  runner-adguardvpn:
+    restart: always
+    build:
+      context: .
+      dockerfile: vendors/adguardvpn/Dockerfile
+    # CLIが確立するトンネルをゲートウェイのネットワーク名前空間に作らせるため（Phase 2で前倒し。
+    # Dockerブリッジネットワークはコンテナ再作成のたびに実CLIのログインセッションが失効する不具合があった）。
+    network_mode: host
+    user: "10001:10001"
+    # 実VPNベンダーCLIがトンネルを確立するために必要（Phase 2）。
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # 実CLIが内部でバックグラウンドプロセスをforkする（`connect`実行時等）ため、
+    # 孤児プロセスがゾンビ化しないようinitプロセス（tini相当）を挟む。
+    init: true
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+      # 実CLIのログイン情報（および永続化したmachine-id、entrypoint.sh参照）の永続化。
+      # 無ければコンテナ再作成のたびに再ログインが必要になる（wbs/phase2.md「次フェーズへの申し送り」参照）。
+      - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
+
+volumes:
+  adguard-data: {}

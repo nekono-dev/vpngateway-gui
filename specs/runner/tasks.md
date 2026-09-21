@@ -54,10 +54,10 @@
 
 ## ベンダーバンドル化（Phase 12）
 
-- [ ] `vendors/<ID>/`へ移動: `Dockerfile`・`entrypoint.sh`・付属の設定（NM設定）・`compose.yml`（`runner-<ID>`・ボリューム。`profiles`廃止）・`profile.json`
-- [ ] E2E用モックベンダーをバンドル化（`e2e/vendors/mockproton/`。Dockerfile・compose・モックCLI・プロファイル）
-- [ ] `proxy/`直下のベンダー別ファイル・`proxy/mock-cli/`の整理、ランナーの実行部（`runner.ts`等）のコメント・メッセージの中立化
-- [ ] `docker-compose.yml`本体から`runner-*`・ベンダー別ボリュームを除去し、`COMPOSE_FILE`合成で起動できることの確認（`docker compose config`）
+- [x] `vendors/<ID>/`へ移動: `Dockerfile`・`entrypoint.sh`・付属の設定（NM設定）・`compose.yml`（`runner-<ID>`・ボリューム。`profiles`廃止）・`profile.json`
+- [x] E2E用モックベンダーをバンドル化（`e2e/vendors/mockproton/`。Dockerfile・compose・モックCLI・プロファイル）
+- [x] `proxy/`直下のベンダー別ファイル・`proxy/mock-cli/`の整理、ランナーの実行部（`runner.ts`等）のコメント・メッセージの中立化
+- [x] `docker-compose.yml`本体から`runner-*`・ベンダー別ボリュームを除去し、`COMPOSE_FILE`合成で起動できることの確認（`docker compose config`）
 
 # 将来課題
 

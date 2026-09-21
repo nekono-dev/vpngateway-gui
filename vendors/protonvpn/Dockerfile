@@ -1,7 +1,7 @@
 # Proton VPN用ランナー（`runner-protonvpn`）のイメージ。Proton VPN公式CLI（proton-vpn-cli）の実行環境と、実行要求の受け口
 # （`dist/runner.js`）だけを持つ。ネットワーク制御（nftables・3proxy）は持たない（ネットワークコンテナ`proxy`の責務）。
 # 公式CLIはNetworkManager・Secret Service（gnome-keyring）・システム/セッションD-Busに依存し、公式にはheadless非対応のため、
-# それらをこのコンテナ内で起動する（エントリポイント`docker-entrypoint.protonvpn.sh`）。
+# それらをこのコンテナ内で起動する（エントリポイント`entrypoint.sh`）。
 # 設計: specs/runner/design.md「Proton VPN用ランナー」、wbs/phase10.md。
 
 # ビルドステージ: ランナー本体（TypeScript）。他のランナーと同じ（実行時の依存パッケージは無く、distのみを使う）。
@@ -53,12 +53,12 @@ RUN groupadd -g 10001 vpngwgui \
 
 # NetworkManagerはホストのネットワーク（network_mode: host）を見る。ホストのインターフェース（物理NIC・Docker・LXC）を
 # 奪わないよう、WireGuardデバイス以外を全て管理対象外にする（Proton VPNのトンネルはNMが作るWireGuardインターフェース）。
-COPY proxy/networkmanager-vpngwgui.conf /usr/local/share/networkmanager-vpngwgui.conf.tmpl
+COPY vendors/protonvpn/networkmanager-vpngwgui.conf /usr/local/share/networkmanager-vpngwgui.conf.tmpl
 
 WORKDIR /app
 COPY --from=build /repo/proxy/dist ./dist
 COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
-COPY proxy/docker-entrypoint.protonvpn.sh /usr/local/bin/docker-entrypoint.sh
+COPY vendors/protonvpn/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENV CTL_SOCKET_PATH=/var/run/vpngw-ctl/runner-protonvpn.sock
 ENV HOME=/home/vpngwgui
