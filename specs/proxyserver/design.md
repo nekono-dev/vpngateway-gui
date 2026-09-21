@@ -174,11 +174,48 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 - `explicitProxy.state`は`active`（稼働中。一時的な再起動待ちを含む。`socksPort`・`httpPort`はこの状態のみ付く）/`stopped`（無効）/`unconfigured`（有効設定だが許可CIDRが空）/`crashLoop`（起動直後の異常終了を連続して繰り返している）/`error`（設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数（設定変更による意図的な再起動は含まない）。プロセスの実在確認のための外部コマンドは実行しない。
 - **異常状態のAPIへの通知経路**: `crashLoop`等は、APIサーバが`GET /v1/connection/gateway`のたびにこのエンドポイントを引いて中継する（pull方式）ことでUI・API利用者へ届く。proxy→apiへの能動的なpush用の経路（APIサーバ側の受信口）は新設しない: APIサーバは状態を持たない方針（apiserver/design.md）で、UIは5秒ポーリングにより最大約5秒で異常を表示でき、push経路を足すと内部プロトコルの信頼境界（proxyからapiへの経路は無い）を広げるため。異常は監査ログにも残る。
 
+## `stdin`の受け渡し（Phase 9で追加）
+
+`POST /exec`のリクエストは任意で`stdin`（文字列、最大4096バイト。apiserver/design.md「プロキシとの内部通信仕様」）を受け取る。指定された場合、`runCommand`は子プロセスの標準入力を`"pipe"`にし、`stdin`を書き込んで閉じる（未指定なら従来どおり`"ignore"`）。パスワード入力型のログイン（Proton VPN CLIの`signin`）で、パスワードをコマンド引数（`ps`で他プロセスから見える）へ載せずに渡すための手段である。
+
+- **内容をログへ出さない**: 監査ログ（`exec_completed`等）は`argv`と`exitCode`のみを記録し、`stdin`は`stdinProvided: true`（有無）だけを記録する。標準出力・標準エラーの内容も従来どおりログしない（レスポンスにのみ含める）。
+- 4096バイトを超える`stdin`は`400`（不正な形状）で拒否する（想定外の巨大な入力でプロセス・メモリを消費させないため）。
+- 書き込み中の`EPIPE`（CLIが入力を読まずに終了）は無視する（プロセスの終了コードと出力で結果が分かるため）。
+
+## 検証用の追加許可バイナリ（Phase 9で追加）
+
+許可リスト（`allowlist.ts`）は原則ハードコードのままとするが、環境変数`EXTRA_ALLOWED_BINARIES`（カンマ区切りの絶対パス）が設定されている場合に限り、それらも許可する。**モックプロバイダCLIを使うE2E（`docker-compose.e2e-mock.yml`）専用**であり、本番の`docker-compose.yml`・`docker-compose.protonvpn.yml`では設定しない。設定できるのはコンテナを起動する管理者のみで、APIコンテナからは変更できないため、「APIコンテナ侵害時に任意コマンド実行の踏み台にならない」という許可リストの目的は損なわれない。
+
+## Proton VPN向けproxyイメージ（Phase 10）
+
+Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーションで、以下に依存する（公式リポジトリのパッケージ定義・ソースで確認）。
+
+| 依存 | 用途 | コンテナ内での用意 |
+|---|---|---|
+| NetworkManager（`network-manager`、`python3-proton-vpn-network-manager`系） | WireGuardトンネルの確立（NMの接続として作成・有効化） | コンテナ内でNMをシステムD-Bus上に起動する。ホストの他のインターフェースを管理させない設定にする（下記） |
+| `proton-vpn-daemon` | ネットワーク関連の特権処理 | コンテナ内で起動する（systemd無しで動くかはPoCで確認） |
+| gnome-keyring（Secret Service。`python3-proton-keyring-linux`） | ログインセッション（トークン）の保管 | コンテナ内のセッションバスで`gnome-keyring-daemon`を起動し、空パスワードで解錠する。保管先を永続化ボリュームにする |
+| セッションD-Bus | keyring・GUI二重起動検知（CLIは起動時にセッションバスを見て、GUIアプリが動作中なら実行を拒否する） | コンテナ内でセッションバスを起動する（GUIは存在しないため二重起動検知は素通しになる） |
+
+- **イメージ**: `proxy/Dockerfile.protonvpn`。Ubuntu 24.04ベース（検証環境と同一で、依存解決が確認済み）。Node.jsは公式イメージからバイナリをコピーする。3proxyはglibc向けにこのイメージ内でビルドする（AdGuard用のAlpine（musl）ビルドは流用できない）。Protonの公式リポジトリ（`protonvpn-stable-release`）を追加し、`proton-vpn-cli`を導入する。イメージは大きくなる（GTK等の依存を含む）が、プロバイダ選択によりAdGuard用イメージには影響しない。
+- **起動構成**: PID 1は`init: true`のtiniの下でエントリポイントのスクリプトが動き、root権限でシステムD-Bus→NetworkManager→（必要なら）`proton-vpn-daemon`を起動し、`vpngwgui`ユーザーでセッションバス・keyringを起動してから、`vpngwgui`権限でproxy本体（Node.js）を`exec`する。バックグラウンドのいずれかが終了したらエントリポイントも終了し、`restart: always`でコンテナごと再起動する（片方だけ死んだ半端な状態で稼働し続けない）。
+- **NetworkManagerの制限**: `network_mode: host`のため、NMはホストのインターフェースを見る。ホストのネットワーク（DHCP・静的設定・Docker・LXC）を奪わないよう、NMの設定で**WireGuardデバイス以外を全て`unmanaged`にする**（`[keyfile] unmanaged-devices=*,except:type:wireguard`相当。書式はPoCで確認）。Proton VPNのトンネルは、NMが作るWireGuardインターフェース（`proton0`等）で、本システムのトンネル検出（`ip route get`の出力先。`tunnel-interface.ts`）はインターフェース名に依存しないためそのまま使える。
+- **Kill Switch**: Proton VPN CLIのKill Switch（`config set kill-switch`）は使わず、既定（無効）のままとして、本システムのnftablesのKill Switchに一本化する（二重の遮断規則による競合・切断後の通信不能を避ける）。PoCで既定値と、有効化されていた場合の切り戻しを確認する。
+- **権限**: `cap_add: [NET_ADMIN]`、`/dev/net/tun`（従来と同じ）に加え、NM・daemonの起動のためにrootで動く。`privileged: true`は使わず、追加の権限が必要と判明した場合のみPoCの結果として個別に追加する。ノード本体・CLIの実行は`vpngwgui`（非root）とする。
+- **永続化**: `~/.config/Proton/VPN`（設定）・`~/.local/share/keyrings`（keyring）・`~/.cache/Proton/VPN`（サーバー一覧のキャッシュ）と、`/etc/machine-id`（コンテナ再作成でログインが失効しないよう、AdGuard用の`docker-entrypoint.sh`と同じ方針でボリュームから復元）を永続化する。
+- **PoCの合否基準**（`wbs/phase10.md`で先に実施する。不合格の場合は、ホストへ`proton-vpn-cli`・NM・daemonを導入しD-Bus・keyringのソケットをコンテナへ共有する代替へ切り替え、本節と`wbs/phase10.md`を改訂する）:
+  1. コンテナ内でNM・daemon・keyringが起動し、`protonvpn status`が終了コード0で応答する。
+  2. `protonvpn signin`が、TTYの無いコンテナで標準入力からパスワードを受け取れ、ログイン情報がコンテナ再作成後も保持される（keyringの永続化）。
+  3. `protonvpn connect`でWireGuardのインターフェースが作られ、`ip route get 1.1.1.1`がそのインターフェースを指す。切断で元に戻る。
+  4. NMがホストの既存インターフェース（物理NIC・Docker・LXC）の設定を変更しない。
+  5. 本システムの透過ゲートウェイ（nftablesのNAT/FORWARD）が、そのインターフェースを経由してLAN端末の通信をVPNへ通す。
+
 # VPNベンダーCLIの追加方法
 
 1. プロキシコンテナのDockerイメージに新規ベンダーCLIバイナリを同梱する。
 2. 管理者向け設定（VPNクライアント操作プロファイルJSON、apiserver/design.md参照）に新規ベンダーのエントリを追加する。
 3. プロキシ側の実行可能バイナリ許可リストに新規バイナリのパスを追加する。
+4. **【Phase 9】** プロバイダごとの機能差・プラン制限をプロファイルの`account`・`features`・`restrictedPattern`等で表現する（apiserver/design.md「Phase 9における具体プロファイル」）。CLIが特殊な実行環境（NetworkManager等）を必要とする場合は、`proxy/Dockerfile.<プロバイダ>`と`docker-compose.<プロバイダ>.yml`を追加する。
 
 # 障害時の挙動
 

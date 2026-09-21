@@ -4,11 +4,12 @@
 
 # 責務の範囲
 
-- VPNベンダーCLI（AdguardVPN CLI / NordVPN CLI等）の実行・状態監視。
+- VPNベンダーCLI（AdguardVPN CLI / Proton VPN CLI / NordVPN CLI等）の実行・状態監視。**【Phase 10】** Proton VPN CLIのようにNetworkManager・キーリング・システムデーモン等の実行環境を必要とするCLIについても、プロキシコンテナ内でそれらを用意して実行できること（ホストへの導入を要求しない）。プロバイダごとにコンテナイメージを切り替えられること。
 - 透過ゲートウェイモードの提供（LAN機器がこのホストをデフォルトゲートウェイとした場合の、VPNトンネル経由でのNAT/フォワーディング）。
 - 明示的SOCKS5/HTTPプロキシモードの提供。
 - Kill Switchの実施（VPN切断検知時のLAN側通信の遮断／通過制御）。
-- APIサーバからの内部コマンド実行要求の受理。
+- APIサーバからの内部コマンド実行要求の受理。**【Phase 9】** 標準入力の受け渡し（ユーザー名・パスワード入力型のログイン用）に対応し、その内容をログへ残さないこと。
+- **【Phase 10】** VPNベンダーCLIが独自にKill Switch・経路制御を行う場合（Proton VPN CLIの`kill-switch`等）でも、本システムのnftablesによるKill Switch・透過ゲートウェイと競合しないこと（ベンダーCLI側のKill Switchは使わず、本システムのKill Switchに一本化する）。
 
 # 対応必須のモード
 

@@ -31,6 +31,37 @@ APIサーバはWebサーバから送信されたAPI命令、および管理者�
 
 VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**Kill Switch**」で制御する。ONの場合はLAN機器の通信を遮断し（フェイルクローズ）、VPN非経由での通信を防ぐ。OFFの場合は直接インターネットに抜ける（フェイルオープン）。デフォルトはONを推奨する。
 
+# プロバイダ抽象化アーキテクチャ（Phase 9・10）
+
+プロバイダ（AdGuard VPN・Proton VPN等）ごとの機能差・プラン制限を、コードの分岐ではなく**管理者向け設定（プロファイル）のデータ**として表現する。APIサーバは「操作（オペレーション）」単位の実行可否（capability）を計算してWebサーバへ返し、Webサーバはそれに従ってUIを制限する。
+
+```
+プロファイル（管理者向け設定）        APIサーバ                         Webサーバ
+ ├ actions（存在＝プロバイダ対応）──▶ ① 静的な可否（非対応）
+ ├ account（読み取り専用の判定コマンド）─▶ ② ログイン状態・プランの自動判定（短時間キャッシュ）
+ ├ plans[].restricts（プラン制限）─────▶ ③ プラン制限
+ └ actions.*.restrictedPattern ────────▶ ④ 実行失敗からの学習（フォールバック）
+                                        └▶ GET /v1/connection/capabilities ──▶ 操作ごとに有効/無効＋理由を表示
+```
+
+- **オペレーション（操作）**: Web UIの操作単位を表す固定の語彙。`login` `logout` `connectToLocation`（接続先を指定した接続）`connectAuto`（接続先を指定しない接続）`changeLocation`（接続中の接続先変更）`disconnect` `locationList`（接続先一覧の取得）`locationFavorites` `pingMeasurement`（ping値の計測・再計測）。プロバイダが増えても語彙は変えない（プロバイダごとの差は、各オペレーションが可能か否かのデータで表す）。
+- **実行不可の原因**は`unsupported`（プロバイダ非対応）・`notLoggedIn`（未ログイン）・`planRestricted`（プラン制限）の3種で、Web UIは原因に応じた理由文を表示する。
+- **判定は副作用のない情報のみ**から行う。プラン判定のために有料機能を実際に実行して確かめる（例: 無料版で失敗することを確かめるために接続コマンドを試す）ことはしない。有料版では実際に接続してしまうため。プロバイダごとに用意された読み取り専用コマンド（Proton VPN: `config list`。無料版では有料機能が`Upgrade to enable`と表示される）の出力で判定する。
+- 判定に失敗・不能な場合は制限しない（fail-open）。実行時にCLIが失敗した場合の出力が`restrictedPattern`に一致すれば、以後その操作を制限として学習する（`403 operation_restricted`）。
+- ログイン方式は`loginMethod`（`deviceUrl`: URL提示型 / `credentials`: ユーザー名・パスワード入力型）で宣言する。
+
+## プロバイダの選択と実行基盤
+
+ベンダーは1台のサーバにつき1種類（apiserver/requirements.md）。プロバイダは`.env`の`VPN_PROVIDER`（`adguardvpn`（既定）／`protonvpn`）で選び、プロバイダごとに以下が切り替わる。
+
+| 項目 | AdGuard VPN | Proton VPN |
+|---|---|---|
+| プロファイル | `api/config/profiles/adguardvpn.json` | `api/config/profiles/protonvpn.json` |
+| proxyイメージ | `proxy/Dockerfile.adguardvpn`（Alpine。単体バイナリ同梱） | `proxy/Dockerfile.protonvpn`（Ubuntu。CLI・NetworkManager・D-Bus・keyring・daemonを同梱） |
+| compose | `docker-compose.yml` | `docker-compose.yml`＋`docker-compose.protonvpn.yml`（`.env`の`COMPOSE_FILE`で合成） |
+
+Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）・`proton-vpn-daemon`に依存し、公式にはheadless非対応とされている。そのため、Phase 10の最初にコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細はproxyserver/design.md「Proton VPN向けproxyイメージ」、`wbs/phase10.md`）。
+
 # 認証・認可の設計方針
 
 将来的にセッション認証（Cookieベース等）を追加する可能性があるため、Web⇄API間は前述の通り同一オリジン構成とし、将来の認証導入時の設計変更コストを抑える。
@@ -45,7 +76,7 @@ APIサーバは Fastify + TypeBox + `@fastify/swagger` を用い、TypeBoxで定
 
 # 実装フェーズ
 
-実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase8.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
+実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase10.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 10 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
 
 | 項目 | 最終形（本ファイル） | Phase 1（wbs/phase1.md） |
 |---|---|---|

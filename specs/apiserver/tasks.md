@@ -85,6 +85,21 @@
 - [x] プレースホルダー検証ロジックのユニットテスト（`profile/placeholder-resolver.test.ts`）
 - [x] APIエンドポイントの統合テスト（プロキシ疎通はモック化）（`routes/session.test.ts`で`POST /v1/session`の200/422/502/504を検証。他エンドポイントは未着手）
 
+## プロバイダ抽象化・プラン制限（Phase 9）
+
+- [ ] プロファイルスキーマ拡張（`loginMethod`・`output.locationPattern`・`features`・省略可アクション・`connectAuto`・`logout`・`account`・`restrictedPattern`・`table`・`connectNameFrom`・`source: "input"`）と、必須アクションの組合せ検証（`profile/profile.schema.ts`・`profile-loader.ts`）
+- [ ] プロファイルを`api/config/profiles/<プロバイダ>.json`へ移動し、`docker-compose.yml`の参照を`VPN_PROVIDER`で切り替える
+- [ ] オペレーションの語彙・実行可否の評価（`capabilities/`。原因の優先順・依存継承）と単体テスト
+- [ ] `account`判定（`session/session-probe.ts`。30秒キャッシュ・同時要求の集約・失敗非キャッシュ）と単体テスト
+- [ ] 実行失敗からの学習（`capabilities/restriction-learner.ts`。`restrictedPattern`一致→`403 operation_restricted`）と単体テスト
+- [ ] `GET /v1/connection/capabilities`
+- [ ] `GET /v1/session`・`DELETE /v1/session`、`POST /v1/session`の`credentials`方式（入力検証・stdin受け渡し・秘密の伏字化・監査ログに秘密を残さない）と統合テスト
+- [ ] `PUT /v1/connection`の`connectAuto`対応（`locationId`省略時）、`501`（未対応操作）
+- [ ] `location-list-parser`の汎用化（列名のプロファイル指定・区切り行の読み飛ばし・`city`なし・`connectNameFrom`）と単体テスト
+- [ ] 接続状態のテキスト出力解釈のプロファイル化（`output.locationPattern`）と単体テスト
+- [ ] `lib/redact.ts`（秘密の伏字化。汎用ヘルパー）と単体テスト
+- [ ] AdGuard VPNプロファイルへ`account`（`license`）を追加（無料版・未ログイン時の出力の実機確認後）
+
 # 将来課題
 
 - 認証・認可の追加（追加箇所: Fastifyの `preHandler` フックにセッション検証を挿入する想定）。

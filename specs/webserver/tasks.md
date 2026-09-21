@@ -72,6 +72,16 @@
 - [x] 画面単位のコンポーネントテスト（vitest＋jsdom＋Testing Library。`App.test.tsx`等。2026-09-21実装）
 - [x] Web⇄API（実API・実VPN）でのE2E動作確認（`e2e/phase5/`。2026-09-21実施、`wbs/phase5.md`「検証結果」参照）
 
+## 操作の制限表示（Phase 9）
+
+- [ ] orval再生成（`capabilities`・`session`）
+- [ ] `capabilities/capability-state.ts`と単体テスト
+- [ ] `useDashboardPolling`へ`capabilities`・`session`を追加（独立した成否・取得失敗時は制限なし）
+- [ ] `SessionCard`・`LoginForm`・`RestrictionNote`の実装とコンポーネントテスト（`deviceUrl`／`credentials`の切替、秘密の欄の消去、ログアウト）
+- [ ] `LocationList`・`ConnectionActions`の`capabilities`対応（無効化＋理由、`connectAuto`の［接続］、リスト全体の理由表示）と`useLocations`の`enabled`
+- [ ] `403 operation_restricted`／`501`のトースト文言（`describe-api-error.ts`）と、403後の`capabilities`再取得
+- [ ] Web⇄API（モックプロバイダCLI）でのE2E（`e2e/phase9/`。Playwright）
+
 # 将来課題
 
 - 認証UI（ログイン画面等）の追加。現時点では認証なし・LAN限定運用のため未実装。

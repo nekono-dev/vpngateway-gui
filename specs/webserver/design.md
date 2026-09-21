@@ -66,6 +66,32 @@
 
 `defaultCountry`ドロップダウンと、それに使っていた`countries`の受け渡しを削除する（`CountrySelect.tsx`も削除）。
 
+# プロバイダ機能差・プラン制限への対応の実装方針（Phase 9）
+
+要件は`requirements.md`「操作の制限表示」。制限の判定はAPI（`specs/apiserver/design.md`「オペレーションと実行可否（capability）」）が行い、Webは受け取った`capabilities`を部品へ配るだけとする。
+
+## 状態の取得
+
+- `hooks/useDashboardPolling.ts`の並行取得に、`GET /v1/connection/capabilities`と`GET /v1/session`を加える（既存の接続状態・稼働状況と同様、各部分が独立に成否を持つ）。APIは`account`判定を30秒キャッシュするため、5秒周期でもCLIは頻繁に起動されない。
+- 取得失敗時は`capabilities`を「全て可」とみなす（制限をかけない）。初回取得が完了する前は「読み込み中」として、接続先リスト（`useLocations`）の取得を開始しない（`useLocations`は`enabled`引数を受け取り、`locationList`が可のときだけ取得する）。
+- `403 operation_restricted`を受けたら、`refresh()`で`capabilities`を即時再取得する（学習した制限がすぐUIへ反映される）。
+
+## コンポーネントと責務
+
+| ファイル | 責務 |
+|---|---|
+| `capabilities/capability-state.ts` | `capabilities`の型と、操作の可否・理由文の参照・「全て可」の既定値・`connectAuto`を表示するかの判定（純粋関数。API応答の型に依存するドメイン処理のため責務ディレクトリ`capabilities/`に置く） |
+| `components/dashboard/SessionCard.tsx` | ログイン状態（ログイン済み・プラン名・未ログイン・不明）の表示、ログイン導線（`loginMethod`で切替）、ログアウトの組み立て（従来の`VpnLoginButton.tsx`を置換） |
+| `components/dashboard/LoginForm.tsx` | `credentials`方式のフォーム（ユーザー名・パスワード・2FAコード）。送信後に秘密の欄を必ず空にする |
+| `components/dashboard/RestrictionNote.tsx` | 制限理由の表示（`role="note"`）。無効化した部品の`aria-describedby`の参照先になる |
+| `components/dashboard/LocationList.tsx` / `ConnectionActions.tsx` | `capabilities`に従う部品の無効化・非表示・理由の表示（上表のとおり） |
+
+## `credentials`ログインの実装上の注意
+
+- 入力欄は`type="password"`、`autoComplete="off"`（パスワードマネージャによる保存提案を避ける。LAN内の管理画面で資格情報をブラウザに残さない方針）。
+- `POST /v1/session`の生成クライアント呼び出しの`finally`で、成否にかかわらず`password`・`twoFactorCode`の状態を空にする。エラー応答（422）の`stderr`は詳細（折りたたみ）にのみ入る既存方針のまま（APIが伏字化済み）。
+- 送信中はフォーム全体を無効化し、二重送信を防ぐ。
+
 # 暫定表示の実装方針（Phase 5）
 
 - `excludedDomains`（Phase 6）は設定の保存のみ可能で通信へ反映されないため、設定ダイアログに「未対応」を表示する。Phase 6の実装時に除去する。明示的プロキシはPhase 4で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。

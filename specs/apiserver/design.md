@@ -135,6 +135,160 @@ Phase 8（`wbs/phase8.md`）で、静的な`countries`と`enumFrom`による許�
 - `listLocations`のアクション名は、他のアクション名（`connect`等）と同様のキャメルケースとし、実CLIのサブコマンド名（`list-locations`）とは`argv`で対応付ける。
 - 管理者向け設定の`countries`を編集していた運用（`wbs/phase2.md`申し送り「経年劣化」）は不要になる。
 
+## Phase 9における具体プロファイル（プロバイダ抽象化・プラン制限）
+
+Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン制限をデータで表現するため、プロファイルを以下のように拡張する。**既存のAdGuard VPNプロファイルは追加項目なしのまま読み込める**（後方互換）。設計の全体像は../design.md「プロバイダ抽象化アーキテクチャ」。
+
+```json
+{
+  "vendor": "protonvpn",
+  "binary": "/usr/bin/protonvpn",
+  "outputFormat": "text",
+  "loginMethod": "credentials",
+  "output": { "locationPattern": "^(?:Server:|Connected to)\\s+(.+?)\\.?\\s*$" },
+  "features": { "changeLocation": true, "locationPing": false },
+  "actions": {
+    "connect": {
+      "argv": ["connect", "--country", "%LOCATION%"],
+      "placeholders": { "LOCATION": { "pattern": "^[A-Za-z]{2}$", "source": "locations" } },
+      "timeoutMs": 90000,
+      "restrictedPattern": "not available on the free plan"
+    },
+    "connectAuto": { "argv": ["connect"], "placeholders": {}, "timeoutMs": 90000 },
+    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 30000 },
+    "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 15000 },
+    "login": {
+      "argv": ["signin", "%USERNAME%"],
+      "placeholders": { "USERNAME": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$", "source": "input" } },
+      "timeoutMs": 60000
+    },
+    "logout": { "argv": ["signout"], "placeholders": {}, "timeoutMs": 30000 },
+    "listLocations": {
+      "argv": ["countries", "list"],
+      "placeholders": {},
+      "timeoutMs": 30000,
+      "table": { "iso": "Code", "country": "Country" },
+      "connectNameFrom": "iso",
+      "restrictedPattern": "not available on the free plan"
+    },
+    "account": {
+      "argv": ["config", "list"],
+      "placeholders": {},
+      "timeoutMs": 15000,
+      "notLoggedInPattern": "Authentication required",
+      "plans": [
+        {
+          "id": "free",
+          "label": "Free",
+          "pattern": "Upgrade to enable|To upgrade to VPN Plus",
+          "restricts": ["connectToLocation", "locationList"],
+          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。"
+        }
+      ],
+      "defaultPlan": { "id": "paid", "label": "Paid" }
+    }
+  }
+}
+```
+
+### 追加・変更する項目
+
+| 項目 | 内容 |
+|---|---|
+| `loginMethod` | `"deviceUrl"`（既定。`login`が認証URLを出力する。従来のAdGuard VPN）／`"credentials"`（ユーザー名・パスワード・2FAコードの入力型。Proton VPN）。 |
+| `actions.connect` | **省略可**に変更（接続先を指定する接続）。`%LOCATION%`を含み、`listLocations`と組で「接続先を指定した接続」（`connectToLocation`）になる。 |
+| `actions.connectAuto` | 新規・省略可。接続先を指定しない接続（プロバイダが最速・既定のサーバを選ぶ）。 |
+| `actions.login` / `listLocations` | **省略可**に変更（プロバイダ非対応を表す）。`disconnect`・`status`は必須。`connect`と`connectAuto`は少なくとも一方が必須（ロード時に検証し、満たさなければ起動失敗）。 |
+| `actions.logout` | 新規・省略可。`DELETE /v1/session`が実行する。 |
+| `actions.account` | 新規・省略可。ログイン状態・プランを判定する**副作用のない読み取り専用**コマンド。詳細は下記「ログイン状態・プランの判定」。 |
+| `actions.<name>.restrictedPattern` | 新規・省略可。コマンドが失敗したとき、標準出力・標準エラーがこの正規表現に一致すればプラン制限による失敗とみなす（下記「実行失敗からの学習」）。 |
+| `actions.listLocations.table` | 新規・省略可。出力表の列名の対応（`iso`・`country`は必須、`city`・`ping`は省略可）。省略時は従来のAdGuard形式（`ISO`/`COUNTRY`/`CITY`/`PING`）。 |
+| `actions.listLocations.connectNameFrom` | 新規・省略可。`"city"`（既定。都市名から`(Virtual)`を除いたもの）／`"iso"`（ISO国コード）。`%LOCATION%`へ代入する接続時の指定名の出典。 |
+| `placeholders.<KEY>.source` | `"input"`を追加。利用者入力をそのまま使い、`pattern`のみで検証する（`enumFrom`・実行時許可値は不要）。ログインのユーザー名に使う。`pattern`は先頭が`-`でない（CLIオプションと解釈されない）ことを必ず要求する。 |
+| `output.locationPattern` | 新規・省略可。接続状態のテキスト出力から接続先（表示名）を取り出す正規表現（フラグ`im`、第1キャプチャ）。省略時は従来のAdGuard形式（`Connected to <都市> in <MODE> mode`）。接続中かの判定は従来どおり単語`connected`の有無（`disconnected`は除外）で、これはProton VPNの`Status: Connected`にも通用するため上書きしない。 |
+| `features.changeLocation` / `features.locationPing` | 新規・省略可（既定`true`）。プロバイダが「接続中の接続先変更」「ping値の提供」に対応するか。`false`なら`unsupported`として扱う。 |
+
+`plans`の各要素: `id`（プラン識別子）、`label`（画面表示名）、`pattern`（`account`の出力に対する正規表現）、`restricts`（そのプランで制限するオペレーションの配列）、`restrictionMessage`（省略可。制限理由として画面に出す文）。
+
+## オペレーションと実行可否（capability）
+
+オペレーションは固定の語彙（../design.md）で、UIの操作と1対1に対応する。各オペレーションの実行可否は、次の順で評価する（先に該当した原因を採用する）。
+
+| 順 | 原因（`reason`） | 条件 |
+|---|---|---|
+| 1 | `unsupported` | プロファイルに必要なアクションが無い。`login`＝`login`定義あり、`logout`＝`logout`定義あり、`connectToLocation`＝`connect`と`listLocations`の定義あり、`connectAuto`＝`connectAuto`定義あり、`disconnect`＝常に可、`locationList`＝`listLocations`定義あり、`changeLocation`＝`connectToLocation`可かつ`features.changeLocation!==false`、`locationFavorites`＝`locationList`可、`pingMeasurement`＝`locationList`可かつ`features.locationPing!==false` |
+| 2 | `notLoggedIn` | ログイン状態が「未ログイン」と判定された場合の`logout`・`connectToLocation`・`connectAuto`・`locationList`（`disconnect`と`login`は常に可能）。判定不能（不明）のときは制限しない |
+| 3 | `planRestricted` | 判定されたプランの`restricts`に含まれる、または実行失敗から学習した制限（下記） |
+
+依存するオペレーションは原因ごと継承する: `changeLocation`は`connectToLocation`に、`locationFavorites`・`pingMeasurement`は`locationList`に従う（プランの`restricts`へ列挙しなくてよい）。
+
+各オペレーションの応答は`{ "available": boolean, "reason"?: "unsupported"|"notLoggedIn"|"planRestricted", "message"?: string }`。`message`は利用者向けの理由文（日本語。`planRestricted`ではプランの`restrictionMessage`、無ければ「現在のプラン（<label>）では利用できません」。`unsupported`は「このVPNプロバイダでは利用できません」、`notLoggedIn`は「ログインしてください」）。Web UIは文をそのまま表示する。
+
+## ログイン状態・プランの判定（`account`アクション）
+
+実装: `api/src/session/session-probe.ts`。
+
+1. `account`が未定義なら判定しない（ログイン状態・プランとも不明）。
+2. `account`を実行する。標準出力・標準エラーをANSI除去して連結した文字列に対して:
+   - `notLoggedInPattern`に一致すれば**未ログイン**（終了コードは問わない。Proton VPNは未ログイン時に終了コード2で失敗する）。
+   - 終了コードが0以外（上記に該当しない）なら**不明**（プロキシ未応答・タイムアウトも不明）。
+   - 終了コードが0なら**ログイン済み**とし、`plans`を先頭から評価して最初に`pattern`に一致した要素をプランとする。どれにも一致しなければ`defaultPlan`。
+3. 結果は**30秒間キャッシュ**する（プロセス内メモリ。同時要求は1回の実行にまとめる）。Web UIが5秒周期で取得してもCLIの起動は最大30秒に1回になる。失敗（不明）はキャッシュせず、次の要求で再判定する。ログイン・ログアウトの成功時、および学習した制限の変化時にキャッシュを破棄する。
+4. `account`はプラン判定のために有料機能を実行してはならない（../design.md）。読み取り専用のコマンドを選ぶ。
+
+**Proton VPN**: `protonvpn config list`。未ログインは`Error: Authentication required to view feature status.`（終了コード2）。ログイン済みの無料版は、有料機能の値が`Upgrade to enable`になり末尾に`To upgrade to VPN Plus visit: ...`が出る（公式CLI 1.0.3のソースで確認。実機での出力確認は`wbs/phase10.md`）。有料版にはどちらも現れない。**AdGuard VPN**: `license`（ログイン済みは`You are using the PREMIUM version`。無料版・未ログイン時の出力の確認は`wbs/phase9.md`）。
+
+## 実行失敗からの学習（`restrictedPattern`）
+
+`account`で判定できない制限（判定コマンドが無い、出力に現れない制限）への備え。`connect`・`connectAuto`・`listLocations`が非ゼロで終了し、その出力が当該アクションの`restrictedPattern`に一致した場合、通常の422ではなく**`403 { "error": "operation_restricted", "message", "exitCode", "stderr" }`**で応答し、対応するオペレーション（`connect`→`connectToLocation`、`connectAuto`→`connectAuto`、`listLocations`→`locationList`）を`planRestricted`として記憶する（`api/src/capabilities/restriction-learner.ts`。プロセス内メモリ。理由文は出力の要約）。記憶は、ログイン・ログアウトの成功、およびAPIの再起動で消える（プラン変更後の再ログインで自然に解除される。Proton VPNもプラン変更後の再サインインを案内している）。
+
+**APIは実行前にプラン制限を理由として操作を拒否しない**（プロファイルにアクションが無い`unsupported`のみ`501`で事前に拒否する）。CLIが実行可否の最終判断者であり、キャッシュした判定（最大30秒古い）でアップグレード直後の操作を誤って塞がないため。capabilityはUIの利便のための表示である。
+
+## 接続（`PUT /v1/connection`）の変更
+
+- `connect=true`で`locationId`を指定した場合: `connectToLocation`が`unsupported`なら`501`。指定は従来どおり`listLocations`で解決する（`connectNameFrom`に従い`%LOCATION%`へ代入）。
+- `connect=true`で`locationId`が無い場合: `connectAuto`が定義されていればそれを実行する。成功時は接続先IDを保存せず（接続状態の`locationId`・`country`なし。`location`はCLI出力から取れれば付与）、「最後に接続した接続先」も更新しない。`connectAuto`が無ければ従来どおり`400`。
+- 失敗時のプラン制限の扱いは上記「実行失敗からの学習」。
+
+## セッション（`/v1/session`）の変更
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `GET` | `/v1/session` | ログイン方式・ログイン状態・プランを取得する。`{ "loginMethod": "deviceUrl"\|"credentials", "loggedIn"?: boolean, "plan"?: { "id", "label" } }`。`loggedIn`は不明（`account`なし・判定失敗）のとき省略。`plan`はログイン済みで判定できたときのみ。判定失敗でも`200`（不明として返す。CLIの障害は`GET /v1/connection`等が別途報告する） |
+| `POST` | `/v1/session` | ログインする。`loginMethod=deviceUrl`は従来どおり（ボディなし。`{ loginUrl?, message }`）。`credentials`はボディ`{ "username", "password", "twoFactorCode"? }`が必須（無ければ`400`）で、成功時は`{ message }`。`login`が未定義なら`501` |
+| `DELETE` | `/v1/session` | ログアウトする（`logout`アクション。成功時`{ message }`。`logout`が未定義なら`501`）。接続状態の保存内容（`connection-state`）を消去する |
+
+`POST /v1/session`の`credentials`方式の入力検証と受け渡し:
+
+- `username`はプレースホルダー`USERNAME`の`pattern`で検証し、argvへ代入する（メールアドレスは秘密ではない）。
+- `password`は1〜512文字で、**改行（`\r`・`\n`）・NUL・制御文字を含まない**こと（含むと標準入力へ余分な行が混入し、2FA入力の偽装等になるため`400`）。`twoFactorCode`は`^[0-9A-Za-z]{4,32}$`。
+- `password`（と`twoFactorCode`）は、`\n`区切りの行としてプロキシの`POST /exec`の`stdin`フィールドへ渡す（Proton VPN CLIの`signin`はパスワードを`getpass`で読み、2FAが必要なときのみ続けて2FAトークンを読む。TTYが無い環境では`getpass`は標準入力へフォールバックする。実機確認は`wbs/phase10.md`）。2FAコードが指定されなければパスワードの1行のみを渡す（2FAが必要なアカウントでコードが無い場合はCLIが失敗し、422で利用者に再入力を促す）。
+- **秘密情報を残さない**: 監査ログの`input`は`{ username }`のみ（パスワード・2FAコードは記録しない）。プロキシ側の監査ログもstdinの内容は記録せず、`stdinProvided: true`のみ記録する。失敗時の`stderr`（422）は、応答へ入れる前にパスワード・2FAコードの部分文字列を伏字にする（CLIが入力を出力へ反映した場合の保険）。Fastifyのリクエストログはボディを出力しない設定のまま維持する。
+- 経路の秘匿: ブラウザ〜Webサーバ間はHTTP（TLSなし、LAN限定運用）のため、パスワードはLAN内で平文になる。**既知の制約**として受容する（認証・TLSはPhase 7の課題。`specs/requirements.md`「認証・認可」）。
+
+## 接続先一覧の汎用化
+
+`listLocations.table`・`connectNameFrom`により、`location-list-parser.ts`は列名（ヘッダ行）をプロファイルから受け取って固定幅の表を読む。追加の書式対応:
+
+- ヘッダ直下の区切り行（`-`と空白のみ。Proton VPNの`tabulate`出力）は読み飛ばす。
+- `city`列が無い表（Proton VPNの`countries list`は国のみ）では、`city`を持たない接続先とする。`id`は`<国コード小文字>-<slug(国名)>`（例: `us-united-states`）、`connectName`は`connectNameFrom`が`iso`なら国コード（例: `US`。Proton VPNの`--country`は大文字小文字を区別しない）。
+- データ行の判定は、従来の「行頭がISO国コード」ではなく、ヘッダで特定したISO列が英字2文字であることとする。
+- `LocationSchema.city`は省略可能にする（`city`列が無いプロバイダ用）。
+
+## エンドポイント（Phase 9で追加）
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否を取得する。`{ "capabilities": { "login": {...}, "logout": {...}, "connectToLocation": {...}, "connectAuto": {...}, "changeLocation": {...}, "disconnect": {...}, "locationList": {...}, "locationFavorites": {...}, "pingMeasurement": {...} } }`。全キーを常に返す。ログイン状態・プランは`account`判定（30秒キャッシュ）を使う。判定不能でも`200`（制限しない） |
+| `GET` | `/v1/session` | 上記 |
+| `DELETE` | `/v1/session` | 上記 |
+
+`locationList`が不可のときの`GET /v1/connection/locations`は、実行前拒否をしない方針（上記）に従い、`unsupported`のみ`501`、他はCLIの結果に従う。
+
+## ファイル配置（AGENTS.mdの規約）
+
+プロバイダ抽象化のドメイン知識は責務ごとのディレクトリに置く: `api/src/capabilities/`（オペレーションの語彙・実行可否の評価・失敗からの学習）、`api/src/session/`（`account`判定・キャッシュ・ログイン入力の検証）。ドメイン非依存の文字列処理（秘密の伏字化）は`lib/`（`lib/redact.ts`）に置く。プロファイルのスキーマ拡張は`profile/profile.schema.ts`。
+
 # ユーザ向け設定の具体スキーマ
 
 Web UIから変更可能な運用設定（目的・意味は../requirements.md参照）。APIサーバが永続化（設定ファイルまたは軽量DB、例 SQLite）し、プロキシサーバへの反映が必要なものはUDS経由で通知する。
@@ -166,7 +320,10 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 | `PUT` | `/v1/connection/config` | ユーザ向け設定を更新 |
 | `GET` | `/v1/connection/log` | 接続・操作履歴（監査ログ）を取得 |
 | `GET` | `/v1/connection/gateway` | 透過ゲートウェイ／Kill Switch（Phase 4以降は明示的プロキシも）の実際の稼働状況を取得（Phase 5で追加。下記「稼働状況取得」参照） |
-| `POST` | `/v1/session` | VPNクライアントへのログインを代行する（`cli login` 実行時に払い出されるログインURL等をクライアントへ返却する） |
+| `POST` | `/v1/session` | VPNクライアントへのログインを代行する（`loginMethod=deviceUrl`は`cli login`実行時に払い出されるログインURL等を返却する。`credentials`はユーザー名・パスワード等を受け取りCLIの標準入力へ渡す。Phase 9で拡張） |
+| `GET` | `/v1/session` | ログイン方式・ログイン状態・プランを取得する（Phase 9） |
+| `DELETE` | `/v1/session` | VPNクライアントからログアウトする（Phase 9） |
+| `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否（プロバイダ非対応・未ログイン・プラン制限）を取得する（Phase 9） |
 
 # OpenAPI仕様の生成・公開方針
 
@@ -192,6 +349,7 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 ```
 
 - `resolvedArgv` は、プレースホルダー検証済みの値を代入した最終的なargv配列（`binary` を含まない、コマンド本体のみ）。
+- `stdin`（省略可、Phase 9で追加）: 指定された場合、プロキシ側は子プロセスの標準入力へこの文字列を書き込んで閉じる（ユーザー名・パスワード入力型のログイン用。最大4096バイト）。**秘密情報を含みうるため、プロキシ・APIのいずれもログへ内容を出力しない。**
 - `completionPattern`（省略可、Phase 2で追加）: 指定された場合、プロキシ側はプロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、プロセス自体はkillせずバックグラウンドで実行を継続させる。ログイン代行（`login`アクション）のように、ブラウザでの認証完了まで数分かかる長時間プロセスに対応するための拡張点（proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
 - レスポンスボディには `exitCode`、`stdout`、`stderr`（要約または全量、ログサイズに応じて要検討）を含める。`completionPattern`に一致し応答した場合、`exitCode`は`null`（プロセスは実行継続中で終了コード未確定）になる。
 - リクエスト/レスポンスは軽量なランタイムスキーマ検証（zod/TypeBox等）を行い、不正形式のリクエストでプロキシ側プロセスがクラッシュしないようにするが、これはOpenAPI仕様としては公開しない。
@@ -311,3 +469,4 @@ CN    China                Shanghai (Virtual)             59
 - プロキシサーバへの接続失敗（UDS未応答等）: `502 Bad Gateway`。
 - プロキシサーバ側でのコマンド実行失敗（非ゼロexit）: `422 Unprocessable Entity` とし、bodyに `exitCode`・`stderr` 要約を含める。実CLIはエラーメッセージをstderrではなくstdoutへ出力するため（例: 接続していない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）、`stderr`が空の場合はstdoutを同フィールドへ格納する（`lib/failure-output.ts`。ANSIエスケープ除去・前後空白除去）。
 - タイムアウト: `504 Gateway Timeout`。
+- **【Phase 9】** プラン制限によるコマンド失敗（`restrictedPattern`一致）: `403 Forbidden`（`error: "operation_restricted"`。`exitCode`・`stderr`要約を含む）。プロファイルがその操作に対応していない（アクション未定義）: `501 Not Implemented`（`error: "operation_unsupported"`）。
