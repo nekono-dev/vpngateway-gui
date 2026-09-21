@@ -14,7 +14,7 @@ GW_IP=$(gw_lan_ip)
 BASE="http://$GW_IP:8080"
 FAILS=0
 gui() { node "$HERE/webgui-dashboard.mjs" "$BASE" "$@" || FAILS=$((FAILS+1)); }
-api() { curl -s -m 30 -X "$1" -H 'content-type: application/json' ${3:+-d "$3"} "$BASE/api$2"; }
+api() { curl -s -m 30 -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} "$BASE/api$2"; }
 
 # proxy停止・起動コマンド（error-502用。GW_MODEの差はgw.shと同じ方針で吸収する）
 if [ "$GW_MODE" = ssh ]; then

@@ -26,6 +26,11 @@ export function describeApiError(status: number, data: unknown, fallback: string
   switch (status) {
     case 400:
       return { summary: `${fallback}（入力が不正です）`, detail };
+    case 403:
+      // プラン制限による失敗（operation_restricted）。通常の実行失敗と区別して、原因が契約プランであることを示す。
+      return { summary: `${fallback}（現在のプランでは利用できない操作です）`, detail };
+    case 501:
+      return { summary: `${fallback}（このVPNプロバイダでは利用できない操作です）`, detail };
     case 422:
       return {
         summary: `${fallback}（VPNコマンドが異常終了${exitCode !== undefined ? `: exit code ${exitCode}` : ""}）`,

@@ -102,10 +102,10 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 
 ## プロバイダ抽象化・複数プロバイダ対応（Phase 9・10）
 
-- [ ] （Phase 9）`POST /exec`の`stdin`対応（`runCommand`・入力検証・4096バイト上限・ログへ内容を出さない）と単体テスト
-- [ ] （Phase 9）`EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）と単体テスト
-- [ ] （Phase 9）モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）と`docker-compose.e2e-mock.yml`
-- [ ] （Phase 9）`proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`VPN_PROVIDER`で切り替え可能にする
+- [x] （Phase 9）`POST /exec`の`stdin`対応（`runCommand`・入力検証・4096バイト上限・ログへ内容を出さない）と単体テスト
+- [x] （Phase 9）`EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）と単体テスト
+- [x] （Phase 9）モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）と`docker-compose.e2e-mock.yml`
+- [x] （Phase 9）`proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`VPN_PROVIDER`で切り替え可能にする
 - [ ] （Phase 10）Proton VPN向けイメージのPoC（合否基準はdesign.md「Proton VPN向けproxyイメージ」）
 - [ ] （Phase 10）`proxy/Dockerfile.protonvpn`・エントリポイント・`docker-compose.protonvpn.yml`・許可リストへの`/usr/bin/protonvpn`追加
 - [ ] （Phase 10）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持）

@@ -47,7 +47,7 @@ export async function ensureIpForwardEnabled(): Promise<boolean> {
 
   return new Promise((resolve) => {
     // procfsのnet.*エントリはroot所有・0644のため、非rootユーザーからの書き込みにはsudoが必要
-    // （proxy/Dockerfileのパスワードなしsudo設定を利用する。nft-client.tsと同様の方針）。
+    // （proxy/Dockerfile.adguardvpnのパスワードなしsudo設定を利用する。nft-client.tsと同様の方針）。
     const child = spawn(SUDO_BIN, ["tee", IP_FORWARD_PATH], { stdio: ["pipe", "ignore", "ignore"] });
     child.on("error", () => resolve(false));
     child.on("exit", (code) => resolve(code === 0));

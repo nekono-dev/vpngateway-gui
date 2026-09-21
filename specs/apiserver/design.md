@@ -220,7 +220,7 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 | 2 | `notLoggedIn` | ログイン状態が「未ログイン」と判定された場合の`logout`・`connectToLocation`・`connectAuto`・`locationList`（`disconnect`と`login`は常に可能）。判定不能（不明）のときは制限しない |
 | 3 | `planRestricted` | 判定されたプランの`restricts`に含まれる、または実行失敗から学習した制限（下記） |
 
-依存するオペレーションは原因ごと継承する: `changeLocation`は`connectToLocation`に、`locationFavorites`・`pingMeasurement`は`locationList`に従う（プランの`restricts`へ列挙しなくてよい）。
+依存するオペレーションは原因ごと継承する: `changeLocation`は`connectToLocation`に、`locationFavorites`・`pingMeasurement`は`locationList`に従う（プランの`restricts`へ列挙しなくてよい）。`connectToLocation`と`locationList`は**相互に依存**する（接続先を指定できないなら一覧を選べても意味が無く、一覧を取得できないなら接続先を解決できない）。一方だけが実行不可なら、もう一方も同じ原因・理由文で実行不可にする（例: 実行失敗から`connectToLocation`の制限を学習したとき、一覧も理由の枠に置き換わる）。
 
 各オペレーションの応答は`{ "available": boolean, "reason"?: "unsupported"|"notLoggedIn"|"planRestricted", "message"?: string }`。`message`は利用者向けの理由文（日本語。`planRestricted`ではプランの`restrictionMessage`、無ければ「現在のプラン（<label>）では利用できません」。`unsupported`は「このVPNプロバイダでは利用できません」、`notLoggedIn`は「ログインしてください」）。Web UIは文をそのまま表示する。
 
@@ -236,7 +236,7 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 3. 結果は**30秒間キャッシュ**する（プロセス内メモリ。同時要求は1回の実行にまとめる）。Web UIが5秒周期で取得してもCLIの起動は最大30秒に1回になる。失敗（不明）はキャッシュせず、次の要求で再判定する。ログイン・ログアウトの成功時、および学習した制限の変化時にキャッシュを破棄する。
 4. `account`はプラン判定のために有料機能を実行してはならない（../design.md）。読み取り専用のコマンドを選ぶ。
 
-**Proton VPN**: `protonvpn config list`。未ログインは`Error: Authentication required to view feature status.`（終了コード2）。ログイン済みの無料版は、有料機能の値が`Upgrade to enable`になり末尾に`To upgrade to VPN Plus visit: ...`が出る（公式CLI 1.0.3のソースで確認。実機での出力確認は`wbs/phase10.md`）。有料版にはどちらも現れない。**AdGuard VPN**: `license`（ログイン済みは`You are using the PREMIUM version`。無料版・未ログイン時の出力の確認は`wbs/phase9.md`）。
+**Proton VPN**: `protonvpn config list`。未ログインは`Error: Authentication required to view feature status.`（終了コード2）。ログイン済みの無料版は、有料機能の値が`Upgrade to enable`になり末尾に`To upgrade to VPN Plus visit: ...`が出る（公式CLI 1.0.3のソースで確認。実機での出力確認は`wbs/phase10.md`）。有料版にはどちらも現れない。**AdGuard VPN**: `license`。実機（CLI 1.7.12）で確認した出力: ログイン済み（PREMIUM）は`Logged in as <メール>`／`You are using the PREMIUM version`（終了コード0）、未ログインは`Please log in to view your license info`（終了コード11）。プロファイルは`premium`・`free`（`using the FREE version`）・既定`unknown`（プラン名「不明」）の3通りで判定し、AdGuard VPN無料版の制限は**実機で確認できていない**ため`restricts`は空（無料版の出力文言も推測。`wbs/phase9.md`「次フェーズへの申し送り」）。`logout`は`adguardvpn-cli logout`。
 
 ## 実行失敗からの学習（`restrictedPattern`）
 

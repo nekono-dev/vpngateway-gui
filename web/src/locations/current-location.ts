@@ -20,7 +20,7 @@ export function findCurrentLocationId(
   if (connection.locationId) return connection.locationId;
   const reported = connection.location?.toLowerCase();
   if (!reported) return undefined;
-  return locations.find((location) => location.city.toLowerCase() === reported)?.id;
+  return locations.find((location) => location.city?.toLowerCase() === reported)?.id;
 }
 
 /**

@@ -69,3 +69,48 @@ describe("toLocationId / toConnectName", () => {
     expect(toConnectName("Tokyo")).toBe("Tokyo");
   });
 });
+
+describe("parseLocationList（Proton VPNの国一覧: 列名指定・都市列なし・区切り行）", () => {
+  // 公式CLIは`tabulate`のsimple形式（ヘッダ・`---`の区切り行・左揃えの列）で出力する。
+  // 先頭に「Server list is outdated, updating...」等の案内が付くことがある。
+  const PROTON_OUTPUT = [
+    "Server list is outdated, updating... This may take a moment.",
+    "Country          Code",
+    "---------------  ------",
+    "Australia        AU",
+    "United States    US",
+    "Japan            JP",
+    "",
+  ].join("\n");
+  const options = { table: { iso: "Code", country: "Country" }, connectNameFrom: "iso" as const };
+
+  it("都市列が無い表では都市を持たない接続先になり、IDは国名のslug、接続時の指定名はISO国コードになる", () => {
+    expect(parseLocationList(PROTON_OUTPUT, options)).toEqual([
+      { id: "au-australia", country: "au", countryName: "Australia", connectName: "AU" },
+      { id: "us-united-states", country: "us", countryName: "United States", connectName: "US" },
+      { id: "jp-japan", country: "jp", countryName: "Japan", connectName: "JP" },
+    ]);
+  });
+
+  it("列の並び（国名→コード）がAdGuard形式と逆でも、ヘッダの桁位置で読む", () => {
+    const [first] = parseLocationList(PROTON_OUTPUT, options);
+    expect(first.countryName).toBe("Australia");
+    expect(first.country).toBe("au");
+  });
+
+  it("ヘッダ直下の区切り行・案内文はデータ行として扱わない", () => {
+    const parsed = parseLocationList(PROTON_OUTPUT, options);
+    expect(parsed).toHaveLength(3);
+  });
+
+  it("pingが無い表ではpingMsを持たず、出力順（CLIの並び）を保つ", () => {
+    expect(parseLocationList(PROTON_OUTPUT, options).map((l) => l.id)).toEqual(["au-australia", "us-united-states", "jp-japan"]);
+    expect(parseLocationList(PROTON_OUTPUT, options).every((l) => l.pingMs === undefined)).toBe(true);
+  });
+
+  it("指定した列名のヘッダが無い出力は例外（CLIの書式変更を黙って空一覧にしない）", () => {
+    expect(() => parseLocationList("Country  Code\n---\nJapan  JP", { table: { iso: "ISO", country: "COUNTRY" } })).toThrow(
+      "header row not found",
+    );
+  });
+});

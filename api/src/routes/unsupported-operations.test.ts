@@ -1,0 +1,60 @@
+// 責務: プロファイルが対応しない操作（アクション未定義）が501（operation_unsupported）で拒否され、
+// CLIを実行しないことの統合テスト。logout・listLocations・login を欠くプロファイルを一時ファイルで用意する。
+
+import { describe, expect, it, vi } from "vitest";
+import { join } from "node:path";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+const base = JSON.parse(readFileSync(join(import.meta.dirname, "../../test-fixtures/protonvpn-like.json"), "utf8"));
+delete base.actions.logout;
+delete base.actions.listLocations;
+delete base.actions.login;
+delete base.actions.account;
+const profilePath = join(dir, "profile.json");
+writeFileSync(profilePath, JSON.stringify(base));
+process.env.VPN_PROFILE_PATH = profilePath;
+process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
+process.env.CONNECTION_STATE_FILE = join(dir, "connection-state.json");
+
+const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));
+vi.mock("../proxy-client/proxy-client.js", () => ({ executeVendorCommand: executeVendorCommandMock }));
+
+const { buildApp } = await import("../app.js");
+
+describe("プロバイダ非対応の操作（501）", () => {
+  const app = buildApp();
+
+  it("logout未定義: DELETE /v1/session は501で、CLIを実行しない", async () => {
+    const response = await app.inject({ method: "DELETE", url: "/v1/session" });
+    expect(response.statusCode).toBe(501);
+    expect(response.json()).toMatchObject({ error: "operation_unsupported" });
+    expect(executeVendorCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("login未定義: POST /v1/session は501", async () => {
+    const response = await app.inject({ method: "POST", url: "/v1/session", payload: { username: "u", password: "p" } });
+    expect(response.statusCode).toBe(501);
+    expect(executeVendorCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("listLocations未定義: GET /v1/connection/locations は501", async () => {
+    const response = await app.inject({ method: "GET", url: "/v1/connection/locations" });
+    expect(response.statusCode).toBe(501);
+    expect(executeVendorCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("listLocations未定義: 接続先を指定した接続は501（接続先を解決できない）", async () => {
+    const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-japan" } });
+    expect(response.statusCode).toBe(501);
+    expect(executeVendorCommandMock).not.toHaveBeenCalled();
+  });
+
+  it("接続先を指定しない接続（connectAuto）は実行できる", async () => {
+    executeVendorCommandMock.mockResolvedValue({ exitCode: 0, stdout: "Connected to JP-FREE#5 in Tokyo, Japan.", stderr: "" });
+    const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true } });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: "connected", location: "JP-FREE#5 in Tokyo, Japan" });
+  });
+});

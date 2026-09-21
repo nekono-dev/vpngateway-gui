@@ -14,7 +14,10 @@ const EXIT_FLUSH_GRACE_MS = 50;
 
 /**
  * 目的: `binary`を`argv`で実行し、結果を待ち受ける。
- * 入力: binary(絶対パス、呼び出し元で許可リスト照合済みであること), argv(コマンド引数配列), timeoutMs(タイムアウトms)。
+ * 入力: binary(絶対パス、呼び出し元で許可リスト照合済みであること), argv(コマンド引数配列), timeoutMs(タイムアウトms),
+ *      options.stdin(省略可。指定時は子プロセスの標準入力へ書き込んで閉じる。ユーザー名・パスワード入力型の
+ *      ログインで、パスワードをコマンド引数（`ps`で他プロセスから見える）へ載せずに渡すため。
+ *      秘密情報を含みうるため、この関数はstdinの内容をどこにも記録しない)。
  * 出力: exitCode/stdout/stderrを含むPromise。timeoutMs超過時はexitCode=-1として返す（呼び出し元プロセスをクラッシュさせない）。
  * 実装上の注意: `child_process.execFile`は内部的に子プロセスの`'close'`イベント（stdout/stderrパイプの
  *             ファイルディスクリプタが完全に閉じられるまで）を待つ。実VPNベンダーCLIの`connect`のように、
@@ -23,16 +26,26 @@ const EXIT_FLUSH_GRACE_MS = 50;
  *             （実機検証で発覚。wbs/phase2.md「次フェーズへの申し送り」参照）。
  *             そのため本関数は`spawn`を使い、子プロセス自身の終了を表す`'exit'`イベントのみを待つ
  *             （`runDetachableCommand`と同じ方式に統一）。
+ * 失敗時の方針: stdin書き込み中のEPIPE（CLIが入力を読まずに終了）は無視する（終了コードと出力で結果が分かる）。
  * 例: runCommand("/usr/local/bin/adguardvpn-cli", ["status"], 5000)
+ *     runCommand("/usr/bin/protonvpn", ["signin", "user@proton.me"], 60000, { stdin: "password\n" })
  */
 export function runCommand(
   binary: string,
   argv: string[],
   timeoutMs: number,
+  options?: { stdin?: string },
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
+    const stdin = options?.stdin;
     // シェルを経由せずspawnするため、argv内にシェルメタ文字が含まれても解釈されない。
-    const child = spawn(binary, argv, { stdio: ["ignore", "pipe", "pipe"] });
+    // stdinは常に"pipe"とし、未指定なら即座に閉じて「読み取り時に即EOF」（従来の"ignore"）と同じ挙動にする
+    // （stdio配列の要素を条件で切り替えると、stdout/stderrがnull許容の型になるため）。
+    const child = spawn(binary, argv, { stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.on("error", () => {
+      // EPIPE等。結果は終了コードと出力で分かるため握りつぶす。
+    });
+    child.stdin.end(stdin);
 
     let stdout = "";
     let stderr = "";

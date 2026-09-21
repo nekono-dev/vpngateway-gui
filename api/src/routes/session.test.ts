@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/vpn-profile.json");
+process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/profiles/adguardvpn.json");
 process.env.AUDIT_LOG_FILE = join(mkdtempSync(join(tmpdir(), "vpngwgui-test-")), "audit.log");
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({
@@ -103,5 +103,80 @@ describe("POST /v1/session", () => {
 
     expect(response.statusCode).toBe(504);
     expect(response.json()).toMatchObject({ error: "proxy_timeout" });
+  });
+});
+
+describe("GET/DELETE /v1/session と capabilities（URL提示型・AdGuard VPNプロファイル）", () => {
+  const LICENSE_PREMIUM = "Logged in as user@example.com\nYou are using the \x1B[1mPREMIUM\x1B[0m version\nUp to 10 devices simultaneously";
+  const LICENSE_LOGGED_OUT = "Please log in to view your license info\nYou can log in by running `adguardvpn-cli login`";
+
+  beforeEach(async () => {
+    executeVendorCommandMock.mockReset();
+    const { invalidateSessionInfo } = await import("../session/session-probe.js");
+    const { clearLearnedRestrictions } = await import("../capabilities/restriction-learner.js");
+    invalidateSessionInfo();
+    clearLearnedRestrictions();
+  });
+
+  it("GET /v1/session: licenseの出力からログイン状態・プランを判定して返す（実機のPREMIUM出力）", async () => {
+    executeVendorCommandMock.mockResolvedValue({ exitCode: 0, stdout: LICENSE_PREMIUM, stderr: "" });
+    const response = await buildApp().inject({ method: "GET", url: "/v1/session" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ loginMethod: "deviceUrl", loggedIn: true, plan: { id: "premium", label: "Premium" } });
+    expect(executeVendorCommandMock.mock.calls[0][0].resolvedArgv).toEqual(["license"]);
+  });
+
+  it("GET /v1/session: 未ログインは終了コード11でもloggedIn=false（実機の未ログイン出力）", async () => {
+    executeVendorCommandMock.mockResolvedValue({ exitCode: 11, stdout: LICENSE_LOGGED_OUT, stderr: "" });
+    const response = await buildApp().inject({ method: "GET", url: "/v1/session" });
+    expect(response.json()).toEqual({ loginMethod: "deviceUrl", loggedIn: false });
+  });
+
+  it("ボディがnull（生成クライアントがボディ引数にnullを渡す場合）でも、URL提示型のログインができる", async () => {
+    executeVendorCommandMock.mockResolvedValue({
+      exitCode: null,
+      stdout: "https://auth.adguard.io/device_code?user_code=ABCD",
+      stderr: "",
+    });
+    const response = await buildApp().inject({
+      method: "POST",
+      url: "/v1/session",
+      headers: { "content-type": "application/json" },
+      payload: "null",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().loginUrl).toBe("https://auth.adguard.io/device_code?user_code=ABCD");
+  });
+
+  it("DELETE /v1/session: logoutアクションを実行し、成功するとキャッシュしたログイン状態を破棄する", async () => {
+    executeVendorCommandMock.mockResolvedValueOnce({ exitCode: 0, stdout: LICENSE_PREMIUM, stderr: "" });
+    const app = buildApp();
+    await app.inject({ method: "GET", url: "/v1/session" });
+    executeVendorCommandMock.mockResolvedValueOnce({ exitCode: 0, stdout: "Logged out\n", stderr: "" });
+    const response = await app.inject({ method: "DELETE", url: "/v1/session" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ message: "Logged out" });
+    expect(executeVendorCommandMock.mock.calls[1][0].resolvedArgv).toEqual(["logout"]);
+    // 破棄されているので、次の取得はキャッシュではなく再判定する。
+    executeVendorCommandMock.mockResolvedValueOnce({ exitCode: 11, stdout: LICENSE_LOGGED_OUT, stderr: "" });
+    expect((await app.inject({ method: "GET", url: "/v1/session" })).json().loggedIn).toBe(false);
+  });
+
+  it("GET /v1/connection/capabilities: 非対応（connectAuto）だけがunsupported、他は可（従来どおりの操作が塞がらない）", async () => {
+    executeVendorCommandMock.mockResolvedValue({ exitCode: 0, stdout: LICENSE_PREMIUM, stderr: "" });
+    const response = await buildApp().inject({ method: "GET", url: "/v1/connection/capabilities" });
+    const { capabilities } = response.json();
+    expect(capabilities.connectAuto).toMatchObject({ available: false, reason: "unsupported" });
+    for (const key of ["login", "logout", "connectToLocation", "changeLocation", "disconnect", "locationList", "locationFavorites", "pingMeasurement"]) {
+      expect(capabilities[key]).toEqual({ available: true });
+    }
+  });
+
+  it("未ログインなら接続系がnotLoggedInになる", async () => {
+    executeVendorCommandMock.mockResolvedValue({ exitCode: 11, stdout: LICENSE_LOGGED_OUT, stderr: "" });
+    const { capabilities } = (await buildApp().inject({ method: "GET", url: "/v1/connection/capabilities" })).json();
+    expect(capabilities.connectToLocation).toMatchObject({ available: false, reason: "notLoggedIn" });
+    expect(capabilities.locationList).toMatchObject({ available: false, reason: "notLoggedIn" });
+    expect(capabilities.login).toEqual({ available: true });
   });
 });

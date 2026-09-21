@@ -18,6 +18,18 @@
       "timeoutMs": 15000,
       "completionPattern": "https://auth\\.adguard\\.io/device_code\\?user_code=[A-Z0-9-]+"
     },
-    "listLocations": { "argv": ["list-locations"], "placeholders": {}, "timeoutMs": 15000 }
+    "logout": { "argv": ["logout"], "placeholders": {}, "timeoutMs": 15000 },
+    "listLocations": { "argv": ["list-locations"], "placeholders": {}, "timeoutMs": 15000 },
+    "account": {
+      "argv": ["license"],
+      "placeholders": {},
+      "timeoutMs": 10000,
+      "notLoggedInPattern": "Please log in|not logged in",
+      "plans": [
+        { "id": "premium", "label": "Premium", "pattern": "using the PREMIUM version", "restricts": [] },
+        { "id": "free", "label": "Free", "pattern": "using the FREE version", "restricts": [] }
+      ],
+      "defaultPlan": { "id": "unknown", "label": "不明" }
+    }
   }
 }

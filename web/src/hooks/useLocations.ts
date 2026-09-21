@@ -28,9 +28,12 @@ export interface LocationsState {
  * 目的: 接続先一覧の取得・再取得・お気に入り更新を提供する。
  * 出力: LocationsState。`refresh`は取得中の重複呼び出しを無視する。`setFavorite`は楽観的に一覧へ反映し
  *       （並び順を変えないため再取得しない）、APIエラー時は元へ戻してトーストで通知する。
- * 副作用: マウント時に一覧を1回取得する。取得中は再取得しない（応答の順序逆転が起きないようにするため）。
+ * 入力: enabled(取得を行うか。接続先一覧の操作が制限されている・実行可否が未取得の間はfalse。falseの間は
+ *       取得せず一覧を空にする。制限されるプロバイダで無駄な取得とエラー表示が出るのを避けるため)。
+ * 副作用: enabledがtrueになったとき（マウント時を含む）一覧を1回取得する。取得中は再取得しない
+ *        （応答の順序逆転が起きないようにするため）。
  */
-export function useLocations(): LocationsState {
+export function useLocations(enabled: boolean): LocationsState {
   const { notifyError } = useToast();
   const [locations, setLocations] = useState<LocationItem[]>([]);
   const [error, setError] = useState<ErrorContent>();
@@ -62,8 +65,15 @@ export function useLocations(): LocationsState {
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      // 制限された（または実行可否が未取得の）間は取得せず、再び有効になったとき最初から読み込み中として扱う。
+      setLocations([]);
+      setError(undefined);
+      setIsLoading(true);
+      return;
+    }
     void load();
-  }, [load]);
+  }, [enabled, load]);
 
   const patchFavorite = useCallback((locationId: string, favorite: boolean) => {
     setLocations((current) =>

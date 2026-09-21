@@ -7,17 +7,23 @@ import { stripAnsi } from "../lib/strip-ansi.js";
 
 /**
  * 目的: コマンド実行結果のstdoutを接続状態(ConnectionStatus)へ変換する。
- * 入力: outputFormat(プロファイルで指定された出力形式、"json"または"text"), stdout(コマンドの標準出力)。
+ * 入力: outputFormat(プロファイルで指定された出力形式、"json"または"text"), stdout(コマンドの標準出力),
+ *       options.locationPattern(省略可。"text"形式で接続先（表示名）を取り出す正規表現ソース。フラグim。
+ *       第1キャプチャが接続先。省略時は従来のAdGuard VPN形式。プロファイルの`output.locationPattern`)。
  * 出力: 接続状態オブジェクト。
  * 失敗時の方針: 未対応のoutputFormat、またはstdoutが期待する形状でない場合は例外を投げる
  *              （呼び出し元でコマンド実行失敗と同様に扱う）。
  */
-export function parseConnectionOutput(outputFormat: string, stdout: string): ConnectionStatus {
+export function parseConnectionOutput(
+  outputFormat: string,
+  stdout: string,
+  options: { locationPattern?: string } = {},
+): ConnectionStatus {
   if (outputFormat === "json") {
     return parseJsonOutput(stdout);
   }
   if (outputFormat === "text") {
-    return parseTextOutput(stdout);
+    return parseTextOutput(stdout, options.locationPattern);
   }
   throw new Error(`unsupported outputFormat: ${outputFormat}`);
 }
@@ -45,7 +51,7 @@ const CONNECTED_WORD_PATTERN = /(?<![a-zA-Z])connected(?![a-zA-Z])/i;
 // 接続先の都市名を取り出す。`status`は"Connected to TOKYO in TUN mode, running on tun0"、
 // `connect`は"Successfully Connected to TOKYO"の形式（いずれもANSI除去後）。都市名は空白を含みうる
 // （例: "NEW YORK"）ため、" in <MODE> mode"または行末までを最短一致で取る。
-const LOCATION_PATTERN = /(?<![a-zA-Z])Connected to (.+?)(?: in \S+ mode|\s*$)/im;
+const DEFAULT_LOCATION_PATTERN = /(?<![a-zA-Z])Connected to (.+?)(?: in \S+ mode|\s*$)/im;
 
 /**
  * 目的: 実VPNベンダーCLI（例: AdGuard VPN CLI）のテキスト出力から接続状態を判定する。
@@ -58,12 +64,14 @@ const LOCATION_PATTERN = /(?<![a-zA-Z])Connected to (.+?)(?: in \S+ mode|\s*$)/i
  *              国コード(country)はここでは取得しない（接続時に要求した国をroutes/connection.tsが永続化する。
  *              apiserver/design.md「接続先国の永続化」参照）。
  */
-function parseTextOutput(stdout: string): ConnectionStatus {
+function parseTextOutput(stdout: string, locationPattern?: string): ConnectionStatus {
   const clean = stripAnsi(stdout);
   if (!CONNECTED_WORD_PATTERN.test(clean)) {
     return { status: "disconnected" };
   }
-  const location = LOCATION_PATTERN.exec(clean)?.[1]?.trim();
+  // Proton VPN等はプロファイルで接続先の書式を指定する（`Server: <名> in <都市>, <国>`／`Connected to <名> ...`）。
+  const pattern = locationPattern === undefined ? DEFAULT_LOCATION_PATTERN : new RegExp(locationPattern, "im");
+  const location = pattern.exec(clean)?.[1]?.trim();
   return location ? { status: "connected", location } : { status: "connected" };
 }
 

@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/vpn-profile.json");
+process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/profiles/adguardvpn.json");
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
 process.env.CONNECTION_STATE_FILE = join(dir, "connection-state.json");
 process.env.LAST_LOCATION_FILE = join(dir, "last-location.json");

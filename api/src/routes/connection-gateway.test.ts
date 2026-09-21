@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/vpn-profile.json");
+process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/profiles/adguardvpn.json");
 process.env.AUDIT_LOG_FILE = join(mkdtempSync(join(tmpdir(), "vpngwgui-test-")), "audit.log");
 
 const { fetchProxyStatusMock } = vi.hoisted(() => ({ fetchProxyStatusMock: vi.fn() }));

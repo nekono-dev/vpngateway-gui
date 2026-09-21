@@ -21,7 +21,14 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
     "/v1/connection/locations",
     {
       schema: {
-        response: { 200: LocationsResponseSchema, 422: ErrorResponseSchema, 502: ErrorResponseSchema, 504: ErrorResponseSchema },
+        response: {
+          200: LocationsResponseSchema,
+          403: ErrorResponseSchema,
+          422: ErrorResponseSchema,
+          501: ErrorResponseSchema,
+          502: ErrorResponseSchema,
+          504: ErrorResponseSchema,
+        },
       },
     },
     async () => {
@@ -33,7 +40,7 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
         id: location.id,
         country: location.country,
         countryName: location.countryName,
-        city: location.city,
+        ...(location.city === undefined ? {} : { city: location.city }),
         ...(location.pingMs === undefined ? {} : { pingMs: location.pingMs }),
         favorite: favorites.has(location.id),
         lastConnected: location.id === lastId,

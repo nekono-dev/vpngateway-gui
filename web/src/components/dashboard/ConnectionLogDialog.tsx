@@ -16,6 +16,7 @@ interface Props {
 const ACTION_LABELS: Record<string, string> = {
   connect: "接続",
   disconnect: "切断",
+  logout: "ログアウト",
   login: "ログイン",
 };
 

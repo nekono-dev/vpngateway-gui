@@ -1,6 +1,7 @@
-// 責務: 実CLI（AdGuard VPN CLI）の`list-locations`が出力する固定幅の表を、接続先（ロケーション）の
-// 配列へ変換し、ping昇順に並べる。ベンダー非依存の整形層（profile/response-parser.ts）の兄弟にあたるが、
-// 接続状態ではなく接続先一覧を扱うためlocations/に置く。
+// 責務: ベンダーCLIの接続先一覧（固定幅の表）を、接続先（ロケーション）の配列へ変換し、ping昇順に並べる。
+// ベンダー非依存の整形層（profile/response-parser.ts）の兄弟にあたるが、接続状態ではなく接続先一覧を扱うため
+// locations/に置く。列名（ヘッダ行）はプロファイル（`listLocations.table`）から受け取り、AdGuard VPN・Proton VPN等の
+// 表を同じ処理で読む（apiserver/design.md「接続先一覧の汎用化」）。
 
 import { stripAnsi } from "../lib/strip-ansi.js";
 import { toConnectName, toLocationId } from "./location-id.js";
@@ -11,54 +12,100 @@ export interface ParsedLocation {
   // ISO国コード（小文字。例: "jp"）。
   country: string;
   countryName: string;
-  // `list-locations`が表示する都市名（例: "Shanghai (Virtual)"）。
-  city: string;
-  // `connect -l`へ渡す指定名（表示名から"(Virtual)"を除いたもの）。
+  // 一覧が表示する都市名（例: "Shanghai (Virtual)"）。都市列を持たない表（Proton VPNの国一覧）では省略する。
+  city?: string;
+  // `%LOCATION%`へ代入する接続時の指定名（`connectNameFrom`に従い、都市名から"(Virtual)"を除いたもの、またはISO国コード）。
   connectName: string;
-  // ping推定値（ミリ秒）。数値として読めなかった場合はundefined。
+  // ping推定値（ミリ秒）。列が無い・数値として読めなかった場合はundefined。
   pingMs?: number;
 }
 
-// 行頭がISO国コード（英大文字2字＋空白）の行のみをデータ行として扱う。
-const DATA_ROW_PATTERN = /^[A-Z]{2}\s/;
+// 出力表の列名。`iso`・`country`は必須、`city`・`ping`は省略可。
+export interface LocationTableSpec {
+  iso: string;
+  country: string;
+  city?: string;
+  ping?: string;
+}
+
+export interface ParseLocationOptions {
+  // 省略時は従来のAdGuard VPN形式（ISO/COUNTRY/CITY/PING）。
+  table?: LocationTableSpec;
+  // 省略時は"city"。
+  connectNameFrom?: "city" | "iso";
+}
+
+const DEFAULT_TABLE: LocationTableSpec = { iso: "ISO", country: "COUNTRY", city: "CITY", ping: "PING" };
+
+// ISO国コード列の値として受理する形（英字2文字）。区切り行（`---`）や案内文はここで弾かれる。
+const ISO_CODE_PATTERN = /^[A-Za-z]{2}$/;
+
+type ColumnKey = keyof LocationTableSpec;
+
+interface Column {
+  key: ColumnKey;
+  start: number;
+}
 
 /**
- * 目的: `list-locations`の標準出力（表）を接続先の配列へ変換し、ping昇順に整列して返す。
- * 入力: stdout(exitCode=0の`list-locations`の標準出力。ANSIエスケープを含んでよい)。
- *       期待する形状: 1行目付近に`ISO`/`COUNTRY`/`CITY`/`PING`を含むヘッダ行があり、以降のデータ行が
- *       各列をヘッダと同じ桁位置から始める（国名・都市名は空白を含むため空白区切りでは分割できない）。
+ * 目的: 列名が単語として現れるヘッダ行かを判定する（"ISO"が"ISOLATED"等の一部に一致しないようにする）。
+ * 入力: line(ヘッダ候補の行), names(全て含まれるべき列名)。
+ * 出力: 全ての列名が単語として含まれればtrue。
+ */
+function isHeaderLine(line: string, names: string[]): boolean {
+  return names.every((name) => new RegExp(`(^|\\s)${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(line));
+}
+
+/**
+ * 目的: 接続先一覧の標準出力（表）を接続先の配列へ変換し、ping昇順に整列して返す。
+ * 入力: stdout(exitCode=0の一覧コマンドの標準出力。ANSIエスケープを含んでよい),
+ *       options(列名・接続時の指定名の出典。省略時はAdGuard VPN形式)。
+ *       期待する形状: ヘッダ行に`options.table`の列名を全て含み、以降のデータ行が各列をヘッダと同じ桁位置から始める
+ *       （国名・都市名は空白を含むため空白区切りでは分割できない）。
  * 出力: ping昇順（pingなしは末尾。同値は元の出力順）の接続先配列。データ行が0件なら空配列。
  * 失敗時の方針: ヘッダ行が見つからない場合は例外を投げる（CLIの書式変更を黙って空一覧にしないため）。
- *              データ行の形をなさない行（空行・末尾の案内文）は読み飛ばす。
+ *              ISO列が英字2文字でない行（空行・区切り行・案内文）、国名（・都市列があれば都市名）が空の行は読み飛ばす。
  * 例: parseLocationList("ISO   COUNTRY   CITY   PING ESTIMATE\nJP    Japan     Tokyo  4  ")
  *     // => [{ id: "jp-tokyo", country: "jp", countryName: "Japan", city: "Tokyo", connectName: "Tokyo", pingMs: 4 }]
  */
-export function parseLocationList(stdout: string): ParsedLocation[] {
+export function parseLocationList(stdout: string, options: ParseLocationOptions = {}): ParsedLocation[] {
+  const table = options.table ?? DEFAULT_TABLE;
+  const connectNameFrom = options.connectNameFrom ?? "city";
   const lines = stripAnsi(stdout).split(/\r?\n/);
-  const headerIndex = lines.findIndex((line) => /^\s*ISO\s+COUNTRY\s+CITY\s+PING/.test(line));
+
+  const names = Object.values(table);
+  const headerIndex = lines.findIndex((line) => isHeaderLine(line, names));
   if (headerIndex < 0) {
-    throw new Error("unexpected list-locations output: header row not found");
+    throw new Error("unexpected location list output: header row not found");
   }
   const header = lines[headerIndex];
-  const countryStart = header.indexOf("COUNTRY");
-  const cityStart = header.indexOf("CITY");
-  const pingStart = header.indexOf("PING");
+
+  // 各列の開始桁を、ヘッダ上の位置の昇順に並べる。データ行は次の列の開始桁までを当該列の値とする。
+  const columns: Column[] = (Object.entries(table) as [ColumnKey, string][])
+    .map(([key, name]) => ({ key, start: header.indexOf(name) }))
+    .sort((a, b) => a.start - b.start);
+  const cell = (line: string, key: ColumnKey): string | undefined => {
+    const index = columns.findIndex((column) => column.key === key);
+    if (index < 0) return undefined;
+    return line.slice(columns[index].start, columns[index + 1]?.start).trim();
+  };
 
   const parsed: ParsedLocation[] = [];
   for (const line of lines.slice(headerIndex + 1)) {
-    if (!DATA_ROW_PATTERN.test(line)) continue;
-    const isoCode = line.slice(0, countryStart).trim();
-    const countryName = line.slice(countryStart, cityStart).trim();
-    const city = line.slice(cityStart, pingStart).trim();
-    // 国名・都市名が空の行は表の形をなしていないため読み飛ばす（IDを作れない）。
-    if (countryName.length === 0 || city.length === 0) continue;
-    const ping = Number.parseInt(line.slice(pingStart).trim(), 10);
+    const isoCode = cell(line, "iso") ?? "";
+    if (!ISO_CODE_PATTERN.test(isoCode)) continue;
+    const countryName = cell(line, "country") ?? "";
+    const city = cell(line, "city");
+    // 国名が空、または都市列があるのに都市名が空の行は表の形をなしていないため読み飛ばす（IDを作れない）。
+    if (countryName.length === 0 || (table.city !== undefined && (city ?? "").length === 0)) continue;
+    const ping = Number.parseInt(cell(line, "ping") ?? "", 10);
+    const cityName = table.city === undefined ? undefined : city;
     parsed.push({
-      id: toLocationId(isoCode, city),
+      id: toLocationId(isoCode, cityName ?? countryName),
       country: isoCode.toLowerCase(),
       countryName,
-      city,
-      connectName: toConnectName(city),
+      ...(cityName === undefined ? {} : { city: cityName }),
+      connectName: connectNameFrom === "iso" || cityName === undefined ? isoCode : toConnectName(cityName),
       ...(Number.isNaN(ping) ? {} : { pingMs: ping }),
     });
   }

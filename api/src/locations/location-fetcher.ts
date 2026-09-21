@@ -4,35 +4,40 @@
 
 import { loadVendorProfile } from "../profile/profile-loader.js";
 import { resolveArgv } from "../profile/placeholder-resolver.js";
+import { requireAction } from "../profile/require-action.js";
 import { executeVendorCommand } from "../proxy-client/proxy-client.js";
-import { CommandExecutionError } from "../errors.js";
+import { throwCommandFailure } from "../capabilities/restriction-learner.js";
 import { pickFailureOutput } from "../lib/failure-output.js";
 import { parseLocationList, type ParsedLocation } from "./location-list-parser.js";
 
 /**
  * 目的: `listLocations`アクションを実行し、接続先をping昇順で取得する。
  * 出力: 接続先の配列（`connectName`を含む。APIレスポンスへは含めない内部値）。
- * 失敗時の方針: コマンドの非ゼロ終了（未ログイン等）はCommandExecutionError（422）、
+ * 失敗時の方針: `listLocations`未定義（プロバイダ非対応）はOperationUnsupportedError（501）、
+ *              コマンドの非ゼロ終了はプラン制限（`restrictedPattern`一致）ならOperationRestrictedError（403）、
+ *              それ以外（未ログイン等）はCommandExecutionError（422）、
  *              プロキシ未応答・タイムアウトはproxy-clientの例外（502/504）、
  *              出力が想定外の書式なら通常のError（500）を、いずれもそのまま呼び出し元へ伝える。
  * 副作用: プロキシ上でベンダーCLIを1回実行する（約1秒）。
  */
 export async function fetchLocations(): Promise<ParsedLocation[]> {
   const profile = loadVendorProfile();
+  const action = requireAction(profile, "listLocations");
   const result = await executeVendorCommand({
     vendor: profile.vendor,
     binary: profile.binary,
     resolvedArgv: resolveArgv(profile, "listLocations", {}),
-    timeoutMs: profile.actions.listLocations.timeoutMs,
+    timeoutMs: action.timeoutMs,
   });
   // completionPatternを指定しないため、exitCodeがnull（実行継続中）になることはない。念のため-1へ正規化する。
   const exitCode = result.exitCode ?? -1;
   if (exitCode !== 0) {
-    throw new CommandExecutionError(
+    throwCommandFailure(
       "list-locations command failed",
       exitCode,
       pickFailureOutput(result.stderr, result.stdout),
+      { pattern: action.restrictedPattern, operation: "locationList" },
     );
   }
-  return parseLocationList(result.stdout);
+  return parseLocationList(result.stdout, { table: action.table, connectNameFrom: action.connectNameFrom });
 }

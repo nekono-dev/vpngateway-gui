@@ -2,7 +2,7 @@
 // 選択はラジオ入力（キーボード操作・支援技術のため）、★は別のボタンとして行の外側に置く
 // （ラベルの中に操作要素を入れ子にしないため）。
 
-import type { LocationItem } from "../../locations/location-filter";
+import { locationLabel, type LocationItem } from "../../locations/location-filter";
 
 interface Props {
   location: LocationItem;
@@ -10,6 +10,10 @@ interface Props {
   // 現在接続中の接続先か。
   current: boolean;
   disabled: boolean;
+  // ping値の列を表示するか。どの接続先にもping値が無い（プロバイダが提供しない）一覧では非表示にする。
+  showPing: boolean;
+  // ★（お気に入り）を操作できない理由。指定されていれば★を無効化する（capabilityの`locationFavorites`が不可のとき）。
+  favoriteDisabledReason?: string;
   onSelect: () => void;
   onToggleFavorite: () => void;
 }
@@ -23,7 +27,18 @@ function formatPing(pingMs: number | undefined): string {
   return pingMs === undefined ? "-" : `${pingMs} ms`;
 }
 
-export function LocationRow({ location, selected, current, disabled, onSelect, onToggleFavorite }: Props) {
+export function LocationRow({
+  location,
+  selected,
+  current,
+  disabled,
+  showPing,
+  favoriteDisabledReason,
+  onSelect,
+  onToggleFavorite,
+}: Props) {
+  // 都市を持たない接続先（国単位の一覧）は国名を主表示にし、補足の国名は重複させない。
+  const label = locationLabel(location);
   return (
     <li className={`location-item${selected ? " location-selected" : ""}`}>
       <label className="location-row">
@@ -38,19 +53,21 @@ export function LocationRow({ location, selected, current, disabled, onSelect, o
         <span className="location-iso">{location.country.toUpperCase()}</span>
         <span className="location-name">
           <span className="location-title">
-            <strong>{location.city}</strong>
+            <strong>{label}</strong>
             {current ? <span className="badge badge-ok">接続中</span> : null}
             {location.lastConnected ? <span className="badge badge-muted">前回</span> : null}
           </span>
-          <span className="hint">{location.countryName}</span>
+          {location.city !== undefined ? <span className="hint">{location.countryName}</span> : null}
         </span>
-        <span className="location-ping">{formatPing(location.pingMs)}</span>
+        {showPing ? <span className="location-ping">{formatPing(location.pingMs)}</span> : null}
       </label>
       <button
         type="button"
         className="star"
         aria-pressed={location.favorite}
-        aria-label={location.favorite ? `${location.city}のお気に入りを解除` : `${location.city}をお気に入りに追加`}
+        aria-label={location.favorite ? `${label}のお気に入りを解除` : `${label}をお気に入りに追加`}
+        disabled={favoriteDisabledReason !== undefined}
+        title={favoriteDisabledReason}
         onClick={onToggleFavorite}
       >
         {location.favorite ? "★" : "☆"}

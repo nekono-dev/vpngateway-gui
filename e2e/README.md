@@ -19,6 +19,8 @@
 | `phase8/locations-scenarios.sh` | Phase8完了基準を通しで自動検証（実VPNログイン済みのゲートウェイ役が必要。`GW_MODE=ssh`可） |
 | `phase4/webgui-explicit-proxy.mjs` | Phase4（明示的プロキシ）のステップ別Playwright検証（有効化・CIDR保存・稼働状況表示・不正CIDR・未構成・無効化・crashLoop表示） |
 | `phase4/proxy-scenarios.sh` | Phase4完了基準を通しで自動検証（LAN端末役からSOCKS5/HTTPで通信。実VPNログイン済みのゲートウェイ役が必要。`GW_MODE=ssh`可） |
+| `phase9/webgui-provider.mjs` | Phase9（プロバイダ抽象化基盤）のステップ別Playwright検証（未ログイン・無料/有料・入力型ログイン・2FA・実行失敗からの学習） |
+| `phase9/mock-scenarios.sh` | Phase9完了基準を、モックプロバイダCLI（Proton VPN公式CLIの挙動を模擬）で通しで自動検証（開発ホストのdocker compose。実VPN不要） |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
 
@@ -72,6 +74,19 @@ GW_MODE=ssh bash e2e/phase5/dashboard-scenarios.sh jp  # 接続国を引数に�
 
 - 開始時に透過ゲートウェイON・Kill Switch ON・VPN切断へ初期化する（設定を書き換えるため、検証専用環境で実行すること）。
 - `error-502`はproxyコンテナを一時停止・再開する。終了時に自動で再開する。
+
+## Phase 9の実行手順
+
+実VPN・実ネットワークは使わない。開発ホストのdocker composeで、モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コード）をproxyへ差し込んだ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）を起動して検証する。
+
+```sh
+bash e2e/phase9/mock-scenarios.sh        # 起動（ビルド含む）→ unauth/free/paid/twofa/learned/secrets → 後始末（down -v）
+```
+
+- 前提: 開発ホストに`docker compose`プラグイン v2.40以降（`!override`を使う。旧`docker-compose` v2.4.1では動かない。`~/.docker/cli-plugins/docker-compose`へ配置）、Node、Playwright。
+- モックのアカウント（パスワードは全て`mock-pass`）: `free@example.com`（無料）／`paid@example.com`（有料）／`free2fa@example.com`（無料・2FAコード`123456`が必要）。
+- `learned`は、ログイン状態のキャッシュ（30秒）の期限切れを待つため約31秒待つ（全体で約2分）。
+- **実VPN（AdGuard VPN）でのリグレッション**は、従来どおり`GW_MODE=ssh bash e2e/lxc/sync.sh`のあと`GW_MODE=ssh bash e2e/phase8/locations-scenarios.sh`を実行する。
 
 ## Phase 8の実行手順
 

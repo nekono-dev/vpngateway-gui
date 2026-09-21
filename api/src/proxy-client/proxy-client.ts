@@ -29,6 +29,9 @@ export interface ExecInput {
   // 設定した場合、プロキシ側はプロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答する
   // （`login`アクション用、profile.schema.tsの`ActionDef.completionPattern`参照）。
   completionPattern?: string;
+  // 設定した場合、プロキシ側は子プロセスの標準入力へ書き込んで閉じる（ユーザー名・パスワード入力型のログイン用）。
+  // パスワード等の秘密情報を含みうるため、この値をログ・エラー応答へ出してはならない。
+  stdin?: string;
 }
 
 export interface ExecResult {

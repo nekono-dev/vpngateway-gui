@@ -1,0 +1,20 @@
+# 責務: Phase 9のE2E（プロバイダ抽象化基盤の検証）専用のoverride。実VPNベンダーCLIの代わりに、Proton VPN公式CLIの挙動を
+# 模擬するモックCLI（proxy/mock-cli/protonvpn-mock.mjs）を使う。**本番では使わない**（許可リストを緩めるため）。
+# 使い方: docker compose -p vpngwgui-e2e-mock -f docker-compose.yml -f docker-compose.e2e-mock.yml up -d --build
+#   （e2e/phase9/mock-scenarios.shが実行する。Web UIは http://localhost:18080）
+services:
+  web:
+    # 他のスタックと衝突しないよう、公開ポートを差し替える（listの合成は追記になるため!overrideで置換する）。
+    ports: !override
+      - "18080:8080"
+  api:
+    volumes:
+      # Proton VPN相当のテスト用プロファイル（binaryはモックCLIのパス）へ差し替える。マウント先が同じなので置換される。
+      - ./api/test-fixtures/protonvpn-like.json:/etc/vpngwgui/vpn-profile.json:ro
+  proxy:
+    volumes:
+      - ./proxy/mock-cli/protonvpn-mock.mjs:/usr/local/bin/protonvpn-mock:ro
+    environment:
+      # 検証専用の追加許可（proxyserver/design.md「検証用の追加許可バイナリ」）。
+      EXTRA_ALLOWED_BINARIES: /usr/local/bin/protonvpn-mock
+      MOCK_STATE_FILE: /tmp/protonvpn-mock-state.json

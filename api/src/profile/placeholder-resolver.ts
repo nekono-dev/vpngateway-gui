@@ -4,6 +4,7 @@
 
 import { matchesPattern } from "../lib/regex-match.js";
 import type { VendorProfile } from "./profile.schema.js";
+import { requireAction } from "./require-action.js";
 
 export class PlaceholderValidationError extends Error {}
 
@@ -33,7 +34,8 @@ function resolveEnumFrom(profile: VendorProfile, enumFrom: string | undefined): 
 /**
  * 目的: 指定アクション（connect/disconnect/status）のargvテンプレートに、検証済みの値を代入して
  *       実行可能なargv配列（コマンド本体、binaryを含まない）を解決する。
- * 入力: profile(検証済みプロファイル), actionName(実行するアクション名), values(プレースホルダー名→生の値),
+ * 入力: profile(検証済みプロファイル), actionName(実行するアクション名。プロファイルに無ければOperationUnsupportedError),
+ *       values(プレースホルダー名→生の値),
  *       allowedValues(`source: "locations"`のプレースホルダー名→許可値の配列。実行時に決まる許可値を呼び出し元が渡す。省略時は空)。
  * 出力: プレースホルダーを実値に置き換えたargv配列。
  * 失敗時の方針: 未定義プレースホルダー参照・値の未指定・許可条件（正規表現/列挙値/実行時の許可値）不一致の場合は
@@ -46,7 +48,7 @@ export function resolveArgv(
   values: Record<string, string>,
   allowedValues: Record<string, string[]> = {},
 ): string[] {
-  const action = profile.actions[actionName];
+  const action = requireAction(profile, actionName);
 
   return action.argv.map((token) => {
     const match = PLACEHOLDER_TOKEN_PATTERN.exec(token);
@@ -71,13 +73,16 @@ export function resolveArgv(
     }
 
     // 許可値の出典はプレースホルダー定義で決まる。"locations"は実行時に呼び出し元が渡した値のみ許可する。
-    const enumValues =
-      placeholder.source === "locations" ? allowedValues[placeholderKey] : resolveEnumFrom(profile, placeholder.enumFrom);
-    if (!enumValues) {
-      throw new PlaceholderValidationError(`allowed values for ${placeholderKey} were not provided`);
-    }
-    if (!enumValues.includes(rawValue)) {
-      throw new PlaceholderValidationError(`value for ${placeholderKey} is not in the allowed list`);
+    // "input"は許可値の列挙を持たず、上の`pattern`検証のみで受理する（ログインのユーザー名等）。
+    if (placeholder.source !== "input") {
+      const enumValues =
+        placeholder.source === "locations" ? allowedValues[placeholderKey] : resolveEnumFrom(profile, placeholder.enumFrom);
+      if (!enumValues) {
+        throw new PlaceholderValidationError(`allowed values for ${placeholderKey} were not provided`);
+      }
+      if (!enumValues.includes(rawValue)) {
+        throw new PlaceholderValidationError(`value for ${placeholderKey} is not in the allowed list`);
+      }
     }
 
     // シェルを経由せずexecFileへ渡すargv要素になるため、追加のエスケープ処理は不要。

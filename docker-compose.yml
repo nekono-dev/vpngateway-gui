@@ -25,7 +25,8 @@ services:
       - proxy
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
-      - ./api/config/vpn-profile.json:/etc/vpngwgui/vpn-profile.json:ro
+      # プロバイダは.envのVPN_PROVIDER（既定adguardvpn）で選ぶ（specs/design.md「プロバイダの選択と実行基盤」）。
+      - ./api/config/profiles/${VPN_PROVIDER:-adguardvpn}.json:/etc/vpngwgui/vpn-profile.json:ro
       - api-data:/var/lib/vpngwgui
     environment:
       VPN_PROFILE_PATH: /etc/vpngwgui/vpn-profile.json
@@ -38,7 +39,7 @@ services:
     restart: always
     build:
       context: .
-      dockerfile: proxy/Dockerfile
+      dockerfile: proxy/Dockerfile.${VPN_PROVIDER:-adguardvpn}
     # 本来はPhase3（wbs/phase3.md）で行う予定だった変更だが、実機検証でDockerブリッジネットワークが
     # IPv6を透過しないためコンテナ再作成のたびに実CLIのログインセッションが失効する不具合が発覚し、
     # host networkへの切替が唯一の解決策と確認できたため、この部分のみPhase2で前倒しする

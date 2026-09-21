@@ -7,7 +7,7 @@ import { ConnectionStatusCard } from "./components/dashboard/ConnectionStatusCar
 import { GatewayStatusCard } from "./components/dashboard/GatewayStatusCard";
 import { LocationList } from "./components/dashboard/LocationList";
 import { ConnectionActions, type SubmittingAction } from "./components/dashboard/ConnectionActions";
-import { VpnLoginButton } from "./components/dashboard/VpnLoginButton";
+import { SessionCard } from "./components/dashboard/SessionCard";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
@@ -15,6 +15,8 @@ import { useToast } from "./notifications/ToastProvider";
 import { putV1Connection } from "./generated/api/default/default";
 import { useLocations } from "./hooks/useLocations";
 import { findCurrentLocationId, resolveEffectiveId } from "./locations/current-location";
+import { locationLabel } from "./locations/location-filter";
+import { isAvailable, reasonOf, usesAutoConnect } from "./capabilities/capability-state";
 
 export function App() {
   // 利用者が接続先リストで明示的に選んだ接続先ID。未選択の間は、接続中なら現在の接続先、
@@ -24,9 +26,13 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(false);
   const { notifyError, notifySuccess } = useToast();
-  const locations = useLocations();
-
   const { data, isLoading, error: pollingError, refresh } = useDashboardPolling();
+  // 操作の実行可否。最初の取得が終わるまで（data未取得）は接続先一覧を取得しない。取得に失敗しても
+  // `capabilities`はundefinedのまま「制限しない」として扱う（判定できないことを理由に操作を塞がない）。
+  const capabilities = data?.capabilities;
+  const locations = useLocations(data !== undefined && isAvailable(capabilities, "locationList"));
+  // 接続先を指定できず自動接続が使えるプロバイダ・プラン（Proton VPN無料版等）では、［接続］は接続先を指定しない接続になる。
+  const autoConnect = usesAutoConnect(capabilities);
   // 接続状態の取得が一時的に失敗しても操作ボタン（接続/切断）を使えるよう、最後に取得できた値を保持する
   // （失敗した事実は`error`として別途カードに表示する）。
   const lastConnection = useRef<ConnectionState>();
@@ -55,19 +61,23 @@ export function App() {
       disconnect: { operation: "切断", done: "切断しました" },
     }[action];
     const connecting = action !== "disconnect";
-    if (connecting && !target) {
+    if (connecting && !autoConnect && !target) {
       notifyError({ summary: "接続先を選択してください" });
       return;
     }
     setSubmitting(action);
     try {
-      const response = await putV1Connection(connecting && target ? { connect: true, locationId: target.id } : { connect: false });
+      // 自動接続は接続先を指定せず（locationIdなし）に接続する。
+      const body = !connecting ? { connect: false } : autoConnect || !target ? { connect: true } : { connect: true, locationId: target.id };
+      const response = await putV1Connection(body);
       if (response.status !== 200) {
         notifyError(describeApiError(response.status, response.data, `${operation}に失敗しました`));
+        // プラン制限（403）を学習した可能性があるため、実行可否を再取得して画面へ反映する。
+        if (response.status === 403) refresh();
         return;
       }
       notifySuccess(done);
-      if (connecting && target) {
+      if (connecting && target && !autoConnect) {
         // 以降の既定選択（次回の「前回」）を一覧へ即時反映し、明示的な選択は消して現在の接続先へ戻す。
         locations.markLastConnected(target.id);
         setSelectedId(undefined);
@@ -96,7 +106,7 @@ export function App() {
       <ConnectionStatusCard connection={connection} isLoading={isLoading} error={error} />
       <GatewayStatusCard gateway={data?.gateway} gatewayError={data?.gatewayError} isLoading={isLoading} />
       <section className="card controls" aria-label="接続操作">
-        <VpnLoginButton />
+        <SessionCard session={data?.session} capabilities={capabilities} onChanged={refresh} />
         <LocationList
           locations={locations.locations}
           isLoading={locations.isLoading}
@@ -108,17 +118,21 @@ export function App() {
           onSelect={setSelectedId}
           onRefresh={locations.refresh}
           onToggleFavorite={(locationId, favorite) => void locations.setFavorite(locationId, favorite)}
+          unavailableReason={reasonOf(capabilities, "locationList")}
+          favoritesDisabledReason={reasonOf(capabilities, "locationFavorites")}
+          refreshDisabledReason={reasonOf(capabilities, "pingMeasurement")}
         />
-        {target ? (
+        {target && !autoConnect ? (
           <p className="hint">
-            選択中の接続先: {target.country.toUpperCase()} / {target.city}
+            選択中の接続先: {target.country.toUpperCase()} / {locationLabel(target)}
           </p>
         ) : null}
         <ConnectionActions
           connection={connection}
           submitting={submitting}
-          hasTarget={target !== undefined}
+          hasTarget={autoConnect || target !== undefined}
           canChange={canChange}
+          capabilities={capabilities}
           onConnect={() => void handleSubmit("connect")}
           onChange={() => void handleSubmit("change")}
           onDisconnect={() => void handleSubmit("disconnect")}

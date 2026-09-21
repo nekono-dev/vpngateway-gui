@@ -8,6 +8,17 @@ export type LocationItem = GetV1ConnectionLocations200Item;
 export type LocationTab = "all" | "favorites";
 
 /**
+ * 目的: 接続先の表示名を返す。都市を持たない接続先（Proton VPNの国単位の一覧）は国名にする。
+ * 入力: location(APIが返した接続先)。
+ * 出力: 都市名、無ければ国名。
+ * 例: locationLabel({ city: "Tokyo", countryName: "Japan", ... }) // => "Tokyo"
+ *     locationLabel({ countryName: "Japan", ... }) // => "Japan"
+ */
+export function locationLabel(location: LocationItem): string {
+  return location.city ?? location.countryName;
+}
+
+/**
  * 目的: タブと検索語で接続先を絞り込む。
  * 入力: locations(APIが返したping昇順の接続先), tab("all"=全件, "favorites"=お気に入りのみ),
  *       query(検索語。前後の空白は無視し、空白区切りの各語がすべて、国コード・国名・都市名のいずれかに
@@ -19,7 +30,7 @@ export function filterLocations(locations: LocationItem[], tab: LocationTab, que
   const terms = query.toLowerCase().split(/\s+/).filter((term) => term.length > 0);
   return locations.filter((location) => {
     if (tab === "favorites" && !location.favorite) return false;
-    const haystack = `${location.country} ${location.countryName} ${location.city}`.toLowerCase();
+    const haystack = `${location.country} ${location.countryName} ${location.city ?? ""}`.toLowerCase();
     return terms.every((term) => haystack.includes(term));
   });
 }

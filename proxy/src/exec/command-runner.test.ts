@@ -75,6 +75,46 @@ function writeLoginLikeScript(markerFile: string): string {
   return scriptPath;
 }
 
+describe("runCommand の stdin", () => {
+  it("stdinを子プロセスの標準入力へ渡して閉じる（パスワード入力型ログインの再現）", async () => {
+    // getpassがTTY無しで標準入力へフォールバックし、パスワード→2FAコードの順に読む挙動を、sh のreadで再現する。
+    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+    const scriptPath = join(dir, "reads-stdin.sh");
+    writeFileSync(
+      scriptPath,
+      ["#!/bin/sh", "read -r first", "read -r second", 'echo "first=$first second=$second"', "exit 0"].join("\n"),
+    );
+    chmodSync(scriptPath, 0o755);
+
+    const result = await runCommand(scriptPath, [], 3000, { stdin: "secret-pass\n123456\n" });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("first=secret-pass second=123456");
+  });
+
+  it("stdin未指定なら標準入力は即EOFで、読み取り待ちでハングしない", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+    const scriptPath = join(dir, "reads-eof.sh");
+    writeFileSync(scriptPath, ["#!/bin/sh", 'if read -r line; then echo "got=$line"; else echo "eof"; fi'].join("\n"));
+    chmodSync(scriptPath, 0o755);
+
+    const result = await runCommand(scriptPath, [], 3000);
+
+    expect(result.stdout).toContain("eof");
+  });
+
+  it("CLIが入力を読まずに終了しても（EPIPE）、例外にならず終了コードを返す", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+    const scriptPath = join(dir, "ignores-stdin.sh");
+    writeFileSync(scriptPath, ["#!/bin/sh", "exit 3"].join("\n"));
+    chmodSync(scriptPath, 0o755);
+
+    const result = await runCommand(scriptPath, [], 3000, { stdin: "x".repeat(4000) });
+
+    expect(result.exitCode).toBe(3);
+  });
+});
+
 describe("runDetachableCommand", () => {
   it("completionPatternに一致した時点でexitCode=nullとして応答し、プロセスはバックグラウンドで継続する", async () => {
     const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-marker-"));

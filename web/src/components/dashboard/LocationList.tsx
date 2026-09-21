@@ -6,6 +6,7 @@ import { useState } from "react";
 import { filterLocations, type LocationItem, type LocationTab } from "../../locations/location-filter";
 import type { ErrorContent } from "../../notifications/describe-api-error";
 import { LocationRow } from "./LocationRow";
+import { RestrictionNote } from "./RestrictionNote";
 
 interface Props {
   locations: LocationItem[];
@@ -19,6 +20,12 @@ interface Props {
   onSelect: (locationId: string) => void;
   onRefresh: () => void;
   onToggleFavorite: (locationId: string, favorite: boolean) => void;
+  // 接続先の一覧そのものが使えない理由（capabilityの`locationList`が不可のとき）。指定されると一覧・タブ・
+  // 絞り込みを出さず、この理由文の枠だけを表示する（一覧を取得しない。webserver/requirements.md「操作の制限表示」）。
+  unavailableReason?: string;
+  // ★（お気に入り）・「再計測」を操作できない理由。指定されていれば該当ボタンを無効化して理由を表示する。
+  favoritesDisabledReason?: string;
+  refreshDisabledReason?: string;
 }
 
 const TAB_LABELS: Record<LocationTab, string> = { all: "すべて", favorites: "お気に入り" };
@@ -34,6 +41,9 @@ export function LocationList({
   onSelect,
   onRefresh,
   onToggleFavorite,
+  unavailableReason,
+  favoritesDisabledReason,
+  refreshDisabledReason,
 }: Props) {
   const [tab, setTab] = useState<LocationTab>("all");
   const [query, setQuery] = useState("");
@@ -41,7 +51,12 @@ export function LocationList({
   const visible = filterLocations(locations, tab, query);
   const favoriteCount = locations.filter((location) => location.favorite).length;
   const counts: Record<LocationTab, number> = { all: locations.length, favorites: favoriteCount };
+  // どの接続先にもping値が無いプロバイダ（国単位の一覧のみ等）では、ping列を出さない。
+  const showPing = locations.some((location) => location.pingMs !== undefined);
 
+  if (unavailableReason !== undefined) {
+    return <RestrictionNote message={unavailableReason} />;
+  }
   if (isLoading) {
     return <p className="hint">接続先を取得中...</p>;
   }
@@ -80,10 +95,17 @@ export function LocationList({
             </button>
           ))}
         </div>
-        <button type="button" disabled={isRefreshing} onClick={onRefresh}>
+        <button
+          type="button"
+          disabled={isRefreshing || refreshDisabledReason !== undefined}
+          aria-describedby={refreshDisabledReason === undefined ? undefined : "refresh-restriction"}
+          onClick={onRefresh}
+        >
           {isRefreshing ? "計測中..." : "再計測"}
         </button>
       </div>
+      <RestrictionNote id="refresh-restriction" message={refreshDisabledReason} />
+      <RestrictionNote message={favoritesDisabledReason} />
       <input
         type="search"
         aria-label="接続先を絞り込み"
@@ -109,6 +131,8 @@ export function LocationList({
                 selected={location.id === selectedId}
                 current={location.id === currentId}
                 disabled={disabled}
+                showPing={showPing}
+                favoriteDisabledReason={favoritesDisabledReason}
                 onSelect={() => onSelect(location.id)}
                 onToggleFavorite={() => onToggleFavorite(location.id, !location.favorite)}
               />

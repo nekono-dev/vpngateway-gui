@@ -1,12 +1,25 @@
-// 責務: ダッシュボードが表示する「接続状態」と「透過ゲートウェイ稼働状況」を、1つの5秒ポーリングで
-// まとめて取得する（wbs/phase5.md「既存の5秒ポーリングに合流」）。API呼び出しは生成クライアントのみを使う。
+// 責務: ダッシュボードが表示する「接続状態」「透過ゲートウェイ稼働状況」「ログイン状態」「操作ごとの実行可否」を、
+// 1つの5秒ポーリングでまとめて取得する（wbs/phase5.md「既存の5秒ポーリングに合流」、wbs/phase9.md）。
+// API呼び出しは生成クライアントのみを使う。
 
-import { getV1Connection, getV1ConnectionGateway } from "../generated/api/default/default";
-import type { GetV1Connection200, GetV1ConnectionGateway200 } from "../generated/api/endpoints.schemas";
+import {
+  getV1Connection,
+  getV1ConnectionCapabilities,
+  getV1ConnectionGateway,
+  getV1Session,
+} from "../generated/api/default/default";
+import type {
+  GetV1Connection200,
+  GetV1ConnectionCapabilities200,
+  GetV1ConnectionGateway200,
+  GetV1Session200,
+} from "../generated/api/endpoints.schemas";
 import { usePolling } from "./usePolling";
 
 export type ConnectionState = GetV1Connection200;
 export type GatewayStatus = GetV1ConnectionGateway200;
+export type SessionState = GetV1Session200;
+export type CapabilitiesState = GetV1ConnectionCapabilities200["capabilities"];
 
 export interface DashboardState {
   // 各部分は独立に成否を持つ。片方の取得失敗で、もう片方の表示（および古い値の残存）に影響させないため。
@@ -14,6 +27,10 @@ export interface DashboardState {
   connectionError: string | undefined;
   gateway: GatewayStatus | undefined;
   gatewayError: string | undefined;
+  // ログイン方式・ログイン状態・プラン。取得失敗時はundefined（ログイン導線は従来どおりの表示になる）。
+  session: SessionState | undefined;
+  // 操作ごとの実行可否。取得失敗時はundefined（判定できないことを理由に操作を塞がない）。
+  capabilities: CapabilitiesState | undefined;
 }
 
 /**
@@ -36,12 +53,14 @@ async function settle<T>(
 }
 
 /**
- * 目的: 接続状態と稼働状況を並行取得する。
+ * 目的: 接続状態・稼働状況・ログイン状態・操作の実行可否を並行取得する。
  * 入力: なし。
- * 出力: DashboardState。失敗はthrowせず、各部分のエラー文言（connectionError/gatewayError）へ格納する。
+ * 出力: DashboardState。失敗はthrowせず、接続状態・稼働状況はエラー文言（connectionError/gatewayError）へ格納する。
+ *       ログイン状態・実行可否は、失敗時に値をundefinedにするだけで、利用者向けのエラーは出さない
+ *       （補助情報であり、取得できなくても操作は従来どおり行えるため）。
  */
 async function fetchDashboardState(): Promise<DashboardState> {
-  const [connection, gateway] = await Promise.all([
+  const [connection, gateway, session, capabilities] = await Promise.all([
     settle<ConnectionState>(
       () => getV1Connection(),
       (status) => `接続状態の取得に失敗しました (status: ${status})`,
@@ -50,12 +69,22 @@ async function fetchDashboardState(): Promise<DashboardState> {
       () => getV1ConnectionGateway(),
       (status) => `稼働状況の取得に失敗しました (status: ${status})`,
     ),
+    settle<SessionState>(
+      () => getV1Session(),
+      (status) => `ログイン状態の取得に失敗しました (status: ${status})`,
+    ),
+    settle<GetV1ConnectionCapabilities200>(
+      () => getV1ConnectionCapabilities(),
+      (status) => `操作の実行可否の取得に失敗しました (status: ${status})`,
+    ),
   ]);
   return {
     connection: connection.value,
     connectionError: connection.error,
     gateway: gateway.value,
     gatewayError: gateway.error,
+    session: session.value,
+    capabilities: capabilities.value?.capabilities,
   };
 }
 

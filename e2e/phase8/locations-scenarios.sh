@@ -14,7 +14,7 @@ GW_IP=$(gw_lan_ip)
 BASE="http://$GW_IP:8080"
 FAILS=0
 gui() { node "$HERE/webgui-locations.mjs" "$BASE" "$@" || FAILS=$((FAILS+1)); }
-api() { curl -s -m 60 -X "$1" -H 'content-type: application/json' ${3:+-d "$3"} "$BASE/api$2"; }
+api() { curl -s -m 60 -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} "$BASE/api$2"; }
 check() { # check <説明> <条件が真のときexit 0となるコマンド...>
   local desc=$1; shift
   if "$@"; then echo "PASS: $desc"; else echo "FAIL: $desc"; FAILS=$((FAILS+1)); fi

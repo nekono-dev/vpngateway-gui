@@ -37,6 +37,18 @@ describe("describeApiError", () => {
       detail: undefined,
     });
   });
+
+  it("403（プラン制限）は、通常の実行失敗と区別してプランが原因であることを示す", () => {
+    const content = describeApiError(403, { error: "operation_restricted", message: "現在のプランでは利用できない操作です", exitCode: 2, stderr: "not available on the free plan" }, "接続に失敗しました");
+    expect(content.summary).toBe("接続に失敗しました（現在のプランでは利用できない操作です）");
+    expect(content.detail).toBe("not available on the free plan");
+  });
+
+  it("501（プロバイダ非対応）は、非対応であることを示す", () => {
+    expect(describeApiError(501, { error: "operation_unsupported" }, "ログアウトに失敗しました").summary).toBe(
+      "ログアウトに失敗しました（このVPNプロバイダでは利用できない操作です）",
+    );
+  });
 });
 
 describe("describeThrownError", () => {

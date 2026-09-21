@@ -75,14 +75,23 @@ interface ExecRequestBody {
   // 設定されている場合、プロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、
   // プロセスはバックグラウンドで実行継続させる（`login`アクション用、command-runner.ts参照）。
   completionPattern?: string;
+  // 設定されている場合、子プロセスの標準入力へ書き込んで閉じる（ユーザー名・パスワード入力型のログイン用）。
+  // 秘密情報を含みうるため内容はログへ出さない（有無のみ記録する）。completionPatternとは併用できない
+  // （その場合は無視する。バックグラウンド継続する`login`はURL提示型のみで入力を要しないため）。
+  stdin?: string;
 }
+
+// stdinの最大バイト数。想定外の巨大な入力でプロセス・メモリを消費させないための上限
+// （パスワード最大512文字＋2FAコード程度で足りる）。
+const MAX_STDIN_BYTES = 4096;
 
 /**
  * 目的: unknownな入力(JSONパース結果)がExecRequestBodyの最小要件を満たすかを検証する。
  * 入力: JSON.parse()の戻り値（unknown）。
  * 出力: 形状が正しければ true（TypeScriptの型ガードとしても機能する）。
  * 期待する入力形状: vendor/binaryが非空文字列、resolvedArgvが文字列配列、timeoutMsが正の数値、
- *                completionPatternは省略可能だが指定時は文字列。
+ *                completionPatternは省略可能だが指定時は文字列。stdinは省略可能だが指定時は
+ *                MAX_STDIN_BYTES以下の文字列。
  */
 function isValidExecRequestBody(value: unknown): value is ExecRequestBody {
   if (typeof value !== "object" || value === null) return false;
@@ -96,7 +105,8 @@ function isValidExecRequestBody(value: unknown): value is ExecRequestBody {
     body.resolvedArgv.every((item) => typeof item === "string") &&
     typeof body.timeoutMs === "number" &&
     body.timeoutMs > 0 &&
-    (body.completionPattern === undefined || typeof body.completionPattern === "string")
+    (body.completionPattern === undefined || typeof body.completionPattern === "string") &&
+    (body.stdin === undefined || (typeof body.stdin === "string" && Buffer.byteLength(body.stdin, "utf8") <= MAX_STDIN_BYTES))
   );
 }
 
@@ -161,13 +171,15 @@ async function handleExec(req: IncomingMessage, res: ServerResponse): Promise<vo
           });
         },
       })
-    : await runCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs);
+    : await runCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs, { stdin: parsed.stdin });
+  // stdinは秘密情報（パスワード等）を含みうるため、内容は記録せず有無のみ残す。
   logAuditEvent({
     event: "exec_completed",
     vendor: parsed.vendor,
     binary: parsed.binary,
     argv: parsed.resolvedArgv,
     exitCode: result.exitCode,
+    ...(parsed.stdin !== undefined ? { stdinProvided: true } : {}),
   });
   sendJson(res, 200, result);
 

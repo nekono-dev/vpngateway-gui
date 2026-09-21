@@ -33,33 +33,33 @@ VPNプロバイダ（AdGuard VPN・Proton VPN等）の機能差・プラン制�
 - [x] 要件定義・設計・タスク一覧の作成（`specs/`各ファイル、本ファイル、`phase10.md`）。
 
 ### proxy
-- [ ] `POST /exec`の`stdin`対応（`runCommand`、入力検証、内容をログへ出さない）。
-- [ ] `EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）。
-- [ ] モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`）と`docker-compose.e2e-mock.yml`。
-- [ ] `proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`.env`の`VPN_PROVIDER`（既定`adguardvpn`）で切り替え可能にする（プロファイルを`api/config/profiles/<プロバイダ>.json`へ移動）。
+- [x] `POST /exec`の`stdin`対応（`runCommand`、入力検証、内容をログへ出さない）。
+- [x] `EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）。
+- [x] モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`）と`docker-compose.e2e-mock.yml`。
+- [x] `proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`.env`の`VPN_PROVIDER`（既定`adguardvpn`）で切り替え可能にする（プロファイルを`api/config/profiles/<プロバイダ>.json`へ移動）。
 
 ### api
-- [ ] プロファイルスキーマ拡張と必須アクションの組合せ検証。
-- [ ] オペレーションの実行可否の評価（原因の優先順・依存継承）。
-- [ ] `account`判定（30秒キャッシュ・同時要求集約）と`GET /v1/session`。
-- [ ] 実行失敗からの学習（`restrictedPattern`→`403 operation_restricted`）。
-- [ ] `GET /v1/connection/capabilities`。
-- [ ] `POST /v1/session`の`credentials`方式（入力検証・stdin・秘密の伏字化）、`DELETE /v1/session`。
-- [ ] `PUT /v1/connection`の`connectAuto`対応（`locationId`省略時）、`501`。
-- [ ] 接続先一覧パーサーの汎用化、接続状態出力解釈のプロファイル化。
-- [ ] 単体・統合テスト。
-- [ ] AdGuard VPNプロファイルへ`account`（`license`）を追加（無料版・未ログイン時の出力を実機で確認したうえで）。
+- [x] プロファイルスキーマ拡張と必須アクションの組合せ検証。
+- [x] オペレーションの実行可否の評価（原因の優先順・依存継承）。
+- [x] `account`判定（30秒キャッシュ・同時要求集約）と`GET /v1/session`。
+- [x] 実行失敗からの学習（`restrictedPattern`→`403 operation_restricted`）。
+- [x] `GET /v1/connection/capabilities`。
+- [x] `POST /v1/session`の`credentials`方式（入力検証・stdin・秘密の伏字化）、`DELETE /v1/session`。
+- [x] `PUT /v1/connection`の`connectAuto`対応（`locationId`省略時）、`501`。
+- [x] 接続先一覧パーサーの汎用化、接続状態出力解釈のプロファイル化。
+- [x] 単体・統合テスト。
+- [x] AdGuard VPNプロファイルへ`account`（`license`）を追加（無料版・未ログイン時の出力を実機で確認したうえで）。
 
 ### web
-- [ ] orval再生成。
-- [ ] `capabilities/capability-state.ts`、`useDashboardPolling`への追加。
-- [ ] `SessionCard`・`LoginForm`・`RestrictionNote`、`LocationList`・`ConnectionActions`の制限対応。
-- [ ] `403`/`501`のトースト文言と再取得。
-- [ ] コンポーネントテスト。
+- [x] orval再生成。
+- [x] `capabilities/capability-state.ts`、`useDashboardPolling`への追加。
+- [x] `SessionCard`・`LoginForm`・`RestrictionNote`、`LocationList`・`ConnectionActions`の制限対応。
+- [x] `403`/`501`のトースト文言と再取得。
+- [x] コンポーネントテスト。
 
 ### 検証
-- [ ] モックプロバイダCLIでのE2E（`e2e/phase9/`。無料版／有料版／未ログイン、`credentials`ログイン（2FAあり/なし）、403学習、パスワードがログ・応答に残らないこと）。
-- [ ] 実VPN（AdGuard VPN）でのリグレッション（`e2e/phase8/`・`e2e/phase5/`が従来どおり通ること。`phase5`の`flow`等は既知の陳腐化のため対象外）。
+- [x] モックプロバイダCLIでのE2E（`e2e/phase9/`。無料版／有料版／未ログイン、`credentials`ログイン（2FAあり/なし）、403学習、パスワードがログ・応答に残らないこと）。
+- [x] 実VPN（AdGuard VPN）でのリグレッション（`e2e/phase8/`・`e2e/phase5/`が従来どおり通ること。`phase5`の`flow`等は既知の陳腐化のため対象外）。
 
 ## 完了基準
 
@@ -72,9 +72,12 @@ VPNプロバイダ（AdGuard VPN・Proton VPN等）の機能差・プラン制�
 
 ## 検証手法
 
-（実施後に記載する。`e2e/README.md`へ`phase9`の手順を追記する。）
+- **単体・統合テスト**: `npm test`（proxy 94件・api 184件・web 83件）。API統合テストは、Proton VPN相当（無料/有料・未ログイン）とAdGuard VPNのプロファイルで、プロキシ通信をモックして実行可否・403学習・501・ログイン（秘密が引数・監査ログ・応答に残らないこと）を検証する。
+- **モックプロバイダCLIでのE2E**（開発ホストのdocker compose。実VPN不要）: `bash e2e/phase9/mock-scenarios.sh`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コードを返すモック（`proxy/mock-cli/protonvpn-mock.mjs`）を`docker-compose.e2e-mock.yml`でproxyへ差し込み、Web UIをPlaywrightで操作する。開発ホストへ`docker compose`プラグイン（v2.40.3）が必要（`!override`を使うため。v2.4.1の`docker-compose`では動かない）。
+- **実VPN（AdGuard VPN）でのリグレッション**: 検証環境（`ubuntu@192.168.3.240`）へ`GW_MODE=ssh bash e2e/lxc/sync.sh`で展開し、`GW_MODE=ssh bash e2e/phase8/locations-scenarios.sh`（従来のE2E）を実行。あわせて`GET /v1/session`・`GET /v1/connection/capabilities`の実応答とダッシュボードの表示を確認。
 
 ## 次フェーズへの申し送り
 
-- （実装しながら追記する）
+- （検証結果）モックE2E 36項目PASS（未ログイン・無料アカウント（一覧が理由の枠・自動接続）・有料アカウント（国単位の一覧・ping無し・再計測は理由付きで無効・接続先変更）・2FAあり/なし・実行失敗からの学習（403→一覧が理由の枠へ）・パスワード/2FAコードがDOM・コンテナのログ・監査ログに残らない）。実VPN（AdGuard PREMIUM）で`GET /v1/session`が`loggedIn:true, plan: premium`、capabilitiesが従来操作を全て可（`connectAuto`のみ`unsupported`）、既存E2E（`e2e/phase8/`）46項目PASS。
+- （実装中に判明した点）(1)`POST /v1/session`のボディ省略可は、`Type.Optional`ではFastifyが「body must be object」で400にするため`Type.Union([ボディ, Type.Null()])`にした（生成クライアントはURL提示型でnullを送る）。(2)接続先の指定（`connectToLocation`）と一覧（`locationList`）は相互依存とした（実行失敗から`connectToLocation`の制限だけを学習したとき、一覧が使えるまま残って選べても接続できない状態になったため。E2Eで判明）。(3)`e2e/phase*/…scenarios.sh`の`api()`ヘルパーがボディ無しのDELETEにも`content-type: application/json`を付けていたため、Fastifyが空ボディで失敗（500）し、お気に入りの事前解除が働かなかった（既存のE2Eの潜在的な不具合。ボディがあるときだけ付けるよう修正）。(4)Fastifyの4xxクライアントエラー（空JSONボディ等）が`internal_error`（500）になる既存の挙動は今回は変更していない。
 - 既知の未確認事項: AdGuard VPN無料版の制限（`list-locations`の返す範囲、接続失敗時の出力）は、検証環境のアカウントがPREMIUMのため実機未確認。全件を返して接続時に失敗する場合は、プランごとの接続先の許可条件（例: `plans[].allowedLocations`）を追加する拡張が必要。
