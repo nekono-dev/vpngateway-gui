@@ -9,6 +9,7 @@ import { listenOnUnixSocket } from "./lib/socket-bootstrap.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController, type GatewaySettings } from "./network/gateway-controller.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
+import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 
 const SOCKET_PATH = process.env.CTL_SOCKET_PATH ?? "/var/run/vpngw-ctl/exec.sock";
 const SOCKET_MODE = 0o770;
@@ -21,12 +22,27 @@ const LAN_IFACE = process.env.LAN_IFACE || undefined;
 const WAN_IFACE = process.env.WAN_IFACE || LAN_IFACE;
 const CONNECTION_POLL_INTERVAL_MS = Number(process.env.CONNECTION_POLL_INTERVAL_MS ?? 10_000);
 
+// 明示的プロキシ（3proxy）のLAN向け待ち受けポート。HTTPの既定を8080にしないのは、Web UI（webコンテナが
+// ホストの8080を公開）と衝突するため。いずれもhostネットワークのためホストのLAN側へ直接bindする。
+const EXPLICIT_SOCKS_PORT = Number(process.env.EXPLICIT_SOCKS_PORT ?? 1080);
+const EXPLICIT_HTTP_PORT = Number(process.env.EXPLICIT_HTTP_PORT ?? 3128);
+
 const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE);
+const explicitProxyController = new ExplicitProxyController({
+  binaryPath: process.env.EXPLICIT_PROXY_BINARY ?? "/usr/local/bin/3proxy",
+  configPath: process.env.EXPLICIT_PROXY_CONFIG ?? "/tmp/vpngwgui/3proxy.cfg",
+  socksPort: EXPLICIT_SOCKS_PORT,
+  httpPort: EXPLICIT_HTTP_PORT,
+  onEvent: (event) => logAuditEvent(event),
+});
 
 // 内部プロトコルのリクエスト形状（OpenAPI非公開）。apiserver/design.md「設定反映(`/settings`)内部プロトコル」参照。
-// APIサーバはユーザ向け設定全体を送信するが、プロキシが実際に用いるのはkillSwitch/transparentGatewayEnabled
-// のみ（explicitProxyEnabled等の他フィールドはPhase 4以降で参照する）。
+// APIサーバはユーザ向け設定全体を送信する。プロキシが用いるのはkillSwitch/transparentGatewayEnabled
+// （透過ゲートウェイ）とexplicitProxyEnabled/explicitProxyAllowedCidrs（明示的プロキシ）。
+// excludedDomainsはPhase 6で参照する。
 interface SettingsRequestBody extends GatewaySettings {
+  explicitProxyEnabled: boolean;
+  explicitProxyAllowedCidrs: string[];
   [key: string]: unknown;
 }
 
@@ -34,12 +50,20 @@ interface SettingsRequestBody extends GatewaySettings {
  * 目的: unknownな入力(JSONパース結果)がSettingsRequestBodyの最小要件を満たすかを検証する。
  * 入力: JSON.parse()の戻り値（unknown）。
  * 出力: 形状が正しければ true（TypeScriptの型ガードとしても機能する）。
- * 期待する入力形状: killSwitch/transparentGatewayEnabledがともにboolean。他フィールドは無視する。
+ * 期待する入力形状: killSwitch/transparentGatewayEnabled/explicitProxyEnabledがboolean、
+ *                explicitProxyAllowedCidrsが文字列配列。他フィールドは無視する。個々のCIDRの形式は
+ *                ここでは検証せず、設定ファイル生成時（config-builder.ts）に検証する。
  */
 function isValidSettingsRequestBody(value: unknown): value is SettingsRequestBody {
   if (typeof value !== "object" || value === null) return false;
   const body = value as Record<string, unknown>;
-  return typeof body.killSwitch === "boolean" && typeof body.transparentGatewayEnabled === "boolean";
+  return (
+    typeof body.killSwitch === "boolean" &&
+    typeof body.transparentGatewayEnabled === "boolean" &&
+    typeof body.explicitProxyEnabled === "boolean" &&
+    Array.isArray(body.explicitProxyAllowedCidrs) &&
+    body.explicitProxyAllowedCidrs.every((cidr) => typeof cidr === "string")
+  );
 }
 
 // 内部プロトコルのリクエスト形状（OpenAPI非公開）。apiserver/design.md「プロキシとの内部通信仕様」参照。
@@ -177,6 +201,12 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
     killSwitch: parsed.killSwitch,
     transparentGatewayEnabled: parsed.transparentGatewayEnabled,
   });
+  // 明示的プロキシの起動・停止は透過ゲートウェイのnft再構成とは独立して行う。同期的に状態を更新し、
+  // プロセスの起動・停止イベントは監査ログへ出力される（ExplicitProxyControllerのonEvent）。
+  explicitProxyController.applySettings({
+    enabled: parsed.explicitProxyEnabled,
+    allowedCidrs: parsed.explicitProxyAllowedCidrs,
+  });
   // APIの定期再通知（変更なし）のたびに監査ログが埋まらないよう、実際に再構成した場合のみ記録する。
   if (outcome.reconciled) {
     logAuditEvent({
@@ -193,7 +223,10 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/status") {
     // 副作用なしの読み取り専用。メモリ上の状態のみを返す（proxyserver/design.md「`GET /status`」）。
-    sendJson(res, 200, { transparentGateway: gatewayController.getStatus() });
+    sendJson(res, 200, {
+      transparentGateway: gatewayController.getStatus(),
+      explicitProxy: explicitProxyController.getStatus(),
+    });
     return;
   }
   if (req.method === "POST" && req.url === "/exec") {

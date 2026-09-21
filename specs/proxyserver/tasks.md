@@ -55,11 +55,13 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 
 ## 明示的プロキシモード (Phase 4以降)
 
-- [ ] 3proxy設定ファイルのテンプレート作成
-- [ ] ユーザ向け設定変更時の3proxy設定ファイル生成処理実装
-- [ ] `child_process.spawn` による3proxy起動・監視・異常終了時再起動実装
-- [ ] `explicitProxyEnabled` 切替による起動/停止実装
-- [ ] `explicitProxyAllowedCidrs` の設定反映実装
+- [x] 3proxy設定ファイルのテンプレート作成（`proxy/src/explicit-proxy/config-builder.ts`。2026-09-21）
+- [x] ユーザ向け設定変更時の3proxy設定ファイル生成処理実装（`POST /settings`→`ExplicitProxyController.applySettings()`。CIDR形式の検証込み。2026-09-21）
+- [x] `child_process.spawn` による3proxy起動・監視・異常終了時再起動実装（`proxy/src/explicit-proxy/explicit-proxy-controller.ts`。2026-09-21）
+- [x] `explicitProxyEnabled` 切替による起動/停止実装（2026-09-21）
+- [x] `explicitProxyAllowedCidrs` の設定反映実装（2026-09-21）
+- [x] 3proxyのDockerイメージへの同梱（`proxy/Dockerfile`の`proxy-build`ステージ。ソースからビルド。2026-09-21）
+- [x] 内部エンドポイント`GET /status`への`explicitProxy`追加（2026-09-21）
 
 ## 稼働状況取得 (Phase 5)
 
@@ -86,8 +88,8 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 
 ## 障害対応
 
-- [ ] 3proxyクラッシュループ時の指数バックオフ実装
-- [ ] APIサーバへのエラー状態通知実装
+- [x] 3proxyクラッシュループ時の指数バックオフ実装（1秒→上限60秒。連続3回で`crashLoop`報告。2026-09-21）
+- [x] APIサーバへのエラー状態通知実装（`GET /status`の`explicitProxy.state=crashLoop`をAPIが中継するpull方式。push経路は新設しない。理由はproxyserver/design.md「`GET /status`」。2026-09-21）
 - [x] コンテナ再起動時のnftables残骸確認・撤去処理実装（上記「透過ゲートウェイモード」参照。最初の`POST /settings`受信時に全撤去→再適用）
 
 ## テスト
@@ -95,7 +97,8 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 - [ ] nftablesルール適用/撤去の動作確認（実機・実nftableskernelでの検証が必要。ルール文字列組み立て・撤去→再適用の調停ロジック自体は`proxy/src/network/ruleset.test.ts`・`gateway-controller.test.ts`で単体テスト済みだが、実nftバイナリ・実カーネルでの動作は未検証。wbs/phase3.md「次フェーズへの申し送り」参照）
 - [ ] Kill Switch（ON/OFF双方）の動作確認（同上、ルール生成ロジックの単体テストのみ実施済み。実機でのLAN機器からの疎通確認は未実施）
 - [ ] UDS受信サーバの単体テスト（許可リスト外バイナリの拒否含む）
-- [ ] 透過ゲートウェイ／明示的プロキシ双方のE2E疎通確認
+- [x] 明示的プロキシのE2E疎通確認（`e2e/phase4/proxy-scenarios.sh`。許可/拒否CIDR・有効無効・強制終了・crashLoop・VPN接続との独立・Web UI・コンテナ再起動を実機で確認。2026-09-21）
+- [ ] 透過ゲートウェイと明示的プロキシを同時に有効にした状態での長時間・高負荷の安定性確認（未実施）
 
 # 将来課題
 

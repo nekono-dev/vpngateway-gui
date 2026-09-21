@@ -20,6 +20,9 @@ specs各ファイルの「将来課題」節に列挙された、初回リリー
 - [ ] 監査ログの長期保存・ローテーション方針の確定・実装。
 
 ### プロキシ運用強化（proxyserver/tasks.md）
+- [ ] 明示的プロキシ（3proxy）へのKill Switch適用。現状のKill Switchは`forward`チェーンのみのため、VPN未接続の間、`killSwitch=true`でも明示的プロキシ経由の通信は実回線から直接出る（Phase 4の実機検証で実測。`proxyserver/design.md`「Kill Switchの対象外」）。3proxy専用のUIDで起動し、`inet vpngwgui`の`output`チェーンでそのUIDのVPN未接続時の発信をdropする案がある（現状は同一UID`vpngwgui`で起動しているため要分離）。
+- [ ] 明示的プロキシのユーザ名・パスワード認証（現状は送信元IPのCIDRのみ）。
+- [ ] 設定変更時の3proxy再起動（SIGTERMから終了まで約5秒応答が途切れる）の短縮。3proxyの設定再読み込み（SIGUSR1）で無停止化できるか検討する。
 - [ ] IPv6対応（現行設計はIPv4のNAT/FORWARDのみを前提としているため、必要性を再評価の上対応）。
 - [ ] 複数VPNベンダー・複数トンネルの同時稼働可否の検討。
 
@@ -28,7 +31,7 @@ specs各ファイルの「将来課題」節に列挙された、初回リリー
 - [ ] WebSocket等によるリアルタイム状態通知への切替（ポーリング間隔・サーバ負荷が問題になった場合に再検討）。
 
 ### テスト・品質
-- [ ] E2Eテストの拡充（Phase1〜6で個別に確認した手順の自動化）。
+- [ ] E2Eテストの拡充（Phase1〜6で個別に確認した手順の自動化）。Phase 8で「接続国」セレクトが廃止された結果、`e2e/phase5/webgui-dashboard.mjs`のうち`flow`・`error-422`・`error-502`が旧UIを前提に失敗している（Phase 4の検証中に判明）。Phase 8の接続先リストに合わせて更新すること。
 - [ ] Phase1で許容した設定ストアの単純read-modify-write方式（同時書き込み競合を考慮しない）の見直し要否の判断。
 
 ## 完了基準

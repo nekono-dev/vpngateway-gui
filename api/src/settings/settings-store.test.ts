@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 const file = join(mkdtempSync(join(tmpdir(), "vpngwgui-settings-")), "settings.json");
 process.env.SETTINGS_FILE = file;
 
-const { getSettings, updateSettings } = await import("./settings-store.js");
+const { getSettings, updateSettings, SettingsValidationError } = await import("./settings-store.js");
 
 describe("settings-store", () => {
   it("Phase 8で廃止したdefaultCountryが保存ファイルに残っていても、読み込みで無視する", () => {
@@ -26,5 +26,19 @@ describe("settings-store", () => {
     updateSettings({ killSwitch: false });
     expect(JSON.parse(readFileSync(file, "utf8"))).not.toHaveProperty("defaultCountry");
   });
-});
 
+  it("explicitProxyAllowedCidrsにIPv4 CIDRを保存できる", () => {
+    const next = updateSettings({ explicitProxyAllowedCidrs: ["192.168.3.0/24", "10.0.0.0/8"] });
+    expect(next.explicitProxyAllowedCidrs).toEqual(["192.168.3.0/24", "10.0.0.0/8"]);
+    expect(getSettings().explicitProxyAllowedCidrs).toEqual(["192.168.3.0/24", "10.0.0.0/8"]);
+  });
+
+  it.each(["192.168.3.0", "192.168.3.0/33", "fe80::/64", "192.168.3.0/24\nallow * 0.0.0.0/0", "example.com"])(
+    "explicitProxyAllowedCidrsに不正な値 %j を含む更新は拒否し、保存済みの値を変えない",
+    (invalid) => {
+      updateSettings({ explicitProxyAllowedCidrs: ["192.168.3.0/24"] });
+      expect(() => updateSettings({ explicitProxyAllowedCidrs: ["10.0.0.0/8", invalid] })).toThrow(SettingsValidationError);
+      expect(getSettings().explicitProxyAllowedCidrs).toEqual(["192.168.3.0/24"]);
+    },
+  );
+});

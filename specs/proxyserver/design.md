@@ -109,6 +109,30 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
   2. `child_process.spawn` で3proxyを起動・監視し、異常終了時は再起動する。
   3. VPN接続状態の変化に伴う3proxyの再起動は不要（ルーティングに自動追従するため）。設定変更（ポート変更等）時のみ再起動する。
 
+## 実装（Phase 4）
+
+- **同梱方法**: Alpine 3.24のmain/communityリポジトリに3proxyパッケージが無く（edge/testingのみ）、testingのバイナリは実行ステージのlibcと版が食い違いうるため、`proxy/Dockerfile`の専用ビルドステージで公式リリース（`THREEPROXY_VERSION`、動作確認済み0.9.5）のソースを`make -f Makefile.Linux`でビルドし、`/usr/local/bin/3proxy`のバイナリ1つだけを実行イメージへ渡す（動的リンクはmuslのみ）。ビルド時にGitHubへのネットワークアクセスが必要（実VPN CLIの取得と同じ）。
+- **待ち受けポート**: SOCKS5=`1080`、HTTP(CONNECT含む)=`3128`（環境変数`EXPLICIT_SOCKS_PORT`・`EXPLICIT_HTTP_PORT`で変更可）。HTTPの既定を`8080`としないのは、Web UI（webコンテナがホストの8080を公開）と衝突するため。`network_mode: host`のため、ホストの全インターフェースへbindする（LAN側IPへの限定はしない。接続の可否は下記の許可元CIDRのみで決まる）。
+- **設定ファイル**（`proxy/src/explicit-proxy/config-builder.ts`。既定の出力先`/tmp/vpngwgui/3proxy.cfg`、環境変数`EXPLICIT_PROXY_CONFIG`で変更可。一時ファイル→renameで原子的に書き出す）:
+  ```
+  auth iponly
+  allow * <CIDR>,<CIDR>...
+  deny *
+  socks -p1080
+  proxy -p3128
+  ```
+  認証は送信元IPのみ（`auth iponly`）。許可元CIDR以外は`deny *`で拒否する（SOCKS5は接続拒否、HTTPは403）。ユーザ名・パスワード認証は行わない（LAN限定運用。Phase 7の認証導入時に検討）。
+- **許可CIDRの検証**: CIDRは設定ファイルの行へ埋め込むため、改行等による設定行の注入（例: `192.168.3.0/24\nallow * 0.0.0.0/0`）で許可範囲が意図せず拡大しないよう、APIサーバ（`PUT /v1/connection/config`。400で拒否、`api/src/settings/settings-store.ts`）とproxy（`buildExplicitProxyConfig`。例外→`error`状態）の両方でIPv4 CIDR形式（`a.b.c.d/n`）を厳密に検証する。プレフィックス長を省略した単一ホスト表記（`192.168.3.5`）は受理しない（`/32`を明示する）。IPv6は対象外。
+- **許可CIDRが空**の場合は3proxyを起動せず`unconfigured`とする（全拒否の設定で起動しても利用者にとって意味が無く、全許可にフォールバックするのは危険なため）。
+- **プロセス監視**（`explicit-proxy-controller.ts`の`ExplicitProxyController`。透過ゲートウェイの`GatewayController`と同じく「いつ起動・停止するか」の調停のみを担う）:
+  - `POST /settings`受信ごとに`applySettings()`を呼ぶ。APIは設定を10秒周期で再通知するため、前回反映済みと同じ内容（有効/無効・CIDR列が同一）なら何もしない（不要な再起動でプロキシ接続を切らない）。設定ファイルの生成・書き込みに失敗した場合は`error`状態とし、次回の再通知で再試行する。
+  - 設定変更時は旧プロセスへSIGTERMを送り、**終了を待ってから**新設定で起動する（ポート競合の回避）。3proxyはSIGTERMから終了まで約5秒かかる（実機で計測）ため、SIGKILLへ切り替えるまでの猶予は10秒とする。したがって設定変更中は最大約5秒プロキシが応答しない。意図的な終了は異常終了として数えない。
+  - 異常終了（`kill -9`等）は指数バックオフ（1秒→2秒→4秒…、上限60秒）で再起動する。連続3回の異常終了で`crashLoop`と報告する（再起動は試み続ける）。プロセスが30秒以上生き続ければ安定とみなし、連続失敗回数・バックオフをリセットして`crashLoop`が解消する。設定変更は新しい状況とみなし、バックオフ待ちを打ち切って即座に新設定で起動する。
+  - 起動失敗（バイナリ不在等で`exit`が来ず`error`イベントのみの場合）も異常終了と同じ扱いとする。
+  - 3proxyの標準出力・標準エラーはコンテナのログへそのまま流す。3proxyの接続ログは有効化しない（通信内容の記録を避ける）。起動・停止・異常終了・crashLoopは監査ログ（`explicit_proxy_started`/`explicit_proxy_stopped`/`explicit_proxy_crashed`/`explicit_proxy_crash_loop`/`explicit_proxy_config_error`）へ記録する。
+- **VPN接続状態との独立**: VPNの接続・切断・国変更で3proxyは再起動しない（実機でPID不変を確認）。3proxyはOSのルーティングに従って発信するため、VPN接続中は出口がVPN側になり、切断中は実回線から直接出る。
+- **Kill Switchの対象外（既知の制約）**: Kill Switchは`inet vpngwgui`の`forward`チェーン（透過ゲートウェイの転送）のみを制御する。明示的プロキシはホスト自身の発信（`output`）であるため、**VPN未接続の間は`killSwitch=true`でも実回線から直接インターネットへ抜ける**（実機で実測）。利用者が意図しない直接通信を避けたい場合は、VPN接続時のみプロキシを使う運用とする。対処（3proxy専用のUIDに対する`output`チェーンのdrop等）はPhase 7の課題とする。
+
 # ユーザ向け設定の反映方法
 
 | 設定項目 | 反映先 |
@@ -135,9 +159,10 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 
 具体的なリクエスト/レスポンス形状はapiserver/design.md「設定反映（`POST /settings`）内部プロトコル仕様」参照。プロキシ側の処理は以下の通り（実装: `proxy/src/server.ts`の`handleSettings`）。
 
-1. `killSwitch`・`transparentGatewayEnabled`のboolean形状のみを検証する（他フィールドは無視、Phase 4以降で利用予定）。
+1. `killSwitch`・`transparentGatewayEnabled`・`explicitProxyEnabled`のboolean、`explicitProxyAllowedCidrs`の文字列配列という形状のみを検証する（他フィールド（`excludedDomains`はPhase 6で利用予定）は無視。個々のCIDRの形式は設定ファイル生成時に検証する）。形状不正は400。
 2. `GatewayController.applySettings()`（`proxy/src/network/gateway-controller.ts`）へ渡し、現在のVPN接続インターフェース状態と合わせてnftルールセットを撤去→再適用する。
-3. 結果（`applied: boolean`）を応答し、監査ログへ記録する。
+3. `ExplicitProxyController.applySettings()`（`proxy/src/explicit-proxy/explicit-proxy-controller.ts`）へ渡し、3proxyを起動・再起動・停止する（上記「実装（Phase 4）」）。透過ゲートウェイのnft再構成とは独立して行う。
+4. 結果（`applied: boolean`。透過ゲートウェイのnft適用結果のみを表す）を応答し、監査ログへ記録する。
 
 ## `GET /status`（稼働状況取得、Phase 5で追加）
 
@@ -145,8 +170,9 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 
 - 情報源は`GatewayController`のメモリ上の状態（適用中の`killSwitch`/`transparentGatewayEnabled`、検出済みVPN IF名、`LAN_IFACE`有無）のみとし、状態取得のためにnft/ipコマンドを新たに実行しない（ポーリング頻度（5秒×閲覧者数）でsudo実行が発生するのを避けるため）。
 - したがって値は「proxyが最後に適用を試みた結果」であり、外部から`nft`で手動変更された場合の乖離は検知しない（Phase 7以降の課題）。
-- レスポンスは`{ "transparentGateway": { "state", "vpnInterface"?, "killSwitchBlocking" } }`（`GatewayController.getStatus()`）。`state`は`active`/`stopped`/`unconfigured`/`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）。設定受信前（プロセス起動直後）は既定設定に基づき`stopped`を返す。
-- Phase 4で3proxyの稼働状態（`explicitProxy`）を同レスポンスへ追加する。
+- レスポンスは`{ "transparentGateway": { "state", "vpnInterface"?, "killSwitchBlocking" }, "explicitProxy": { "state", "socksPort"?, "httpPort"?, "restartCount" } }`（`GatewayController.getStatus()`・`ExplicitProxyController.getStatus()`）。`transparentGateway.state`は`active`/`stopped`/`unconfigured`/`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）。設定受信前（プロセス起動直後）は既定設定に基づき`stopped`を返す。
+- `explicitProxy.state`は`active`（稼働中。一時的な再起動待ちを含む。`socksPort`・`httpPort`はこの状態のみ付く）/`stopped`（無効）/`unconfigured`（有効設定だが許可CIDRが空）/`crashLoop`（起動直後の異常終了を連続して繰り返している）/`error`（設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数（設定変更による意図的な再起動は含まない）。プロセスの実在確認のための外部コマンドは実行しない。
+- **異常状態のAPIへの通知経路**: `crashLoop`等は、APIサーバが`GET /v1/connection/gateway`のたびにこのエンドポイントを引いて中継する（pull方式）ことでUI・API利用者へ届く。proxy→apiへの能動的なpush用の経路（APIサーバ側の受信口）は新設しない: APIサーバは状態を持たない方針（apiserver/design.md）で、UIは5秒ポーリングにより最大約5秒で異常を表示でき、push経路を足すと内部プロトコルの信頼境界（proxyからapiへの経路は無い）を広げるため。異常は監査ログにも残る。
 
 # VPNベンダーCLIの追加方法
 
@@ -157,7 +183,8 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 # 障害時の挙動
 
 - VPN接続断検知時: 監視プロセスが `ip route get` 等でトンネル経路の消失を検知し、Kill Switch設定に従ってnftablesルールを即座に更新する（上記「Kill Switch」節参照）。
-- 3proxyプロセスの異常終了: 監視プロセスが検知し再起動する。連続的なクラッシュループの場合は再起動間隔を指数バックオフし、APIサーバへエラー状態を通知する（Phase 4で3proxy導入時に実装）。
+- 3proxyプロセスの異常終了: `ExplicitProxyController`が検知し再起動する。連続的なクラッシュループの場合は再起動間隔を指数バックオフし（上限60秒）、`GET /status`の`explicitProxy.state=crashLoop`としてAPI・Web UIへ通知する（上記「実装（Phase 4）」・「`GET /status`」。Phase 4で実装）。
+- プロキシコンテナ自体の再起動時: 3proxyもコンテナとともに停止し、APIの設定再通知（最大約10秒）で設定を受信した時点で自動的に再起動する（実機で確認）。
 - プロキシコンテナ自体の再起動時: **起動時にnftablesルールを撤去しない**。プロキシは自身のプロセス内メモリにのみ現在の`killSwitch`/`transparentGatewayEnabled`を保持し永続化しないため、起動直後は現在の設定を知らない。この状態で撤去すると、設定を受信するまでの間Kill Switchが効かず、LAN機器の通信がVPNを迂回してリークする（実機検証で確認。プロキシコンテナ再起動でVPNデーモンも停止するため、KS ONのまま実IPで通信できてしまう）。既存のルールは、最初の`POST /settings`受信時の「全撤去→再適用」（`GatewayController.applyCurrentState()`）で置き換わり、その際に前回異常終了時の残骸も同時に掃除される。
   - APIサーバは現在の設定を10秒周期（`SETTINGS_RESYNC_INTERVAL_MS`）で`POST /settings`へ再通知するため（`api/src/server.ts`）、プロキシのみが再起動・再作成された場合でも最大約10秒で設定が反映される。この間はプロセス再起動前のルールがカーネルに残り続けるためフェイルクローズが維持される。
 

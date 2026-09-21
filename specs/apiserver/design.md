@@ -213,7 +213,8 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 }
 ```
 
-- プロキシ側は`killSwitch`・`transparentGatewayEnabled`のみを用いてnftablesルールセットを再構成する（他フィールドはPhase 4以降で参照予定。proxyserver/design.md「透過ゲートウェイモードの実現方式」「Kill Switch」参照）。
+- プロキシ側は`killSwitch`・`transparentGatewayEnabled`でnftablesルールセットを、`explicitProxyEnabled`・`explicitProxyAllowedCidrs`で3proxyを再構成する（`excludedDomains`はPhase 6で参照予定。proxyserver/design.md「透過ゲートウェイモードの実現方式」「Kill Switch」「明示的プロキシモードの実現方式」参照）。
+- `explicitProxyAllowedCidrs`の各要素はIPv4 CIDR（`a.b.c.d/n`）でなければならず、違反は`PUT /v1/connection/config`が400で拒否し保存しない（3proxyの設定ファイルへ埋め込まれるため、設定行の注入による許可範囲の拡大を入口で防ぐ）。
 - レスポンスボディ: `{ "applied": boolean }`。`transparentGatewayEnabled=false`、またはLAN側インターフェース名が未設定（インストールスクリプト未実行環境）の場合は`false`（ルール撤去のみ実施、適用は行わない）。
 - 通知が失敗（プロキシ未起動等でProxyUnavailableError/ProxyTimeoutError）した場合でも、`PUT /v1/connection/config`自体は失敗させない（設定の永続化は既に成功しているため）。失敗はログにのみ記録し、プロキシ復旧後の次回設定変更または接続状態監視ループでの再構成に委ねる。
 
@@ -234,7 +235,8 @@ Web UIのダッシュボードが「設定値」ではなく「実際に適用�
 - `transparentGateway.state`: `"active"`（nftablesルール適用中）／`"stopped"`（`transparentGatewayEnabled=false`）／`"unconfigured"`（有効設定だが`LAN_IFACE`未設定でルールを構成できない）／`"error"`（有効設定だが直近のnft適用が失敗、または再構成の完了前でルールの実態が不明。実装時に追加）。
 - `vpnInterface`: 検出中のVPNトンネルIF名。未接続時は省略。
 - `killSwitchBlocking`: Kill Switchによりforwardが遮断中（VPN未接続かつ`killSwitch=true`）か。
-- **拡張余地**: Phase 4で`explicitProxy`（`state`: `active`/`stopped`/`crashLoop`）を同レスポンスへ追加する。Phase 5時点では含めず、Web UIは暫定的に「未対応」表示とする（wbs/phase5.md参照）。
+- **`explicitProxy`（Phase 4で追加）**: `{ "state", "socksPort"?, "httpPort"?, "restartCount" }`。`state`は`"active"`（稼働中。`socksPort`・`httpPort`はこの状態のみ付く）／`"stopped"`（`explicitProxyEnabled=false`）／`"unconfigured"`（有効設定だが`explicitProxyAllowedCidrs`が空で起動しない）／`"crashLoop"`（3proxyが起動直後の異常終了を連続して繰り返している）／`"error"`（3proxy設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数。`crashLoop`等のproxy側の異常は本エンドポイントの中継で利用者へ届く（proxyserver/design.md「`GET /status`」参照）。
+- proxyが`explicitProxy`を含まない旧形式で応答した場合は、形状不一致として例外（502相当）になる（api・proxyは同時にデプロイすること）。
 - proxy未応答時は既存方針どおり`502`／`504`（下記エラーハンドリング方針）。
 
 ## 接続先国の永続化（Phase 5で追加）

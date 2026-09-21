@@ -34,6 +34,21 @@ RUN apk add --no-cache curl tar \
   && chmod +x /opt/adguardvpn_cli/adguardvpn-cli \
   && rm /tmp/adguardvpn-cli.tar.gz
 
+# ビルドステージ: 明示的プロキシ用の3proxyをソースからビルドする（Phase 4）。
+# Alpineの安定版リポジトリ（main/community）に3proxyパッケージが無く、edge/testingのバイナリは
+# 実行ステージのlibcと版が食い違いうるため、公式リリースのソースを固定バージョンでビルドする
+# （動的リンクはmuslのみ。ビルド時のみネットワークアクセスが必要で、実行イメージにはバイナリ1つだけを渡す）。
+FROM alpine:3.24 AS proxy-build
+# 動作確認済みバージョンを固定する。更新時はこの値のみを変更する。
+ARG THREEPROXY_VERSION=0.9.5
+RUN apk add --no-cache build-base curl tar linux-headers \
+  && curl -fsSL -o /tmp/3proxy.tar.gz \
+       "https://github.com/3proxy/3proxy/archive/refs/tags/${THREEPROXY_VERSION}.tar.gz" \
+  && mkdir /src \
+  && tar -xzf /tmp/3proxy.tar.gz -C /src --strip-components=1 \
+  && make -C /src -f Makefile.Linux \
+  && strip /src/bin/3proxy
+
 # 実行ステージ
 FROM node:22-alpine
 # AdGuard VPN CLIは非rootユーザー実行時、TUNインターフェース設定（ip link等）の実行にsudoを要求する
@@ -49,6 +64,7 @@ RUN apk add --no-cache sudo nftables iproute2 \
 WORKDIR /app
 COPY --from=build /repo/proxy/dist ./dist
 COPY --from=vpn-cli /opt/adguardvpn_cli/adguardvpn-cli /usr/local/bin/adguardvpn-cli
+COPY --from=proxy-build /src/bin/3proxy /usr/local/bin/3proxy
 COPY proxy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN mkdir -p /var/run/vpngw-ctl \
   && chown vpngwgui:vpngwgui /var/run/vpngw-ctl \

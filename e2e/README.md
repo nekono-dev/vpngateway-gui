@@ -17,6 +17,8 @@
 | `phase5/dashboard-scenarios.sh` | Phase5完了基準を通しで自動検証（実VPNログイン済みのゲートウェイ役が必要。`GW_MODE=ssh`可） |
 | `phase8/webgui-locations.mjs` | Phase8（接続先選択UIの刷新）のステップ別Playwright検証（ping順リスト・絞り込み・お気に入り・接続・接続先変更・前回接続・取得失敗） |
 | `phase8/locations-scenarios.sh` | Phase8完了基準を通しで自動検証（実VPNログイン済みのゲートウェイ役が必要。`GW_MODE=ssh`可） |
+| `phase4/webgui-explicit-proxy.mjs` | Phase4（明示的プロキシ）のステップ別Playwright検証（有効化・CIDR保存・稼働状況表示・不正CIDR・未構成・無効化・crashLoop表示） |
+| `phase4/proxy-scenarios.sh` | Phase4完了基準を通しで自動検証（LAN端末役からSOCKS5/HTTPで通信。実VPNログイン済みのゲートウェイ役が必要。`GW_MODE=ssh`可） |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
 
@@ -44,6 +46,20 @@ bash e2e/phase3/gateway-scenarios.sh      # 全シナリオ（A〜H）。個別�
 - 実VPN（シナリオC・D）はAdGuard VPNへのログインが必要。認証情報は検証環境へ複製せず、Web UIのログイン導線で人手認証する。
 - ゲートウェイ役のproxyコンテナを再作成すると、待機中の`login`プロセスが終了し認証URLが失効する。ログイン前にビルド・再作成を済ませること。
 - FAIL件数が終了コードになる。
+
+## Phase 4の実行手順
+
+Phase 3の環境（実VPNログイン済み）をそのまま使う。LAN端末役（`CLIENT_NAME`）からゲートウェイ役の`:1080`（SOCKS5）・`:3128`（HTTP）へプロキシ通信する。
+
+```sh
+GW_MODE=ssh bash e2e/lxc/sync.sh                      # 転送・ビルド（3proxyのソースビルドを含む）・起動
+GW_MODE=ssh bash e2e/phase4/proxy-scenarios.sh        # 全シナリオ（A〜H・G）。個別実行: ... A C
+```
+
+- 開始時に透過ゲートウェイON・Kill Switch ON・VPN切断・明示的プロキシ無効へ初期化し、終了時に明示的プロキシ無効・VPN切断へ戻す（検証専用環境で実行すること）。
+- 実VPNへ複数回接続・切断する（シナリオD）。シナリオCは3proxyを強制終了し、安定稼働判定（30秒）の待ちを含む（全体で約6分）。シナリオHはproxyコンテナを再起動する。
+- LAN端末役自身の直接通信は、透過ゲートウェイ+Kill Switch ON・VPN未接続では遮断されるため、「直接の出口IP」はゲートウェイ役自身の外部IPで代用する。
+- 注意: `phase5/dashboard-scenarios.sh`のうち`flow`・`error-422`・`error-502`は、Phase 8で廃止した「接続国」セレクトを前提としており現在は失敗する（Phase 4とは無関係の既存の陳腐化。`initial`・`log`・`ks-off`は通る）。
 
 ## Phase 5の実行手順
 

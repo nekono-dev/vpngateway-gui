@@ -1,6 +1,7 @@
 // 責務: Phase 5（Web UI完成）の完了基準を、実VPN・実proxyに接続したWeb UIをPlaywrightで操作して検証する。
 // 実行: node e2e/phase5/webgui-dashboard.mjs <baseUrl> <step> [引数...]
-//   initial            : 稼働状況の初期表示（透過ゲートウェイ・明示的プロキシの暫定表示）と設定ダイアログの暫定表示
+//   initial            : 稼働状況の初期表示（透過ゲートウェイ・明示的プロキシの実状態）と設定ダイアログの暫定表示
+//                        （明示的プロキシの暫定表示はPhase 4で実状態表示へ置換済み。除外ドメインはPhase 6まで暫定）
 //   flow <country>     : ログイン→国選択→接続→再読み込み後も接続国表示→透過ゲートウェイOFF/ON→状態確認→切断 の通し操作
 //   log                : 接続ログダイアログに直前までの操作が新しい順で表示される
 //   ks-off             : Kill Switch OFF+VPN未接続=稼働中（遮断なし）、ONに戻すと遮断中（切断状態で実施）
@@ -16,9 +17,12 @@ const [baseUrl, step, ...args] = process.argv.slice(2);
 const POLL_WAIT_MS = 20000;
 const { browser, page } = await launch(baseUrl);
 
-/** 稼働状況カードの透過ゲートウェイ欄に指定テキストのバッジが出るまで待つ。 */
+/** 稼働状況カードの透過ゲートウェイ欄に指定テキストのバッジが出るまで待つ（明示的プロキシ欄の同名バッジと混同しない）。 */
 async function expectGateway(text, description) {
-  await page.locator(".status-list .badge", { hasText: text }).first().waitFor({ timeout: POLL_WAIT_MS });
+  await page
+    .getByTestId("status-transparent-gateway")
+    .locator(".badge", { hasText: text })
+    .waitFor({ timeout: POLL_WAIT_MS });
   assert(true, description);
 }
 
@@ -41,14 +45,23 @@ try {
   await openDashboard();
 
   if (step === "initial") {
+    const explicitProxyRow = page.getByTestId("status-explicit-proxy");
+    await explicitProxyRow.locator(".badge").first().waitFor({ timeout: POLL_WAIT_MS });
     assert(
-      await page.getByText("未対応（Phase 4で対応予定）").isVisible(),
-      "明示的プロキシ欄に「未対応（Phase 4で対応予定）」の暫定表示が出る",
+      (await page.getByText("未対応（Phase 4で対応予定）").count()) === 0,
+      "明示的プロキシ欄に「未対応」の暫定表示が出ない（実状態の表示に置換済み）",
+    );
+    assert(
+      /停止|稼働中|未構成|起動失敗|エラー/.test(await explicitProxyRow.innerText()),
+      "明示的プロキシ欄に実状態（停止/稼働中等）が表示される",
     );
     await page.getByRole("button", { name: "設定", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "設定" });
     await dialog.getByText("Phase 6で対応予定").waitFor();
-    assert(await dialog.getByText("Phase 4で対応予定").isVisible(), "設定ダイアログの明示的プロキシ・除外ドメイン欄に未対応の暫定表示が出る");
+    assert(
+      (await dialog.getByText("Phase 4で対応予定").count()) === 0,
+      "設定ダイアログの明示的プロキシ欄に未対応の暫定表示が出ない（除外ドメイン欄のみPhase 6まで暫定表示）",
+    );
     await page.getByRole("button", { name: "キャンセル" }).click();
   } else if (step === "flow") {
     const [country] = args;

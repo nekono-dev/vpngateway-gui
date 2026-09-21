@@ -24,7 +24,10 @@ describe("GET /v1/connection/gateway", () => {
   });
 
   it("プロキシの稼働状況をそのまま200で返す", async () => {
-    const status = { transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false } };
+    const status = {
+      transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
+      explicitProxy: { state: "crashLoop", restartCount: 4 },
+    };
     fetchProxyStatusMock.mockResolvedValue(status);
 
     const response = await buildApp().inject({ method: "GET", url: "/v1/connection/gateway" });

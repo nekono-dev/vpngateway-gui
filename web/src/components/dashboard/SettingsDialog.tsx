@@ -107,10 +107,9 @@ export function SettingsDialog({ open, onClose }: Props) {
             />
             明示的プロキシモード（SOCKS5/HTTP）
           </label>
-          <p className="unsupported">未対応: 保存はされますが現在は動作に反映されません（Phase 4で対応予定）。</p>
 
           <LineListEditor
-            label="明示的プロキシの許可CIDR（1行1CIDR）"
+            label="明示的プロキシの許可CIDR（1行1CIDR。例: 192.168.3.0/24。空のままでは起動しません）"
             value={settings.explicitProxyAllowedCidrs}
             onChange={(explicitProxyAllowedCidrs) => setSettings({ ...settings, explicitProxyAllowedCidrs })}
             disabled={!settings.explicitProxyEnabled}

@@ -52,6 +52,8 @@
 - [x] `proxy-client.ts`に`fetchProxyStatus()`追加（ExecResult同様、TypeBoxで応答形状を検証。2026-09-21）
 - [x] `GET /v1/connection/gateway` 実装（TypeBoxスキーマ・OpenAPI公開。`routes/connection-gateway.ts`・`schemas/gateway.ts`。2026-09-21）
 - [x] 上記の統合テスト（プロキシ疎通はモック化。200/502/504。`routes/connection-gateway.test.ts`・`proxy-client.test.ts`。2026-09-21）
+- [x] 稼働状況へ`explicitProxy`（`state`: active/stopped/unconfigured/crashLoop/error、`socksPort`/`httpPort`/`restartCount`）を追加（Phase 4。`schemas/gateway.ts`。2026-09-21）
+- [x] `explicitProxyAllowedCidrs`のIPv4 CIDR形式検証（不正は400で保存しない。3proxy設定ファイルへの行注入対策。`settings/settings-store.ts`・`lib/ipv4-cidr.ts`。Phase 4。2026-09-21）
 
 ## 監査ログ
 

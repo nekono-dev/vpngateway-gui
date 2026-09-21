@@ -36,7 +36,10 @@ const LOCATIONS = [
 ];
 const gatewayActive = {
   status: 200,
-  data: { transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false } },
+  data: {
+    transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
+    explicitProxy: { state: "stopped", restartCount: 0 },
+  },
 };
 
 function renderApp() {
@@ -59,15 +62,19 @@ describe("App", () => {
     api.getV1ConnectionLocations.mockResolvedValue({ status: 200, data: LOCATIONS });
     api.getV1ConnectionGateway.mockResolvedValue({
       status: 200,
-      data: { transparentGateway: { state: "stopped", killSwitchBlocking: false } },
+      data: {
+        transparentGateway: { state: "stopped", killSwitchBlocking: false },
+        explicitProxy: { state: "stopped", restartCount: 0 },
+      },
     });
   });
 
-  it("接続状態と透過ゲートウェイ稼働状況、明示的プロキシの暫定表示を初回ロードで表示する", async () => {
+  it("接続状態と透過ゲートウェイ・明示的プロキシの稼働状況を初回ロードで表示する", async () => {
     renderApp();
     expect(await screen.findByText("切断")).toBeInTheDocument();
-    expect(await screen.findByText("停止")).toBeInTheDocument();
-    expect(screen.getByText(/未対応（Phase 4で対応予定）/)).toBeInTheDocument();
+    // 両方とも停止のため「停止」が2つ表示される（各行の実状態）。
+    expect(await screen.findAllByText("停止")).toHaveLength(2);
+    expect(screen.queryByText(/未対応（Phase 4で対応予定）/)).not.toBeInTheDocument();
   });
 
   it("リストで選択した接続先へlocationIdで接続し、APIが返す接続国（と接続先）を表示、切断で消える", async () => {
@@ -260,12 +267,12 @@ describe("App", () => {
     try {
       renderApp();
       await screen.findByText("切断");
-      await screen.findByText("停止");
+      await screen.findAllByText("停止");
 
       api.getV1Connection.mockResolvedValue({ status: 422, data: { error: "command_failed" } });
       await vi.advanceTimersByTimeAsync(5000);
       expect(await screen.findByText(/接続状態の取得に失敗しました \(status: 422\)/)).toBeInTheDocument();
-      expect(screen.getByText("停止")).toBeInTheDocument();
+      expect(screen.getAllByText("停止")).toHaveLength(2);
     } finally {
       vi.useRealTimers();
     }
@@ -293,7 +300,10 @@ describe("App", () => {
     try {
       api.getV1ConnectionGateway.mockResolvedValue({
         status: 200,
-        data: { transparentGateway: { state: "active", killSwitchBlocking: true } },
+        data: {
+          transparentGateway: { state: "active", killSwitchBlocking: true },
+          explicitProxy: { state: "stopped", restartCount: 0 },
+        },
       });
       renderApp();
       expect(await screen.findByText("Kill Switchにより遮断中（VPN未接続）")).toBeInTheDocument();
@@ -307,7 +317,7 @@ describe("App", () => {
     }
   });
 
-  it("接続ログ・設定ボタンでそれぞれのダイアログが開き、暫定表示が出る", async () => {
+  it("接続ログ・設定ボタンでそれぞれのダイアログが開き、除外ドメインの暫定表示が出る", async () => {
     api.getV1ConnectionLog.mockResolvedValue({ status: 200, data: [] });
     api.getV1ConnectionConfig.mockResolvedValue({
       status: 200,
@@ -326,8 +336,9 @@ describe("App", () => {
     expect(await screen.findByText("履歴はありません。")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "設定" }));
-    expect(await screen.findByText(/Phase 4で対応予定）。$/)).toBeInTheDocument();
-    expect(screen.getByText(/Phase 6で対応予定）。$/)).toBeInTheDocument();
+    expect(await screen.findByText(/Phase 6で対応予定）。$/)).toBeInTheDocument();
+    // 明示的プロキシはPhase 4で実装したため「未対応」の暫定表示は出さない。
+    expect(screen.queryByText(/Phase 4で対応予定/)).not.toBeInTheDocument();
     // Phase 8でデフォルト接続国は廃止した
     expect(screen.queryByText("デフォルト接続国")).not.toBeInTheDocument();
   });

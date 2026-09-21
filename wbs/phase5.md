@@ -54,6 +54,7 @@ webserver/requirements.mdで定義された画面のうち、未実装の「接�
 - 本フェーズはPhase 4より前に実施するため、明示的プロキシの稼働状況は「未対応」の暫定表示となる。Phase 4完了時に暫定表示を実状態へ置き換えること（`phase4.md`に対応タスクを追加済み）。
 - `GET /v1/connection/gateway`のレスポンスには、Phase 4で`explicitProxy`側の状態を追加できるよう拡張余地を残す（`specs/apiserver/design.md`参照）。
 - 【2026-09-21実施】proxy `GET /status`・api `GET /v1/connection/gateway`の`state`は、仕様の3値（`active`/`stopped`/`unconfigured`）に加えて`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）を追加した。`explicitProxy`はPhase 4で同レスポンスへ追加する（`transparentGateway`と並列のキーとして拡張可能な形にしてある）。
+- 【2026-09-21 Phase 4で置換済み】下記の暫定表示のうち明示的プロキシ分は、Phase 4で実状態表示へ置換した（`wbs/phase4.md`参照）。
 - Phase 4完了時に置換すべき暫定表示は2か所: `GatewayStatusCard.tsx`の「明示的プロキシ」欄と、`SettingsDialog.tsx`の`.unsupported`表示（Phase 4対象は明示的プロキシ、Phase 6対象は`excludedDomains`）。`web/src/App.test.tsx`・`GatewayStatusCard.test.tsx`にも暫定表示の文言を検証するテストがあるため同時に更新すること。
 - 【E2Eで判明した既存不具合】実VPN CLIはエラーメッセージを**stdout**へ出力するため、422応答の`stderr`が空になり、トーストの詳細に何も出ない不具合があった（Phase 2実装由来。例: 接続中でない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）。`api/src/lib/failure-output.ts`（stderrが空ならstdoutを返す）を追加して修正した。
 - 【設計上の判断】ポーリングは接続状態と稼働状況で成否を分離した。当初は「接続状態の取得失敗＝全体の失敗」とし古い値を保持していたため、proxy停止中も稼働状況が「稼働中」のまま残る問題をE2Eで発見し、部分ごとに成否を持つ形へ改めた（`specs/webserver/design.md`「状態管理の実装方針」）。

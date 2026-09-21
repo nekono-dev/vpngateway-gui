@@ -19,7 +19,7 @@
 
 - [x] 接続状態（接続中/切断/エラー）・国表示実装（ベンダー表示は実装しない。設計方針上APIがベンダーを識別・選択可能にしないため、Web UIも1ベンダー運用を前提とし表示しない）
 - [x] 透過ゲートウェイ稼働状況表示実装（`GET /v1/connection/gateway`。稼働中/停止/Kill Switch遮断中/未構成/ルール適用エラー。接続状態と1つの5秒ポーリングに合流。`GatewayStatusCard.tsx`・`useDashboardPolling.ts`。2026-09-21実装、実機E2E確認済み）
-- [x] 明示的プロキシ稼働状況欄: 「未対応（Phase 4で対応予定）」暫定表示（2026-09-21実装。Phase 4で実状態表示へ置換する。`wbs/phase4.md`参照）
+- [x] 明示的プロキシ稼働状況欄: 「未対応（Phase 4で対応予定）」暫定表示（2026-09-21実装）→ Phase 4で実状態表示（稼働中＋待ち受けポート/停止/未構成/起動失敗の繰り返し/設定ファイル生成エラー）へ置換済み（`GatewayStatusCard.tsx`）
 - [x] 接続国表示（`GET /v1/connection`の`country`／`location`を表示。当初はクライアントのメモリ保持による暫定対応としたが、再読み込みで消える不具合のため、API側の永続化（apiserver/tasks.md）へ移行しクライアント保持は撤去。2026-09-21）
 - [x] 最小限のスタイル適用（`styles.css`。レイアウト・状態の色分け・ボタンの視認性のみ。2026-09-21実装）
 - [x] 設定ダイアログ起動ボタン実装（2026-09-14: 設定ダイアログ本体と合わせて実装。下記「画面: 設定ダイアログ」参照）
@@ -54,7 +54,7 @@
 - [x] `explicitProxyEnabled` トグルスイッチ実装
 - [x] `explicitProxyAllowedCidrs` リスト編集UI実装（`explicitProxyEnabled` OFF時disabled連動）
 - [x] ダイアログ内保存ボタンによる一括 `PUT` 実装
-- [x] 明示的プロキシ／`excludedDomains`項目への「未対応（反映されません）」暫定表示（2026-09-21追加。Phase 4/6で該当項目ごとに除去。webserver/requirements.md「未実装機能の暫定表示」参照）
+- [x] 明示的プロキシ／`excludedDomains`項目への「未対応（反映されません）」暫定表示（2026-09-21追加）。明示的プロキシ分はPhase 4で除去済み。`excludedDomains`分はPhase 6で除去する（webserver/requirements.md「未実装機能の暫定表示」参照）
 
 ## 画面: 接続ログ (Phase 5)
 

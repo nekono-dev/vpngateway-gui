@@ -66,7 +66,10 @@ describe("notifySettings", () => {
 
 describe("fetchProxyStatus", () => {
   it("プロキシが期待通りの形状で応答した場合はそのまま返し、GET /statusを呼ぶ", async () => {
-    const status = { transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false } };
+    const status = {
+      transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
+      explicitProxy: { state: "active", socksPort: 1080, httpPort: 3128, restartCount: 0 },
+    };
     requestMock.mockResolvedValue(jsonResponse(status));
 
     const result = await fetchProxyStatus();
@@ -76,12 +79,28 @@ describe("fetchProxyStatus", () => {
   });
 
   it("vpnInterface省略（未接続）でも受理する", async () => {
+    const status = {
+      transparentGateway: { state: "stopped", killSwitchBlocking: false },
+      explicitProxy: { state: "stopped", restartCount: 0 },
+    };
+    requestMock.mockResolvedValue(jsonResponse(status));
+    await expect(fetchProxyStatus()).resolves.toEqual(status);
+  });
+
+  it("明示的プロキシのcrashLoop状態も受理する", async () => {
+    const status = {
+      transparentGateway: { state: "stopped", killSwitchBlocking: false },
+      explicitProxy: { state: "crashLoop", restartCount: 5 },
+    };
+    requestMock.mockResolvedValue(jsonResponse(status));
+    await expect(fetchProxyStatus()).resolves.toEqual(status);
+  });
+
+  it("explicitProxyを含まない応答（旧バージョンのproxy）は形状不一致として例外を投げる", async () => {
     requestMock.mockResolvedValue(
       jsonResponse({ transparentGateway: { state: "stopped", killSwitchBlocking: false } }),
     );
-    await expect(fetchProxyStatus()).resolves.toEqual({
-      transparentGateway: { state: "stopped", killSwitchBlocking: false },
-    });
+    await expect(fetchProxyStatus()).rejects.toThrow(/unexpected response shape from proxy/);
   });
 
   it("プロキシが期待と異なる形状で応答した場合は例外を投げる", async () => {
