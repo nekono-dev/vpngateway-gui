@@ -172,7 +172,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 **ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
 
-**既知の制約**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）が有効な環境では、起動時のルールが消去されうる。Debian 12（bookworm）では、`nftables`パッケージを導入しても`nftables.service`は既定で**無効**であることを確認した（LXC）。管理者が有効にしている場合に限り問題になるため、インストーラは、有効なら警告を表示するに留め、利用者の設定を書き換えない。起動時のガードが実際に維持されるか（ホストの再起動）と、Raspberry Pi OSでの動作は**未検証**（検証はUbuntu 24.04・Debian 12のLXCのみ）。アンインストール・IPv6は対象外。
+**nftables.serviceとの順序**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）は、Debian 12では`nftables`パッケージを導入しても既定で無効だが、**Raspberry Pi OS（trixie）では既定で有効**である。有効な環境では起動時のルールが消去されうるため、起動ガードのユニットに`After=nftables.service`を付けて、その後に適用する（順序だけで、`nftables.service`が無い・無効な環境でも害はない）。利用者の設定は書き換えない。**既知の制約**: ホストの再起動後にガードが実際にproxyの適用まで維持されるかのKill Switchの実通信での確認、Raspberry Pi OSの32bit（armhf・`ID=raspbian`）、実際のRaspberry Pi機（GPIO・Pi用カーネル等）は未検証。アンインストール・IPv6は対象外。
 
 ## 頒布（CI）
 

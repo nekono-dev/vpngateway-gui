@@ -2,7 +2,7 @@
 # 責務: Raspberry Pi相当の検証機（実物のRaspberry Pi OS Lite arm64のrootfs・ユーザーランドを、QEMUのarm64システムエミュレーションで起動）を、
 #       Dockerだけで（root権限・KVM・qemuのホストへの導入なしで）作って操作する。インストーラ（Phase 13）のarm64・Raspberry Pi OSでの検証用。
 # 使い方: bash e2e/phase13/rpi-vm.sh <prepare|start|wait|ssh|stop|destroy> [ssh時はコマンド...]
-#   prepare  イメージの取得（SHA256検証）・展開・ディスクの拡張・cloud-init（ユーザー・SSH鍵）の書き込み・qemuイメージのビルド・
+#   prepare  イメージの取得（SHA256検証）・展開・ディスクの拡張・検証用ユーザーとSSH鍵の書き込み・qemuイメージのビルド・
 #            段階1のカーネルの取り出し
 #   start    VM起動（バックグラウンド。SSH: 127.0.0.1:$RPI_SSH_PORT、Web UI: 127.0.0.1:$RPI_WEB_PORT）。段階2のカーネルがあればそれを使う
 #   kernel   段階1で起動したVMの中にDebianの汎用カーネルを導入し、カーネル・initrdを取り出して、VMを段階2（そのカーネル）で再起動する
@@ -51,35 +51,33 @@ prepare() {
     mv "$DIR/pios.img.xz.keep" "$DIR/pios.img.xz"
   fi
   [ -f "$DIR/pios.img.expanded" ] || { truncate -s "$DISK" "$DIR/pios.img" && : > "$DIR/pios.img.expanded"; }
-  log "boot領域（カーネル・initramfs）を取り出し、cloud-init（ユーザー・SSH鍵）を書き込む"
+  log "検証用ユーザー（vpngw）・SSH鍵をrootfsへ書き込む（Pi OSには既定のpiユーザー（uid 1000。SSHは初回設定まで拒否される）があるため、別名・別uidにする）"
   # 検証専用のSSH鍵（VMへのログイン用。作業ディレクトリに作る。既存の鍵は使わない）。
   [ -f "$SSH_KEY" ] || ssh-keygen -q -t ed25519 -N "" -f "$SSH_KEY"
-  cat > "$DIR/boot/user-data" <<EOU
-#cloud-config
-hostname: rpi-verify
-users:
-  - name: pi
-    shell: /bin/bash
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    lock_passwd: true
-    ssh_authorized_keys:
-      - $(cat "$SSH_KEY.pub")
-ssh_pwauth: false
-runcmd:
-  - [systemctl, enable, --now, ssh]
-EOU
   if [ ! -f "$DIR/pios.img.patched" ]; then
-    # 段階1のカーネル（Debianのクラウドカーネル）は、rootfsに対応するmodulesが無くvfatを読めない。cloud-initの設定はext4上の
-    # NoCloudのseed（/var/lib/cloud/seed/nocloud/）へ直接書き、fstabのboot領域（vfat）はnofailにして、起動を止めないようにする。
-    printf 'instance-id: rpi-verify-1\nlocal-hostname: rpi-verify\n' > "$DIR/boot/meta-data.seed"
+    # 段階1のカーネル（Debianのクラウドカーネル）は、rootfsに対応するmodulesが無くvfatを読めない。cloud-init（設定をvfatのbootから読む）に
+    # 頼らず、ext4のrootfsへ直接、検証用ユーザー（vpngw。鍵ログインのみ・sudo NOPASSWD）を作り、cloud-initを無効化し、
+    # fstabのboot領域（vfat）はnofailにして起動を止めないようにする。
+    cp "$SSH_KEY.pub" "$DIR/boot/authorized_keys"
+    printf 'vpngw ALL=(ALL) NOPASSWD:ALL\n' > "$DIR/boot/sudoers-vpngw"
     tools 'apt-get install -y -qq e2fsprogs >/dev/null 2>&1
       ROOTSTART=$(sfdisk -d pios.img | awk "/pios.img2/ {gsub(\",\",\"\",\$4); print \$4}"); IMG="pios.img?offset=$((512*ROOTSTART))"
-      for d in /var/lib/cloud /var/lib/cloud/seed; do debugfs -w -R "mkdir $d" "$IMG" >/dev/null 2>&1; done; debugfs -w -R "mkdir /var/lib/cloud/seed/nocloud" "$IMG" >/dev/null 2>&1
-      debugfs -w -R "write boot/user-data /var/lib/cloud/seed/nocloud/user-data" "$IMG" >/dev/null
-      debugfs -w -R "write boot/meta-data.seed /var/lib/cloud/seed/nocloud/meta-data" "$IMG" >/dev/null
+      dw() { debugfs -w -R "$1" "$IMG" >/dev/null 2>&1; }
+      # 目的: ゲストのファイルへ行を追加して書き戻す（元の所有者・モードを保つ）。 入力: パス, 追加する行, モード, gid
+      addline() { debugfs -R "cat $1" "$IMG" 2>/dev/null > boot/tmp.file; printf "%s\n" "$2" >> boot/tmp.file; dw "rm $1"; dw "write boot/tmp.file $1"; dw "sif $1 mode $3"; dw "sif $1 gid $4"; }
+      addline /etc/passwd "vpngw:x:1001:1001:verify user:/home/vpngw:/bin/bash" 0100644 0
+      addline /etc/shadow "vpngw:*:19000:0:99999:7:::" 0100640 42
+      addline /etc/group "vpngw:x:1001:"  0100644 0
+      debugfs -R "cat /etc/group" "$IMG" 2>/dev/null | sed "s/^\(sudo:x:[0-9]*:.*\)\$/\1,vpngw/; s/^\(sudo:x:[0-9]*:\),vpngw\$/\1vpngw/" > boot/group.new; dw "rm /etc/group"; dw "write boot/group.new /etc/group"; dw "sif /etc/group mode 0100644"
+      dw "mkdir /home/vpngw"; dw "mkdir /home/vpngw/.ssh"; dw "write boot/authorized_keys /home/vpngw/.ssh/authorized_keys"
+      for f in /home/vpngw /home/vpngw/.ssh /home/vpngw/.ssh/authorized_keys; do dw "sif $f uid 1001"; dw "sif $f gid 1001"; done
+      dw "sif /home/vpngw mode 040755"; dw "sif /home/vpngw/.ssh mode 040700"; dw "sif /home/vpngw/.ssh/authorized_keys mode 0100600"
+      dw "write boot/sudoers-vpngw /etc/sudoers.d/vpngw"; dw "sif /etc/sudoers.d/vpngw mode 0100440"
+      dw "write /dev/null /etc/cloud/cloud-init.disabled"
       debugfs -R "cat /etc/fstab" "$IMG" 2>/dev/null | sed "s#\(/boot/firmware *vfat *defaults\)#\1,nofail#" > boot/fstab.new
-      debugfs -w -R "rm /etc/fstab" "$IMG" >/dev/null; debugfs -w -R "write boot/fstab.new /etc/fstab" "$IMG" >/dev/null
-      debugfs -R "cat /etc/fstab" "$IMG" 2>/dev/null; debugfs -R "ls /var/lib/cloud/seed/nocloud" "$IMG" 2>/dev/null | grep -q user-data || { echo "seedの書き込みに失敗" >&2; exit 1; }' && : > "$DIR/pios.img.patched"
+      dw "rm /etc/fstab"; dw "write boot/fstab.new /etc/fstab"; dw "sif /etc/fstab mode 0100644"
+      echo "--- 確認"; debugfs -R "cat /etc/passwd" "$IMG" 2>/dev/null | tail -2; debugfs -R "cat /etc/group" "$IMG" 2>/dev/null | grep "^sudo"; debugfs -R "ls -l /home/vpngw/.ssh" "$IMG" 2>/dev/null | head -4; debugfs -R "cat /etc/fstab" "$IMG" 2>/dev/null | grep firmware
+      debugfs -R "ls /etc/cloud" "$IMG" 2>/dev/null | grep -q cloud-init.disabled && debugfs -R "cat /home/vpngw/.ssh/authorized_keys" "$IMG" 2>/dev/null | grep -q ssh-ed25519 || { echo "ユーザーの書き込みに失敗" >&2; exit 1; }' && : > "$DIR/pios.img.patched"
   fi
   if ! docker image inspect "$QEMU_IMAGE" >/dev/null 2>&1; then
     log "qemuのDockerイメージをビルド"
@@ -112,7 +110,7 @@ start() {
     qemu-system-aarch64 -M virt -cpu cortex-a72 -smp "$CPUS" -m "$MEM" -accel tcg,thread=multi -nographic \
     -kernel "boot/$KERNEL" -initrd "boot/$INITRD" \
     -append "console=ttyAMA0 root=/dev/vda2 rootfstype=ext4 rw rootwait fsck.repair=yes net.ifnames=0" \
-    -drive file=pios.img,if=virtio,format=raw,cache=unsafe \
+    -drive file=pios.img,if=virtio,format=raw,cache=writeback \
     -netdev "user,id=n0,hostfwd=tcp:127.0.0.1:$SSH_PORT-:22,hostfwd=tcp:127.0.0.1:$WEB_PORT-:8080" -device virtio-net-pci,netdev=n0,romfile= \
     -serial file:/w/serial.log >/dev/null
 }
@@ -121,7 +119,7 @@ wait_ssh() {
   log "SSHの応答を待機（最大約20分）"
   for _ in $(seq 1 120); do
     # shellcheck disable=SC2086
-    if ssh $SSH_OPTS pi@127.0.0.1 true >/dev/null 2>&1; then log "SSH接続できました"; return 0; fi
+    if ssh $SSH_OPTS vpngw@127.0.0.1 true >/dev/null 2>&1; then log "SSH接続できました"; return 0; fi
     sleep 10
   done
   tail -30 "$DIR/serial.log" 1>&2
@@ -133,17 +131,17 @@ wait_ssh() {
 kernel() {
   log "ゲストへDebianの汎用カーネルを導入（modulesも入る）"
   # shellcheck disable=SC2086
-  ssh $SSH_OPTS pi@127.0.0.1 'sudo sh -c "sed -i s/^MODULES=.*/MODULES=most/ /etc/initramfs-tools/initramfs.conf; export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq linux-image-arm64 >/dev/null; ls /boot"'
+  ssh $SSH_OPTS vpngw@127.0.0.1 'sudo sh -c "sed -i s/^MODULES=.*/MODULES=most/ /etc/initramfs-tools/initramfs.conf; export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq linux-image-arm64 >/dev/null; ls /boot"'
   # shellcheck disable=SC2086
-  V=$(ssh $SSH_OPTS pi@127.0.0.1 'ls /boot | grep "^vmlinuz-.*arm64$" | sort -V | tail -1 | sed s/^vmlinuz-//')
+  V=$(ssh $SSH_OPTS vpngw@127.0.0.1 'ls /boot | grep "^vmlinuz-.*arm64$" | sort -V | tail -1 | sed s/^vmlinuz-//')
   [ -n "$V" ] || die "導入したカーネルが見つかりません"
   log "カーネル $V を取り出す"
   # shellcheck disable=SC2086
-  ssh $SSH_OPTS pi@127.0.0.1 "sudo cat /boot/vmlinuz-$V" > "$DIR/boot/stage2-vmlinuz"
+  ssh $SSH_OPTS vpngw@127.0.0.1 "sudo cat /boot/vmlinuz-$V" > "$DIR/boot/stage2-vmlinuz"
   # shellcheck disable=SC2086
-  ssh $SSH_OPTS pi@127.0.0.1 "sudo cat /boot/initrd.img-$V" > "$DIR/boot/stage2-initrd"
+  ssh $SSH_OPTS vpngw@127.0.0.1 "sudo cat /boot/initrd.img-$V" > "$DIR/boot/stage2-initrd"
   # shellcheck disable=SC2086
-  ssh $SSH_OPTS pi@127.0.0.1 'sudo poweroff' || true
+  ssh $SSH_OPTS vpngw@127.0.0.1 'sudo poweroff' || true
   sleep 15
   docker stop "$NAME" >/dev/null 2>&1 || true
   start
@@ -155,8 +153,13 @@ case "${1:-}" in
   start) start ;;
   kernel) kernel ;;
   wait) wait_ssh ;;
-  ssh) shift; ssh $SSH_OPTS pi@127.0.0.1 "$@" ;;
-  stop) docker stop "$NAME" >/dev/null 2>&1 || true; docker rm "$NAME" >/dev/null 2>&1 || true ;;
+  ssh) shift; ssh $SSH_OPTS vpngw@127.0.0.1 "$@" ;;
+  stop)
+    # ディスクへの書き込みを失わないよう、まずゲストを正常にシャットダウンする。
+    # shellcheck disable=SC2086
+    ssh $SSH_OPTS vpngw@127.0.0.1 'sudo poweroff' >/dev/null 2>&1 || true
+    for _ in $(seq 1 30); do docker ps -q -f "name=$NAME" | grep -q . || break; sleep 2; done
+    docker stop "$NAME" >/dev/null 2>&1 || true; docker rm "$NAME" >/dev/null 2>&1 || true ;;
   destroy) docker rm -f "$NAME" >/dev/null 2>&1 || true; rm -rf "$DIR" ;;
   *) sed -n '2,16p' "$0"; exit 1 ;;
 esac

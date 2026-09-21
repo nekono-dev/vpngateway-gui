@@ -35,7 +35,6 @@ NO_START=0
 # 目的: 進行状況・エラーを標準出力・標準エラーへ出す。
 # 入力: 表示する文字列。
 log() { printf '==> %s\n' "$*"; }
-warn() { printf '警告: %s\n' "$*" 1>&2; }
 die() { printf 'エラー: %s\n' "$*" 1>&2; exit 1; }
 
 # 目的: 使い方を表示する。
@@ -195,6 +194,7 @@ setup_lan_iface() {
 # 背景: `inet vpngwgui`テーブルはDocker→proxy→APIの設定通知を経て初めて作られるため、起動直後の間はLAN機器の通信がVPNを迂回してしまう。
 #       ネットワーク起動前に、proxyが適用するものと同名のテーブルへ「LAN側から入る転送はdrop（Docker公開ポート宛のDNATのみ許可）」だけを載せる。
 #       proxyは最初の設定通知でこのテーブルを全撤去→再構成（原子的置換）するため、以降は通常のルールに置き換わる。
+#       nftables.serviceが有効な環境では、その全消去の後に適用されるよう`After=nftables.service`を付ける。
 # 副作用: /etc/systemd/system/vpngwgui-boot-guard.service を作成し、有効化する（今すぐ適用すると稼働中のproxyのルールを上書きするため、起動（start）はしない）。
 setup_boot_guard() {
   nft_bin=$(command -v nft) || die "nft コマンドが見つかりません"
@@ -204,6 +204,8 @@ setup_boot_guard() {
 Description=vpngateway-gui boot-time fail-closed guard
 DefaultDependencies=no
 Before=network-pre.target docker.service
+# nftables.service（有効な環境。Raspberry Pi OS等）は起動時に/etc/nftables.confで既存のルールを全消去するため、その後に適用する（順序だけ。無くても害はない）。
+After=nftables.service
 Wants=network-pre.target
 
 [Service]
@@ -217,9 +219,10 @@ EOGUARD
   systemctl daemon-reload
   systemctl enable vpngwgui-boot-guard.service >/dev/null 2>&1
   log "起動時のKill Switchガード: 有効（次回起動から）"
-  # nftables.service（/etc/nftables.confを読み込み、既存のルールを全消去する）が有効だと、起動時のルールが消えうる。設定は書き換えず、警告のみ出す。
+  # nftables.service（/etc/nftables.confを読み込み、既存のルールを全消去する）が有効な環境（Raspberry Pi OS等）では、上のユニットをその後に
+  # 順序付けている。利用者の設定は書き換えない。
   if systemctl is-enabled nftables.service >/dev/null 2>&1; then
-    warn "nftables.service が有効です。起動時に既存のルールが消去され、Kill Switchガードが無効になる可能性があります（未検証）"
+    log "nftables.service が有効です。起動時のKill Switchガードは、その後に適用されるよう順序付けました"
   fi
 }
 

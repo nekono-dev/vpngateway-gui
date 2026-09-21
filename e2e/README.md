@@ -25,6 +25,7 @@
 | `phase11/provider-scenarios.sh` | Phase11完了基準を、AdGuard VPN（未ログイン）＋モックProton VPNの2ベンダーで通しで自動検証（開発ホストのdocker compose。ランナーの許可バイナリ・ネットワークコンテナのCLI非同梱も確認） |
 | `phase12/add-vendor-scenarios.sh` | Phase12完了基準「ベンダー追加の実証」を自動検証（モックのバンドルを別名で複製して追加するだけで、共通部を変更せずに新ベンダーが現れ・選択でき、外すと消える。開発ホストのdocker compose。実VPN不要） |
 | `phase13/install-scenarios.sh` | Phase13完了基準（インストーラ）を、LXCのクリーンなコンテナ（既定ubuntu:24.04。引数でイメージを指定）で自動検証（1コマンドの導入・再実行・ベンダーの追加/削除・ホスト側フック・失敗系。開発ホストのリポジトリから作った裸リポジトリをfile://で取得する。実VPN不要） |
+| `phase13/rpi-vm.sh` | Raspberry Pi相当の検証機を、Dockerだけで作って操作する（実物のRaspberry Pi OS Lite arm64のイメージ＋QEMUのarm64エミュレーション。カーネルだけDebian製。`prepare`→`start`→`wait`→`kernel`→`ssh`）。インストーラのarm64・Raspberry Pi OSでの検証用。TCGのため遅い（Dockerイメージのビルドに約1時間） |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
