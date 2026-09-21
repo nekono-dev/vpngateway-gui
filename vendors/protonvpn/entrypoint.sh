@@ -23,7 +23,7 @@ if [ "$(id -u)" != 0 ]; then
 fi
 
 # /etc/machine-idをボリューム上の値から復元する（コンテナ再作成のたびに変わると、NM・keyringが別の端末と
-# みなしログインが失効しうる。AdGuard用のdocker-entrypoint.shと同じ方針）。
+# みなしログインが失効しうる。別のバンドルのエントリポイントと同じ方針）。
 MACHINE_ID_STORE="$RUN_HOME/.config/Proton/.machine-id"
 if [ ! -s "$MACHINE_ID_STORE" ]; then
   mkdir -p "$(dirname "$MACHINE_ID_STORE")"

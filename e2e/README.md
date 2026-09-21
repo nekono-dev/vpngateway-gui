@@ -23,7 +23,9 @@
 | `phase9/mock-scenarios.sh` | Phase9完了基準を、モックプロバイダCLI（Proton VPN公式CLIの挙動を模擬）で通しで自動検証（開発ホストのdocker compose。実VPN不要） |
 | `phase11/webgui-providers.mjs` | Phase11（Web UIからのベンダー選択）のステップ別Playwright検証（選択部品・切替・接続中の確認と自動切断・ベンダー別状態・利用不可） |
 | `phase11/provider-scenarios.sh` | Phase11完了基準を、AdGuard VPN（未ログイン）＋モックProton VPNの2ベンダーで通しで自動検証（開発ホストのdocker compose。ランナーの許可バイナリ・ネットワークコンテナのCLI非同梱も確認） |
-| `lib/e2e-profiles.sh` | モックランナーを使うE2E用に、実運用のプロファイルとテスト用プロファイル（mockproton）を集めた一時ディレクトリを作る（`E2E_PROFILES_DIR`） |
+| `phase12/add-vendor-scenarios.sh` | Phase12完了基準「ベンダー追加の実証」を自動検証（モックのバンドルを別名で複製して追加するだけで、共通部を変更せずに新ベンダーが現れ・選択でき、外すと消える。開発ホストのdocker compose。実VPN不要） |
+| `phase13/install-scenarios.sh` | Phase13完了基準（インストーラ）を、LXCのクリーンなコンテナ（既定ubuntu:24.04。引数でイメージを指定）で自動検証（1コマンドの導入・再実行・ベンダーの追加/削除・ホスト側フック・失敗系。開発ホストのリポジトリから作った裸リポジトリをfile://で取得する。実VPN不要） |
+| `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
 
@@ -38,9 +40,7 @@
 ```sh
 bash e2e/lxc/setup.sh                     # 環境構築（初回のみ。GW_IPが表示される）
 bash e2e/lxc/sync.sh --no-build           # リポジトリ転送
-lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/detect-lan-interface.sh
-lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/setup-sysctl.sh
-lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/setup-boot-guard.sh
+lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/install.sh --providers adguardvpn --no-start   # LAN側IF検出・sysctl・起動ガード・.env（Docker導入済みなら何もしない）
 bash e2e/lxc/sync.sh                      # ビルド・起動
 node e2e/phase3/webgui-login.mjs http://<GW_IP>:8080   # 認証URLを表示 → 人手でブラウザ認証
 bash e2e/phase3/gateway-scenarios.sh      # 全シナリオ（A〜H）。個別実行: ... A B
@@ -80,7 +80,7 @@ GW_MODE=ssh bash e2e/phase5/dashboard-scenarios.sh jp  # 接続国を引数に�
 
 ## Phase 9の実行手順
 
-実VPN・実ネットワークは使わない。開発ホストのdocker composeで、モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コード）をproxyへ差し込んだ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）を起動して検証する。
+実VPN・実ネットワークは使わない。開発ホストのdocker composeで、モックプロバイダCLI（`e2e/vendors/mockproton/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コード）を、モックのベンダーバンドル（`e2e/vendors/mockproton/`。ランナー`runner-mockproton`）で実行する専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）を起動して検証する。
 
 ```sh
 bash e2e/phase9/mock-scenarios.sh        # 起動（ビルド含む）→ unauth/free/paid/twofa/learned/secrets → 後始末（down -v）
@@ -93,13 +93,13 @@ bash e2e/phase9/mock-scenarios.sh        # 起動（ビルド含む）→ unauth
 
 ## Phase 11の実行手順
 
-Phase 9と同じ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）に、AdGuard VPN（ランナーは同梱するが未ログイン）とモックProton VPNの2ベンダーを有効にして検証する（`E2E_PROVIDERS=adguardvpn,mockproton`）。
+Phase 9と同じ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）に、AdGuard VPN（ランナーは同梱するが未ログイン）とモックProton VPNの2ベンダーを有効にして検証する（`make_e2e_vendors_dir adguardvpn mockproton`）。
 
 ```sh
 bash e2e/phase11/provider-scenarios.sh   # 起動（ビルド含む）→ initial/switch-idle/mock-login-connect/switch-decline/switch-accept/switch-back → ランナー・ネットワークコンテナの構成確認 → unavailable → 後始末
 ```
 
-- モックランナーを使うE2E（Phase 9・11）は、プロファイルのディレクトリをcomposeへ渡す必要がある（読み取り専用マウントの中へ単一ファイルを重ねられないため）。スクリプトが`e2e/lib/e2e-profiles.sh`で一時ディレクトリを作り`E2E_PROFILES_DIR`で渡す。
+- モックのバンドルを使うE2E（Phase 9・11）は、本番と同じ方式（`VPN_PROVIDERS`と、有効なバンドルのcompose fragmentを並べた`-f`）で起動する。APIへ渡すベンダーのディレクトリは、読み取り専用マウントの中へ別の場所のファイルを重ねられないため、スクリプトが`e2e/lib/e2e-vendors.sh`で有効なベンダーのプロファイルだけを集めた一時ディレクトリを作り`E2E_VENDORS_DIR`で渡す。
 - **実VPN（AdGuard VPN・ネットワーク分離後）でのリグレッション**は、`GW_MODE=ssh bash e2e/lxc/sync.sh`のあと、`GW_MODE=ssh bash e2e/phase8/locations-scenarios.sh`・`GW_MODE=ssh bash e2e/phase3/gateway-scenarios.sh A B C D E F`・`GW_MODE=ssh bash e2e/phase4/proxy-scenarios.sh`を実行する（Phase 11でVPNデーモンはネットワークコンテナ`proxy`ではなくランナー`runner-adguardvpn`内で動くため、各スクリプトの`docker compose exec`・停止対象を改めた。LAN端末役のmacvlanコンテナは`GW_MODE=ssh bash e2e/lxc/setup.sh`で作る）。
 
 ## Phase 8の実行手順

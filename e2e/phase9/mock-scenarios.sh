@@ -11,16 +11,18 @@ HERE=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$HERE/../.." && pwd)
 BASE=${BASE:-http://localhost:18080}
 PROJECT=vpngwgui-e2e-mock
-DC="docker compose -p $PROJECT -f $ROOT/docker-compose.yml -f $ROOT/docker-compose.e2e-mock.yml"
-. "$HERE/../lib/e2e-profiles.sh"
-make_e2e_profiles_dir
+. "$HERE/../lib/e2e-vendors.sh"
+make_e2e_vendors_dir mockproton
+# 相対パスのcomposeファイル（本体の位置が基準）を使うため、リポジトリルートで実行する。
+cd "$ROOT" || exit 1
+DC="docker compose -p $PROJECT $(e2e_compose_files mockproton)"
 FAILS=0
 gui() { node "$HERE/webgui-provider.mjs" "$BASE" "$@" || FAILS=$((FAILS+1)); }
 check() { # check <説明> <条件が真のときexit 0となるコマンド...>
   local desc=$1; shift
   if "$@"; then echo "PASS: $desc"; else echo "FAIL: $desc"; FAILS=$((FAILS+1)); fi
 }
-cleanup() { $DC down -v >/dev/null 2>&1; rm -rf "$E2E_PROFILES_DIR"; }
+cleanup() { $DC down -v >/dev/null 2>&1; rm -rf "$E2E_VENDORS_DIR"; }
 trap cleanup EXIT
 
 echo "== 準備: モックプロバイダ構成の起動（ビルドを含む）"
@@ -37,9 +39,9 @@ echo "== twofa: 2段階認証"
 gui twofa
 
 echo "== learned: 判定では有料に見えるが実行すると無料版の制限に当たる（実行失敗からの学習）"
-$DC exec -T runner-mock /usr/local/bin/protonvpn-mock signout >/dev/null
-printf 'mock-pass\n' | $DC exec -T runner-mock /usr/local/bin/protonvpn-mock signin free@example.com >/dev/null 2>&1
-$DC exec -T runner-mock /usr/local/bin/protonvpn-mock mock-set-probe-plan paid >/dev/null
+$DC exec -T runner-mockproton /usr/local/bin/protonvpn-mock signout >/dev/null
+printf 'mock-pass\n' | $DC exec -T runner-mockproton /usr/local/bin/protonvpn-mock signin free@example.com >/dev/null 2>&1
+$DC exec -T runner-mockproton /usr/local/bin/protonvpn-mock mock-set-probe-plan paid >/dev/null
 # ログイン状態のキャッシュ（30秒）を確実に更新させるため、APIのログアウト→CLI直ログインではなく、経過を待つ。
 sleep 31
 gui learned

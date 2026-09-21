@@ -1,7 +1,7 @@
-// 責務: 管理者が有効化したVPNベンダー（プロファイル）の読み込み・検証と、ID→ベンダーの引き当て。
+// 責務: 管理者が有効化したVPNベンダー（ベンダーバンドルのプロファイル）の読み込み・検証と、ID→ベンダーの引き当て。
 // Phase 11で、従来の「1つのプロファイル（VPN_PROFILE_PATH）」から、複数ベンダーを持つ形へ改めた
 // （apiserver/design.md「ベンダーの選択」）。有効なベンダーは環境変数`ENABLED_PROVIDERS`（カンマ区切りのベンダーID）、
-// プロファイルは`VPN_PROFILES_DIR/<ベンダーID>.json`（ファイル名＝ベンダーID。ファイル内の`vendor`と一致させる）。
+// プロファイルは`VENDORS_DIR/<ベンダーID>/profile.json`（ディレクトリ名＝ベンダーID。ファイル内の`vendor`と一致させる）。既定のベンダーは持たない。
 // :roマウントされ実行時に変化しない前提のため、初回に読み込んでキャッシュする。
 
 import { join } from "node:path";
@@ -9,7 +9,7 @@ import { parseProfileFile } from "../profile/profile-loader.js";
 import type { VendorProfile } from "../profile/profile.schema.js";
 
 export interface Provider {
-  // ベンダーID（プロファイルのファイル名。例 "adguardvpn"）。
+  // ベンダーID（ベンダーバンドルのディレクトリ名）。
   id: string;
   // 画面に出すベンダー名（プロファイルの`displayName`、無ければ`vendor`）。
   displayName: string;
@@ -23,17 +23,21 @@ let cached: Provider[] | undefined;
 
 /**
  * 目的: 有効なベンダーのプロファイルを全て読み込み、検証して返す（初回のみ読み込み、以後はキャッシュ）。
- * 入力: なし（環境変数`ENABLED_PROVIDERS`（既定"adguardvpn"）・`VPN_PROFILES_DIR`（既定/etc/vpngwgui/profiles））。
+ * 入力: なし（環境変数`ENABLED_PROVIDERS`（必須。カンマ区切り）・`VENDORS_DIR`（既定/etc/vpngwgui/vendors））。
  * 出力: 有効化された順のProvider配列（1件以上）。
- * 失敗時の方針: ID形式の不正・重複・有効なベンダーが0件・プロファイルの読み込み/検証失敗・
+ * 失敗時の方針: `ENABLED_PROVIDERS`が未設定・ID形式の不正・重複・有効なベンダーが0件・プロファイルの読み込み/検証失敗・
  *              ファイル内の`vendor`とIDの不一致は、例外を投げて起動を失敗させる（不正な管理者向け設定のまま
  *              誤ったコマンドを解決しないため）。
- * 例: getProviders().map((provider) => provider.id) // => ["adguardvpn", "protonvpn"]
+ * 例: getProviders().map((provider) => provider.id) // => ["vendora", "vendorb"]
  */
 export function getProviders(): Provider[] {
   if (cached) return cached;
-  const dir = process.env.VPN_PROFILES_DIR ?? "/etc/vpngwgui/profiles";
-  const ids = (process.env.ENABLED_PROVIDERS ?? "adguardvpn")
+  const dir = process.env.VENDORS_DIR ?? "/etc/vpngwgui/vendors";
+  const enabled = process.env.ENABLED_PROVIDERS;
+  if (enabled === undefined) {
+    throw new Error("ENABLED_PROVIDERS is required (comma-separated vendor ids; there is no default vendor)");
+  }
+  const ids = enabled
     .split(",")
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
@@ -47,9 +51,9 @@ export function getProviders(): Provider[] {
     if (!PROVIDER_ID_PATTERN.test(id)) {
       throw new Error(`invalid provider id: ${id}`);
     }
-    const profile = parseProfileFile(join(dir, `${id}.json`));
+    const profile = parseProfileFile(join(dir, id, "profile.json"));
     if (profile.vendor !== id) {
-      throw new Error(`profile "${id}.json" declares vendor "${profile.vendor}" (must equal the file name)`);
+      throw new Error(`profile of "${id}" declares vendor "${profile.vendor}" (must equal the directory name)`);
     }
     return { id, displayName: profile.displayName ?? profile.vendor, profile };
   });

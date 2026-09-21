@@ -1,0 +1,83 @@
+{
+  "description": "Proton VPN CLIの出力サンプル（status・connect・countries list・config list。実アカウント（無料）で確認した書式）。適合テスト（api/src/profile/vendor-samples.test.ts）が共通処理へ流す。",
+  "cases": [
+    {
+      "name": "status: 切断中（未ログインでも同じ）",
+      "kind": "status",
+      "exitCode": 0,
+      "stdout": "Status: Disconnected\n",
+      "expect": {
+        "status": "disconnected"
+      }
+    },
+    {
+      "name": "status: 接続中",
+      "kind": "status",
+      "exitCode": 0,
+      "stdout": "Status: Connected\nServer: JP-FREE#3 in Osaka, Japan\nLoad: 41%\nProtocol: wireguard-udp\n",
+      "expect": {
+        "status": "connected",
+        "location": "JP-FREE#3 in Osaka, Japan"
+      }
+    },
+    {
+      "name": "status形式でないconnectの出力: 接続先を取り出す",
+      "kind": "status",
+      "exitCode": 0,
+      "stdout": "Connected to JP-FREE#3 in Osaka, Japan.\nYour new IP address is 203.0.113.9.\n",
+      "expect": {
+        "status": "connected",
+        "location": "JP-FREE#3 in Osaka, Japan"
+      }
+    },
+    {
+      "name": "listLocations: 国単位の一覧（区切り行・都市列なし）",
+      "kind": "listLocations",
+      "exitCode": 0,
+      "stdout": "Country          Code\n---------------  ------\nJapan            JP\nUnited States    US\n",
+      "expect": [
+        {
+          "id": "jp-japan",
+          "country": "jp",
+          "countryName": "Japan",
+          "connectName": "JP"
+        },
+        {
+          "id": "us-united-states",
+          "country": "us",
+          "countryName": "United States",
+          "connectName": "US"
+        }
+      ]
+    },
+    {
+      "name": "account: 無料版",
+      "kind": "account",
+      "exitCode": 0,
+      "output": "Setting  Value\nnetshield  Upgrade to enable\nTo upgrade to VPN Plus visit: https://example.test/pricing\n",
+      "expect": {
+        "loggedIn": true,
+        "planId": "free"
+      }
+    },
+    {
+      "name": "account: 有料版（無料版の文言が無い）",
+      "kind": "account",
+      "exitCode": 0,
+      "output": "Setting  Value\nnetshield  on\n",
+      "expect": {
+        "loggedIn": true,
+        "planId": "paid"
+      }
+    },
+    {
+      "name": "account: 未ログイン（非ゼロ終了でも未ログインと判定）",
+      "kind": "account",
+      "exitCode": 2,
+      "output": "Error: Authentication required to view feature status.\n",
+      "expect": {
+        "loggedIn": false
+      }
+    }
+  ]
+}

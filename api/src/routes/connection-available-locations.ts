@@ -1,5 +1,5 @@
 // 責務: 契約プランで接続できる接続先（国・都市）の参考一覧の取得（GET）。
-// 接続先を選べないプラン（Proton VPN無料版）で、自動接続の行き先の候補を画面に出すために使う。
+// 接続先を選べないプラン（無料プラン等）で、自動接続の行き先の候補を画面に出すために使う。
 import { Type } from "@sinclair/typebox";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { getActiveProvider } from "../providers/active-provider-store.js";

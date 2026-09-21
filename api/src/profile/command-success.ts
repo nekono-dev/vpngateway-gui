@@ -1,6 +1,6 @@
 // 責務: ベンダーCLIの実行結果が成功かどうかの判定。
 // 終了コード0を成功とするが、アクションにsuccessPatternがあれば、終了コードが0以外でも出力が一致すれば成功とみなす
-// （Proton VPN CLIの`disconnect`は、実際の接続を切断できても終了コード1を返すため）。
+// （成功しても非ゼロの終了コードを返すCLIの操作があるため）。
 
 import type { ActionDef } from "./profile.schema.js";
 

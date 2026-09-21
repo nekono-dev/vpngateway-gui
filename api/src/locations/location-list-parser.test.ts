@@ -10,16 +10,22 @@ const row = (iso: string, country: string, city: string, ping: string) =>
   `${iso.padEnd(6)}${country.padEnd(21)}${city.padEnd(31)}${ping.padEnd(10)}\n`;
 const FOOTER = "\nYou can connect to a location by running `adguardvpn-cli connect -l 'city, country or ISO code'`\n";
 
+// 表の列名・接続時の指定名は、プロファイルが明示する（コードに既定を持たない）。この値は同梱のバンドルの宣言と同じ。
+const TABLE_OPTIONS = {
+  table: { iso: "ISO", country: "COUNTRY", city: "CITY", ping: "PING" },
+  connectName: { from: "city" as const, stripPattern: "\\s*\\(Virtual\\)\\s*$" },
+};
+
 describe("parseLocationList", () => {
   it("空白を含む国名・都市名を桁位置で切り出し、IDと接続時指定名を導出する", () => {
     const out = HEADER + row("US", "United States", "Las Vegas", "111") + FOOTER;
-    expect(parseLocationList(out)).toEqual([
+    expect(parseLocationList(out, TABLE_OPTIONS)).toEqual([
       { id: "us-las-vegas", country: "us", countryName: "United States", city: "Las Vegas", connectName: "Las Vegas", pingMs: 111 },
     ]);
   });
 
   it("(Virtual)付きの都市は、表示名を保ちつつ接続時指定名から(Virtual)を除く", () => {
-    const [shanghai] = parseLocationList(HEADER + row("CN", "China", "Shanghai (Virtual)", "59"));
+    const [shanghai] = parseLocationList(HEADER + row("CN", "China", "Shanghai (Virtual)", "59"), TABLE_OPTIONS);
     expect(shanghai).toMatchObject({ id: "cn-shanghai-virtual", city: "Shanghai (Virtual)", connectName: "Shanghai" });
   });
 
@@ -31,27 +37,27 @@ describe("parseLocationList", () => {
       row("XX", "Nowhere", "Unknown", "N/A") +
       row("US", "United States", "Atlanta", "153") +
       row("KR", "South Korea", "Seoul", "25");
-    expect(parseLocationList(out).map((l) => l.id)).toEqual([
+    expect(parseLocationList(out, TABLE_OPTIONS).map((l) => l.id)).toEqual([
       "jp-tokyo",
       "kr-seoul",
       "us-dallas",
       "us-atlanta",
       "xx-unknown",
     ]);
-    expect(parseLocationList(out).at(-1)?.pingMs).toBeUndefined();
+    expect(parseLocationList(out, TABLE_OPTIONS).at(-1)?.pingMs).toBeUndefined();
   });
 
   it("非ASCIIの都市名を保持する", () => {
-    const [sp] = parseLocationList(HEADER + row("BR", "Brazil", "São Paulo", "294"));
+    const [sp] = parseLocationList(HEADER + row("BR", "Brazil", "São Paulo", "294"), TABLE_OPTIONS);
     expect(sp).toMatchObject({ id: "br-sao-paulo", city: "São Paulo", connectName: "São Paulo" });
   });
 
   it("データ行がなければ空配列を返す", () => {
-    expect(parseLocationList(HEADER + FOOTER)).toEqual([]);
+    expect(parseLocationList(HEADER + FOOTER, TABLE_OPTIONS)).toEqual([]);
   });
 
   it("ヘッダ行が無い出力（想定外の書式）は例外にする", () => {
-    expect(() => parseLocationList("You are not logged in\n")).toThrow(/header row not found/);
+    expect(() => parseLocationList("You are not logged in\n", TABLE_OPTIONS)).toThrow(/header row not found/);
   });
 });
 
@@ -65,8 +71,12 @@ describe("toLocationId / toConnectName", () => {
   });
 
   it("末尾の(Virtual)のみを除く", () => {
-    expect(toConnectName("Mumbai (Virtual)")).toBe("Mumbai");
-    expect(toConnectName("Tokyo")).toBe("Tokyo");
+    expect(toConnectName("Mumbai (Virtual)", "\\s*\\(Virtual\\)\\s*$")).toBe("Mumbai");
+    expect(toConnectName("Tokyo", "\\s*\\(Virtual\\)\\s*$")).toBe("Tokyo");
+  });
+
+  it("stripPatternが無ければ加工しない", () => {
+    expect(toConnectName("Mumbai (Virtual)")).toBe("Mumbai (Virtual)");
   });
 });
 
@@ -82,7 +92,7 @@ describe("parseLocationList（Proton VPNの国一覧: 列名指定・都市列�
     "Japan            JP",
     "",
   ].join("\n");
-  const options = { table: { iso: "Code", country: "Country" }, connectNameFrom: "iso" as const };
+  const options = { table: { iso: "Code", country: "Country" }, connectName: { from: "iso" as const } };
 
   it("都市列が無い表では都市を持たない接続先になり、IDは国名のslug、接続時の指定名はISO国コードになる", () => {
     expect(parseLocationList(PROTON_OUTPUT, options)).toEqual([
@@ -109,7 +119,7 @@ describe("parseLocationList（Proton VPNの国一覧: 列名指定・都市列�
   });
 
   it("指定した列名のヘッダが無い出力は例外（CLIの書式変更を黙って空一覧にしない）", () => {
-    expect(() => parseLocationList("Country  Code\n---\nJapan  JP", { table: { iso: "ISO", country: "COUNTRY" } })).toThrow(
+    expect(() => parseLocationList("Country  Code\n---\nJapan  JP", { table: { iso: "ISO", country: "COUNTRY" }, connectName: { from: "city" } })).toThrow(
       "header row not found",
     );
   });

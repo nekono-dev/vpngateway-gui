@@ -27,8 +27,8 @@ const EXIT_FLUSH_GRACE_MS = 50;
  *             そのため本関数は`spawn`を使い、子プロセス自身の終了を表す`'exit'`イベントのみを待つ
  *             （`runDetachableCommand`と同じ方式に統一）。
  * 失敗時の方針: stdin書き込み中のEPIPE（CLIが入力を読まずに終了）は無視する（終了コードと出力で結果が分かる）。
- * 例: runCommand("/usr/local/bin/adguardvpn-cli", ["status"], 5000)
- *     runCommand("/usr/bin/protonvpn", ["signin", "user@proton.me"], 60000, { stdin: "password\n" })
+ * 例: runCommand("/usr/local/bin/vendor-cli", ["status"], 5000)
+ *     runCommand("/usr/bin/vendor-cli", ["signin", "user@example.test"], 60000, { stdin: "password\n" })
  */
 export function runCommand(
   binary: string,
@@ -122,7 +122,7 @@ const DEFAULT_BACKGROUND_TIMEOUT_MS = 30 * 60 * 1000;
  *             stdinは`"ignore"`ではなく書き込みを行わない`"pipe"`とし、読み取りをブロックさせる
  *             （即時EOFより安全）。加えて、上記のような不具合でプロセスが自然終了しないケースに
  *             備え、`backgroundTimeoutMs`経過後は強制killしてプロセスの無期限な滞留を防ぐ。
- * 例: runDetachableCommand("/usr/local/bin/adguardvpn-cli", ["login"], 15000, "https://\\S+")
+ * 例: runDetachableCommand("/usr/local/bin/vendor-cli", ["login"], 15000, "https://\\S+")
  */
 export function runDetachableCommand(
   binary: string,

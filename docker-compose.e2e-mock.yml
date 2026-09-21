@@ -1,9 +1,10 @@
-# 責務: E2E専用のoverride。実VPNベンダーCLIの代わりに、Proton VPN公式CLIの挙動を模擬するモックCLI
-# （proxy/mock-cli/protonvpn-mock.mjs）を、専用のモックランナー（runner-mock）で実行する。**本番では使わない**。
-# 使い方: docker compose -p vpngwgui-e2e-mock -f docker-compose.yml -f docker-compose.e2e-mock.yml up -d --build
-#   （e2e/phase9/mock-scenarios.sh・e2e/phase11/provider-scenarios.shが実行する。Web UIは http://localhost:18080）
-#   E2E_PROFILES_DIR: プロファイルを集めたディレクトリ（e2e/lib/e2e-profiles.shの`make_e2e_profiles_dir`が作る）
-#   E2E_PROVIDERS（既定mockproton）: 有効にするベンダー。例 E2E_PROVIDERS=adguardvpn,mockproton
+# 責務: E2E専用のoverride。Web UIの公開ポートの差し替えと、APIへ渡すベンダーバンドル（プロファイル）のディレクトリの差し替えだけを行う。
+# **本番では使わない**。ランナーは、各バンドルのcompose fragment（実運用: vendors/<ID>/compose.yml、モック: e2e/vendors/<ID>/compose.yml）が
+# 定義し、有効にするものだけを併せて起動する（本番と同じ方式。e2e/lib/e2e-vendors.shの`e2e_compose_files`）。
+# 使い方: . e2e/lib/e2e-vendors.sh; make_e2e_vendors_dir mockproton
+#         docker compose -p vpngwgui-e2e-mock $(e2e_compose_files mockproton) up -d --build   （リポジトリルートで。Web UIは http://localhost:18080）
+#   E2E_VENDORS_DIR: 有効なベンダーのプロファイルを集めたディレクトリ（`make_e2e_vendors_dir`が作る）
+#   VPN_PROVIDERS: 有効にするベンダー（`make_e2e_vendors_dir`がexportする）
 services:
   web:
     # 他のスタックと衝突しないよう、公開ポートを差し替える（listの合成は追記になるため!overrideで置換する）。
@@ -11,26 +12,5 @@ services:
       - "18080:8080"
   api:
     volumes:
-      # プロファイルのディレクトリを、実運用のプロファイル（api/config/profiles/）とテスト用プロファイル
-      # （mockproton。binaryはモックCLIのパス）を併せたものへ差し替える（マウント先が同じなので置換される）。
-      # 読み取り専用のバインドマウントの中へ単一ファイルを重ねられないため、E2Eのスクリプトが
-      # 併せたディレクトリを作り、E2E_PROFILES_DIRで渡す。
-      - ${E2E_PROFILES_DIR:?E2E_PROFILES_DIRにプロファイルを集めたディレクトリを指定すること}:/etc/vpngwgui/profiles:ro
-    environment:
-      ENABLED_PROVIDERS: ${E2E_PROVIDERS:-mockproton}
-  # モックプロバイダ用ランナー。実運用のランナーとは別のサービス・イメージで、許可バイナリ・ソケット名はここで与える。
-  runner-mock:
-    restart: always
-    build:
-      context: .
-      dockerfile: proxy/Dockerfile.runner-mock
-    network_mode: host
-    user: "10001:10001"
-    init: true
-    volumes:
-      - ctl-socket:/var/run/vpngw-ctl
-      - ./proxy/mock-cli/protonvpn-mock.mjs:/usr/local/bin/protonvpn-mock:ro
-    environment:
-      CTL_SOCKET_PATH: /var/run/vpngw-ctl/runner-mockproton.sock
-      RUNNER_ALLOWED_BINARY: /usr/local/bin/protonvpn-mock
-      MOCK_STATE_FILE: /tmp/protonvpn-mock-state.json
+      # ベンダーバンドルのディレクトリを、有効なベンダーのプロファイルだけを集めたものへ差し替える（マウント先が同じなので置換される）。
+      - ${E2E_VENDORS_DIR:?E2E_VENDORS_DIRに、有効なベンダーのプロファイルを集めたディレクトリを指定すること}:/etc/vpngwgui/vendors:ro

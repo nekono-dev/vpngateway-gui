@@ -161,7 +161,7 @@ export async function fetchProxyStatus(): Promise<GatewayStatus> {
  * 入力: providerId(確認するベンダーID)。
  * 出力: 200で応答すればtrue。ソケットが無い・接続拒否・タイムアウト・想定外の応答はfalse（例外にしない）。
  * 副作用: なし（ランナー内でCLIは起動されない）。一覧表示を遅くしないよう短いタイムアウトにする。
- * 例: await checkRunnerHealth("protonvpn") // => false（ランナー未起動）
+ * 例: await checkRunnerHealth("vendorb") // => false（ランナー未起動）
  */
 export async function checkRunnerHealth(providerId: string): Promise<boolean> {
   try {

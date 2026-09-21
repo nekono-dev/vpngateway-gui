@@ -1,0 +1,10 @@
+# 責務: 中立性の検査（scripts/check-vendor-neutrality.mjs）が、バンドル（vendors/<ID>/）とは別に禁止する語の一覧。
+# まだバンドルが無い既知のVPNベンダー名（要件書に登場するもの）を、1行1語で書く。大文字小文字は区別しない。`#`で始まる行はコメント。
+# 実際にバンドルがあるベンダーのID・表示名・CLIのバイナリ名は、profile.jsonから自動で禁止語にするため、ここには書かない。
+adguard
+proton
+nordvpn
+mullvad
+expressvpn
+surfshark
+privateinternetaccess

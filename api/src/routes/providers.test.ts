@@ -10,9 +10,11 @@ import { join } from "node:path";
 const root = mkdtempSync(join(tmpdir(), "vpngwgui-switch-"));
 const profilesDir = join(root, "profiles");
 mkdirSync(profilesDir);
-copyFileSync(join(import.meta.dirname, "../../config/profiles/adguardvpn.json"), join(profilesDir, "adguardvpn.json"));
-copyFileSync(join(import.meta.dirname, "../../test-fixtures/profiles/mockproton.json"), join(profilesDir, "mockproton.json"));
-process.env.VPN_PROFILES_DIR = profilesDir;
+for (const [id, source] of [["adguardvpn", "../../../vendors/adguardvpn/profile.json"], ["mockproton", "../../../e2e/vendors/mockproton/profile.json"]]) {
+  mkdirSync(join(profilesDir, id));
+  copyFileSync(join(import.meta.dirname, source), join(profilesDir, id, "profile.json"));
+}
+process.env.VENDORS_DIR = profilesDir;
 process.env.ENABLED_PROVIDERS = "adguardvpn,mockproton";
 process.env.STATE_DIR = root;
 process.env.AUDIT_LOG_FILE = join(root, "audit.log");

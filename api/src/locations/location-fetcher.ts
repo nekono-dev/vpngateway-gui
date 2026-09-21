@@ -1,4 +1,4 @@
-// 責務: ベンダーCLIの`list-locations`を（プロキシ経由で）実行し、接続先の配列として返す。
+// 責務: CLIの接続先一覧アクション（`listLocations`）を（ランナー経由で）実行し、接続先の配列として返す。
 // `GET /v1/connection/locations`と、接続時の接続先ID解決（`PUT /v1/connection`）の両方が使う。
 // キャッシュはしない（ping値の鮮度は利用者の「再計測」操作で決める。apiserver/design.md参照）。
 
@@ -41,5 +41,5 @@ export async function fetchLocations(provider: Provider): Promise<ParsedLocation
       { pattern: action.restrictedPattern, operation: "locationList" },
     );
   }
-  return parseLocationList(result.stdout, { table: action.table, connectNameFrom: action.connectNameFrom });
+  return parseLocationList(result.stdout, { table: action.table, connectName: action.connectName });
 }

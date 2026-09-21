@@ -1,19 +1,21 @@
 // 責務: 管理者向け設定「VPNクライアント操作プロファイル」JSONのTypeBoxスキーマ定義。
-// apiserver/design.md「管理者向け設定」「Phase 9における具体プロファイル」参照。
-// argv配列ベースで保持し、シェル文字列は扱わない。プロバイダごとの機能差・プラン制限もここ（データ）で表現する。
+// apiserver/design.md「管理者向け設定」「Phase 9における具体プロファイル」「Phase 12におけるプロファイルの明示化」参照。
+// argv配列ベースで保持し、シェル文字列は扱わない。プロバイダごとの機能差・プラン制限・出力の書式もここ（データ）で表現し、
+// コード側にプロバイダ固有の既定値を持たない（ベンダー固有になりうる項目は必須にする）。
 
 import { Type, type Static } from "@sinclair/typebox";
 import { OPERATION_KEYS } from "../capabilities/operations.js";
 
 // 許可値の出典。
-// - "enum": プロファイル内の配列フィールド（`enumFrom`。例 "adguardvpn.regions"）に含まれる値のみ許可する。
 // - "locations": 直前に`listLocations`アクションで取得した接続先から導出した値のみ許可する（Phase 8。
 //   許可値は実行時に決まるため、resolveArgvの呼び出し元が渡す。apiserver/design.md「Phase 8における具体プロファイル」）。
 // - "input": 利用者入力を`pattern`のみで検証して使う（Phase 9。ログインのユーザー名。許可値の列挙が意味を持たない入力用）。
+// - "secret": 秘密の入力（Phase 12。パスワード・2FAコード）。`pattern`のみで検証し、argvには置けず、標準入力（`stdin`）にだけ使う。
 export const PlaceholderDefSchema = Type.Object({
   pattern: Type.String(),
-  source: Type.Union([Type.Literal("enum"), Type.Literal("locations"), Type.Literal("input")]),
-  enumFrom: Type.Optional(Type.String()),
+  source: Type.Union([Type.Literal("locations"), Type.Literal("input"), Type.Literal("secret")]),
+  // `source: "secret"`のとき、値が未指定・空ならその値を使う標準入力の行を出さない（2段階認証コード等）。
+  optional: Type.Optional(Type.Boolean()),
 });
 
 export const ActionDefSchema = Type.Object({
@@ -29,27 +31,31 @@ export const ActionDefSchema = Type.Object({
   // （Phase 9。403 operation_restrictedで通知し、対応するオペレーションを制限として学習する）。
   restrictedPattern: Type.Optional(Type.String()),
   // 終了コードが0以外でも、標準出力・標準エラーがこの正規表現に一致すれば成功とみなす。
-  // Proton VPN CLIの`disconnect`は、実際の接続の切断に成功しても終了コード1で"Disconnected."と出力するため。
+  // 成功しても非ゼロの終了コードを返すCLIの操作向け。
   successPattern: Type.Optional(Type.String()),
+  // 子プロセスの標準入力へ渡す行のテンプレート（Phase 12。`login`の入力型で使う）。各要素は固定の文字列か、
+  // `source: "secret"`のプレースホルダー（例 "%PASSWORD%"）。各行の末尾に改行を付けて連結する。
+  stdin: Type.Optional(Type.Array(Type.String())),
 });
 export type ActionDef = Static<typeof ActionDefSchema>;
 
-// `listLocations`アクション。出力表の列名と、接続時の指定名の出典をプロバイダごとに指定できる（Phase 9）。
+// `listLocations`アクション。出力表の列名と、接続時の指定名の出典を指定する（Phase 9。Phase 12で既定値を廃止し必須にした）。
 export const ListLocationsActionDefSchema = Type.Composite([
   ActionDefSchema,
   Type.Object({
-    // 出力表のヘッダ行に現れる列名。`iso`・`country`は必須、`city`・`ping`は省略可。省略時は従来のAdGuard VPN形式
-    // （ISO/COUNTRY/CITY/PING）。
-    table: Type.Optional(
-      Type.Object({
-        iso: Type.String(),
-        country: Type.String(),
-        city: Type.Optional(Type.String()),
-        ping: Type.Optional(Type.String()),
-      }),
-    ),
-    // `%LOCATION%`へ代入する接続時の指定名の出典。"city"（既定。都市名から"(Virtual)"を除いたもの）／"iso"（ISO国コード）。
-    connectNameFrom: Type.Optional(Type.Union([Type.Literal("city"), Type.Literal("iso")])),
+    // 出力表のヘッダ行に現れる列名。`iso`・`country`は必須、`city`・`ping`は省略可。
+    table: Type.Object({
+      iso: Type.String(),
+      country: Type.String(),
+      city: Type.Optional(Type.String()),
+      ping: Type.Optional(Type.String()),
+    }),
+    // `%LOCATION%`へ代入する接続時の指定名。`from`は出典（"city"=都市名／"iso"=ISO国コード）、
+    // `stripPattern`は指定名から取り除く部分の正規表現（表示にだけ付く注記の除去等。省略時は加工しない）。
+    connectName: Type.Object({
+      from: Type.Union([Type.Literal("city"), Type.Literal("iso")]),
+      stripPattern: Type.Optional(Type.String()),
+    }),
   }),
 ]);
 export type ListLocationsActionDef = Static<typeof ListLocationsActionDefSchema>;
@@ -97,12 +103,11 @@ export const AccountActionDefSchema = Type.Composite([
 ]);
 export type AccountActionDef = Static<typeof AccountActionDefSchema>;
 
-// Phase 1では"json"固定（モックCLI）。Phase 2で実VPNベンダーCLI統合に伴い"text"を追加し、
-// 対応するパーサーをresponse-parser.tsに実装した（wbs/phase2.md参照）。
+// "json"は`status`・`country`を持つ内部規約（モックCLI用）、"text"は人間可読なテキスト出力を`output`の正規表現で解釈する。
 export const OutputFormatSchema = Type.Union([Type.Literal("json"), Type.Literal("text")]);
 
-// ログイン方式。"deviceUrl"=`login`が認証URLを出力する（AdGuard VPN。既定）、
-// "credentials"=ユーザー名・パスワード（・2FAコード）の入力型（Proton VPN）。
+// ログイン方式。"deviceUrl"=`login`が認証URLを出力し、ブラウザでの認証完了を待つ、
+// "credentials"=ユーザー名・パスワード（・2FAコード）の入力型（`login.stdin`で標準入力の書式を宣言する）。
 export const LoginMethodSchema = Type.Union([Type.Literal("deviceUrl"), Type.Literal("credentials")]);
 export type LoginMethod = Static<typeof LoginMethodSchema>;
 
@@ -112,10 +117,13 @@ export const VendorProfileSchema = Type.Object({
   displayName: Type.Optional(Type.String()),
   binary: Type.String(),
   outputFormat: OutputFormatSchema,
-  loginMethod: Type.Optional(LoginMethodSchema),
-  // 接続状態のテキスト出力の解釈（Phase 9）。省略時は従来のAdGuard VPN形式。
+  // Phase 12で必須（既定なし）。
+  loginMethod: LoginMethodSchema,
+  // 接続状態のテキスト出力の解釈（Phase 9・12）。`outputFormat: "text"`のとき、両方とも必須（validateProfileで検証する）。
   output: Type.Optional(
     Type.Object({
+      // 標準出力が一致すれば接続中と判定する正規表現（フラグi）。
+      connectedPattern: Type.Optional(Type.String()),
       // 接続先（表示名）を取り出す正規表現（フラグim。第1キャプチャが接続先）。
       locationPattern: Type.Optional(Type.String()),
     }),

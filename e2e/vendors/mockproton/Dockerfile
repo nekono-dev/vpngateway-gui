@@ -1,5 +1,5 @@
-# モックプロバイダ用ランナー（`runner-mock`）のイメージ。**E2E専用**（docker-compose.e2e-mock.yml）。
-# ベンダーCLIを含まず、モックCLI（proxy/mock-cli/protonvpn-mock.mjs）をcomposeでマウントして使う。
+# モックプロバイダ用ランナー（`runner-mockproton`）のイメージ。**E2E専用**（`e2e/vendors/mockproton/`のバンドル）。
+# ベンダーCLIを含まず、モックCLI（e2e/vendors/mockproton/protonvpn-mock.mjs）をcomposeでマウントして使う。
 # 許可バイナリ（RUNNER_ALLOWED_BINARY）・ソケット名もcomposeで与える（実運用のランナーとは別のサービス・イメージ）。
 
 FROM node:22-alpine AS build

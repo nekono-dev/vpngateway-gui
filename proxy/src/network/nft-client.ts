@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 
 const NFT_BIN = process.env.NFT_BIN ?? "nft";
 // vpngwguiユーザーは非rootで動作するが、nftテーブル操作はroot権限を要する。実VPNベンダーCLIの
-// TUN設定と同様にパスワードなしsudo（proxy/Dockerfile.adguardvpn参照）を経由する。
+// TUN設定と同様にパスワードなしsudo（proxy/Dockerfile参照）を経由する。
 const SUDO_BIN = process.env.SUDO_BIN ?? "sudo";
 const DEFAULT_TIMEOUT_MS = 5000;
 

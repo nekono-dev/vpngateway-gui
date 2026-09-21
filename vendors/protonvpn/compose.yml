@@ -1,0 +1,38 @@
+# 責務: このベンダーのランナー（`runner-protonvpn`）のcompose fragment。`.env`の`COMPOSE_FILE`へ、docker-compose.yml（本体）の
+# 後ろに並べて合成する（install/install.shが書く）。規約は`vendors/adguardvpn/compose.yml`の冒頭と同じ。
+# CLIの実行環境（NetworkManager・D-Bus・keyring）はこのコンテナ内で起動する（entrypoint.sh）。
+services:
+  runner-protonvpn:
+    restart: always
+    build:
+      context: .
+      dockerfile: vendors/protonvpn/Dockerfile
+    # NMが作るWireGuardトンネルをゲートウェイのネットワーク名前空間に作らせるため。
+    network_mode: host
+    # エントリポイントがroot権限でシステムD-Bus・NetworkManagerを起動し、ランナー本体はvpngwgui（10001）へ権限を落として起動する。
+    user: "0:0"
+    cap_add:
+      - NET_ADMIN
+    init: true
+    environment:
+      # NMの管理対象に加える上り側NIC（entrypoint.shがNM設定へ埋める）。ネットワークコンテナと同じ`.env`の値。
+      LAN_IFACE: ${LAN_IFACE:-}
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+      # CLIの設定・永続化したmachine-id
+      - proton-config:/home/vpngwgui/.config/Proton
+      # Secret Service（gnome-keyring）の実体。ログイン情報（トークン）はここに保存される。
+      - proton-keyrings:/home/vpngwgui/.local/share/keyrings
+      # サーバー一覧のキャッシュ（毎回の取得を避ける）
+      - proton-cache:/home/vpngwgui/.cache/Proton
+
+  # APIへ、CLIのサーバ一覧のキャッシュを読み取り専用で見せる（プランで接続できる接続先の参考一覧。specs/apiserver/design.md「Phase 14」）。
+  # composeの合成で、docker-compose.ymlのapiのvolumesへ加わる。
+  api:
+    volumes:
+      - proton-cache:/var/lib/vpngwgui-provider-cache/protonvpn:ro
+
+volumes:
+  proton-config: {}
+  proton-keyrings: {}
+  proton-cache: {}

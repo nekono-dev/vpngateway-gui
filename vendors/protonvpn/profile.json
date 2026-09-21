@@ -5,6 +5,7 @@
   "outputFormat": "text",
   "loginMethod": "credentials",
   "output": {
+    "connectedPattern": "(?<![a-zA-Z])connected(?![a-zA-Z])",
     "locationPattern": "^(?:Server:|Connected to)\\s+(.+?)\\.?\\s*$"
   },
   "features": {
@@ -58,8 +59,21 @@
         "USERNAME": {
           "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$",
           "source": "input"
+        },
+        "PASSWORD": {
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,512}$",
+          "source": "secret"
+        },
+        "TWO_FACTOR_CODE": {
+          "pattern": "^[0-9A-Za-z]{4,32}$",
+          "source": "secret",
+          "optional": true
         }
       },
+      "stdin": [
+        "%PASSWORD%",
+        "%TWO_FACTOR_CODE%"
+      ],
       "timeoutMs": 60000
     },
     "logout": {
@@ -80,8 +94,10 @@
         "iso": "Code",
         "country": "Country"
       },
-      "connectNameFrom": "iso",
-      "restrictedPattern": "not available on the free plan"
+      "restrictedPattern": "not available on the free plan",
+      "connectName": {
+        "from": "iso"
+      }
     },
     "account": {
       "argv": [

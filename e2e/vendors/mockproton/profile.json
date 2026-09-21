@@ -4,7 +4,10 @@
   "binary": "/usr/local/bin/protonvpn-mock",
   "outputFormat": "text",
   "loginMethod": "credentials",
-  "output": { "locationPattern": "^(?:Server:|Connected to)\\s+(.+?)\\.?\\s*$" },
+  "output": {
+    "connectedPattern": "(?<![a-zA-Z])connected(?![a-zA-Z])",
+    "locationPattern": "^(?:Server:|Connected to)\\s+(.+?)\\.?\\s*$"
+  },
   "features": { "changeLocation": true, "locationPing": false },
   "actions": {
     "connect": {
@@ -18,7 +21,12 @@
     "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 15000 },
     "login": {
       "argv": ["signin", "%USERNAME%"],
-      "placeholders": { "USERNAME": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$", "source": "input" } },
+      "placeholders": {
+        "USERNAME": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$", "source": "input" },
+        "PASSWORD": { "pattern": "^[^\\x00-\\x1f\\x7f]{1,512}$", "source": "secret" },
+        "TWO_FACTOR_CODE": { "pattern": "^[0-9A-Za-z]{4,32}$", "source": "secret", "optional": true }
+      },
+      "stdin": ["%PASSWORD%", "%TWO_FACTOR_CODE%"],
       "timeoutMs": 60000
     },
     "logout": { "argv": ["signout"], "placeholders": {}, "timeoutMs": 30000 },
@@ -27,7 +35,7 @@
       "placeholders": {},
       "timeoutMs": 30000,
       "table": { "iso": "Code", "country": "Country" },
-      "connectNameFrom": "iso",
+      "connectName": { "from": "iso" },
       "restrictedPattern": "not available on the free plan"
     },
     "account": {

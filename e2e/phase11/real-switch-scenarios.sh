@@ -1,7 +1,7 @@
 #!/bin/bash
 # 責務: Phase 11完了基準のうち、実VPN（AdGuard VPN）に接続中にモックProton VPNへ切り替えたときの、実ネットワークでの挙動を検証する
 #       （現在のVPNが切断されトンネルが消える・Kill Switch ONでLAN端末の通信が遮断される・切り戻して再接続すると再びVPN経由になる）。
-#       実VPNログイン済みのゲートウェイ役（GW_MODE=ssh）に、モックランナー付きの構成（docker-compose.e2e-mock.yml）を一時的に重ねて行う。
+#       実VPNログイン済みのゲートウェイ役（GW_MODE=ssh）に、モックランナー付きの構成（docker-compose.e2e-mock.yml＋モックのバンドル）を一時的に重ねて行う。
 # 実行: GW_MODE=ssh bash e2e/phase11/real-switch-scenarios.sh
 # 前提: e2e/lxc/sync.sh済み・AdGuard VPNログイン済み・LAN端末役（e2e/lxc/setup.sh）。終了時に通常の構成（モックランナー無し・Web 8080）へ戻す。
 #       検証専用環境で実行すること（設定・接続状態を書き換える）。
@@ -23,11 +23,11 @@ has_vpn_rule() { gw nft list table inet vpngwgui 2>/dev/null | grep -q 'oifname 
 active_provider() { api GET /v1/providers | python3 -c "import json,sys;print([p['id'] for p in json.load(sys.stdin) if p['active']][0])"; }
 
 # モックランナー付きの構成へ（プロファイルのディレクトリをゲートウェイ役に作り、composeへ渡す）
-gw sh -c "rm -rf e2e-profiles && mkdir -p e2e-profiles && cp api/config/profiles/*.json e2e-profiles/ && cp api/test-fixtures/profiles/mockproton.json e2e-profiles/ && chmod 755 e2e-profiles && chmod 644 e2e-profiles/*.json"
-DCF="docker compose -f docker-compose.yml -f docker-compose.e2e-mock.yml"
-E2E_ENV="E2E_PROFILES_DIR=$GW_REPO_DIR/e2e-profiles E2E_PROVIDERS=adguardvpn,mockproton"
+gw sh -c "rm -rf e2e-vendors && mkdir -p e2e-vendors/adguardvpn e2e-vendors/mockproton && cp vendors/adguardvpn/profile.json e2e-vendors/adguardvpn/ && cp e2e/vendors/mockproton/profile.json e2e-vendors/mockproton/ && chmod -R a+rX e2e-vendors"
+DCF="docker compose -f docker-compose.yml -f docker-compose.e2e-mock.yml -f vendors/adguardvpn/compose.yml -f e2e/vendors/mockproton/compose.yml"
+E2E_ENV="E2E_VENDORS_DIR=$GW_REPO_DIR/e2e-vendors VPN_PROVIDERS=adguardvpn,mockproton"
 restore() {
-  gw sh -c "$E2E_ENV $DCF down >/dev/null 2>&1; docker compose up -d --remove-orphans >/dev/null 2>&1; rm -rf e2e-profiles"
+  gw sh -c "$E2E_ENV $DCF down >/dev/null 2>&1; docker compose up -d --remove-orphans >/dev/null 2>&1; rm -rf e2e-vendors"
 }
 trap restore EXIT
 

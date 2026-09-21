@@ -612,7 +612,7 @@ CN    China                Shanghai (Virtual)             59
 
 ### 参照するキャッシュの置き場
 
-- `PROVIDER_CACHE_DIR`（既定`/var/lib/vpngwgui-provider-cache`）配下に、ベンダーごとの読み取り専用のキャッシュを`<ベンダーID>/`として置く。ランナーがCLIのキャッシュに使うボリュームを、APIコンテナへ読み取り専用でマウントする（ランナーの実行部は変更しない。APIはCLIを起動せずファイルだけを読む）。マウントの記述はベンダー固有のため、Phase 12のベンダーバンドルへ移す対象（現状は`docker-compose.yml`）。
+- `PROVIDER_CACHE_DIR`（既定`/var/lib/vpngwgui-provider-cache`）配下に、ベンダーごとの読み取り専用のキャッシュを`<ベンダーID>/`として置く。ランナーがCLIのキャッシュに使うボリュームを、APIコンテナへ読み取り専用でマウントする（ランナーの実行部は変更しない。APIはCLIを起動せずファイルだけを読む）。マウントの記述はベンダー固有のため、そのバンドルのcompose.yml（`services.api.volumes`。composeの合成で`docker-compose.yml`の`api`へ加わる）に置く（Phase 12。`vendors/protonvpn/compose.yml`）。
 - APIは非rootで起動し、ランナーのキャッシュファイルと同じUID/GID（10001）で読む。
 
 ### ファイル配置（AGENTS.mdの規約）

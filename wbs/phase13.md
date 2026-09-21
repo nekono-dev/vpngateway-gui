@@ -11,12 +11,12 @@
 ## 前提
 
 - Phase 12完了（ベンダーバンドル、`COMPOSE_FILE`合成、`VPN_PROVIDERS`必須）。
-- クリーンなUbuntu 24.04の検証環境（LXC。`security.nesting=true`。`e2e/lxc/`）。
+- クリーンなUbuntu 24.04・Debian 12の検証環境（LXC。`security.nesting=true`。`e2e/lxc/`）。
 
 ## スコープ外
 
 - アンインストール、IPv6、ホストのファイアウォール（ufw等）との調整。
-- Debian・Raspberry Pi OSでの検証（検証環境はUbuntu 24.04のみ。`nftables.service`の`flush ruleset`による起動時ルールの消失は未検証）。
+- Raspberry Pi OSでの検証、ホストの再起動後の起動時ガードの維持の検証（Debian 12・Ubuntu 24.04のLXCでの導入は検証済み）。
 - 無効にしたベンダーの`install-host.sh`の取り消し（`uninstall-host.sh`）。ベンダーのCLIがホスト導入を要するようになった時点で設計する。
 - インストーラの署名（`install.sh.sha256`の添付までとする）。
 
@@ -43,16 +43,16 @@
 - [x] 要件・設計・タスクの反映（本ファイルを含む）。
 
 ### インストーラ
-- [ ] `install/install.sh`（本体）: 事前検査・依存とDocker公式リポジトリ・sysctl・起動ガード・`.env`・ベンダーの決定・`install-host.sh`のフック・起動と待機・完了表示。従来の`install/`の4本を削除し、参照（compose・仕様書・E2Eのコメント）を更新。
-- [ ] `install/bootstrap.sh`（頒布物の雛形）と`install/build-bootstrap.sh`（置換・置換漏れの検査）。
-- [ ] `.github/workflows/installer.yml`（`sh -n`・shellcheck・`npm test`・ブートストラップの生成・ブランチのartifact・タグのRelease）。
-- [ ] `README.md`にインストール手順（1コマンド・`--providers`・更新・ベンダーの変更）を記載。
+- [x] `install/install.sh`（本体）: 事前検査・依存とDocker公式リポジトリ・sysctl・起動ガード・`.env`・ベンダーの決定・`install-host.sh`のフック・起動と待機・完了表示。従来の`install/`の4本を削除し、参照（compose・仕様書・E2Eのコメント）を更新。
+- [x] `install/bootstrap.sh`（頒布物の雛形）と`install/build-bootstrap.sh`（置換・置換漏れの検査）。
+- [x] `.github/workflows/installer.yml`（`sh -n`・shellcheck・`npm test`・ブートストラップの生成・ブランチのartifact・タグのRelease）。
+- [x] `README.md`にインストール手順（1コマンド・`--providers`・更新・ベンダーの変更）を記載。
 
 ### 検証
-- [ ] クリーンなUbuntu 24.04（LXC）で、ブートストラップ（ローカルのリポジトリをREPO_URLにしたもの）から導入・起動し、Web UIが応答する。
-- [ ] `--providers`の指定・変更（追加・削除。無効にしたランナーの停止）、引数なしの再実行（既存値の保持・更新）、対話選択、`.env`の保持（`LAN_IFACE`）。
-- [ ] `install-host.sh`のフック（テスト用バンドルで、実行される・失敗で中止する）。
-- [ ] 導入後のE2E（`e2e/phase3`の一部: sysctl・起動ガード・透過ゲートウェイ）と、実VPN（AdGuard）での接続。
+- [x] クリーンなUbuntu 24.04（LXC）で、ブートストラップ（ローカルのリポジトリをREPO_URLにしたもの）から導入・起動し、Web UIが応答する。
+- [x] `--providers`の指定・変更（追加・削除。無効にしたランナーの停止）、引数なしの再実行（既存値の保持・更新）、対話選択、`.env`の保持（`LAN_IFACE`）。
+- [x] `install-host.sh`のフック（テスト用バンドルで、実行される・失敗で中止する）。
+- [x] 導入後のE2E（`e2e/phase3`の一部: sysctl・起動ガード・透過ゲートウェイ）と、実VPN（AdGuard）での接続。
 
 ## 完了基準
 
@@ -65,6 +65,16 @@
 
 - LXCのクリーンなコンテナで、ブートストラップを`file://`のリポジトリ（REPO_URL）から実行する。GitHub Releaseへの公開・実際の`curl | sh`の経路は、リポジトリへのpushとタグが必要なため、利用者の許可を得て確認する（`git push`は許可があるときのみ）。
 
+## 検証結果（2026-09-21）
+
+- インストーラ関連の検査: `sh install/tests/run.sh`（`npm test`に含む）25項目。構文・頒布物の生成（値の埋め込み・置換漏れ・不正な引数の拒否）・雛形のまま実行した場合の中止・引数の解釈・対話選択（`script`で擬似端末を与える）。shellcheck（`koalaman/shellcheck`のコンテナ）で指摘なし。
+- クリーンなコンテナでの導入（`e2e/phase13/install-scenarios.sh`。ブートストラップを標準入力のパイプで実行）: **Ubuntu 24.04・Debian 12（bookworm）とも26項目 FAIL 0**。1コマンドでDocker（公式リポジトリ）導入・sysctl・起動ガード・`.env`・起動・Web UI応答まで完了、引数なしの再実行が冪等（`.env`不変）、`--providers`でベンダーの追加・削除（ランナーの停止・削除）、`install-host.sh`の契約と失敗時の中止、存在しない・不正なベンダーIDの拒否、指定も既存値も端末も無ければ失敗、存在しないコミットの頒布物は何も実行しない、未コミットの変更で更新を中止。
+- 検証中に見つけた不具合を修正: `sysctl --system`が、無関係な他のファイルの権限エラー（Debian LXC）で導入を中断した → 自分の設定ファイルだけを`sysctl -p`で反映する。
+
 ## 次フェーズへの申し送り
 
-- （実施後に記載）
+- **未確認（利用者の許可が要る）**: GitHubへのpushとタグによる実際の頒布（`.github/workflows/installer.yml`の実行、GitHub Releaseへの`install.sh`・`install.sh.sha256`の添付、`releases/latest/download/install.sh`のURL、`curl | sudo sh`の実経路）。ワークフローはYAML構文とシェルの検査のみローカルで確認した。README・仕様書のURLは`nekono-dev/vpngateway-gui`を前提にしている。
+- 既存環境（検証環境`192.168.3.240`等、旧形式の`.env`）は、`install.sh --providers <ID>,...`を一度実行すれば`COMPOSE_PROFILES`から`COMPOSE_FILE`へ移る（`--no-start`で`.env`だけ更新もできる）。
+- `nftables.service`が有効な環境でのホスト再起動後の起動ガードの維持、Raspberry Pi OS（32bit/64bit）での導入は未検証。
+- ベンダー固有のホスト側の追加手順（`install-host.sh`）は、現在のバンドルに存在しない。フックの契約は、検査用のバンドルで確認した。ホスト導入を要するベンダーを追加するときは、無効にしたときの取り消し（`uninstall-host.sh`等）を設計する。
+- アンインストール（`docker compose down`・sysctl設定・起動ガードの撤去）は未提供。

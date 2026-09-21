@@ -1,5 +1,5 @@
 // 責務: コマンド失敗時にユーザへ返す診断テキストを、stderr/stdoutから選ぶ汎用ヘルパー。
-// 実VPNベンダーCLI（adguardvpn-cli）はエラーメッセージをstderrではなくstdoutへ出力するため
+// VPNベンダーCLIの中にはエラーメッセージをstderrではなくstdoutへ出力するものがあるため
 // （例: `disconnect`が接続していない時の"Failed to disconnect. Process is not running"、exit code 14。
 //  Phase 5のE2Eで判明）、stderrのみを返すと診断が空になる。プロジェクト固有の型に依存しない。
 

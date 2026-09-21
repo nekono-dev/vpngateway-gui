@@ -8,7 +8,7 @@ export type LocationItem = GetV1ConnectionLocations200Item;
 export type LocationTab = "all" | "favorites";
 
 /**
- * 目的: 接続先の表示名を返す。都市を持たない接続先（Proton VPNの国単位の一覧）は国名にする。
+ * 目的: 接続先の表示名を返す。都市を持たない接続先（国単位の一覧）は国名にする。
  * 入力: location(APIが返した接続先)。
  * 出力: 都市名、無ければ国名。
  * 例: locationLabel({ city: "Tokyo", countryName: "Japan", ... }) // => "Tokyo"

@@ -11,8 +11,8 @@ function loadJson(name: string): VendorProfile {
   return JSON.parse(readFileSync(join(import.meta.dirname, name), "utf8")) as VendorProfile;
 }
 
-const adguard = loadJson("../../config/profiles/adguardvpn.json");
-const protonLike = loadJson("../../test-fixtures/profiles/mockproton.json");
+const adguard = loadJson("../../../vendors/adguardvpn/profile.json");
+const protonLike = loadJson("../../../e2e/vendors/mockproton/profile.json");
 
 const freePlan: SessionInfo = {
   loggedIn: true,

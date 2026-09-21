@@ -41,19 +41,19 @@
 - [x] 要件・設計・タスク・AGENTS.mdへの反映（本ファイルを含む）。
 
 ### api（`specs/apiserver/tasks.md`「ベンダー非依存化」）
-- [ ] プロファイルスキーマの明示化・検証、コードからの既定値・固有処理の除去、`enum`の削除。
-- [ ] 有効ベンダーの既定値の廃止、旧形式の状態移行の廃止、`VENDORS_DIR`への変更。
-- [ ] 既存2プロファイルの明示化、単体テストの追随。
+- [x] プロファイルスキーマの明示化・検証、コードからの既定値・固有処理の除去、`enum`の削除。
+- [x] 有効ベンダーの既定値の廃止、旧形式の状態移行の廃止、`VENDORS_DIR`への変更。
+- [x] 既存2プロファイルの明示化、単体テストの追随。
 
 ### ベンダーバンドル化（`specs/runner/tasks.md`「ベンダーバンドル化」）
-- [ ] `vendors/adguardvpn/`・`vendors/protonvpn/`（`profile.json`・`Dockerfile`・`entrypoint.sh`・付属の設定・`compose.yml`）へ移動し、`docker-compose.yml`の本体からランナー・ベンダー別ボリュームを除去。
-- [ ] E2E用モックベンダーのバンドル化（`e2e/vendors/mockproton/`）と、E2Eスクリプト・`docker-compose.e2e-mock.yml`の追随。
-- [ ] `install/select-providers.sh`の暫定の追随（`VPN_PROVIDERS`・`COMPOSE_FILE`を書く）。
+- [x] `vendors/adguardvpn/`・`vendors/protonvpn/`（`profile.json`・`Dockerfile`・`entrypoint.sh`・付属の設定・`compose.yml`）へ移動し、`docker-compose.yml`の本体からランナー・ベンダー別ボリュームを除去。
+- [x] E2E用モックベンダーのバンドル化（`e2e/vendors/mockproton/`）と、E2Eスクリプト・`docker-compose.e2e-mock.yml`の追随。
+- [x] `install/select-providers.sh`の暫定の追随（`VPN_PROVIDERS`・`COMPOSE_FILE`を書く）。
 
 ### 再発防止
-- [ ] 中立性の検査（`scripts/check-vendor-neutrality.mjs`）とルートの`npm test`への組み込み。
-- [ ] バンドルの適合テスト（`vendor-samples.test.ts`・`samples.json`）。
-- [ ] 本番コードのコメント・エラーメッセージ例のベンダー固有名の除去。
+- [x] 中立性の検査（`scripts/check-vendor-neutrality.mjs`）とルートの`npm test`への組み込み。
+- [x] バンドルの適合テスト（`vendor-samples.test.ts`・`samples.json`）。
+- [x] 本番コードのコメント・エラーメッセージ例のベンダー固有名の除去。
 
 ## 完了基準
 
@@ -69,6 +69,18 @@
 - 中立性の検査: `node scripts/check-vendor-neutrality.mjs`。
 - E2E: `e2e/phase9/mock-scenarios.sh`・`e2e/phase11/provider-scenarios.sh`（モック）、実VPNは`GW_MODE=ssh`で`e2e/phase8/locations-scenarios.sh`。
 
+## 検証結果（2026-09-21）
+
+- 単体・統合テスト: `npm test`（proxy 101件・api 237件・web 92件・中立性の検査OK）。中立性の検査は、違反を混入させると失敗する（2件検出・終了コード1）ことも確認した。
+- バンドルの適合テスト（`vendor-samples.test.ts`）15件: 全バンドルのプロファイル検証と、各`samples.json`（実CLIの出力サンプル）の共通処理での判定。
+- モックE2E（開発ホストのdocker compose）: `e2e/phase9/mock-scenarios.sh` 36項目、`e2e/phase11/provider-scenarios.sh` 27項目、`e2e/phase12/add-vendor-scenarios.sh` 7項目（別名のバンドルを1ディレクトリ複製するだけで、共通部を変更せずに新ベンダーが一覧に現れ・選択でき、外すと消える）。すべてFAIL 0。
+- 実VPN（AdGuard VPN・実機ゲートウェイ`GW_MODE=ssh`）: `e2e/phase8/locations-scenarios.sh` 46項目 FAIL 0（既存のログイン情報のボリュームを引き継いだまま、バンドル方式のcomposeで起動し直して確認）。`e2e/phase11/real-switch-scenarios.sh` 10項目 FAIL 0（実VPN接続中にモックへ切替→実VPN切断・Kill Switchで遮断→切り戻して再接続）。
+
 ## 次フェーズへの申し送り
 
-- （実施後に記載）
+- **既存環境のボリュームは引き継がれる**（ボリューム名を変えていない）。ただし、既存環境の`.env`は`COMPOSE_PROFILES`から`COMPOSE_FILE`へ更新する必要がある（`install/select-providers.sh`が書き換える。Phase 13の`install.sh`が担う）。更新せずに`docker compose up`すると、`VPN_PROVIDERS`が有れば起動はするがランナーが起動しない。
+- 旧形式の状態ファイルの移行（`migrateLegacyState`）と`proxy/mock-cli/adguardvpn-cli-mock.mjs`（Phase 1のモック。どこからも使われていなかった）を削除した。
+- 別のセッションが並行して進めていたPhase 14（プランで接続できる接続先の参考表示）は、`api/config/profiles/protonvpn.json`・`api/src/profile/profile.schema.ts`・`docker-compose.yml`の`api`（`proton-cache`のマウントと`PROVIDER_CACHE_DIR`）を変更している。本フェーズで`api/config/profiles/`は`vendors/<ID>/profile.json`へ移り、composeの`api`のマウントは、Proton VPNのバンドルの`compose.yml`（`services.api.volumes`へ`proton-cache:/var/lib/vpngwgui-provider-cache/protonvpn:ro`を足す。composeの合成でマージされる）へ移すのが本来の形（`specs/apiserver/design.md`のPhase 14の記述の注記）。マージ時の作業として引き継ぐ。
+- プロファイルの`login.stdin`の行の順序・2FAコードの形式は、Proton VPNの実CLI（`signin`）の入力仕様のまま（ロジックは変えず、プロファイルへ移した）。2FAが必要な実アカウントでの確認は、Phase 10の残りの検証に含まれる。
+- E2Eの`e2e/phase3`・`phase5`・`phase4`は、検証環境の`.env`が`COMPOSE_FILE`方式へ更新済みであることを前提にする（`GW_MODE=ssh`。`sync.sh`は`.env`を上書きしない）。
+- `nftables`パッケージ由来の`nftables.service`・Debian系での起動時ルールの消失は、Phase 13で扱う（未検証）。

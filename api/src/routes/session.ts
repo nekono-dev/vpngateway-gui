@@ -10,10 +10,9 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "@sinclair/typebox";
 import { SessionLoginBodySchema, SessionResponseSchema, SessionStateSchema } from "../schemas/session.js";
 import { ErrorResponseSchema } from "../schemas/connection.js";
-import { getLoginMethod } from "../profile/profile-loader.js";
 import { getActiveProvider } from "../providers/active-provider-store.js";
 import { assertNotSwitching } from "../providers/provider-switcher.js";
-import { PlaceholderValidationError, resolveArgv } from "../profile/placeholder-resolver.js";
+import { PlaceholderValidationError, resolveArgv, resolveStdin } from "../profile/placeholder-resolver.js";
 import { requireAction } from "../profile/require-action.js";
 import { extractLoginUrl } from "../profile/response-parser.js";
 import { executeVendorCommand, requestConnectionCheck } from "../proxy-client/proxy-client.js";
@@ -25,7 +24,6 @@ import { stripAnsi } from "../lib/strip-ansi.js";
 import { clearConnectedLocation } from "../connection-state/connection-state-store.js";
 import { clearLearnedRestrictions } from "../capabilities/restriction-learner.js";
 import { getSessionInfo, invalidateSessionInfo } from "../session/session-probe.js";
-import { assertValidSecrets, buildLoginStdin } from "../session/login-input.js";
 
 /**
  * 目的: ログイン・ログアウトの成功後に、状態に依存するキャッシュ・学習を破棄する。
@@ -46,7 +44,7 @@ export const registerSessionRoute: FastifyPluginAsyncTypebox = async (fastify) =
       const provider = getActiveProvider();
       const info = await getSessionInfo(provider);
       return {
-        loginMethod: getLoginMethod(provider.profile),
+        loginMethod: provider.profile.loginMethod,
         ...(info.loggedIn === undefined ? {} : { loggedIn: info.loggedIn }),
         ...(info.plan === undefined ? {} : { plan: { id: info.plan.id, label: info.plan.label } }),
       };
@@ -76,19 +74,22 @@ export const registerSessionRoute: FastifyPluginAsyncTypebox = async (fastify) =
       const { profile } = provider;
       const loginAction = requireAction(profile, "login");
 
-      if (getLoginMethod(profile) === "credentials") {
+      if (profile.loginMethod === "credentials") {
         const credentials = request.body;
         if (!credentials) {
           throw new PlaceholderValidationError("username and password are required");
         }
-        assertValidSecrets(credentials);
+        // ユーザー名はargvへ、パスワード・2FAコードは`login.stdin`のテンプレートに従って標準入力へ渡す
+        // （値の検証はプロファイルの`pattern`。行の順序・形式はコードでなくプロファイルが持つ）。
+        const secretValues = { PASSWORD: credentials.password, TWO_FACTOR_CODE: credentials.twoFactorCode };
+        const stdin = resolveStdin(profile, "login", secretValues);
         const argv = resolveArgv(profile, "login", { USERNAME: credentials.username });
         const result = await executeVendorCommand(provider.id, {
           vendor: profile.vendor,
           binary: profile.binary,
           resolvedArgv: argv,
           timeoutMs: loginAction.timeoutMs,
-          stdin: buildLoginStdin(credentials),
+          stdin,
         });
         const exitCode = result.exitCode ?? -1;
         // 監査ログにはユーザー名のみ記録し、パスワード・2FAコードは残さない。
@@ -165,12 +166,12 @@ export const registerSessionRoute: FastifyPluginAsyncTypebox = async (fastify) =
       });
       const exitCode = result.exitCode ?? -1;
       appendAuditLog({ action: "logout", provider: provider.id, exitCode });
-      // ログアウトでVPNも終了しうる（Proton VPN CLIのsignout）ため、ゲートウェイルールの再構成を依頼する。
+      // ログアウトでVPNも終了しうる（CLIによる）ため、ゲートウェイルールの再構成を依頼する。
       await requestConnectionCheck();
       if (exitCode !== 0) {
         throw new CommandExecutionError("logout command failed", exitCode, pickFailureOutput(result.stderr, result.stdout));
       }
-      // ログアウトで接続も終了する（Proton VPN CLIの`signout`）ため、保存した接続先も消す。
+      // ログアウトで接続も終了しうる（CLIによる）ため、保存した接続先も消す。
       clearConnectedLocation(provider.id);
       resetSessionDerivedState(provider.id);
       const message = stripAnsi(result.stdout).trim();

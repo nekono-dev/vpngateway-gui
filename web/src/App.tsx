@@ -50,7 +50,7 @@ export function App() {
   useEffect(() => {
     setSelectedId(undefined);
   }, [activeProviderId]);
-  // 接続先を指定できず自動接続が使えるプロバイダ・プラン（Proton VPN無料版等）では、［接続］は接続先を指定しない接続になる。
+  // 接続先を指定できず自動接続が使えるプロバイダ・プラン（接続先を選べないプラン等）では、［接続］は接続先を指定しない接続になる。
   const autoConnect = usesAutoConnect(capabilities);
   // 接続状態の取得が一時的に失敗しても操作ボタン（接続/切断）を使えるよう、最後に取得できた値を保持する
   // （失敗した事実は`error`として別途カードに表示する）。

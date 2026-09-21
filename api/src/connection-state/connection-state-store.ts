@@ -50,7 +50,7 @@ function readStored(providerId: string): StoredConnection | undefined {
  * 目的: 接続成功時に、要求した接続先（ID・国コード）と、CLIが報告した都市名を保存する。
  * 入力: providerId(対象のベンダーID), requested(接続時に要求した接続先の`{ locationId, country }`), location(CLIが報告した都市名。不明ならundefined)。
  * 副作用: ベンダー別の保存ファイルへ書き込む（ディレクトリが無ければ作成）。
- * 例: saveConnectedLocation("adguardvpn", { locationId: "jp-tokyo", country: "jp" }, "TOKYO")
+ * 例: saveConnectedLocation("vendora", { locationId: "jp-tokyo", country: "jp" }, "TOKYO")
  */
 export function saveConnectedLocation(
   providerId: string,
@@ -79,7 +79,7 @@ export function clearConnectedLocation(providerId: string): void {
  * 副作用（整合性維持）: 切断を観測した場合、または接続先の都市名が保存時と異なる（別経路で再接続された）
  *   場合は、古い接続先を返し続けないよう保存内容を消去する。都市名がどちらかで不明な場合は判定できないため
  *   保存内容を信頼する。
- * 例: reconcileLocation("adguardvpn", { status: "connected", location: "TOKYO" })
+ * 例: reconcileLocation("vendora", { status: "connected", location: "TOKYO" })
  *     // => { status: "connected", location: "TOKYO", country: "jp", locationId: "jp-tokyo" }
  */
 export function reconcileLocation(providerId: string, observed: ConnectionStatus): ConnectionStatus {
