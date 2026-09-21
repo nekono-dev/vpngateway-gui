@@ -88,7 +88,7 @@ curl -s -X PUT http://localhost:8080/api/v1/connection -H 'Content-Type: applica
   - トンネル（`tun0`）経由でコンテナのルーティングが実際に切り替わること。
   - 【2026-09-14 追加検証で解消】完了基準記載の外部IP確認による実通信確認: `adguardvpn-cli connect -l jp -y`実行前後で外部IPを比較したところ、接続前は自ホストのIPだったのに対し、接続後は`156.146.34.246`（Tokyo, AS60068 Datacamp Limited＝AdGuard VPNのIP）に変化しており、実際にVPNトンネル経由で通信していることを確認した。`disconnect`後は接続前のIPに復帰することも確認済み。
   - なお、この検証環境では`adguardvpn-cli`本体プロセス（非rootユーザー実行）が内部的に対話端末経由の`sudo`パスワード入力を要求する構成だったため、`expect`を用いてパスワード入力を自動化して実行した。本番proxyイメージでは上記の`NOPASSWD:ALL`設定により本来この手当ては不要なはずであり、これは検証専用環境固有の制約であることに留意。
-- **接続先国(country)をレスポンスに含められていない。** 実CLIのテキスト出力から接続先国を確実に抽出できる固定書式を実機で確認できなかったため、`ConnectionStatus.country`は常に`undefined`を返す（`ConnectionStatus.country`は元々optionalであるため型上は問題ない）。UIで接続先国を表示する場合は、PUT時にリクエストした`country`をクライアント側で保持するなどの回避策が必要になる可能性がある。Phase 5（Web UI完成）着手時に要検討。
+- **接続先国(country)をレスポンスに含められていない。** 実CLIのテキスト出力から接続先国を確実に抽出できる固定書式を実機で確認できなかったため、`ConnectionStatus.country`は常に`undefined`を返す（`ConnectionStatus.country`は元々optionalであるため型上は問題ない）。UIで接続先国を表示する場合は、PUT時にリクエストした`country`をクライアント側で保持するなどの回避策が必要になる可能性がある。Phase 5（Web UI完成）着手時に要検討。**→ 2026-09-21解決: クライアント保持は再読み込みで消えるため、APIサーバ側で永続化する方式とした（`specs/apiserver/design.md`「接続先国の永続化」、`wbs/phase5.md`「申し送り」）。**
 - **`countries`一覧は経年劣化する。** `api/config/vpn-profile.json`の`countries`はある時点の`list-locations`のスナップショットであり、AdGuard側のサーバ増減で古くなる。管理者向けの定期更新手順（またはAPIサーバ起動時に`list-locations`を都度実行して動的に取得する設計への変更）を将来検討する。
 - **`login`の同時多重実行は考慮していない。** `POST /v1/session`を短時間に複数回呼ぶと、実CLI側の多重ログイン試行の挙動（拒否されるか、新しいデバイスコードが発行されるか）は未検証。認証機構がない現状（apiserver/tasks.md「将来課題」参照）と合わせて、Phase 5以降で認証・レート制限を追加する際に併せて検討する。
 - **自動リトライ方針は導入していない。** 実CLIの一時的なネットワーク遅延・レート制限に対する自動リトライの必要性は、実機での接続検証（上記）を経てから判断する方が確度が高いと判断し、今回は見送った。

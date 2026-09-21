@@ -11,3 +11,7 @@ web/src/generated/
 
 # Phase1のユーザ向け設定・監査ログ永続化ファイル（ローカル実行時にホストへ書き出す場合）
 *.local.json
+
+# install/detect-lan-interface.shが対象ホストごとに書き出すLAN側インターフェース設定（環境依存。
+# docker composeが自動読み込みする.envファイル経由でproxyコンテナのLAN_IFACE/WAN_IFACEへ渡す）
+.env

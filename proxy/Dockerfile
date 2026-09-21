@@ -39,7 +39,10 @@ FROM node:22-alpine
 # AdGuard VPN CLIは非rootユーザー実行時、TUNインターフェース設定（ip link等）の実行にsudoを要求する
 # （cap_add: NET_ADMINを付与していてもCLI内部の実装上sudo経由での昇格が必須）。
 # vpngwguiにパスワードなしsudoを付与して対応する。
-RUN apk add --no-cache sudo \
+# nftables: 透過ゲートウェイ・Kill Switchのルール操作用（`iptables`ではなく`nft`を直接使う。
+# proxyserver/design.md「NAT/FORWARDルール」参照）。iproute2: `ip route show default`によるVPN
+# トンネルインターフェース動的検出用（Alpine標準の busybox ip では出力形式が異なりうるため明示的に導入）。
+RUN apk add --no-cache sudo nftables iproute2 \
   && addgroup -g 10001 vpngwgui && adduser -D -u 10001 -G vpngwgui vpngwgui \
   && echo "vpngwgui ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vpngwgui \
   && chmod 0440 /etc/sudoers.d/vpngwgui

@@ -64,7 +64,7 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 `network_mode: host` のプロキシコンテナは、ホストのネットワーク名前空間を共有するため、コンテナ内から `/proc/sys/net/ipv4/ip_forward` へ書き込む操作はホストのカーネル設定を直接変更する操作と等価である。
 
 - **インストールスクリプトが、ホスト上に永続設定ファイル（例 `/etc/sysctl.d/99-vpngwgui.conf` に `net.ipv4.ip_forward=1`）を1つ作成し、`sysctl --system` を実行する。** これは「ホストの変更を最小限に抑える（＝変更するファイル数を最小限にする）」という方針に沿った、必要最小限の永続的ホスト変更である。プロキシコンテナが `restart: always` で永続稼働するデーモンである以上、この設定はコンテナ起動のたびに動的に行うのではなく、インストール時に一度だけ永続化するのが妥当である。
-- プロキシコンテナの起動時にも念のため `/proc/sys/net/ipv4/ip_forward` の値を確認し、0であれば1に設定する（コンテナが再作成された環境でインストールスクリプトを再実行していないケースへのフォールバック）。
+- プロキシコンテナの起動時にも念のため `/proc/sys/net/ipv4/ip_forward` の値を確認し、0であれば1に設定を試みる（コンテナが再作成された環境でインストールスクリプトを再実行していないケースへのフォールバック）。**ただしDockerはコンテナの`/proc/sys`を読み取り専用でマウントするため、`NET_ADMIN`を付与していても書き込みは`Read-only file system`で失敗し、このフォールバックは実際には機能しない（実機検証で確認）。** 補正できなかった場合は監査ログへ`ip_forward_disabled`イベントを記録して警告する（無音にしない）。実質的な解決手段はインストールスクリプト（`install/setup-sysctl.sh`）の実行のみである。
 
 ## NAT/FORWARDルール
 
@@ -74,18 +74,30 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
   - `nft add table inet vpngwgui`
   - `nft add chain inet vpngwgui postrouting { type nat hook postrouting priority 100 ; }`
   - `nft add rule inet vpngwgui postrouting oifname "<vpn_iface>" masquerade`
-  - `nft add chain inet vpngwgui forward { type filter hook forward priority 0 ; policy drop ; }`
-  - `nft add rule inet vpngwgui forward iifname "<lan_iface>" oifname "<vpn_iface>" accept`
-  - `nft add rule inet vpngwgui forward iifname "<vpn_iface>" oifname "<lan_iface>" ct state established,related accept`
-- `forward` チェーンの `policy drop` はKill Switchの基礎になる（後述）。
-- **VPNトンネルのインターフェース名（`<vpn_iface>`）は動的に検出する。** ベンダー・バージョンにより `tun0`・`nordlynx` 等固定できないため、VPN接続完了後に `ip route show default` の出力インターフェースを取得し、それを用いてルールを再適用する。再接続・国変更のたびに旧ルールを撤去し、新インターフェース名で再適用する。
+  - `nft add chain inet vpngwgui forward { type filter hook forward priority 0 ; policy accept ; }`
+  - `nft add rule inet vpngwgui forward ct status dnat accept`（Dockerの公開ポート宛の転送とその応答を常に許可する。これが無いとLAN側からWeb UI（webコンテナの公開ポート）へも到達できなくなる。ゲートウェイ転送通信はDNATされないためKill Switchの遮断範囲には影響しない。実機検証で発覚）
+  - `nft add rule inet vpngwgui forward oifname != "<lan_iface>" ct direction reply ct state established,related accept`（LAN側以外へ向かう応答方向の確立済み通信。単一NIC構成では同居コンテナ自身のインターネット向け通信の応答もLAN側インターフェースから入ってくるため、末尾のdropに巻き込まないための許可。`ct direction reply`によりLAN機器発の確立済み通信は含まれない）
+  - `nft add rule inet vpngwgui forward iifname "<lan_iface>" oifname "<vpn_iface>" accept`（VPN接続中のみ）
+  - `nft add rule inet vpngwgui forward iifname "<vpn_iface>" oifname "<lan_iface>" ct state established,related accept`（VPN接続中のみ）
+  - `nft add rule inet vpngwgui forward iifname "<vpn_iface>" drop`（VPN接続中のみ。トンネル側からのLAN機器宛の新規接続を拒否）
+  - `nft add rule inet vpngwgui forward iifname "<lan_iface>" drop`（**常に末尾**。上記に該当しなかったLAN側発の転送を遮断する）
+- **`forward`チェーンは`policy accept`とし、遮断対象は末尾の`iifname "<lan_iface>" drop`で「LAN側インターフェースから入ってきた転送」のみに限定する。** `policy drop`だと、同居する他のDockerコンテナ等ゲートウェイ機能と無関係な転送（コンテナのインターネット向け通信）まで遮断してしまうため（実機検証で、透過GW有効・VPN未接続・KS ONの間も同居コンテナの通信が継続することを確認）。この末尾のdropがKill Switchの基礎になる（後述）。
+- **ルールセットの置換は原子的に行う。** 組み立てたスクリプトの先頭を「`add table`→`delete table`→`add table`」とし、`nft -f`の1トランザクションで旧ルールの撤去と新ルールの適用を同時に行う（既存テーブルの有無に関わらずエラーにならない）。撤去と適用を別呼び出しにすると、その間フィルタが存在せずLAN機器の通信が漏れる一瞬ができるため。あわせて、APIの定期再通知（後述）で設定・VPN接続状態が前回成功した適用と同じ場合は再構成自体を行わない（`GatewayController.applySettings()`）。
+- **VPNトンネルのインターフェース名（`<vpn_iface>`）は動的に検出する。** ベンダー・バージョンにより `tun0`・`nordlynx` 等固定できないため、VPN接続完了後に `ip route get 1.1.1.1`（公開IP宛の経路選択結果。パケットは送信しない）の出力インターフェースを取得し、それを用いてルールを再適用する。`ip route show default`（メインテーブルのみ参照）を使わない理由: 実機検証で、AdGuard VPN CLI（TUNモード）はメインテーブルのデフォルトルートを書き換えず、ポリシールーティング（`ip rule`の優先度30801で専用テーブル880を優先参照し、テーブル880に全IPv4を`dev tun0`向けで投入）で通信を切り替えることが判明したため。`ip route get`はポリシールーティングを含めたカーネルの実際の経路選択結果を返すため、default置換型・ポリシールーティング型のどちらのベンダーにも対応できる。再接続・国変更のたびに旧ルールを撤去し、新インターフェース名で再適用する。
 - `<lan_iface>`（LAN側インターフェース名）は、インストールスクリプト実行時に検出し設定ファイルへ書き出し、プロキシコンテナ起動時に環境変数/設定ファイル経由で読み込む（ハードコードしない）。
+  - **実装（Phase 3）**: `install/detect-lan-interface.sh`がデフォルトゲートウェイの逆引きで検出し、リポジトリルートの`.env`ファイル（docker composeが自動読み込みしvariable substitutionに使う、コンテナに直接マウントするファイルではない）へ`LAN_IFACE=<検出結果>`を書き出す。`docker-compose.yml`のproxyサービスが`LAN_IFACE: ${LAN_IFACE:-}`として環境変数に渡す（当初検討していた`/etc/vpngwgui/network.env`のvolumeマウント案は、ファイル未作成時のbind mount失敗を避けるため見送った）。未設定（未インストール環境）の場合、プロキシは透過ゲートウェイを構成せず撤去のみ行う（安全側）。
+  - `<wan_iface>`（フェイルオープン時の送出インターフェース名）は`WAN_IFACE`環境変数で個別指定可能だが、対象ターゲット（Raspberry Pi等の単一NIC構成、../design.md参照）では未設定時`<lan_iface>`をそのまま流用する。
+- nft自体の実行はプロキシコンテナ内で非root（`vpngwgui`）ユーザーが行うため、`sudo nft -f -`（標準入力からルールセットを一括投入）の形で実行する。実VPNベンダーCLIのTUN設定と同じパスワードなしsudo（`proxy/Dockerfile`）を流用し、Dockerイメージへの追加変更は不要。ルールセット全体を1回の`nft -f -`呼び出しで投入することで、複数回の`nft add ...`呼び出しに比べ、途中失敗時のルール半端適用を避けられる。
 
 ## Kill Switch
 
-- ユーザ向け設定 `killSwitch` がONの場合: 上記 `forward` チェーンの `policy drop` をそのまま維持する。VPN接続が確立していない、または切断された場合、`<vpn_iface>` 宛のacceptルールが存在しない（または撤去済みの）状態になるため、LAN側からのフォワード通信は自動的に遮断される（フェイルクローズ）。VPN接続状態の監視により、切断を検知した時点で該当acceptルールを即座に撤去する。
+- ユーザ向け設定 `killSwitch` がONの場合: 上記 `forward` チェーン末尾の `iifname "<lan_iface>" drop` を維持する。VPN接続が確立していない、または切断された場合、`<vpn_iface>` 宛のacceptルールが存在しない（または撤去済みの）状態になるため、LAN側からのフォワード通信は自動的に遮断される（フェイルクローズ）。VPN接続状態の監視により、切断を検知した時点で該当acceptルールを即座に撤去する。
 - `killSwitch` がOFFの場合: VPN切断時に、LAN側からの通信をWAN側インターフェースへ直接acceptするフォールバックルールを追加し、フェイルオープンとする。
 - `killSwitch` の切替はユーザ向け設定としてAPIサーバから通知され、プロキシコンテナがnftルールを再構成することで即時反映する。
+- **VPN接続状態の検出方式（実装）**: ベンダー固有のCLI出力解釈をプロキシ側に持ち込まず、`connect`/`disconnect`等のコマンド実行直後および10秒間隔の監視ループの両方で`ip route get 1.1.1.1`を再評価し、その出力インターフェースが`<lan_iface>`と異なればVPN接続中とみなす（`proxy/src/network/connection-monitor.ts`）。これにより、APIサーバ経由の明示的な切断だけでなく、ネットワーク瞬断等によるベンダーCLI側の予期しない切断にも、次回ポーリング（最大10秒）で追従する。
+
+- **起動ガード（ホスト起動時のリーク防止）**: `ip_forward=1`は`install/setup-sysctl.sh`により起動直後から有効だが、`inet vpngwgui`テーブルはDocker→proxy→APIの設定通知を経て初めて作られる。実機の再起動検証で、この間（KS ONでも）LAN機器の通信がVPNを迂回してリークすることを確認した。これを防ぐため、`install/setup-boot-guard.sh`がsystemd oneshotユニット`vpngwgui-boot-guard.service`（`network-pre.target`・`docker.service`より前に実行）を作成し、同名テーブルへ「LAN側から入る転送はdrop（DNAT済みのみ許可）」だけを載せる。proxyは最初の`POST /settings`受信時にこのテーブルを原子的に置換する（透過ゲートウェイ無効の設定なら撤去される）。ホストへの永続変更はsysctl設定に加えこのユニット1ファイルのみ。
+- **IPv6は対象外（既知の制約）**: 透過ゲートウェイはIPv4のみを転送・遮断する。LAN機器がルータのRAでIPv6のデフォルトゲートウェイをルータ自身から得ている場合、その通信はゲートウェイを経由せず、Kill Switch・VPNのいずれも迂回してルータ直で外部へ出る（実機検証で、IPv4が遮断／VPN経由の状態でもLAN機器のIPv6が実アドレスで通信できることを確認）。対処は運用側で行う（LAN側ルータでIPv6のRA配布を止める、LAN機器のIPv6を無効化する等）。ゲートウェイ側でのIPv6転送・NAT66は行わない。
 
 # 明示的プロキシモードの実現方式
 
@@ -119,6 +131,23 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 - レスポンス: `{ exitCode, stdout, stderr }`。`exitCode`は`completionPattern`一致時のみ`null`になりうる。
 - すべての実行要求と結果を構造化ログとして記録する（監査ログ、apiserver/design.md参照）。
 
+## `POST /settings`（設定反映、Phase 3で追加）
+
+具体的なリクエスト/レスポンス形状はapiserver/design.md「設定反映（`POST /settings`）内部プロトコル仕様」参照。プロキシ側の処理は以下の通り（実装: `proxy/src/server.ts`の`handleSettings`）。
+
+1. `killSwitch`・`transparentGatewayEnabled`のboolean形状のみを検証する（他フィールドは無視、Phase 4以降で利用予定）。
+2. `GatewayController.applySettings()`（`proxy/src/network/gateway-controller.ts`）へ渡し、現在のVPN接続インターフェース状態と合わせてnftルールセットを撤去→再適用する。
+3. 結果（`applied: boolean`）を応答し、監査ログへ記録する。
+
+## `GET /status`（稼働状況取得、Phase 5で追加）
+
+`GatewayController`（`proxy/src/network/gateway-controller.ts`）が保持する現在状態を、副作用なしで返す読み取り専用エンドポイント。`/exec`・`/settings`と同一UDSソケット上、OpenAPI非公開。APIサーバの`GET /v1/connection/gateway`が中継する（形状はapiserver/design.md「稼働状況取得」参照）。
+
+- 情報源は`GatewayController`のメモリ上の状態（適用中の`killSwitch`/`transparentGatewayEnabled`、検出済みVPN IF名、`LAN_IFACE`有無）のみとし、状態取得のためにnft/ipコマンドを新たに実行しない（ポーリング頻度（5秒×閲覧者数）でsudo実行が発生するのを避けるため）。
+- したがって値は「proxyが最後に適用を試みた結果」であり、外部から`nft`で手動変更された場合の乖離は検知しない（Phase 7以降の課題）。
+- レスポンスは`{ "transparentGateway": { "state", "vpnInterface"?, "killSwitchBlocking" } }`（`GatewayController.getStatus()`）。`state`は`active`/`stopped`/`unconfigured`/`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）。設定受信前（プロセス起動直後）は既定設定に基づき`stopped`を返す。
+- Phase 4で3proxyの稼働状態（`explicitProxy`）を同レスポンスへ追加する。
+
 # VPNベンダーCLIの追加方法
 
 1. プロキシコンテナのDockerイメージに新規ベンダーCLIバイナリを同梱する。
@@ -127,9 +156,10 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 
 # 障害時の挙動
 
-- VPN接続断検知時: 監視プロセスが `ip route show default` 等でトンネル経路の消失を検知し、Kill Switch設定に従ってnftablesルールを即座に更新する（上記「Kill Switch」節参照）。
-- 3proxyプロセスの異常終了: 監視プロセスが検知し再起動する。連続的なクラッシュループの場合は再起動間隔を指数バックオフし、APIサーバへエラー状態を通知する。
-- プロキシコンテナ自体の再起動時: `restart: always` により自動再起動されるが、起動時にnftablesルールの残骸（前回異常終了時のもの）が残っていないか確認し、一度全て撤去してから再適用する。
+- VPN接続断検知時: 監視プロセスが `ip route get` 等でトンネル経路の消失を検知し、Kill Switch設定に従ってnftablesルールを即座に更新する（上記「Kill Switch」節参照）。
+- 3proxyプロセスの異常終了: 監視プロセスが検知し再起動する。連続的なクラッシュループの場合は再起動間隔を指数バックオフし、APIサーバへエラー状態を通知する（Phase 4で3proxy導入時に実装）。
+- プロキシコンテナ自体の再起動時: **起動時にnftablesルールを撤去しない**。プロキシは自身のプロセス内メモリにのみ現在の`killSwitch`/`transparentGatewayEnabled`を保持し永続化しないため、起動直後は現在の設定を知らない。この状態で撤去すると、設定を受信するまでの間Kill Switchが効かず、LAN機器の通信がVPNを迂回してリークする（実機検証で確認。プロキシコンテナ再起動でVPNデーモンも停止するため、KS ONのまま実IPで通信できてしまう）。既存のルールは、最初の`POST /settings`受信時の「全撤去→再適用」（`GatewayController.applyCurrentState()`）で置き換わり、その際に前回異常終了時の残骸も同時に掃除される。
+  - APIサーバは現在の設定を10秒周期（`SETTINGS_RESYNC_INTERVAL_MS`）で`POST /settings`へ再通知するため（`api/src/server.ts`）、プロキシのみが再起動・再作成された場合でも最大約10秒で設定が反映される。この間はプロセス再起動前のルールがカーネルに残り続けるためフェイルクローズが維持される。
 
 # docker-compose.yml 概念構成（プロキシサービス抜粋）
 
@@ -143,7 +173,10 @@ services:
       - /dev/net/tun:/dev/net/tun
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
-      - ./config/proxy-network.env:/etc/vpngwgui/network.env:ro  # インストール時検出したLANインターフェース名等
+    environment:
+      # install/detect-lan-interface.shがリポジトリルートの.envへ書き出し、docker composeが
+      # variable substitutionで読み込む（コンテナへのファイルマウントではない。実装済み、docker-compose.yml参照）。
+      LAN_IFACE: ${LAN_IFACE:-}
     restart: always
 
 volumes:

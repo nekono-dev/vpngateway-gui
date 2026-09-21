@@ -101,7 +101,7 @@ Phase1用プロファイル（`api/config/vpn-profile.json`、`outputFormat`追�
 - [x] `api/scripts/export-openapi.ts`でOpenAPI JSONを書き出し、`web/orval.config.ts`（`client:'fetch'`, `baseUrl:'/api'`）で`web/src/generated/api/`へクライアント生成。
 - [x] `@fastify/http-proxy`で`/api/*` → `http://api:3000`へリバースプロキシ。
 - [x] `ConnectionStatusCard` / `CountrySelect`（選択肢のみ、自由入力不可） / `ConnectDisconnectButton`（`isSubmitting`で二重送信防止）。
-- [x] `useConnectionPolling`フック（5秒間隔、非表示タブでは停止）。
+- [x] `useConnectionPolling`フック（5秒間隔、非表示タブでは停止）。（Phase 5で汎用`usePolling`＋`useDashboardPolling`へ再構成）
 
 ### Step 5: docker-compose全体構成
 ```yaml

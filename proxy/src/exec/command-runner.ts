@@ -136,6 +136,8 @@ export function runDetachableCommand(
     let backgroundTimer: ReturnType<typeof setTimeout> | undefined;
     // 強制kill後も対象プロセスの'exit'イベント自体は発火するため、onBackgroundExitの二重通知を防ぐ。
     let backgroundSettled = false;
+    // 'exit'で観測した終了コード。猶予中にcompletionPatternへ一致した場合の後始末に用いる。
+    let exitedCode: number | undefined;
 
     const timer = setTimeout(() => {
       if (settled) return;
@@ -159,6 +161,12 @@ export function runDetachableCommand(
         }, backgroundTimeoutMs);
         backgroundTimer.unref();
         resolve({ exitCode: null, stdout, stderr });
+        // すでに終了済み（猶予中の一致）なら、バックグラウンド終了を即座に通知して後始末する。
+        if (exitedCode !== undefined) {
+          backgroundSettled = true;
+          clearTimeout(backgroundTimer);
+          onBackgroundExit?.({ exitCode: exitedCode, killedByTimeout: false });
+        }
       }
     });
 
@@ -167,10 +175,18 @@ export function runDetachableCommand(
     });
 
     child.on("exit", (code) => {
+      exitedCode = code ?? -1;
       if (!settled) {
-        settled = true;
-        clearTimeout(timer);
-        resolve({ exitCode: code ?? -1, stdout, stderr });
+        // 出力直後に終了したプロセスでは、'exit'が最後のstdout'data'より先に処理されうる
+        // （runCommandと同じ理由。これを猶予なしで確定すると、completionPatternに一致する出力を
+        // 取りこぼして終了コードを返してしまう。間欠的なテスト失敗として顕在化した）。
+        // 猶予中にdataで一致すれば、一致側がすでに応答しているためここでは何もしない。
+        setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ exitCode: exitedCode ?? -1, stdout, stderr });
+        }, EXIT_FLUSH_GRACE_MS);
         return;
       }
       // completionPattern一致後（バックグラウンド継続中）の自然終了。

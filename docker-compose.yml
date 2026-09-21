@@ -1,5 +1,6 @@
 services:
   web:
+    restart: always
     build:
       context: .
       dockerfile: web/Dockerfile
@@ -13,6 +14,7 @@ services:
       API_ORIGIN: http://api:3000
 
   api:
+    restart: always
     build:
       context: .
       dockerfile: api/Dockerfile
@@ -30,8 +32,10 @@ services:
       PROXY_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
       SETTINGS_FILE: /var/lib/vpngwgui/settings.json
       AUDIT_LOG_FILE: /var/lib/vpngwgui/audit.log
+      CONNECTION_STATE_FILE: /var/lib/vpngwgui/connection-state.json
 
   proxy:
+    restart: always
     build:
       context: .
       dockerfile: proxy/Dockerfile
@@ -58,6 +62,12 @@ services:
       - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
     environment:
       CTL_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
+      # install/detect-lan-interface.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
+      # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
+      # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
+      LAN_IFACE: ${LAN_IFACE:-}
+      # フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため通常は未設定のまま
+      # LAN_IFACEを流用する（proxyserver/design.md「Kill Switch」参照）。
 
 networks:
   app-net: {}
