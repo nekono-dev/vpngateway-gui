@@ -4,9 +4,9 @@
   "outputFormat": "text",
   "actions": {
     "connect": {
-      "argv": ["connect", "-l", "%COUNTRY%", "-y"],
+      "argv": ["connect", "-l", "%LOCATION%", "-y"],
       "placeholders": {
-        "COUNTRY": { "pattern": "^[a-z]{2}$", "source": "enum", "enumFrom": "adguardvpn.countries" }
+        "LOCATION": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\x00-\\x1f\\x7f]{0,62}$", "source": "locations" }
       },
       "timeoutMs": 30000
     },
@@ -17,15 +17,7 @@
       "placeholders": {},
       "timeoutMs": 15000,
       "completionPattern": "https://auth\\.adguard\\.io/device_code\\?user_code=[A-Z0-9-]+"
-    }
-  },
-  "countries": [
-    "ae", "ar", "at", "au", "be", "bg", "br", "ca", "ch", "cl",
-    "cn", "co", "cy", "cz", "de", "dk", "ee", "eg", "es", "fi",
-    "fr", "gb", "gr", "hk", "hr", "hu", "id", "ie", "il", "in",
-    "it", "jp", "kh", "kr", "kz", "lt", "lu", "lv", "md", "mx",
-    "ng", "nl", "no", "np", "nz", "pe", "ph", "pl", "pt", "ro",
-    "rs", "ru", "se", "sg", "sk", "th", "tr", "tw", "ua", "us",
-    "vn", "za"
-  ]
+    },
+    "listLocations": { "argv": ["list-locations"], "placeholders": {}, "timeoutMs": 15000 }
+  }
 }

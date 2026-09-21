@@ -3,14 +3,25 @@
 import Fastify from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import { registerConnectionCountriesRoute } from "./routes/connection-countries.js";
+import { registerConnectionLocationsRoute } from "./routes/connection-locations.js";
 import { registerConnectionRoute } from "./routes/connection.js";
 import { registerConnectionConfigRoute } from "./routes/connection-config.js";
+import { registerConnectionGatewayRoute } from "./routes/connection-gateway.js";
 import { registerConnectionLogRoute } from "./routes/connection-log.js";
 import { registerSessionRoute } from "./routes/session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
+import { FavoriteLocationsError } from "./locations/favorite-locations-store.js";
 import { ProxyUnavailableError, ProxyTimeoutError, CommandExecutionError } from "./errors.js";
+
+/**
+ * 目的: Fastifyのスキーマ検証（body・params等）が失敗して投げられたエラーかを判定する。
+ * 入力: error(エラーハンドラへ渡された値。unknown)。期待する形状: 検証失敗時は`validation`配列を持つオブジェクト。
+ * 出力: スキーマ検証エラーなら true。
+ */
+function isSchemaValidationError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "validation" in error;
+}
 
 /**
  * 目的: Fastifyアプリケーションのインスタンスを構築する（listenはしない）。
@@ -29,8 +40,14 @@ export function buildApp() {
 
   // apiserver/design.md「エラーハンドリング方針」に基づくエラー種別→HTTPステータスのマッピング。
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof PlaceholderValidationError || error instanceof SettingsValidationError) {
-      reply.code(400).send({ error: "invalid_input", message: error.message });
+    // スキーマ検証（body・パスパラメータ）の失敗もFastifyが`validation`を付けて渡す。入力エラーとして400にする。
+    if (
+      error instanceof PlaceholderValidationError ||
+      error instanceof SettingsValidationError ||
+      error instanceof FavoriteLocationsError ||
+      isSchemaValidationError(error)
+    ) {
+      reply.code(400).send({ error: "invalid_input", message: (error as Error).message });
       return;
     }
     if (error instanceof ProxyUnavailableError) {
@@ -51,10 +68,11 @@ export function buildApp() {
 
   app.get("/openapi.json", async () => app.swagger());
 
-  app.register(registerConnectionCountriesRoute);
+  app.register(registerConnectionLocationsRoute);
   app.register(registerConnectionRoute);
   app.register(registerConnectionConfigRoute);
   app.register(registerConnectionLogRoute);
+  app.register(registerConnectionGatewayRoute);
   app.register(registerSessionRoute);
 
   return app;

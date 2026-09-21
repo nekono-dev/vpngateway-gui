@@ -3,10 +3,14 @@
 
 import { Type, type Static } from "@sinclair/typebox";
 
+// 許可値の出典。
+// - "enum": プロファイル内の配列フィールド（`enumFrom`。例 "adguardvpn.regions"）に含まれる値のみ許可する。
+// - "locations": 直前に`listLocations`アクションで取得した接続先から導出した値のみ許可する（Phase 8。
+//   許可値は実行時に決まるため、resolveArgvの呼び出し元が渡す。apiserver/design.md「Phase 8における具体プロファイル」）。
 export const PlaceholderDefSchema = Type.Object({
   pattern: Type.String(),
-  source: Type.Literal("enum"),
-  enumFrom: Type.String(),
+  source: Type.Union([Type.Literal("enum"), Type.Literal("locations")]),
+  enumFrom: Type.Optional(Type.String()),
 });
 
 export const ActionDefSchema = Type.Object({
@@ -35,7 +39,8 @@ export const VendorProfileSchema = Type.Object({
     status: ActionDefSchema,
     // ログイン代行（`POST /v1/session`）用アクション。Phase 2で追加。
     login: ActionDefSchema,
+    // 接続先一覧（`list-locations`）の取得アクション。Phase 8で追加（静的な`countries`一覧を廃止した代わり）。
+    listLocations: ActionDefSchema,
   }),
-  countries: Type.Array(Type.String()),
 });
 export type VendorProfile = Static<typeof VendorProfileSchema>;

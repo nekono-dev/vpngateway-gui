@@ -12,7 +12,16 @@ import { resolveArgv, PlaceholderValidationError } from "../profile/placeholder-
 import { parseConnectionOutput } from "../profile/response-parser.js";
 import { executeVendorCommand } from "../proxy-client/proxy-client.js";
 import { CommandExecutionError } from "../errors.js";
+import { pickFailureOutput } from "../lib/failure-output.js";
 import { appendAuditLog } from "../audit-log/audit-log-store.js";
+import {
+  clearConnectedLocation,
+  reconcileLocation,
+  saveConnectedLocation,
+} from "../connection-state/connection-state-store.js";
+import { fetchLocations } from "../locations/location-fetcher.js";
+import { saveLastLocationId } from "../locations/last-location-store.js";
+import type { ParsedLocation } from "../locations/location-list-parser.js";
 
 export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.get(
@@ -39,9 +48,13 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       // （プロセス実行継続中）になることはない。念のため-1（既存のタイムアウト表現）へ正規化する。
       const exitCode = result.exitCode ?? -1;
       if (exitCode !== 0) {
-        throw new CommandExecutionError("status command failed", exitCode, result.stderr);
+        throw new CommandExecutionError(
+          "status command failed",
+          exitCode,
+          pickFailureOutput(result.stderr, result.stdout),
+        );
       }
-      return parseConnectionOutput(profile.outputFormat, result.stdout);
+      return reconcileLocation(parseConnectionOutput(profile.outputFormat, result.stdout));
     },
   );
 
@@ -64,10 +77,28 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       const body = request.body;
 
       const actionName = body.connect ? "connect" : "disconnect";
-      if (body.connect && !body.country) {
-        throw new PlaceholderValidationError("country is required when connect=true");
+      // 接続先はクライアントから都市名を直接受け取らず、IDを直前の`list-locations`の結果と照合して
+      // 接続時の指定名へ解決する（任意の文字列がCLIへ渡らないようにするため。サーバ増減にも追従する）。
+      let target: ParsedLocation | undefined;
+      let argv: string[];
+      if (body.connect) {
+        if (!body.locationId) {
+          throw new PlaceholderValidationError("locationId is required when connect=true");
+        }
+        const locations = await fetchLocations();
+        target = locations.find((location) => location.id === body.locationId);
+        if (!target) {
+          throw new PlaceholderValidationError(`unknown locationId: ${body.locationId}`);
+        }
+        argv = resolveArgv(
+          profile,
+          "connect",
+          { LOCATION: target.connectName },
+          { LOCATION: locations.map((location) => location.connectName) },
+        );
+      } else {
+        argv = resolveArgv(profile, "disconnect", {});
       }
-      const argv = resolveArgv(profile, actionName, body.country ? { COUNTRY: body.country } : {});
 
       const result = await executeVendorCommand({
         vendor: profile.vendor,
@@ -82,9 +113,23 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       appendAuditLog({ action: actionName, input: body, exitCode });
 
       if (exitCode !== 0) {
-        throw new CommandExecutionError(`${actionName} command failed`, exitCode, result.stderr);
+        throw new CommandExecutionError(
+          `${actionName} command failed`,
+          exitCode,
+          pickFailureOutput(result.stderr, result.stdout),
+        );
       }
-      return parseConnectionOutput(profile.outputFormat, result.stdout);
+      const status = parseConnectionOutput(profile.outputFormat, result.stdout);
+      // 接続国・接続先IDはCLI出力から取れないため、成功した接続操作で要求した接続先を保存し（切断なら消去）、
+      // GET /v1/connection・リロード後の表示でも返せるようにする。あわせて「最後に接続した接続先」を記憶する
+      // （こちらは切断しても消さない。次回の既定選択に使う）。
+      if (target && status.status === "connected") {
+        saveConnectedLocation({ locationId: target.id, country: target.country }, status.location);
+        saveLastLocationId(target.id);
+        return { ...status, country: target.country, locationId: target.id };
+      }
+      clearConnectedLocation();
+      return status;
     },
   );
 };

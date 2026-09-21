@@ -12,7 +12,6 @@ const SETTINGS_FILE = process.env.SETTINGS_FILE ?? "/var/lib/vpngwgui/settings.j
 const DEFAULT_SETTINGS: UserSettings = {
   killSwitch: true,
   excludedDomains: [],
-  defaultCountry: "jp",
   transparentGatewayEnabled: false,
   explicitProxyEnabled: false,
   explicitProxyAllowedCidrs: [],
@@ -39,13 +38,16 @@ function validateExcludedDomains(domains: string[]): void {
 /**
  * 目的: 永続化済みのユーザ向け設定を取得する。未作成の場合はデフォルト値を返す。
  * 入力: なし。
- * 出力: UserSettings。
+ * 出力: UserSettings。保存ファイルに現行スキーマに無い項目（Phase 8で廃止した`defaultCountry`等）が
+ *       残っていても無視し、保存ファイルに無い項目はデフォルト値で補う。
  */
 export function getSettings(): UserSettings {
   if (!existsSync(SETTINGS_FILE)) {
     return DEFAULT_SETTINGS;
   }
-  return JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
+  const stored: Record<string, unknown> = JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
+  const known = Object.keys(DEFAULT_SETTINGS).filter((key) => key in stored);
+  return { ...DEFAULT_SETTINGS, ...Object.fromEntries(known.map((key) => [key, stored[key]])) };
 }
 
 /**
@@ -54,7 +56,8 @@ export function getSettings(): UserSettings {
  * 出力: 更新後の完全なUserSettings。
  * 失敗時の方針: `excludedDomains`がドメイン形式を満たさない場合はSettingsValidationErrorを投げる
  *              （呼び出し元でHTTP 400へマッピングする）。
- * 副作用: SETTINGS_FILEへ書き込む。Phase 1ではプロキシへの実反映は行わない。
+ * 副作用: SETTINGS_FILEへ書き込む。プロキシへの実反映（nftables再構成等）は呼び出し元
+ *        （routes/connection-config.ts）がnotifySettings()を介して行う（本関数の責務ではない）。
  */
 export function updateSettings(patch: UserSettingsPatch): UserSettings {
   if (patch.excludedDomains) {

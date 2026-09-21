@@ -2,33 +2,24 @@
 // ページ遷移は行わず、保存はダイアログ内の保存ボタン押下時に一括でPUTする
 // （webserver/requirements.md「設定ダイアログ」「設定ダイアログの入力項目」参照）。
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { getV1ConnectionConfig, putV1ConnectionConfig } from "../../generated/api/default/default";
 import type { GetV1ConnectionConfig200 } from "../../generated/api/endpoints.schemas";
+import { useDialogOpen } from "../../hooks/useDialogOpen";
+import { describeApiError, describeThrownError } from "../../notifications/describe-api-error";
 import { LineListEditor } from "./LineListEditor";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  countries: string[];
 }
 
-export function SettingsDialog({ open, onClose, countries }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+export function SettingsDialog({ open, onClose }: Props) {
+  const dialogRef = useDialogOpen(open);
   const [settings, setSettings] = useState<GetV1ConnectionConfig200>();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    const dialogElement = dialogRef.current;
-    if (!dialogElement) return;
-    if (open && !dialogElement.open) {
-      dialogElement.showModal();
-    } else if (!open && dialogElement.open) {
-      dialogElement.close();
-    }
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -37,12 +28,13 @@ export function SettingsDialog({ open, onClose, countries }: Props) {
     getV1ConnectionConfig()
       .then((response) => {
         if (response.status !== 200) {
-          throw new Error(`設定の取得に失敗しました (status: ${response.status})`);
+          setError(describeApiError(response.status, response.data, "設定の取得に失敗しました").summary);
+          return;
         }
         setSettings(response.data);
       })
       .catch((caughtError: unknown) => {
-        setError(caughtError instanceof Error ? caughtError.message : String(caughtError));
+        setError(describeThrownError(caughtError, "設定の取得に失敗しました").summary);
       })
       .finally(() => setIsLoading(false));
   }, [open]);
@@ -58,11 +50,12 @@ export function SettingsDialog({ open, onClose, countries }: Props) {
         explicitProxyAllowedCidrs: settings.explicitProxyAllowedCidrs.filter((cidr) => cidr.trim().length > 0),
       });
       if (response.status !== 200) {
-        throw new Error(`設定の保存に失敗しました (status: ${response.status})`);
+        setError(describeApiError(response.status, response.data, "設定の保存に失敗しました").summary);
+        return;
       }
       onClose();
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : String(caughtError));
+      setError(describeThrownError(caughtError, "設定の保存に失敗しました").summary);
     } finally {
       setIsSaving(false);
     }
@@ -95,20 +88,7 @@ export function SettingsDialog({ open, onClose, countries }: Props) {
             value={settings.excludedDomains}
             onChange={(excludedDomains) => setSettings({ ...settings, excludedDomains })}
           />
-
-          <label>
-            デフォルト接続国
-            <select
-              value={settings.defaultCountry}
-              onChange={(event) => setSettings({ ...settings, defaultCountry: event.target.value })}
-            >
-              {countries.map((country) => (
-                <option key={country} value={country}>
-                  {country.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p className="unsupported">未対応: 保存はされますが現在は通信に反映されません（Phase 6で対応予定）。</p>
 
           <label>
             <input
@@ -127,6 +107,7 @@ export function SettingsDialog({ open, onClose, countries }: Props) {
             />
             明示的プロキシモード（SOCKS5/HTTP）
           </label>
+          <p className="unsupported">未対応: 保存はされますが現在は動作に反映されません（Phase 4で対応予定）。</p>
 
           <LineListEditor
             label="明示的プロキシの許可CIDR（1行1CIDR）"
@@ -137,7 +118,7 @@ export function SettingsDialog({ open, onClose, countries }: Props) {
 
           {error ? <p role="alert">{error}</p> : null}
 
-          <div>
+          <div className="dialog-actions">
             <button type="submit" disabled={isSaving}>
               {isSaving ? "保存中..." : "保存"}
             </button>

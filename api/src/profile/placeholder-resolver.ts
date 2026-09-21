@@ -15,7 +15,10 @@ const PLACEHOLDER_TOKEN_PATTERN = /^%([A-Z_]+)%$/;
  * 出力: 列挙値の文字列配列。
  * 失敗時の方針: vendor名不一致・フィールド未存在の場合は例外を投げる（プロファイル自体の設定不整合のため）。
  */
-function resolveEnumFrom(profile: VendorProfile, enumFrom: string): string[] {
+function resolveEnumFrom(profile: VendorProfile, enumFrom: string | undefined): string[] {
+  if (enumFrom === undefined) {
+    throw new Error("placeholder with source \"enum\" requires enumFrom");
+  }
   const [vendorName, fieldName] = enumFrom.split(".");
   if (vendorName !== profile.vendor) {
     throw new Error(`enumFrom vendor mismatch: expected "${profile.vendor}", got "${vendorName}" in "${enumFrom}"`);
@@ -30,16 +33,18 @@ function resolveEnumFrom(profile: VendorProfile, enumFrom: string): string[] {
 /**
  * 目的: 指定アクション（connect/disconnect/status）のargvテンプレートに、検証済みの値を代入して
  *       実行可能なargv配列（コマンド本体、binaryを含まない）を解決する。
- * 入力: profile(検証済みプロファイル), actionName(実行するアクション名), values(プレースホルダー名→生の値)。
+ * 入力: profile(検証済みプロファイル), actionName(実行するアクション名), values(プレースホルダー名→生の値),
+ *       allowedValues(`source: "locations"`のプレースホルダー名→許可値の配列。実行時に決まる許可値を呼び出し元が渡す。省略時は空)。
  * 出力: プレースホルダーを実値に置き換えたargv配列。
- * 失敗時の方針: 未定義プレースホルダー参照・値の未指定・許可条件（正規表現/列挙値）不一致の場合は
+ * 失敗時の方針: 未定義プレースホルダー参照・値の未指定・許可条件（正規表現/列挙値/実行時の許可値）不一致の場合は
  *              PlaceholderValidationErrorを投げる（呼び出し元でHTTP 400へマッピングする）。
- * 例: resolveArgv(profile, "connect", { COUNTRY: "jp" }) // => ["connection", "-l", "jp"]
+ * 例: resolveArgv(profile, "connect", { LOCATION: "Tokyo" }, { LOCATION: ["Tokyo", "Seoul"] }) // => ["connect", "-l", "Tokyo", "-y"]
  */
 export function resolveArgv(
   profile: VendorProfile,
   actionName: keyof VendorProfile["actions"],
   values: Record<string, string>,
+  allowedValues: Record<string, string[]> = {},
 ): string[] {
   const action = profile.actions[actionName];
 
@@ -65,7 +70,12 @@ export function resolveArgv(
       throw new PlaceholderValidationError(`value for ${placeholderKey} does not match allowed pattern`);
     }
 
-    const enumValues = resolveEnumFrom(profile, placeholder.enumFrom);
+    // 許可値の出典はプレースホルダー定義で決まる。"locations"は実行時に呼び出し元が渡した値のみ許可する。
+    const enumValues =
+      placeholder.source === "locations" ? allowedValues[placeholderKey] : resolveEnumFrom(profile, placeholder.enumFrom);
+    if (!enumValues) {
+      throw new PlaceholderValidationError(`allowed values for ${placeholderKey} were not provided`);
+    }
     if (!enumValues.includes(rawValue)) {
       throw new PlaceholderValidationError(`value for ${placeholderKey} is not in the allowed list`);
     }

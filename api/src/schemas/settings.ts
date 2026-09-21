@@ -7,7 +7,6 @@ import { Type, type Static } from "@sinclair/typebox";
 export const UserSettingsSchema = Type.Object({
   killSwitch: Type.Boolean(),
   excludedDomains: Type.Array(Type.String()),
-  defaultCountry: Type.String(),
   transparentGatewayEnabled: Type.Boolean(),
   explicitProxyEnabled: Type.Boolean(),
   explicitProxyAllowedCidrs: Type.Array(Type.String()),

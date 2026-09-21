@@ -27,11 +27,31 @@
 
 - [x] `GET /v1/connection` 実装
 - [x] `PUT /v1/connection` 実装（`connect`/`country` 検証・コマンド解決・UDS送信）
-- [x] `GET /v1/connection/countries` 実装
+- [x] `GET /v1/connection/countries` 実装（**Phase 8で`GET /v1/connection/locations`へ置換**）
+
+## 接続先（ロケーション）API (Phase 8)
+
+`wbs/phase8.md`。設計は`design.md`「接続先（ロケーション）」。
+
+- [x] プロファイル: `listLocations`アクション追加、`countries`・`enumFrom`方式の廃止、`%LOCATION%`（`source: "locations"`）の動的な許可値検証（`profile.schema.ts`・`placeholder-resolver.ts`・`api/config/vpn-profile.json`）
+- [x] `list-locations`出力パーサー・接続先ID・接続時指定名（`(Virtual)`除去）（`locations/location-list-parser.ts`・`locations/location-id.ts`・`lib/slugify.ts`）
+- [x] お気に入りストア・最後の接続先ストア（`locations/favorite-locations-store.ts`・`locations/last-location-store.ts`）
+- [x] `GET /v1/connection/locations`（ping昇順・`favorite`・`lastConnected`付き）。`GET /v1/connection/countries`を廃止
+- [x] `PUT`/`DELETE /v1/connection/locations/{locationId}/favorite`
+- [x] `PUT /v1/connection`を`locationId`指定へ変更（接続時に`listLocations`を再実行して`id`を解決、成功時に最後の接続先・接続状態を保存）。`GET /v1/connection`に`locationId`を含める
+- [x] 設定スキーマから`defaultCountry`を除去（既存設定ファイルの残存値を無視）
+- [x] スキーマ検証エラーを400で返す（`app.ts`）
+- [x] テスト（パーサー・ストア・各エンドポイント・プレースホルダー）
 
 ## ログイン代行API
 
 - [x] `POST /v1/session` 実装（`login` アクション解決・実行結果からログインURL抽出）（Phase2で実装、`wbs/phase2.md`参照）
+
+## 稼働状況取得API (Phase 5)
+
+- [x] `proxy-client.ts`に`fetchProxyStatus()`追加（ExecResult同様、TypeBoxで応答形状を検証。2026-09-21）
+- [x] `GET /v1/connection/gateway` 実装（TypeBoxスキーマ・OpenAPI公開。`routes/connection-gateway.ts`・`schemas/gateway.ts`。2026-09-21）
+- [x] 上記の統合テスト（プロキシ疎通はモック化。200/502/504。`routes/connection-gateway.test.ts`・`proxy-client.test.ts`。2026-09-21）
 
 ## 監査ログ
 
@@ -49,6 +69,8 @@
 - [x] 入力エラー（`400`）のハンドリング実装
 - [x] プロキシ接続失敗（`502`）のハンドリング実装
 - [x] プロキシ実行失敗（`422`、`exitCode`/`stderr`要約含む）のハンドリング実装
+- [x] 接続先国の永続化（接続成功時に要求した国＋接続先の都市名を保存し、`GET /v1/connection`・`PUT`の応答へ`country`/`location`を付与、切断・接続先不一致で消去。`connection-state/connection-state-store.ts`。2026-09-21。Web UI再読み込みで接続国が消える不具合の修正）
+- [x] 422の`stderr`が空の場合はstdoutを診断として返す（実CLI `adguardvpn-cli`はエラーをstdoutへ出力するため。Phase 5のE2Eで判明。`lib/failure-output.ts`。2026-09-21）
 - [x] タイムアウト（`504`）のハンドリング実装（2026-09-14: 実機で`proxy`コンテナを`docker compose pause`により意図的に無応答化し、`GET /v1/connection`が`504 {"error":"proxy_timeout",...}`を返すことをE2Eで確認済み。`wbs/phase2.md`参照）
 
 ## OpenAPI公開
