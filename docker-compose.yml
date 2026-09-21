@@ -88,6 +88,30 @@ services:
       # 無ければコンテナ再作成のたびに再ログインが必要になる（wbs/phase2.md「次フェーズへの申し送り」参照）。
       - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
 
+  # Proton VPN用ランナー: Proton VPN CLIの実行環境（NetworkManager・D-Bus・keyringをコンテナ内で起動する）。
+  # Proton VPNを有効にした場合のみ起動する（`.env`のCOMPOSE_PROFILES。install/select-providers.shが書く）。
+  runner-protonvpn:
+    profiles: [protonvpn]
+    restart: always
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile.runner-protonvpn
+    # NMが作るWireGuardトンネルをゲートウェイのネットワーク名前空間に作らせるため。
+    network_mode: host
+    # エントリポイントがroot権限でシステムD-Bus・NetworkManagerを起動し、ランナー本体はvpngwgui（10001）へ権限を落として起動する。
+    user: "0:0"
+    cap_add:
+      - NET_ADMIN
+    init: true
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+      # CLIの設定・永続化したmachine-id
+      - proton-config:/home/vpngwgui/.config/Proton
+      # Secret Service（gnome-keyring）の実体。ログイン情報（トークン）はここに保存される。
+      - proton-keyrings:/home/vpngwgui/.local/share/keyrings
+      # サーバー一覧のキャッシュ（毎回の取得を避ける）
+      - proton-cache:/home/vpngwgui/.cache/Proton
+
 networks:
   app-net: {}
 
@@ -95,3 +119,6 @@ volumes:
   ctl-socket: {}
   api-data: {}
   adguard-data: {}
+  proton-config: {}
+  proton-keyrings: {}
+  proton-cache: {}

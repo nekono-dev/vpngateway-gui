@@ -39,8 +39,8 @@
 - [x] （Phase 9）`EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）と単体テスト
 - [x] （Phase 9）モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）と`docker-compose.e2e-mock.yml`
 - [x] （Phase 9）`proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`VPN_PROVIDER`で切り替え可能にする
-- [ ] （Phase 10）Proton VPN用ランナーのPoC（合否基準はdesign.md「Proton VPN用ランナー」）
-- [ ] （Phase 10）`proxy/Dockerfile.runner-protonvpn`・エントリポイント・NM設定・`docker-compose.yml`の`runner-protonvpn`サービス・`RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn`
+- [x] （Phase 10）Proton VPN用ランナーのPoC（合否基準はdesign.md「Proton VPN用ランナー」）。基準1・4と2の一部まで合格（実ログインが必要な基準2の残り・3・5は検証待ち。2026-09-21）
+- [x] （Phase 10）`proxy/Dockerfile.runner-protonvpn`・エントリポイント・NM設定・`docker-compose.yml`の`runner-protonvpn`サービス・`RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn`
 - [ ] （Phase 10）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持）
 
 ## ランナーの分離（Phase 11）

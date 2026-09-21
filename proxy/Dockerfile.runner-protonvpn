@@ -1,0 +1,70 @@
+# Proton VPN用ランナー（`runner-protonvpn`）のイメージ。Proton VPN公式CLI（proton-vpn-cli）の実行環境と、実行要求の受け口
+# （`dist/runner.js`）だけを持つ。ネットワーク制御（nftables・3proxy）は持たない（ネットワークコンテナ`proxy`の責務）。
+# 公式CLIはNetworkManager・Secret Service（gnome-keyring）・システム/セッションD-Busに依存し、公式にはheadless非対応のため、
+# それらをこのコンテナ内で起動する（エントリポイント`docker-entrypoint.protonvpn.sh`）。
+# 設計: specs/runner/design.md「Proton VPN用ランナー」、wbs/phase10.md。
+
+# ビルドステージ: ランナー本体（TypeScript）。他のランナーと同じ（実行時の依存パッケージは無く、distのみを使う）。
+FROM node:22-alpine AS build
+WORKDIR /repo
+COPY package.json package-lock.json* ./
+COPY web/package.json web/package.json
+COPY api/package.json api/package.json
+COPY proxy/package.json proxy/package.json
+RUN npm ci
+COPY proxy proxy
+COPY tsconfig.base.json tsconfig.base.json
+RUN npm run build -w proxy
+
+# Node.jsの実行バイナリの取得元（公式イメージ。Debian 12のglibc 2.36向けで、Ubuntu 24.04（glibc 2.39）でも動く）。
+FROM node:22-bookworm-slim AS node-runtime
+
+# 実行ステージ
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+# 依存の内訳:
+# - gnupg・apt-transport-https: Proton公式リポジトリのリリースパッケージ（protonvpn-stable-release）の依存（署名鍵の導入用）。
+# - proton-vpn-cli: 公式CLI本体。依存でNetworkManager・python3-gi・wireguard-tools・gnome-keyring等が入る。
+# - dbus: システムバス・セッションバス（NM・keyringがD-Bus上で動く）。
+# - libsecret-tools: 検証用のsecret-tool（Secret Serviceの動作確認。実行には不要）。iproute2: 経路の確認用。
+# - util-linux(setpriv): rootのエントリポイントから非root（vpngwgui）へ権限を落とすため。
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg apt-transport-https dbus libsecret-tools iproute2 util-linux procps \
+  && curl -fsSL -o /tmp/protonvpn-release.deb https://repo.protonvpn.com/debian/dists/stable/main/binary-all/protonvpn-stable-release_1.0.8_all.deb \
+  && dpkg -i /tmp/protonvpn-release.deb \
+  && apt-get update \
+  # proton-vpn-daemon（proton-vpn-cliの依存。分割トンネリング用のサービスで、本システムでは使わない）のpostinstは、
+  # systemd無しの環境でも`systemctl daemon-reload/enable/start`を無条件に実行して失敗する。導入の間だけ、
+  # /usr/bin/systemctlを何もしないスタブへ差し替える（dpkg-divertで、後から導入される本物のsystemctlは退避先へ入る。
+  # /usr/local/binへ置く方法は、dpkgがmaintainerスクリプトの実行時にPATHを変えるため効かなかった）。導入後に元へ戻す。
+  && dpkg-divert --local --rename --add /usr/bin/systemctl \
+  && printf '#!/bin/sh\nexit 0\n' > /usr/bin/systemctl && chmod +x /usr/bin/systemctl \
+  && apt-get install -y --no-install-recommends proton-vpn-cli \
+  && rm -f /usr/bin/systemctl \
+  && dpkg-divert --local --rename --remove /usr/bin/systemctl \
+  && rm -f /tmp/protonvpn-release.deb \
+  && rm -rf /var/lib/apt/lists/*
+
+# 非root実行ユーザー（他のランナー・ネットワークコンテナと同じUID/GID。ctl-socketボリュームの所有権を共有するため）。
+RUN groupadd -g 10001 vpngwgui \
+  && useradd -m -u 10001 -g 10001 -s /usr/sbin/nologin vpngwgui \
+  && mkdir -p /var/run/vpngw-ctl /home/vpngwgui/.config/Proton /home/vpngwgui/.cache/Proton /home/vpngwgui/.local/share/keyrings \
+  && chown -R vpngwgui:vpngwgui /var/run/vpngw-ctl /home/vpngwgui
+
+# NetworkManagerはホストのネットワーク（network_mode: host）を見る。ホストのインターフェース（物理NIC・Docker・LXC）を
+# 奪わないよう、WireGuardデバイス以外を全て管理対象外にする（Proton VPNのトンネルはNMが作るWireGuardインターフェース）。
+COPY proxy/networkmanager-vpngwgui.conf /etc/NetworkManager/conf.d/99-vpngwgui.conf
+
+WORKDIR /app
+COPY --from=build /repo/proxy/dist ./dist
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY proxy/docker-entrypoint.protonvpn.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENV CTL_SOCKET_PATH=/var/run/vpngw-ctl/runner-protonvpn.sock
+ENV HOME=/home/vpngwgui
+# このランナーが実行してよいバイナリ（allowlist.ts）。実運用のイメージにビルド時に焼き込み、composeでは上書きしない。
+ENV RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn
+# エントリポイントがroot権限でD-Bus・NetworkManagerを起動し、ランナー本体は`vpngwgui`へ権限を落として起動する
+# （docker-compose.ymlでuser: "0:0"にする）。
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node", "dist/runner.js"]

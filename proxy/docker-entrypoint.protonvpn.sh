@@ -60,9 +60,20 @@ chown "$RUN_UID:$RUN_GID" "$XDG_RUNTIME_DIR"
 chmod 0700 "$XDG_RUNTIME_DIR"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 run_as env DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" dbus-daemon --session --fork --nopidfile --address="$DBUS_SESSION_BUS_ADDRESS"
-# 空のパスワードで解錠する（ヘッドレスのため対話入力できない。keyringの実体は永続化ボリューム上）。
-printf '' | run_as env HOME="$RUN_HOME" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
-  gnome-keyring-daemon --daemonize --unlock --components=secrets >/dev/null
+# keyringを解錠する。ヘッドレスのため対話入力できない。**空のパスワードでは、初回のログインkeyringの作成が
+# GUIのプロンプト（org.gnome.keyring.SystemPrompter）を要求して失敗する**（PoCで確認）ため、ランダムなパスワードを
+# 永続化ボリューム（~/.config/Proton）に0600で保存して使う。keyringの実体（~/.local/share/keyrings）と別のボリュームだが、
+# 同じコンテナから読めるため暗号化としての強度は無い（CLIのトークンを保管するSecret Serviceを成立させるための措置）。
+KEYRING_PASS_FILE="$RUN_HOME/.config/Proton/.keyring-pass"
+if [ ! -s "$KEYRING_PASS_FILE" ]; then
+  od -An -tx1 -N24 /dev/urandom | tr -d ' \n' > "$KEYRING_PASS_FILE"
+  chown "$RUN_UID:$RUN_GID" "$KEYRING_PASS_FILE"
+  chmod 0600 "$KEYRING_PASS_FILE"
+fi
+KEYRING_ENV="HOME=$RUN_HOME XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+# --login: パスワードを標準入力から読み、ログインkeyringが無ければ作成し、あれば解錠する。続けて--startでSecret Serviceを開始する。
+run_as env $KEYRING_ENV gnome-keyring-daemon --daemonize --login < "$KEYRING_PASS_FILE" >/dev/null
+run_as env $KEYRING_ENV gnome-keyring-daemon --start --components=secrets >/dev/null
 log "セッションD-Bus・keyring起動"
 
 # 4) proxy本体（非root）

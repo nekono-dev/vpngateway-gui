@@ -69,12 +69,14 @@ Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーション
 - **イメージ**: `proxy/Dockerfile.runner-protonvpn`（Phase 10の当初案の`Dockerfile.protonvpn`から、ランナーとして改名・縮小した。3proxy・nftablesは不要）。Ubuntu 24.04ベース（検証環境と同一で、依存解決が確認済み）。Node.jsは公式イメージからバイナリをコピーする。3proxyはネットワークコンテナ（Alpine）にのみ含めるため、このイメージには不要。Protonの公式リポジトリ（`protonvpn-stable-release`）を追加し、`proton-vpn-cli`を導入する。イメージは大きくなる（GTK等の依存を含む）が、ランナーが分離されているためAdGuard用ランナー・ネットワークコンテナには影響しない。**Proton用ランナーは、Proton VPNを有効化した場合のみ起動する**（`COMPOSE_PROFILES`）。
 - **起動構成**: PID 1は`init: true`のtiniの下でエントリポイントのスクリプトが動き、root権限でシステムD-Bus→NetworkManagerを起動し、`vpngwgui`ユーザーでセッションバス・keyringを起動してから、`vpngwgui`権限でランナー本体（Node.js）を`exec`する。バックグラウンドのいずれかが終了したらエントリポイントも終了し、`restart: always`でコンテナごと再起動する（片方だけ死んだ半端な状態で稼働し続けない）。
 - **NetworkManagerの制限**: `network_mode: host`のため、NMはホストのインターフェースを見る。ホストのネットワーク（DHCP・静的設定・Docker・LXC）を奪わないよう、NMの設定で**WireGuardデバイス以外を全て`unmanaged`にする**（`[keyfile] unmanaged-devices=*,except:type:wireguard`相当。書式はPoCで確認）。Proton VPNのトンネルは、NMが作るWireGuardインターフェース（`proton0`等）で、本システムのトンネル検出（`ip route get`の出力先。`tunnel-interface.ts`）はインターフェース名に依存しないためそのまま使える。
+- **keyringの解錠（PoCで判明）**: 空のパスワードでは、初回のログインkeyringの作成がGUIのプロンプト（`org.gnome.keyring.SystemPrompter`）を要求して失敗する。エントリポイントは、ランダムなパスワードを`~/.config/Proton/.keyring-pass`（0600、永続化ボリューム）へ保存し、`gnome-keyring-daemon --daemonize --login`へ標準入力で渡してログインkeyringを作成・解錠し、続けて`--start --components=secrets`でSecret Serviceを開始する。keyringの実体は`~/.local/share/keyrings`（別のボリューム）。同じコンテナから読めるため暗号化としての強度は無い（トークンを保管するSecret Serviceを成立させるための措置）。コンテナ再作成後も、保存した値が取り出せることを確認した。
+- **導入時のsystemctl（PoCで判明）**: `proton-vpn-daemon`のpostinstがsystemd無しでも`systemctl`を実行して失敗するため、`dpkg-divert`で`/usr/bin/systemctl`を退避して導入中だけスタブへ差し替え、導入後に戻す（`/usr/local/bin`へ置く方法はdpkgのPATHの都合で効かない）。
 - **Kill Switch**: Proton VPN CLIのKill Switch（`config set kill-switch`）は使わず、既定（無効）のままとして、本システムのnftablesのKill Switchに一本化する（二重の遮断規則による競合・切断後の通信不能を避ける）。PoCで既定値と、有効化されていた場合の切り戻しを確認する。
 - **権限**: `cap_add: [NET_ADMIN]`、`/dev/net/tun`（従来と同じ）に加え、NMの起動のためにrootで動く。`privileged: true`は使わず、追加の権限が必要と判明した場合のみPoCの結果として個別に追加する。ノード本体・CLIの実行は`vpngwgui`（非root）とする。
 - **永続化**: `~/.config/Proton/VPN`（設定）・`~/.local/share/keyrings`（keyring）・`~/.cache/Proton/VPN`（サーバー一覧のキャッシュ）と、`/etc/machine-id`（コンテナ再作成でログインが失効しないよう、AdGuard用の`docker-entrypoint.sh`と同じ方針でボリュームから復元）を永続化する。
 - **PoCの合否基準**（`wbs/phase10.md`で先に実施する。不合格の場合は、ホストへ`proton-vpn-cli`・NM・daemonを導入しD-Bus・keyringのソケットをコンテナへ共有する代替へ切り替え、本節と`wbs/phase10.md`を改訂する）:
   1. コンテナ内でNM・keyringが起動し、`protonvpn status`が終了コード0で応答する。
-  2. `protonvpn signin`が、TTYの無いコンテナで標準入力からパスワードを受け取れ、ログイン情報がコンテナ再作成後も保持される（keyringの永続化）。
+  2. `protonvpn signin`が、TTYの無いコンテナで標準入力からパスワードを受け取れ（`getpass`が標準入力へフォールバックする。**確認済み**）、ログイン情報がコンテナ再作成後も保持される（keyringの永続化。**keyringの保持は確認済み、実アカウントでのログインは検証待ち**）。
   3. `protonvpn connect`でWireGuardのインターフェースが作られ、`ip route get 1.1.1.1`がそのインターフェースを指す。切断で元に戻る。
   4. NMがホストの既存インターフェース（物理NIC・Docker・LXC）の設定を変更しない。
   5. 本システムの透過ゲートウェイ（nftablesのNAT/FORWARD）が、そのインターフェースを経由してLAN端末の通信をVPNへ通す。

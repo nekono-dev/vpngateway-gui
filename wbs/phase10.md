@@ -51,20 +51,20 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 - [x] 要件定義・設計・タスク一覧の作成（`specs/`各ファイル、本ファイル）。
 
 ### 1. 実行基盤のPoC（最初に実施。合否基準は`specs/proxyserver/design.md`「Proton VPN向けproxyイメージ」）
-- [ ] コンテナ内でNetworkManager・keyring・セッションD-Busが起動し（`proton-vpn-daemon`は起動不要）、`protonvpn status`が応答する。
-- [ ] NetworkManagerがホストの既存インターフェースを変更しない設定（`unmanaged-devices`）の確定。
-- [ ] TTYの無いコンテナで、標準入力からのパスワード入力で`signin`が成立する（人手：無料アカウント）。ログイン情報がコンテナ再作成後も保持される。
-- [ ] `connect`でWireGuardインターフェースが作られ、`ip route get`がそれを指す。切断で戻る。
-- [ ] 透過ゲートウェイ（nftables）がそのインターフェース経由でLAN端末の通信をVPNへ通す。
-- [ ] PoC結果に基づく合否判定。**不合格の場合は本フェーズの設計（`specs/proxyserver/design.md`・本ファイル）を改訂してから先へ進む**。
+- [x] コンテナ内でNetworkManager・keyring・セッションD-Busが起動し（`proton-vpn-daemon`は起動不要）、`protonvpn status`が応答する。（2026-09-21、検証環境で確認。`Status: Disconnected`、終了コード0）
+- [x] NetworkManagerがホストの既存インターフェースを変更しない設定（`unmanaged-devices=*,except:type:wireguard`）の確定。（コンテナ内`nmcli device status`で全デバイス`unmanaged`、ホストの`enp6s18`・docker・lxcのアドレス・経路に変化なし）
+- [ ] TTYの無いコンテナで、標準入力からのパスワード入力で`signin`が成立する（人手：無料アカウント）。**確認済み**: 存在しないアカウントで`POST /v1/session`を実行し、`getpass`のTTY無しフォールバックが標準入力のパスワードを読み、ProtonのAPIが`Authentication failed`を返す（パスワードはログ・応答に出ない）ところまで。**keyringの永続化**: `secret-tool`で保存した値がコンテナ再作成後も取り出せる。**未確認（人手）**: 実アカウントでのログイン成功とトークンの保管・再作成後のログイン保持。
+- [ ] `connect`でWireGuardインターフェースが作られ、`ip route get`がそれを指す。切断で戻る。（**検証待ち**: ログインが必要）
+- [ ] 透過ゲートウェイ（nftables）がそのインターフェース経由でLAN端末の通信をVPNへ通す。（**検証待ち**: ログインが必要）
+- [x] PoC結果に基づく合否判定: **ここまで合格**（コンテナ内実行基盤は成立。判定基準1・4と、2の一部）。残り（基準2の実ログイン、3、5）は無料アカウントでのログイン後に確認する。不合格に転じた場合は本フェーズの設計（`specs/runner/design.md`・本ファイル）を改訂する。
 
 ### 2. 実装
-- [ ] `proxy/Dockerfile.runner-protonvpn`・エントリポイント（`docker-entrypoint.protonvpn.sh`）・NM設定（`networkmanager-vpngwgui.conf`）・`docker-compose.yml`の`runner-protonvpn`サービス（`profiles: [protonvpn]`・ボリューム）。**エントリポイント・NM設定・プロファイル（`api/config/profiles/protonvpn.json`）はPoC途中の下書きがある**（下記「PoC途中の知見」）。
-- [ ] プロキシの許可リストへ`/usr/bin/protonvpn`を追加。
-- [ ] `api/config/profiles/protonvpn.json`（`specs/apiserver/design.md`「Phase 9における具体プロファイル」）。実機の出力に合わせて`restrictedPattern`・`output.locationPattern`・`account.plans[].pattern`を確定する。
-- [ ] Proton VPN CLI既定のKill Switch設定の確認（本システムのKill Switchに一本化する。有効になっていた場合の扱い）。
+- [x] `proxy/Dockerfile.runner-protonvpn`・エントリポイント（`docker-entrypoint.protonvpn.sh`）・NM設定（`networkmanager-vpngwgui.conf`）・`docker-compose.yml`の`runner-protonvpn`サービス（`profiles: [protonvpn]`・ボリューム）。（イメージは約1GB。検証環境でビルド・起動し、APIから`GET /v1/providers`で利用可能と判定されることを確認）
+- [x] ランナーの許可バイナリ`RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn`をイメージへ焼き込み（Phase 11でプロキシの許可リストから置き換え）。
+- [ ] `api/config/profiles/protonvpn.json`（`specs/apiserver/design.md`「Phase 9における具体プロファイル」）。**実機で確認済み**: 未ログイン時の`config list`が`Authentication required`（終了コード2）で`loggedIn:false`と判定され、capabilityが`notLoggedIn`になる／`status`は未ログインで`Status: Disconnected`（終了コード0）。**未確認（ログイン後）**: `account.plans[].pattern`（無料版の`Upgrade to enable`）・`restrictedPattern`・`output.locationPattern`（接続時・接続中の出力）。
+- [ ] Proton VPN CLI既定のKill Switch設定の確認（本システムのKill Switchに一本化する。有効になっていた場合の扱い）。（**検証待ち**: `config list`はログインが必要）
 - [ ] `changeLocation`（接続中の再接続）の可否の確認（有料版のみ検証可能。無料版では接続先を選べないため対象外。`features.changeLocation`の値は有料版の検証まで既定値のまま）。
-- [ ] Proton VPNの有効化手順（`install/select-providers.sh adguardvpn protonvpn`）を文書へ追記。
+- [x] Proton VPNの有効化手順（`install/select-providers.sh adguardvpn protonvpn`。`specs/design.md`・`e2e/README.md`）。検証環境では有効化済み（`.env`）。
 
 ### 3. 検証
 - [ ] 実機（検証環境・実LAN・Proton VPN無料アカウント）でのE2E（`e2e/phase10/`）: Web UIのフォームでログイン→プラン判定（Free）→接続先リストが理由付きで無効→自動接続→出口IPがProton側→LAN端末の透過ゲートウェイ通信→Kill Switch→切断→ログアウト→コンテナ再起動後もログイン保持。
@@ -80,8 +80,11 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 
 ## 検証手法
 
-（実施後に記載する。）
+- **PoC・実行基盤（実施済み）**: 検証環境（`192.168.3.240`）で`docker compose`（`COMPOSE_PROFILES=protonvpn`）により`runner-protonvpn`をビルド・起動し、コンテナ内で`nmcli device status`・`protonvpn status`・`protonvpn config list`・`secret-tool`（keyringの保存・取得・コンテナ再作成後の保持）を確認。あわせてAPI経由（`GET /v1/providers`・`PUT /v1/providers/active`・`GET /v1/session`・`GET /v1/connection/capabilities`・`POST /v1/session`）で実CLIの出力の解釈と、標準入力でのパスワード受け渡しを確認。
+- **実機E2E（人手のログインを含む。未実施）**: 検証環境のWeb UI（`http://192.168.3.240:8080`）でProton VPNを選択し、無料アカウントでログイン後、完了基準の各項目を確認する（`e2e/phase10/`に手順を残す予定）。
 
 ## 次フェーズへの申し送り
 
-- （実装しながら追記する）
+- **状態: 実装完了・検証待ち**（人手による無料アカウントのログインが必要）。検証環境では`runner-protonvpn`が起動し、Proton VPNが有効化済み（Web UIのベンダー選択に表示される）。利用者がWeb UIでProton VPNを選び、ログインフォームから無料アカウントでログインすれば、以降の検証（プラン判定・自動接続・透過ゲートウェイ・Kill Switch・切断・ログアウト・再作成後のログイン保持）に進める。
+- **判明した点（PoC）**: (1)**keyringは空のパスワードでは初回のログインkeyringを作成できない**（`org.gnome.keyring.SystemPrompter`のGUIプロンプトが要求され失敗する）。`gnome-keyring-daemon --login`にランダムなパスワードを標準入力で渡す（パスワードは`~/.config/Proton/.keyring-pass`へ0600で保存。暗号化としての強度は無い）。(2)`proton-vpn-daemon`のpostinstのsystemctl問題は、`/usr/bin/systemctl`を`dpkg-divert`で退避して導入中だけスタブに差し替える方法で解決した（`/usr/local/bin`へ置く方法は効かない）。(3)NM起動時に`systemctl daemon-reload`の失敗ログが出るが無害（systemd無し）。(4)`signin`失敗時の`stderr`に`getpass`のTTY無しの警告（`GetPassWarning`・`Password input may be echoed`）が含まれる（利用者向けの詳細に出るだけで、パスワードは含まれない）。(5)ホストのNetworkManagerはPoC中に停止・無効化した（コンテナ内NMと競合するため。`~/claude-installed.md`）。
+- 有料版の挙動（国指定の接続・国一覧・接続先変更）は、アカウントが無いため検証待ち。

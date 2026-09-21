@@ -2,11 +2,11 @@
 // 既存のAdGuard VPNプロファイルが追加項目なしのまま読み込めること（後方互換）も確認する。
 
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { VendorProfileSchema, type VendorProfile } from "./profile.schema.js";
-import { getLoginMethod, validateProfile } from "./profile-loader.js";
+import { getLoginMethod, parseProfileFile, validateProfile } from "./profile-loader.js";
 
 const load = (relative: string): VendorProfile => JSON.parse(readFileSync(join(import.meta.dirname, relative), "utf8")) as VendorProfile;
 const adguard = load("../../config/profiles/adguardvpn.json");
@@ -61,5 +61,20 @@ describe("プロファイルのスキーマ・検証", () => {
   it("ログイン方式は未指定ならURL提示型（deviceUrl）", () => {
     expect(getLoginMethod(adguard)).toBe("deviceUrl");
     expect(getLoginMethod(protonLike)).toBe("credentials");
+  });
+});
+
+describe("同梱の管理者向けプロファイル（api/config/profiles/）", () => {
+  const dir = join(import.meta.dirname, "../../config/profiles");
+  const files = readdirSync(dir).filter((name) => name.endsWith(".json"));
+
+  it("少なくとも1つのプロファイルがある", () => {
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it.each(files)("%s: スキーマ・組合せ検証を通り、ファイル名がベンダーIDと一致する", (name) => {
+    const profile = parseProfileFile(join(dir, name));
+    expect(profile.vendor).toBe(name.replace(/\.json$/, ""));
+    expect(profile.displayName).toBeTruthy();
   });
 });
