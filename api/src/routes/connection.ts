@@ -1,6 +1,7 @@
 // 責務: 現在の接続状態取得（GET）と接続/切断の制御（PUT）。
 // apiserver/design.md「APIエンドポイント一覧」`GET/PUT /v1/connection`に対応する。
 
+import { isCommandSuccess } from "../profile/command-success.js";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   ConnectionStatusSchema,
@@ -93,7 +94,7 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       let target: ParsedLocation | undefined;
       let argv: string[];
       // 実行失敗時にプラン制限（403）かを判定するための、実際に実行するアクションとオペレーション。
-      let executed: { action: { timeoutMs: number; restrictedPattern?: string }; operation: OperationKey | undefined };
+      let executed: { action: { timeoutMs: number; restrictedPattern?: string; successPattern?: string }; operation: OperationKey | undefined };
       if (body.connect && body.locationId) {
         const connectAction = requireAction(profile, "connect");
         const locations = await fetchLocations(provider);
@@ -134,7 +135,8 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       // ネットワークコンテナは別コンテナのため、ここで通知する。失敗は握りつぶす（監視ループが追従する）。
       await requestConnectionCheck();
 
-      if (exitCode !== 0) {
+      // 終了コードが0以外でも、successPatternに一致する出力なら成功として扱う（CLIの終了コードが実態と合わないベンダー向け）。
+      if (!isCommandSuccess(executed.action, result)) {
         const output = pickFailureOutput(result.stderr, result.stdout);
         if (executed.operation === undefined) {
           throw new CommandExecutionError(`${actionName} command failed`, exitCode, output);

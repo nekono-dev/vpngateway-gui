@@ -3,6 +3,7 @@
 // 切替中は、ベンダーに対する他の操作（接続・ログイン等）を409で拒否する（切替前後のどちらのベンダーへ作用するか曖昧に
 // なるのを避けるため。プロセス内の単純な排他で、API複数台構成は想定しない）。
 
+import { isCommandSuccess } from "../profile/command-success.js";
 import { appendAuditLog } from "../audit-log/audit-log-store.js";
 import { clearConnectedLocation } from "../connection-state/connection-state-store.js";
 import { CommandExecutionError, ProviderSwitchingError, ProxyTimeoutError, ProxyUnavailableError } from "../errors.js";
@@ -65,7 +66,7 @@ async function disconnectIfConnected(current: Provider): Promise<void> {
   });
   const exitCode = result.exitCode ?? -1;
   appendAuditLog({ action: "disconnect", provider: current.id, input: { reason: "switch-provider" }, exitCode });
-  if (exitCode !== 0) {
+  if (!isCommandSuccess(profile.actions.disconnect, result)) {
     throw new CommandExecutionError("disconnect command failed", exitCode, pickFailureOutput(result.stderr, result.stdout));
   }
   clearConnectedLocation(current.id);

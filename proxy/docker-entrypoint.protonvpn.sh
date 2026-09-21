@@ -37,13 +37,35 @@ mkdir -p /var/lib/dbus && cp /etc/machine-id /var/lib/dbus/machine-id
 chown "$RUN_UID:$RUN_GID" "$RUN_HOME" "$RUN_HOME/.config" "$RUN_HOME/.cache" "$RUN_HOME/.local" "$RUN_HOME/.local/share" 2>/dev/null || true
 chown -R "$RUN_UID:$RUN_GID" "$RUN_HOME/.config/Proton" "$RUN_HOME/.cache/Proton" "$RUN_HOME/.local/share/keyrings"
 
+# 前回の実行で取り残されたCLI由来のI/F（WireGuardトンネル・Kill Switch用dummy）を消す。コンテナが作り直されると
+# CLIの接続状態は失われるのにカーネルのI/Fだけ残り、NMが「外部接続」として抱えてtunnel検出・経路を乱すため。
+for ifc in $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sed 's/@.*//' | grep -E '^(proton[0-9]+|pvpnksintrf[0-9]+|ipv6leakintrf[0-9]+)$' || true); do
+  ip link del "$ifc" 2>/dev/null && log "取り残されたI/Fを削除: $ifc"
+done
+
 # 1) システムD-Bus
 mkdir -p /run/dbus
 rm -f /run/dbus/pid /run/dbus/system_bus_socket
 dbus-daemon --system --fork --nopidfile
 log "システムD-Bus起動"
 
-# 2) NetworkManager（設定は/etc/NetworkManager/conf.d/99-vpngwgui.conf。WireGuard以外は管理対象外）
+# 2) NetworkManager（設定はテンプレートから生成する。WireGuard・dummy・上り側NIC以外は管理対象外）
+# 上り側NIC: LAN_IFACE（未設定ならdefault経路のIF）。CLIのWireGuard接続が、サーバ宛の経路をNMの管理下の物理NICへ足すため必須。
+UPLINK_IFACE="${LAN_IFACE:-$(ip -4 route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); exit}}')}"
+case "$UPLINK_IFACE" in
+  ""|*[!A-Za-z0-9._-]*) UPLINK_EXCEPT="" ;;
+  *) UPLINK_EXCEPT=",except:interface-name:$UPLINK_IFACE" ;;
+esac
+sed "s|__UPLINK_EXCEPT__|$UPLINK_EXCEPT|" /usr/local/share/networkmanager-vpngwgui.conf.tmpl > /etc/NetworkManager/conf.d/99-vpngwgui.conf
+log "NM管理対象の上り側NIC: ${UPLINK_IFACE:-（なし）}"
+
+# NMは「ユーザ限定（permissions=user:vpngwgui）」の接続プロファイルを、そのユーザのログインセッションが
+# 無いと有効化しない。CLIのKill Switch・WireGuard接続は全てこの形式で作られるが、コンテナにはlogindが無い。
+# NMが参照するlogindのセッション情報（/run/systemd/users・sessions）を、vpngwguiが常時ログイン中である体で置く。
+mkdir -p /run/systemd/users /run/systemd/sessions
+printf 'NAME=%s\nSTATE=active\nSESSIONS=1\nONLINE_SESSIONS=1\nACTIVE_SESSIONS=1\nDISPLAY=1\n' "$RUN_USER" > "/run/systemd/users/$RUN_UID"
+printf 'UID=%s\nUSER=%s\nACTIVE=1\nIS_DISPLAY=1\nSTATE=active\nREMOTE=0\nCLASS=user\nTYPE=tty\n' "$RUN_UID" "$RUN_USER" > /run/systemd/sessions/1
+
 mkdir -p /run/NetworkManager
 NetworkManager --no-daemon &
 NM_PID=$!

@@ -28,6 +28,9 @@ export const ActionDefSchema = Type.Object({
   // コマンドが失敗したとき、標準出力・標準エラーがこの正規表現に一致すればプラン制限による失敗とみなす
   // （Phase 9。403 operation_restrictedで通知し、対応するオペレーションを制限として学習する）。
   restrictedPattern: Type.Optional(Type.String()),
+  // 終了コードが0以外でも、標準出力・標準エラーがこの正規表現に一致すれば成功とみなす。
+  // Proton VPN CLIの`disconnect`は、実際の接続の切断に成功しても終了コード1で"Disconnected."と出力するため。
+  successPattern: Type.Optional(Type.String()),
 });
 export type ActionDef = Static<typeof ActionDefSchema>;
 

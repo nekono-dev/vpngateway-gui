@@ -145,8 +145,11 @@ switch (command) {
     break;
   }
   case "disconnect": {
+    // 実CLI（1.0.3）は、実際の接続を切断したときだけ終了コード1で終わる（メッセージは成功）。未接続なら0。
+    const wasConnected = Boolean(state.connectedTo);
     saveState({ ...state, connectedTo: null });
     console.log("Disconnected.");
+    if (wasConnected) process.exit(1);
     break;
   }
   case "countries": {

@@ -202,6 +202,7 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 | `actions.logout` | 新規・省略可。`DELETE /v1/session`が実行する。 |
 | `actions.account` | 新規・省略可。ログイン状態・プランを判定する**副作用のない読み取り専用**コマンド。詳細は下記「ログイン状態・プランの判定」。 |
 | `actions.<name>.restrictedPattern` | 新規・省略可。コマンドが失敗したとき、標準出力・標準エラーがこの正規表現に一致すればプラン制限による失敗とみなす（下記「実行失敗からの学習」）。 |
+| `actions.<name>.successPattern` | 新規・省略可。終了コードが0以外でも、標準出力・標準エラーがこの正規表現（複数行モード）に一致すれば成功とみなす。CLIの終了コードが実態と合わないベンダー向け（Proton VPN CLIの`disconnect`は、実際の接続を切断したときだけ終了コード1で`Disconnected.`と出力する）。`PUT /v1/connection`とベンダー切替時の切断で使う（`api/src/profile/command-success.ts`）。 |
 | `actions.listLocations.table` | 新規・省略可。出力表の列名の対応（`iso`・`country`は必須、`city`・`ping`は省略可）。省略時は従来のAdGuard形式（`ISO`/`COUNTRY`/`CITY`/`PING`）。 |
 | `actions.listLocations.connectNameFrom` | 新規・省略可。`"city"`（既定。都市名から`(Virtual)`を除いたもの）／`"iso"`（ISO国コード）。`%LOCATION%`へ代入する接続時の指定名の出典。 |
 | `placeholders.<KEY>.source` | `"input"`を追加。利用者入力をそのまま使い、`pattern`のみで検証する（`enumFrom`・実行時許可値は不要）。ログインのユーザー名に使う。`pattern`は先頭が`-`でない（CLIオプションと解釈されない）ことを必ず要求する。 |

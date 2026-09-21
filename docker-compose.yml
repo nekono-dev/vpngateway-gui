@@ -103,6 +103,9 @@ services:
     cap_add:
       - NET_ADMIN
     init: true
+    environment:
+      # NMが管理対象にする上り側NIC（未設定ならdefault経路のIF）。proxy（ネットワーク）と同じ値。
+      LAN_IFACE: ${LAN_IFACE:-}
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
       # CLIの設定・永続化したmachine-id

@@ -14,7 +14,7 @@
       "restrictedPattern": "not available on the free plan"
     },
     "connectAuto": { "argv": ["connect"], "placeholders": {}, "timeoutMs": 90000 },
-    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 30000 },
+    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 30000, "successPattern": "^Disconnected\\." },
     "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 15000 },
     "login": {
       "argv": ["signin", "%USERNAME%"],

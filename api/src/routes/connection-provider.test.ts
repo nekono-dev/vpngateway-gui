@@ -53,8 +53,10 @@ function fakeProton({ resolvedArgv }: { resolvedArgv: string[] }) {
     return Promise.resolve(ok(`Connected to ${state.connectedTo}. \nYour new IP address is 1.2.3.4.`));
   }
   if (command === "disconnect") {
+    // 実CLIは、実際の接続を切断したときだけ終了コード1で"Disconnected."と出力する（未接続なら0）。
+    const wasConnected = state.connectedTo !== undefined;
     state.connectedTo = undefined;
-    return Promise.resolve(ok("Disconnected."));
+    return Promise.resolve(wasConnected ? { exitCode: 1, stdout: "Disconnected.\n", stderr: "" } : ok("Disconnected."));
   }
   if (command === "signin") return Promise.resolve(ok("Successfully signed in as 'user@proton.me'"));
   if (command === "signout") return Promise.resolve(ok("You have been successfully signed out."));
@@ -122,7 +124,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
       expect(reloaded.json()).toEqual({ status: "connected", location: "JP-FREE#5 in Tokyo, Japan" });
     });
 
-    it("切断（connect=false）は従来どおり実行できる", async () => {
+    it("切断（connect=false）は、CLIが終了コード1を返してもsuccessPatternに一致すれば成功として扱う", async () => {
       await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true } });
       const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: false } });
       expect(response.statusCode).toBe(200);

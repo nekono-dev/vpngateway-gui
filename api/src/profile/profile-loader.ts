@@ -38,6 +38,7 @@ export function validateProfile(profile: VendorProfile): void {
     if (action === undefined) continue;
     assertValidRegExp(`${name}.completionPattern`, action.completionPattern);
     assertValidRegExp(`${name}.restrictedPattern`, action.restrictedPattern);
+    assertValidRegExp(`${name}.successPattern`, action.successPattern, "m");
   }
   assertValidRegExp("output.locationPattern", profile.output?.locationPattern, "im");
   const account = actions.account;

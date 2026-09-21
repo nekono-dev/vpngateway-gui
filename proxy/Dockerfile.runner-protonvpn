@@ -53,7 +53,7 @@ RUN groupadd -g 10001 vpngwgui \
 
 # NetworkManagerはホストのネットワーク（network_mode: host）を見る。ホストのインターフェース（物理NIC・Docker・LXC）を
 # 奪わないよう、WireGuardデバイス以外を全て管理対象外にする（Proton VPNのトンネルはNMが作るWireGuardインターフェース）。
-COPY proxy/networkmanager-vpngwgui.conf /etc/NetworkManager/conf.d/99-vpngwgui.conf
+COPY proxy/networkmanager-vpngwgui.conf /usr/local/share/networkmanager-vpngwgui.conf.tmpl
 
 WORKDIR /app
 COPY --from=build /repo/proxy/dist ./dist
