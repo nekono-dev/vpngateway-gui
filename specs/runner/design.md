@@ -2,19 +2,19 @@
 
 サービス全体設計（../design.md）で定義されたランナーコンテナ（`runner-<ベンダー>`）の詳細設計を示す。ランナーは、VPNベンダーごとに1つ用意し、そのベンダーのCLIの実行環境と実行要求の受け口だけを持つ。透過ゲートウェイ・Kill Switch・明示的プロキシ・接続監視はネットワークコンテナ（`proxy`。../proxyserver/design.md）の責務であり、ランナーは関与しない。
 
-実装は`proxy/`パッケージ内（`src/runner.ts`・`src/exec/`・`src/allowlist.ts`）、イメージは`proxy/Dockerfile.runner-<ベンダー>`。ネットワークコンテナと同じnpmパッケージから別のエントリポイント（`dist/runner.js`）としてビルドするが、責務・イメージ・コンテナは別である。
+実装は`proxy/`パッケージ内（`src/runner.ts`・`src/exec/`・`src/allowlist.ts`）、イメージは`vendors/<ベンダーID>/Dockerfile`（ベンダーバンドル）。ネットワークコンテナと同じnpmパッケージから別のエントリポイント（`dist/runner.js`）としてビルドするが、責務・イメージ・コンテナは別である。
 
 # コンテナ構成
 
 | ランナー（compose service） | 実行するCLI | イメージ | 内部HTTP（UDS。`ctl-socket`ボリューム） |
 |---|---|---|---|
-| `runner-adguardvpn` | AdGuard VPN CLI | `proxy/Dockerfile.runner-adguardvpn`（Alpine＋CLI＋sudo。従来のAdGuard用proxyから、ネットワーク制御を除いたもの） | `runner-adguardvpn.sock`: `POST /exec`・`GET /health` |
-| `runner-protonvpn` | Proton VPN CLI（NetworkManager等を同梱） | `proxy/Dockerfile.runner-protonvpn`（Ubuntu。下記「Proton VPN用ランナー」） | `runner-protonvpn.sock`: `POST /exec`・`GET /health` |
-| `runner-mock`（E2E専用） | モックプロバイダCLI | `proxy/Dockerfile.runner-mock`（Alpine。CLIなし。モックをマウント） | `runner-mockproton.sock` |
+| `runner-adguardvpn` | AdGuard VPN CLI | `vendors/adguardvpn/Dockerfile`（Alpine＋CLI＋sudo。従来のAdGuard用proxyから、ネットワーク制御を除いたもの） | `runner-adguardvpn.sock`: `POST /exec`・`GET /health` |
+| `runner-protonvpn` | Proton VPN CLI（NetworkManager等を同梱） | `vendors/protonvpn/Dockerfile`（Ubuntu。下記「Proton VPN用ランナー」） | `runner-protonvpn.sock`: `POST /exec`・`GET /health` |
+| `runner-mock`（E2E専用） | モックプロバイダCLI | `e2e/vendors/mockproton/Dockerfile`（Alpine。CLIなし。モックをマウント） | `runner-mockproton.sock` |
 
 - **`network_mode: host`・`cap_add: [NET_ADMIN]`・`/dev/net/tun`**: CLIが確立するトンネル（AdGuard: TUN、Proton: NMのWireGuard）を、ゲートウェイ（ホスト）のネットワーク名前空間に作らせるため。`privileged: true`は使わない。
 - **UDS**: 各ランナーは自分のソケットファイル（環境変数`CTL_SOCKET_PATH`。`/var/run/vpngw-ctl/runner-<ベンダーID>.sock`）だけを作る。起動時に残存ソケットを`unlink`してから`listen`し、`chmodSync(0o770)`で制限する。所有者は`vpngwgui`（UID 10001。APIコンテナも同UID）。ネットワーク的にコンテナ外部から到達不能である理由・方式はネットワークコンテナと同じ（../proxyserver/design.md「内部コマンド受信サーバ（UDS制御チャネル）」）。
-- **起動しないランナー**: 有効化されていないベンダーのランナーは起動しない（composeの`profiles`）。起動していない・応答しないランナーのベンダーは、APIが「利用不可」として扱い、選択できない（../apiserver/design.md「ランナーの利用可否」）。
+- **起動しないランナー**: 有効化されていないベンダーのランナーは起動しない（有効なベンダーのバンドルの`compose.yml`だけを`COMPOSE_FILE`へ並べる。`../design.md`「ベンダー非依存の設計原則」）。起動していない・応答しないランナーのベンダーは、APIが「利用不可」として扱い、選択できない（../apiserver/design.md「ランナーの利用可否」）。
 - **ボリューム**: ベンダーごとにログイン情報を別々に永続化する（`adguard-data`、`proton-config`・`proton-keyrings`・`proton-cache`）。ベンダーを切り替えても各ベンダーのログイン情報は失われない。
 
 # ランナーの内部HTTP（`dist/runner.js`）
@@ -46,13 +46,13 @@
 ## 許可バイナリ（`RUNNER_ALLOWED_BINARY`。Phase 9の`EXTRA_ALLOWED_BINARIES`を置換）
 
 - ランナーが実行してよいのは、環境変数`RUNNER_ALLOWED_BINARY`（絶対パス）に一致するバイナリ1つだけ（`src/allowlist.ts`）。未設定・相対パスなら何も許可しない（許可バイナリが決まらない構成では実行させない）。
-- **実運用のランナー**（`runner-adguardvpn`・`runner-protonvpn`）は、Dockerイメージにビルド時に`ENV`で焼き込み、composeでは上書きしない。**E2Eのモックランナー**（`runner-mock`。`docker-compose.e2e-mock.yml`）のみ、composeでモックCLIのパスを与える（専用のサービス・イメージで、実運用のランナーとは分かれている。実運用の`docker-compose.yml`には含まれない）。
+- **実運用のランナー**（`runner-adguardvpn`・`runner-protonvpn`）は、Dockerイメージにビルド時に`ENV`で焼き込み、composeでは上書きしない。**E2Eのモックランナー**（`runner-mockproton`。E2E用のバンドル`e2e/vendors/mockproton/`）のみ、composeでモックCLIのパスを与える（専用のサービス・イメージで、実運用のバンドルとは分かれている）。
 - Phase 9の`EXTRA_ALLOWED_BINARIES`（単一のproxyコンテナの許可リストへE2E用に追加許可する環境変数）は、ベンダーごとにランナーが分かれたため廃止した。設定できるのはコンテナを起動する管理者のみで、APIコンテナからは変更できないため、「APIコンテナ侵害時に任意コマンド実行の踏み台にならない」という許可リストの目的は損なわれない。
 
 ## AdGuard VPN用ランナー
 
-- **イメージ**: `proxy/Dockerfile.runner-adguardvpn`。ビルドステージでAdGuard VPN CLI（GitHub Releases、動作確認済みバージョン固定）を取得し、実行ステージ（Alpine＋Node.js）へバイナリ1つを渡す。CLIは非root実行時にTUN設定（`ip link`等）を`sudo`経由で行うため、`vpngwgui`にパスワードなしsudoを付与する（`cap_add: NET_ADMIN`があってもCLI内部の実装上必須）。`RUNNER_ALLOWED_BINARY=/usr/local/bin/adguardvpn-cli`を`ENV`で焼き込む。
-- **ログイン情報の永続化**: CLIは認証情報を`$HOME/.local/share/adguardvpn-cli`へ保存する。`adguard-data`ボリュームでマウントし、コンテナ再作成のたびに再ログインが必要にならないようにする。加えて、CLIがログインセッションの妥当性検証に用いる`/etc/machine-id`・`/var/lib/dbus/machine-id`を、エントリポイント（`proxy/docker-entrypoint.sh`）が同ボリューム上に保存した値から復元する（コンテナ再作成のたびに失われるとログインが失効するため。`wbs/phase2.md`「次フェーズへの申し送り」）。
+- **イメージ**: `vendors/adguardvpn/Dockerfile`。ビルドステージでAdGuard VPN CLI（GitHub Releases、動作確認済みバージョン固定）を取得し、実行ステージ（Alpine＋Node.js）へバイナリ1つを渡す。CLIは非root実行時にTUN設定（`ip link`等）を`sudo`経由で行うため、`vpngwgui`にパスワードなしsudoを付与する（`cap_add: NET_ADMIN`があってもCLI内部の実装上必須）。`RUNNER_ALLOWED_BINARY=/usr/local/bin/adguardvpn-cli`を`ENV`で焼き込む。
+- **ログイン情報の永続化**: CLIは認証情報を`$HOME/.local/share/adguardvpn-cli`へ保存する。`adguard-data`ボリュームでマウントし、コンテナ再作成のたびに再ログインが必要にならないようにする。加えて、CLIがログインセッションの妥当性検証に用いる`/etc/machine-id`・`/var/lib/dbus/machine-id`を、エントリポイント（`vendors/adguardvpn/entrypoint.sh`）が同ボリューム上に保存した値から復元する（コンテナ再作成のたびに失われるとログインが失効するため。`wbs/phase2.md`「次フェーズへの申し送り」）。
 - **`network_mode: host`が必須**: Dockerブリッジネットワークはコンテナ再作成のたびに実CLIのログインセッションが失効する不具合があった（IPv6を透過しない。`wbs/phase2.md`）。
 
 ## Proton VPN用ランナー（Phase 10。Phase 11でproxyイメージからランナーイメージへ位置づけを変更）
@@ -66,9 +66,9 @@ Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーション
 | gnome-keyring（Secret Service。`python3-proton-keyring-linux`） | ログインセッション（トークン）の保管 | コンテナ内のセッションバスで`gnome-keyring-daemon`を起動し、空パスワードで解錠する。保管先を永続化ボリュームにする |
 | セッションD-Bus | keyring・GUI二重起動検知（CLIは起動時にセッションバスを見て、GUIアプリが動作中なら実行を拒否する） | コンテナ内でセッションバスを起動する（GUIは存在しないため二重起動検知は素通しになる） |
 
-- **イメージ**: `proxy/Dockerfile.runner-protonvpn`（Phase 10の当初案の`Dockerfile.protonvpn`から、ランナーとして改名・縮小した。3proxy・nftablesは不要）。Ubuntu 24.04ベース（検証環境と同一で、依存解決が確認済み）。Node.jsは公式イメージからバイナリをコピーする。3proxyはネットワークコンテナ（Alpine）にのみ含めるため、このイメージには不要。Protonの公式リポジトリ（`protonvpn-stable-release`）を追加し、`proton-vpn-cli`を導入する。イメージは大きくなる（GTK等の依存を含む）が、ランナーが分離されているためAdGuard用ランナー・ネットワークコンテナには影響しない。**Proton用ランナーは、Proton VPNを有効化した場合のみ起動する**（`COMPOSE_PROFILES`）。
+- **イメージ**: `vendors/protonvpn/Dockerfile`（Phase 10の当初案の`Dockerfile.protonvpn`から、ランナーとして改名・縮小した。3proxy・nftablesは不要）。Ubuntu 24.04ベース（検証環境と同一で、依存解決が確認済み）。Node.jsは公式イメージからバイナリをコピーする。3proxyはネットワークコンテナ（Alpine）にのみ含めるため、このイメージには不要。Protonの公式リポジトリ（`protonvpn-stable-release`）を追加し、`proton-vpn-cli`を導入する。イメージは大きくなる（GTK等の依存を含む）が、ランナーが分離されているためAdGuard用ランナー・ネットワークコンテナには影響しない。**Proton用ランナーは、Proton VPNを有効化した場合のみ起動する**（`COMPOSE_PROFILES`）。
 - **起動構成**: PID 1は`init: true`のtiniの下でエントリポイントのスクリプトが動き、root権限でシステムD-Bus→NetworkManagerを起動し、`vpngwgui`ユーザーでセッションバス・keyringを起動してから、`vpngwgui`権限でランナー本体（Node.js）を`exec`する。バックグラウンドのいずれかが終了したらエントリポイントも終了し、`restart: always`でコンテナごと再起動する（片方だけ死んだ半端な状態で稼働し続けない）。
-- **NetworkManagerの制限**: `network_mode: host`のため、NMはホストのインターフェースを見る。ホストのネットワーク（DHCP・静的設定・Docker・LXC）を奪わないよう、NMの設定で**次の3種以外を全て`unmanaged`にする**（`[keyfile] unmanaged-devices=*,except:type:wireguard,except:type:dummy,except:interface-name:<上り側NIC>`）。設定は`proxy/networkmanager-vpngwgui.conf`のテンプレートから、エントリポイントが`LAN_IFACE`（未設定ならdefault経路のIF）を埋めて生成する。
+- **NetworkManagerの制限**: `network_mode: host`のため、NMはホストのインターフェースを見る。ホストのネットワーク（DHCP・静的設定・Docker・LXC）を奪わないよう、NMの設定で**次の3種以外を全て`unmanaged`にする**（`[keyfile] unmanaged-devices=*,except:type:wireguard,except:type:dummy,except:interface-name:<上り側NIC>`）。設定は`vendors/protonvpn/networkmanager-vpngwgui.conf`のテンプレートから、エントリポイントが`LAN_IFACE`（未設定ならdefault経路のIF）を埋めて生成する。
   - **WireGuardデバイス**: Proton VPNのトンネル（`proton0`等）。本システムのトンネル検出（`ip route get`の出力先。`tunnel-interface.ts`）はインターフェース名に依存しないためそのまま使える。
   - **dummyデバイス（実機検証で判明）**: CLIは接続の度にNM式のKill Switch（`pvpn-killswitch`・`pvpnksintrf0`）と、IPv6リーク防止（`ipv6leakintrf0`）のdummyデバイスを作る（CLI設定のKill Switchがoffでも、接続中は一時的に作る）。管理対象外だと有効化されない。
   - **上り側NIC（実機検証で判明）**: CLIのWireGuard接続は、VPNサーバへの到達を確認するため、NMが「有効化済み（ACTIVATED）の物理NIC（ethernet/wifi）」へサーバ宛の経路を足し、default経路を握りつぶすKill Switch（metric 98）を迂回する。物理NICが`unmanaged`だとこの経路が作られず、サーバへ到達できない（CLIログ`VPN server NOT reachable`、`Connection failed`）。**NMの起動時から**管理対象にすると、既存の設定をそのまま引き継ぎ（`connected (externally)`）IP・経路は変わらない。起動後に管理対象へ切り替えるとIPが外れる（`disconnected`。試験済み）。副作用: 管理対象のNICは、RAで得た一部のIPv6アドレスが入れ替わる（本システムはIPv4のみが対象）。
@@ -89,7 +89,7 @@ Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーション
 
 ## モックプロバイダ用ランナー（E2E専用）
 
-Phase 9のモックCLI（`proxy/mock-cli/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）を、専用のランナー（`runner-mock`。`docker-compose.e2e-mock.yml`）で実行する。許可バイナリ・ソケット名はcomposeで与える（実運用のランナーとはサービス・イメージが別で、実運用の`docker-compose.yml`には含まれない）。
+Phase 9のモックCLI（`e2e/vendors/mockproton/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）を、専用のランナー（`runner-mock`。`docker-compose.e2e-mock.yml`）で実行する。許可バイナリ・ソケット名はcomposeで与える（実運用のランナーとはサービス・イメージが別で、実運用の`docker-compose.yml`には含まれない）。
 
 ## （履歴）Phase 1のモックVPN CLI仕様
 
@@ -109,12 +109,13 @@ Phase 9のモックCLI（`proxy/mock-cli/protonvpn-mock.mjs`。Proton VPN公式C
 内部コマンド受信サーバの待受パスは`POST /exec`に固定する（Phase 3で設定反映用`POST /settings`を追加する際、既存仕様の変更ではなく追加で済むようにするため）。
 
 
-# VPNベンダーCLI（ランナー）の追加方法
+# ベンダーの追加方法（ベンダーバンドル。Phase 12）
 
-1. （Phase 11以降）新規ベンダーのランナーコンテナのDockerイメージに、ベンダーCLIバイナリを同梱する（従来はproxyコンテナのイメージ）。
-2. 管理者向け設定（VPNクライアント操作プロファイルJSON、apiserver/design.md参照）に新規ベンダーのエントリを追加する。
-3. ランナーの許可バイナリ（`RUNNER_ALLOWED_BINARY`。ランナーのイメージに焼き込む）に新規バイナリのパスを設定する。
-4. **【Phase 9】** プロバイダごとの機能差・プラン制限をプロファイルの`account`・`features`・`restrictedPattern`等で表現する（apiserver/design.md「Phase 9における具体プロファイル」）。
-5. **【Phase 11】** そのベンダーのランナー（`proxy/Dockerfile.runner-<ベンダー>`と、`docker-compose.yml`の`runner-<ベンダー>`サービス（`profiles: [<ベンダー>]`）、ベンダー専用のボリューム）を追加する。CLIが特殊な実行環境（NetworkManager等）を必要とする場合も、その環境はこのランナーに閉じる（他のベンダーのランナー・ネットワークコンテナに影響しない）。プロファイルは`api/config/profiles/<ベンダーID>.json`。
+ベンダーの追加は、`vendors/<ベンダーID>/`を1つ追加するだけで完結する（共通部の改修は不要）。バンドルの構成は`../design.md`「ベンダー非依存の設計原則」。
 
-
+1. `profile.json`: 管理者向け設定（VPNクライアント操作プロファイル。`../apiserver/design.md`）。機能差・プラン制限・ログイン方式・出力の書式は、ここで宣言する（ベンダー固有の値を共通部のコードへ書かない）。
+2. `Dockerfile`: ランナーのイメージ。ベンダーCLIのバイナリと実行環境を同梱し、許可バイナリ`RUNNER_ALLOWED_BINARY`をビルド時に焼き込む。CLIが特殊な実行環境（NetworkManager等）を必要とする場合も、その環境はこのランナーに閉じる（他のベンダーのランナー・ネットワークコンテナに影響しない）。
+3. `compose.yml`: ランナーのサービス`runner-<ベンダーID>`（`network_mode: host`・`NET_ADMIN`・`/dev/net/tun`）とベンダー専用のボリューム。
+4. `entrypoint.sh`（任意）: そのベンダー固有の起動処理。
+5. `install-host.sh`（任意）: ベンダーのCLIがホスト（ベアメタル）へのアプリケーションの導入を要するときだけ。共通インストーラは、有効にしたベンダーのこのファイルだけを呼ぶ（`../design.md`「インストーラと頒布」）。
+6. `samples.json`（推奨）: 実CLIの出力サンプルと期待値（適合テストが全ベンダーに同じ方法で流す）。

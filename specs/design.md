@@ -6,7 +6,7 @@ APIサーバから、ネットワークコンテナ・各ランナーコンテ�
 
 ネットワークコンテナは、透過ゲートウェイモードを実現するためホストのネットワーク名前空間を共有する必要があり（詳細はSPEC-PROXY.md）、`network_mode: host` を用いる。**ランナーコンテナも、ベンダーCLIが確立するトンネルインターフェースをホスト（ゲートウェイ）のネットワーク名前空間に作らせるため、`network_mode: host`・`NET_ADMIN`・`/dev/net/tun`を用いる**。docker-composeの仕様上 `network_mode: host` と `networks:`（ユーザー定義ブリッジ）は併用できないため、これらのコンテナは他コンテナと同一のDockerブリッジネットワークには参加できない。API⇄各コンテナ間の通信を前述のUDS方式に限定しているのはこの制約への対応でもある。
 
-インストール用のスクリプトを作成し、このスクリプトではホスト（VPNゲートウェイ）に届く通信を、内部のプロキシコンテナを通して外部通信するように設定を行う。設定はコマンドではなく設定値ベースで行う。
+インストーラ（`curl`1コマンドで、クリーンなDebian系ベアメタルへ導入・起動する。下記「インストーラと頒布（Phase 13）」）が、ホスト（VPNゲートウェイ）に届く通信を、内部のプロキシコンテナを通して外部通信するように設定を行う。設定はコマンドではなく設定値ベースで行う。
 
 プロキシコンテナは `restart: always` 等により永続稼働するデーモンとなるため、永続化が必要な設定（例: IPフォワーディングの有効化）はインストールスクリプトが一度だけ行い、ホスト上のファイルとして最小限の数に絞って残す。一方、VPN接続のたびに変わるトンネルインターフェース名に依存するNAT/FORWARDルールのように、静的ファイルとして表現できず実行時に変化する値は、プロキシコンテナ起動中のプロセスが動的に適用・撤去する。
 
@@ -67,17 +67,119 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 
 - **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視だけを担い、ベンダーCLIを実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
 - **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
-- **有効化**: 管理者は`.env`の`VPN_PROVIDERS`（例 `adguardvpn,protonvpn`）で有効なベンダーを指定する。APIはこれを`ENABLED_PROVIDERS`として受け取り、composeのランナーは`profiles:`でベンダーごとに起動を選択する（`COMPOSE_PROFILES`。`install/select-providers.sh`が両方を`.env`へ書く）。プロファイルは`api/config/profiles/<ベンダー>.json`（ファイル名＝ベンダーID）。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
+- **有効化**: 管理者は、インストーラの`--providers`（例 `--providers adguardvpn,protonvpn`。`install/install.sh`が`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`へ書く）で有効なベンダーを指定する。APIは`VPN_PROVIDERS`を`ENABLED_PROVIDERS`として受け取り、有効なベンダーのバンドル（`vendors/<ベンダーID>/`。下記「ベンダー非依存の設計原則」）のcompose fragmentだけが`COMPOSE_FILE`に載り、そのランナーだけが起動する。**既定のベンダーは無い**（指定が無ければAPI・インストーラとも失敗する）。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
 - **ランナーの許可リスト**: ランナーは、自分のベンダーのバイナリ1つだけを実行対象とする（イメージにビルド時に焼き込む`RUNNER_ALLOWED_BINARY`）。APIコンテナが侵害されても、別ベンダーのランナー経由で任意のバイナリを実行できず、許可リストによる「最後の防波堤」は従来どおり働く。
 - **切替時のネットワーク**: 切断から新ベンダーへの接続までの間、トンネルは存在しない。Kill Switch ONならLAN機器の通信は遮断、OFFなら直接インターネットへ抜ける（従来の切断時と同じ。トンネル検出はベンダー非依存のため、新ベンダーに接続すればそのインターフェースへ自動的に追従する）。
 
 | 項目 | AdGuard VPN | Proton VPN |
 |---|---|---|
-| プロファイル | `api/config/profiles/adguardvpn.json` | `api/config/profiles/protonvpn.json` |
-| ランナーイメージ | `proxy/Dockerfile.runner-adguardvpn`（Alpine。単体バイナリ同梱） | `proxy/Dockerfile.runner-protonvpn`（Ubuntu。CLI・NetworkManager・D-Bus・keyringを同梱） |
-| composeのサービス | `runner-adguardvpn` | `runner-protonvpn` |
+| バンドル | `vendors/adguardvpn/` | `vendors/protonvpn/` |
+| プロファイル | `vendors/adguardvpn/profile.json` | `vendors/protonvpn/profile.json` |
+| ランナーイメージ | `vendors/adguardvpn/Dockerfile`（Alpine。単体バイナリ同梱） | `vendors/protonvpn/Dockerfile`（Ubuntu。CLI・NetworkManager・D-Bus・keyringを同梱） |
+| composeのサービス | `runner-adguardvpn`（`vendors/adguardvpn/compose.yml`） | `runner-protonvpn`（`vendors/protonvpn/compose.yml`） |
 
 Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 10の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細は`runner/design.md`「Proton VPN用ランナー」、`wbs/phase10.md`）。
+
+# ベンダー非依存の設計原則（Phase 12）
+
+要件は`requirements.md`「ベンダー非依存性」。本番のソースコード（`api/src`・`proxy/src`・`web/src`・`web/server`・`install/`・composeの本体・共通のDockerfile）は、ベンダーのID・名称・CLIの書式を持たず、ベンダーに対する分岐をしない。差はプロファイルとベンダーバンドルだけに置く。
+
+## 抽象化の対応表（Phase 11までのベンダー固有の埋め込みの置き場所）
+
+| 従来のベンダー固有の埋め込み | 抽象化後 |
+|---|---|
+| 有効なベンダーの既定値（API・composeとも`adguardvpn`） | 既定を持たない。`VPN_PROVIDERS`が無ければ失敗する |
+| 旧形式の状態ファイルの移行先（`adguardvpn`固定） | 移行処理を廃止する（未リリースで、実機はPhase 11で移行済み） |
+| 接続先の表の列名の既定（`ISO/COUNTRY/CITY/PING`） | `listLocations.table`を必須にする |
+| 接続時の指定名の加工（`(Virtual)`の除去） | `listLocations.connectName`（`{ from: "city"\|"iso", stripPattern? }`）。加工はプロファイルの`stripPattern`で表す |
+| 接続状態の判定語（`connected`）と接続先の既定の書式 | `output.connectedPattern`・`output.locationPattern`を、text形式で必須にする |
+| ログイン方式の既定（`deviceUrl`） | `loginMethod`を必須にする |
+| ログインの標準入力の書式（パスワード→2FAの順、2FAの形式） | `login.stdin`（行のテンプレート。空の行は出さない）と、プレースホルダーの`source: "secret"` |
+| 静的な列挙値（`enumFrom`。`<ベンダー名>.<項目>`形式） | 廃止（Phase 8以降、どのプロファイルも使わない） |
+| composeへのランナー・ボリュームの直書き、`profiles`・AdGuardだけの特例 | ベンダーバンドルのcompose fragment。全ベンダーを同じに扱う |
+| `proxy/`直下のベンダー別ファイル（Dockerfile・エントリポイント・NM設定） | ベンダーバンドルへ移す |
+
+例外的に、`loginMethod`の2方式（`deviceUrl`・`credentials`）による処理の分岐は残す。これはベンダーに対する分岐ではなく、プロファイルが宣言する機構に対する分岐である。
+
+## ベンダーバンドル
+
+ベンダー1つを、ディレクトリ1つ`vendors/<ベンダーID>/`で表す。IDは`^[a-z][a-z0-9]{0,31}$`。
+
+| ファイル | 必須 | 内容 |
+|---|---|---|
+| `profile.json` | ○ | VPNクライアント操作プロファイル（`apiserver/design.md`）。ファイル内の`vendor`とディレクトリ名は一致させる |
+| `compose.yml` | ○ | ランナーのcompose fragment。サービス名は`runner-<ベンダーID>`、ソケットは`CTL_SOCKET_PATH: /var/run/vpngw-ctl/runner-<ベンダーID>.sock`、ボリュームは`<ベンダーID>-`で始まる名前にする。`profiles`は使わない。ビルドは`context: .`・`dockerfile: vendors/<ベンダーID>/Dockerfile`のようにリポジトリルート基準で書く（複数のcomposeファイルを併用したとき、相対パスは最初のファイルの位置が基準になるため） |
+| `Dockerfile` | ○ | ランナーのイメージ（ベンダーCLIの導入、`RUNNER_ALLOWED_BINARY`の焼き込み。`specs/runner/design.md`） |
+| `entrypoint.sh` | 任意 | ランナーのエントリポイント（machine-idの復元、NetworkManagerの起動など、そのベンダー固有の起動処理）と付属の設定ファイル |
+| `install-host.sh` | 任意 | ベンダーのCLIがホスト（ベアメタル）へのアプリケーションの導入を要するときだけ置く、ホスト側の追加手順。契約は「インストーラと頒布」 |
+| `samples.json` | 推奨 | 実CLIの出力サンプルと期待値（`status`・`listLocations`・`account`）。全ベンダーに同じテストで流す |
+
+- **composeの合成**: composeの本体（`docker-compose.yml`）は`web`・`api`・`proxy`のみを持つ。有効にしたベンダーのfragmentだけを`.env`の`COMPOSE_FILE`（`docker-compose.yml:vendors/<A>/compose.yml:vendors/<B>/compose.yml`）へ並べる。無効なベンダーのランナーは定義自体がロードされないため、起動もビルドもされない。
+- **APIのプロファイル読み込み**: `./vendors`を`/etc/vpngwgui/vendors:ro`へマウントし、環境変数`VENDORS_DIR`（既定`/etc/vpngwgui/vendors`）配下の`<ベンダーID>/profile.json`を読む（旧`VPN_PROFILES_DIR`は廃止）。
+- **E2E用のモックベンダー**も同じ形のバンドル（`e2e/vendors/mockproton/`）にする。E2Eは、実運用のバンドルとモックのバンドルを同じ方式で合成する。
+- **ネットワークコンテナ・ランナーの共通コード**（`proxy/src`）は、ベンダーの名前を持たない。ランナーは`RUNNER_ALLOWED_BINARY`だけを知る。
+
+## 再発防止（機械的な検査）
+
+- **中立性の検査**（`scripts/check-vendor-neutrality.mjs`。ルートの`npm test`から実行する）: 対象は、`api/src`・`proxy/src`・`web/src`・`web/server`・`api/scripts`・`install/`・`docker-compose.yml`・共通のDockerfile・共通のエントリポイントのうち、テストファイル（`*.test.*`）・生成物・依存物を除いたファイル。**コメントも検査する。** 禁止語は、`vendors/*/profile.json`の`vendor`・`displayName`・`binary`のファイル名から動的に作り、加えて`scripts/vendor-neutrality.words`（まだバンドルが無い既知のベンダー名。要件書に登場するもの）を足す。大文字小文字は区別しない。1件でも見つかれば失敗する。
+- **バンドルの適合テスト**（`api/src/profile/vendor-samples.test.ts`）: `vendors/*/profile.json`をすべて読み込み検証し、`samples.json`の各ケースを、共通のパーサー・判定処理へ流して期待値と照合する。ベンダーごとの出力の知識がバンドルに閉じる。
+
+# インストーラと頒布（Phase 13）
+
+要件は`requirements.md`「インストール」。クリーンなDebian系ベアメタルへ、1コマンドで導入・起動する。**インストーラは2層**で、利用者が実行するのは頒布される1本のブートストラップだけである。
+
+```
+GitHub Release（タグ）／CIのartifact（ブランチ）
+  install.sh  ← ブートストラップ。REF・COMMIT・REPO_URLがCIで埋め込まれている
+     │  curl -fsSL <URL> | sudo sh -s -- --providers adguardvpn,protonvpn
+     ▼
+  ① git・curl等を導入 → ② COMMITを/opt/vpngwguiへ取得（取得後にHEADがCOMMITと一致することを確認）
+     ▼
+  install/install.sh  ← 本体。リポジトリ内にあり、手動でcloneした場合はこれを直接実行してもよい
+     ▼
+  Docker（公式リポジトリ）導入 → ホストの最小限の設定 → .env → ベンダーのホスト側手順 → docker compose up
+```
+
+## ブートストラップ（`install/bootstrap.sh`。頒布物`install.sh`の雛形）
+
+- 雛形には`@@REF@@`（タグ名またはブランチ名。表示用）・`@@COMMIT@@`（取得するコミットの完全なSHA）・`@@REPO_URL@@`が入る。CIが`install/build-bootstrap.sh <REF> <COMMIT> <REPO_URL>`で置換して`install.sh`を作る（置換漏れがあれば失敗する）。
+- 動作: root確認 → `git`・`ca-certificates`が無ければ`apt-get`で導入 → 取得先（既定`/opt/vpngwgui`。環境変数`VPNGW_DIR`で変更可）へ`COMMIT`を取得（`git init`・`git fetch --depth 1 origin <COMMIT>`・`git checkout --detach`。既にある場合は同じ手順で更新する。作業ツリーに未コミットの変更があれば中止する）→ `HEAD`が`COMMIT`と一致することを確認 → `install/install.sh`へ引数をそのまま渡して実行する。
+- **ブランチ・タグへの紐付け**: 頒布物は、そのCI実行時のコミットに固定される。ブランチのブートストラップは、そのブランチの最新（CI実行時点）を取得する。
+
+## 本体インストーラ（`install/install.sh`）
+
+既存の`install/`の4本（`setup-sysctl.sh`・`detect-lan-interface.sh`・`setup-boot-guard.sh`・`select-providers.sh`）を、この1本へ統合する（従来の各スクリプトは削除する）。POSIX `sh`で書く。**冪等**で、再実行は更新・ベンダーの変更・修復を兼ねる。
+
+| 引数 | 意味 |
+|---|---|
+| `--providers <ID>[,<ID>...]` | 有効にするベンダー。`vendors/<ID>/`が無ければ失敗する |
+| `--lan-iface <名前>` | LAN側インターフェース名を手動で指定する（検出できない・複数NICの場合） |
+| `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を捨てて再検出する |
+| `--no-start` | 起動（`docker compose up`）をしない |
+
+処理の順序:
+
+1. **事前検査**: root、Debian系（`/etc/os-release`の`ID`・`ID_LIKE`）、systemd、CPU（Dockerの公式リポジトリが対応するamd64・arm64・armhfのうち、Debian系の対応するもの）。満たさなければ理由を示して失敗する。
+2. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
+3. **ホストの設定**: `/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
+4. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`VPN_PROVIDERS`、`COMPOSE_FILE`。
+5. **ベンダーの決定**: 優先順は`--providers` ＞ `.env`の既存の`VPN_PROVIDERS`（引数なしの再実行は、変更せず更新だけをする）＞ 端末（`/dev/tty`。`curl | sh`では標準入力がパイプのため`/dev/tty`から読む）での対話選択 ＞ 失敗。対話の選択肢は`vendors/*/profile.json`の`displayName`（無ければID）。
+6. **ベンダーのホスト側手順**: 有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
+7. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。Web UIが応答するまで待つ（最大約3分）。
+8. **完了の表示**: Web UIのURL（`http://<LAN側アドレス>:8080`）、有効なベンダー、次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）。
+
+**`install-host.sh`の契約**（ベンダーバンドルの任意ファイル）: rootで`sh`により実行される。冪等で、非対話であること。実行時の環境変数`VPNGW_ROOT`（取得先）・`VPNGW_VENDOR_ID`が与えられ、カレントディレクトリはバンドルのディレクトリ。ホスト（ベアメタル）へ導入・設定するのはこのファイルだけで、共通インストーラはその内容を知らない。非ゼロ終了はインストールの中止を意味する。現在のバンドル（AdGuard VPN・Proton VPN）は、ホストの追加導入が不要なため、このファイルを持たない（実行環境は全てランナーのコンテナに閉じている）。
+
+**ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
+
+**既知の制約**: Debian・Raspberry Pi OSでは、`nftables`パッケージの`nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）が有効な場合、起動時のルールが消されうる。**未検証**（検証環境はUbuntu 24.04のみ）。インストーラは、`nftables.service`が有効なら警告を表示するに留め、利用者の設定を書き換えない。アンインストール・IPv6は対象外。
+
+## 頒布（CI）
+
+- ワークフロー`.github/workflows/installer.yml`。**トリガー**: ブランチへのpush、`v*`タグのpush。**検査**: `sh -n`・`shellcheck`（`install/`）、`npm ci`と`npm test`（中立性の検査を含む）、ブートストラップの生成テスト（置換漏れが無いこと）。
+- **ブランチ**: `install-<ブランチ名>.sh`をワークフローのartifactとして保存する（Releaseは作らない）。
+- **タグ**: `install.sh`と`install.sh.sha256`をGitHub Releaseへ添付する。利用者が使うURLは、最新: `https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh`、版の固定: `https://github.com/nekono-dev/vpngateway-gui/releases/download/<タグ>/install.sh`。
+- **信頼の範囲**: `curl | sh`はスクリプトの取得元（GitHub ReleaseのHTTPS）を信頼する方式である。ブートストラップは取得するコミットを固定し、取得後にSHAを照合するため、スクリプトとソースの食い違い（タグの付け替え等）は検出できる。`install.sh.sha256`で、ダウンロードして検証してから実行することもできる。
 
 # 認証・認可の設計方針
 
@@ -93,7 +195,7 @@ APIサーバは Fastify + TypeBox + `@fastify/swagger` を用い、TypeBoxで定
 
 # 実装フェーズ
 
-実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase11.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
+実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase13.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 12 → 13 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
 
 | 項目 | 最終形（本ファイル） | Phase 1（wbs/phase1.md） |
 |---|---|---|

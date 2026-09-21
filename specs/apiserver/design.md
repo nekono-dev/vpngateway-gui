@@ -130,14 +130,14 @@ Phase 8（`wbs/phase8.md`）で、静的な`countries`と`enumFrom`による許�
 ```
 
 - `countries`フィールドを削除した。
-- `placeholders.<KEY>.source`に`"locations"`を追加した。値が、直前に`listLocations`アクションで取得した接続先から導出した「接続時の指定名」（下記「接続先の識別と接続時の指定名」）のいずれかに一致することを検証する。`"enum"`（`enumFrom`の配列に含まれること）は従来どおり使える（`enumFrom`は`source: "enum"`のときのみ必須）。許可値はプロファイルではなく実行時に決まるため、`resolveArgv`は呼び出し元から許可値の集合（プレースホルダー名→値の配列）を受け取る。
+- `placeholders.<KEY>.source`に`"locations"`を追加した。値が、直前に`listLocations`アクションで取得した接続先から導出した「接続時の指定名」（下記「接続先の識別と接続時の指定名」）のいずれかに一致することを検証する。（`"enum"`（`enumFrom`）はPhase 12で廃止した。）許可値はプロファイルではなく実行時に決まるため、`resolveArgv`は呼び出し元から許可値の集合（プレースホルダー名→値の配列）を受け取る。
 - `pattern`は許可値検証の前段の防御（先頭が`-`でないこと＝CLIオプションとして解釈されない、制御文字・空白のみでない、長さ上限）であり、都市名の文字種は制限しない（`São Paulo`等の非ASCII都市名が実在し、実CLIも接続できることを実機確認した）。argvはシェルを経由しないため、記号を許してもコマンド注入にはならない。
 - `listLocations`のアクション名は、他のアクション名（`connect`等）と同様のキャメルケースとし、実CLIのサブコマンド名（`list-locations`）とは`argv`で対応付ける。
 - 管理者向け設定の`countries`を編集していた運用（`wbs/phase2.md`申し送り「経年劣化」）は不要になる。
 
 ## Phase 9における具体プロファイル（プロバイダ抽象化・プラン制限）
 
-Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン制限をデータで表現するため、プロファイルを以下のように拡張する。**既存のAdGuard VPNプロファイルは追加項目なしのまま読み込める**（後方互換）。設計の全体像は../design.md「プロバイダ抽象化アーキテクチャ」。
+Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン制限をデータで表現するため、プロファイルを以下のように拡張する。（**Phase 12で、ベンダー固有の暗黙の既定値を廃止し、下記の項目の一部を必須にした。「Phase 12におけるプロファイルの明示化」参照。以降の表の「既定」「省略時は従来のAdGuard形式」は、Phase 12で廃止された記述である**。）設計の全体像は../design.md「プロバイダ抽象化アーキテクチャ」。
 
 ```json
 {
@@ -195,7 +195,7 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 
 | 項目 | 内容 |
 |---|---|
-| `loginMethod` | `"deviceUrl"`（既定。`login`が認証URLを出力する。従来のAdGuard VPN）／`"credentials"`（ユーザー名・パスワード・2FAコードの入力型。Proton VPN）。 |
+| `loginMethod` | `"deviceUrl"`（`login`が認証URLを出力する）／`"credentials"`（ユーザー名・パスワード・2FAコードの入力型）。**Phase 12で必須**（既定なし）。 |
 | `actions.connect` | **省略可**に変更（接続先を指定する接続）。`%LOCATION%`を含み、`listLocations`と組で「接続先を指定した接続」（`connectToLocation`）になる。 |
 | `actions.connectAuto` | 新規・省略可。接続先を指定しない接続（プロバイダが最速・既定のサーバを選ぶ）。 |
 | `actions.login` / `listLocations` | **省略可**に変更（プロバイダ非対応を表す）。`disconnect`・`status`は必須。`connect`と`connectAuto`は少なくとも一方が必須（ロード時に検証し、満たさなければ起動失敗）。 |
@@ -203,14 +203,52 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 | `actions.account` | 新規・省略可。ログイン状態・プランを判定する**副作用のない読み取り専用**コマンド。詳細は下記「ログイン状態・プランの判定」。 |
 | `actions.<name>.restrictedPattern` | 新規・省略可。コマンドが失敗したとき、標準出力・標準エラーがこの正規表現に一致すればプラン制限による失敗とみなす（下記「実行失敗からの学習」）。 |
 | `actions.<name>.successPattern` | 新規・省略可。終了コードが0以外でも、標準出力・標準エラーがこの正規表現（複数行モード）に一致すれば成功とみなす。CLIの終了コードが実態と合わないベンダー向け（Proton VPN CLIの`disconnect`は、実際の接続を切断したときだけ終了コード1で`Disconnected.`と出力する）。`PUT /v1/connection`とベンダー切替時の切断で使う（`api/src/profile/command-success.ts`）。 |
-| `actions.listLocations.table` | 新規・省略可。出力表の列名の対応（`iso`・`country`は必須、`city`・`ping`は省略可）。省略時は従来のAdGuard形式（`ISO`/`COUNTRY`/`CITY`/`PING`）。 |
-| `actions.listLocations.connectNameFrom` | 新規・省略可。`"city"`（既定。都市名から`(Virtual)`を除いたもの）／`"iso"`（ISO国コード）。`%LOCATION%`へ代入する接続時の指定名の出典。 |
-| `placeholders.<KEY>.source` | `"input"`を追加。利用者入力をそのまま使い、`pattern`のみで検証する（`enumFrom`・実行時許可値は不要）。ログインのユーザー名に使う。`pattern`は先頭が`-`でない（CLIオプションと解釈されない）ことを必ず要求する。 |
-| `output.locationPattern` | 新規・省略可。接続状態のテキスト出力から接続先（表示名）を取り出す正規表現（フラグ`im`、第1キャプチャ）。省略時は従来のAdGuard形式（`Connected to <都市> in <MODE> mode`）。接続中かの判定は従来どおり単語`connected`の有無（`disconnected`は除外）で、これはProton VPNの`Status: Connected`にも通用するため上書きしない。 |
+| `actions.listLocations.table` | 出力表の列名の対応（`iso`・`country`は必須、`city`・`ping`は省略可）。**Phase 12で`listLocations`があるとき必須**（既定なし）。 |
+| `actions.listLocations.connectName` | **Phase 12で`connectNameFrom`を置き換え、`listLocations`があるとき必須**。`{ "from": "city"\|"iso", "stripPattern"?: 正規表現 }`。`%LOCATION%`へ代入する接続時の指定名の出典（`city`＝都市名、`iso`＝ISO国コード）と、指定名から取り除く部分（`stripPattern`に一致する部分を空にする。例: 表示にだけ付く注記）。 |
+| `placeholders.<KEY>.source` | `"locations"`（実行時に決まる許可値）・`"input"`（利用者入力を`pattern`のみで検証。ログインのユーザー名）・`"secret"`（Phase 12。秘密の入力。`pattern`のみで検証し、**argvに置けず**標準入力（`login.stdin`）にだけ使う。ログ・エラー応答では伏字にする）。`"enum"`・`enumFrom`はPhase 12で廃止した。`pattern`は先頭が`-`でない（CLIオプションと解釈されない）ことを必ず要求する。 |
+| `output` | **Phase 12でtext形式のとき必須**。`connectedPattern`（正規表現。フラグ`i`。標準出力が一致すれば接続中）と`locationPattern`（正規表現。フラグ`im`。第1キャプチャが接続先の表示名。一致しなければ接続先は不明）。json形式では使わない。 |
 | `displayName` | 新規・省略可（Phase 11）。画面に出すベンダー名。省略時は`vendor`。 |
 | `features.changeLocation` / `features.locationPing` | 新規・省略可（既定`true`）。プロバイダが「接続中の接続先変更」「ping値の提供」に対応するか。`false`なら`unsupported`として扱う。 |
 
 `plans`の各要素: `id`（プラン識別子）、`label`（画面表示名）、`pattern`（`account`の出力に対する正規表現）、`restricts`（そのプランで制限するオペレーションの配列）、`restrictionMessage`（省略可。制限理由として画面に出す文）。
+
+## Phase 12におけるプロファイルの明示化（ベンダー非依存）
+
+要件は`../requirements.md`「ベンダー非依存性」、設計の全体は`../design.md`「ベンダー非依存の設計原則」。APIのコードが暗黙に持っていたベンダー固有の既定値を、プロファイルの必須項目へ移す。**動作は変えない**（既存2プロファイルは、従来の既定値と同じ値を明示する）。旧形式（必須項目が欠けたプロファイル）は、欠けた項目を示して起動を失敗させる。互換のための既定値は残さない。
+
+```json
+{
+  "vendor": "<ID>",
+  "loginMethod": "deviceUrl",
+  "output": {
+    "connectedPattern": "(?<![a-zA-Z])connected(?![a-zA-Z])",
+    "locationPattern": "(?<![a-zA-Z])Connected to (.+?)(?: in \\S+ mode|\\s*$)"
+  },
+  "actions": {
+    "listLocations": {
+      "argv": ["..."], "placeholders": {}, "timeoutMs": 15000,
+      "table": { "iso": "ISO", "country": "COUNTRY", "city": "CITY", "ping": "PING" },
+      "connectName": { "from": "city", "stripPattern": "\\s*\\(Virtual\\)\\s*$" }
+    },
+    "login": {
+      "argv": ["signin", "%USERNAME%"],
+      "placeholders": {
+        "USERNAME": { "pattern": "...", "source": "input" },
+        "PASSWORD": { "pattern": "^[^\\x00-\\x1f\\x7f]{1,512}$", "source": "secret" },
+        "TWO_FACTOR_CODE": { "pattern": "^[0-9A-Za-z]{4,32}$", "source": "secret", "optional": true }
+      },
+      "stdin": ["%PASSWORD%", "%TWO_FACTOR_CODE%"],
+      "timeoutMs": 60000
+    }
+  }
+}
+```
+
+- **`connectedPattern`・`locationPattern`**: 従来は`response-parser.ts`が既定の正規表現を持っていた。text形式では両方を必須にする（json形式は、`status`・`country`を持つ内部規約のまま、ベンダー中立）。
+- **`table`・`connectName`**: 従来は`location-list-parser.ts`が列名の既定を、`location-id.ts`が`(Virtual)`の除去を持っていた。`connectName`はロード時に`stripPattern`の正規表現の妥当性を検証する。
+- **`loginMethod`**: 必須。`GET /v1/session`は宣言された値を返す。
+- **`login.stdin`とsecret**: `credentials`方式のとき、`login`は`stdin`（行のテンプレートの配列）を持つ。各行は、固定の文字列か、`source: "secret"`のプレースホルダー（`%PASSWORD%`・`%TWO_FACTOR_CODE%`）。`optional: true`のプレースホルダーは、値が未指定・空のとき、その行を出さない。`PASSWORD`・`TWO_FACTOR_CODE`・`USERNAME`は、APIの`POST /v1/session`のボディのキー（`password`・`twoFactorCode`・`username`）に対応する固定の語彙である。値は`pattern`で検証する（従来コードが固定で持っていたパスワードの長さ・制御文字の禁止・2FAの形式は、プロファイルの`pattern`へ移る。改行・制御文字を許す`pattern`は、標準入力への余分な行の混入を招くため、ロード時に`\x00-\x1f`を許さない`pattern`だけを`secret`に受理する）。`secret`のプレースホルダーを`argv`に置くプロファイルは、ロード時に失敗させる。
+- **`enum`の廃止**: `source: "enum"`・`enumFrom`・`resolveEnumFrom`を削除した。
 
 ## オペレーションと実行可否（capability）
 
@@ -264,7 +302,7 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 
 - `username`はプレースホルダー`USERNAME`の`pattern`で検証し、argvへ代入する（メールアドレスは秘密ではない）。
 - `password`は1〜512文字で、**改行（`\r`・`\n`）・NUL・制御文字を含まない**こと（含むと標準入力へ余分な行が混入し、2FA入力の偽装等になるため`400`）。`twoFactorCode`は`^[0-9A-Za-z]{4,32}$`。
-- `password`（と`twoFactorCode`）は、`\n`区切りの行としてプロキシの`POST /exec`の`stdin`フィールドへ渡す（Proton VPN CLIの`signin`はパスワードを`getpass`で読み、2FAが必要なときのみ続けて2FAトークンを読む。TTYが無い環境では`getpass`は標準入力へフォールバックする。実機確認は`wbs/phase10.md`）。2FAコードが指定されなければパスワードの1行のみを渡す（2FAが必要なアカウントでコードが無い場合はCLIが失敗し、422で利用者に再入力を促す）。
+- `password`（と`twoFactorCode`）は、プロファイルの`login.stdin`（行のテンプレート。下記「Phase 12におけるプロファイルの明示化」）に従って行を組み立て、プロキシの`POST /exec`の`stdin`フィールドへ渡す。値が空の行（未指定の2FAコード）は出さない。行の順序・2FAコードの形式は、ベンダーのCLIの入力仕様であり、プロファイルが持つ（コードは持たない。2FAが必要なアカウントでコードが無い場合はCLIが失敗し、422で利用者に再入力を促す）。
 - **秘密情報を残さない**: 監査ログの`input`は`{ username }`のみ（パスワード・2FAコードは記録しない）。プロキシ側の監査ログもstdinの内容は記録せず、`stdinProvided: true`のみ記録する。失敗時の`stderr`（422）は、応答へ入れる前にパスワード・2FAコードの部分文字列を伏字にする（CLIが入力を出力へ反映した場合の保険）。Fastifyのリクエストログはボディを出力しない設定のまま維持する。
 - 経路の秘匿: ブラウザ〜Webサーバ間はHTTP（TLSなし、LAN限定運用）のため、パスワードはLAN内で平文になる。**既知の制約**として受容する（認証・TLSはPhase 7の課題。`specs/requirements.md`「認証・認可」）。
 
@@ -301,8 +339,8 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 
 | 項目 | 内容 |
 |---|---|
-| `ENABLED_PROVIDERS`（環境変数） | 有効なベンダーIDのカンマ区切り（既定`adguardvpn`）。compose側は`.env`の`VPN_PROVIDERS`から渡す |
-| `VPN_PROFILES_DIR`（環境変数） | プロファイルのディレクトリ（既定`/etc/vpngwgui/profiles`。`./api/config/profiles`を`:ro`でマウント）。**ファイル名（拡張子を除く）＝ベンダーID**で、ファイル内の`vendor`と一致しなければ起動失敗 |
+| `ENABLED_PROVIDERS`（環境変数） | 有効なベンダーIDのカンマ区切り。**必須（Phase 12で既定を廃止。未設定・空なら起動失敗）**。compose側は`.env`の`VPN_PROVIDERS`から渡す |
+| `VENDORS_DIR`（環境変数） | ベンダーバンドルのディレクトリ（既定`/etc/vpngwgui/vendors`。`./vendors`を`:ro`でマウント）。`<ベンダーID>/profile.json`を読む。プロファイル内の`vendor`とディレクトリ名（＝ベンダーID）が一致しなければ起動失敗（Phase 12で旧`VPN_PROFILES_DIR`を置き換え） |
 | `CTL_SOCKET_DIR`（環境変数） | UDSのディレクトリ（既定`/var/run/vpngw-ctl`）。ネットワークコンテナは`net.sock`、ランナーは`runner-<ベンダーID>.sock` |
 | `STATE_DIR`（環境変数） | 永続化の基点（既定`/var/lib/vpngwgui`）。ベンダー別の状態は`$STATE_DIR/providers/<ベンダーID>/`以下 |
 | プロファイルの`displayName`（新規・省略可） | 画面に出すベンダー名（例 `AdGuard VPN`）。省略時は`vendor` |
@@ -310,7 +348,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 - 起動時に、有効な全ベンダーのプロファイルを読み込み検証する（1つでも不正なら起動失敗。従来の`VPN_PROFILE_PATH`は廃止）。IDは`^[a-z][a-z0-9]{0,31}$`。有効なベンダーが0個なら起動失敗。
 - **選択中のベンダー**は`$STATE_DIR/active-provider.json`（`{ "id": "adguardvpn" }`）に永続化する。無い・壊れている・有効でないIDが入っている場合は、有効なベンダーの先頭を選択中とする（例外にしない）。
 - **ベンダー別の状態**（`$STATE_DIR/providers/<ID>/`）: `connection-state.json`（接続先ID・国・都市名）、`last-location.json`、`favorite-locations.json`。ログイン状態・プランの判定キャッシュ、学習した制限は、プロセス内でベンダーIDをキーに別々に保持する。**ユーザ向け設定（`settings.json`）・監査ログはベンダーに依存しないため従来の場所のまま**。
-- **旧形式からの移行**: 起動時、旧パス（`$STATE_DIR/connection-state.json`・`last-location.json`・`favorite-locations.json`）が存在し、`providers/adguardvpn/`に対応するファイルが無ければ、`providers/adguardvpn/`へ移す（Phase 10より前に保存された状態は全てAdGuard VPNのものであるため）。`adguardvpn`が有効でない場合は移さない。
+- **旧形式からの移行は行わない**（Phase 12で廃止）。Phase 10より前の旧パス（`$STATE_DIR`直下の`connection-state.json`等）は読まない。未リリースで、実機はPhase 11の起動時に移行済みのため。
 
 ### エンドポイント
 
@@ -537,3 +575,4 @@ CN    China                Shanghai (Virtual)             59
 - タイムアウト: `504 Gateway Timeout`。
 - **【Phase 11】** ベンダー切替中の競合: `409 Conflict`（`error: "provider_switching"`）。
 - **【Phase 9】** プラン制限によるコマンド失敗（`restrictedPattern`一致）: `403 Forbidden`（`error: "operation_restricted"`。`exitCode`・`stderr`要約を含む）。プロファイルがその操作に対応していない（アクション未定義）: `501 Not Implemented`（`error: "operation_unsupported"`）。
+
