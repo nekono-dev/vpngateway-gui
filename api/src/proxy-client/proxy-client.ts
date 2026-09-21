@@ -1,13 +1,18 @@
-// 責務: APIコンテナからプロキシコンテナの内部専用HTTPサーバへ、UDS経由でコマンド実行要求を送信する。
-// apiserver/design.md「プロキシとの内部通信仕様」参照。この経路はOpenAPI非公開の内部チャネル。
+// 責務: APIコンテナから、ベンダー別のランナーコンテナ（コマンド実行・利用可否）と、ネットワークコンテナ
+// （設定反映・稼働状況・接続状態の再確認）の内部専用HTTPサーバへ、UDS経由で要求を送信する。
+// apiserver/design.md「プロキシとの内部通信仕様」「内部プロトコルの変更」参照。この経路はOpenAPI非公開の内部チャネル。
+// Phase 11で、従来の単一のproxyコンテナ宛（exec.sock）を、ランナー宛（runner-<ベンダーID>.sock）と
+// ネットワークコンテナ宛（net.sock）に分けた。
 
+import { join } from "node:path";
 import { Pool } from "undici";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
 import { ProxyUnavailableError, ProxyTimeoutError } from "../errors.js";
 
-const SOCKET_PATH = process.env.PROXY_SOCKET_PATH ?? "/var/run/vpngw-ctl/exec.sock";
+// UDSを置くディレクトリ。各コンテナは自分のソケットファイルだけを作る（ランナー: runner-<ベンダーID>.sock、ネットワーク: net.sock）。
+const SOCKET_DIR = process.env.CTL_SOCKET_DIR ?? "/var/run/vpngw-ctl";
 
 // プロキシは別コンテナ・別プロセスで動くため、TypeScriptの型だけでは実際のレスポンス形状を保証できない
 // （バージョン不一致・実装ミス等でプロトコルが乖離する可能性がある）。UDS経由の内部通信とはいえ、
@@ -18,8 +23,23 @@ const ExecResultSchema = Type.Object({
   stderr: Type.String(),
 });
 
-// Unixドメインソケット経由の接続プール。TCPは使用しない。
-const pool = new Pool("http://localhost", { socketPath: SOCKET_PATH });
+// Unixドメインソケット経由の接続プール。TCPは使用しない。ネットワークコンテナ宛は1つ、ランナー宛はベンダーごとに1つ。
+const netPool = new Pool("http://localhost", { socketPath: join(SOCKET_DIR, "net.sock") });
+const runnerPools = new Map<string, Pool>();
+
+/**
+ * 目的: ベンダーのランナー宛の接続プールを返す（初回に作成してキャッシュする）。
+ * 入力: providerId(検証済みのベンダーID。ソケット名に使うため形式は呼び出し元（provider-registry）が保証する)。
+ * 出力: そのランナーのUDSへ接続するundici Pool。
+ */
+function runnerPool(providerId: string): Pool {
+  let pool = runnerPools.get(providerId);
+  if (!pool) {
+    pool = new Pool("http://localhost", { socketPath: join(SOCKET_DIR, `runner-${providerId}.sock`) });
+    runnerPools.set(providerId, pool);
+  }
+  return pool;
+}
 
 export interface ExecInput {
   vendor: string;
@@ -42,17 +62,17 @@ export interface ExecResult {
 }
 
 /**
- * 目的: 解決済みコマンドをプロキシの`POST /exec`へ送信し、実行結果を取得する。
- * 入力: input(vendor/binary/resolvedArgv/timeoutMs)。
+ * 目的: 解決済みコマンドを、そのベンダーのランナーの`POST /exec`へ送信し、実行結果を取得する。
+ * 入力: providerId(実行先のベンダーID), input(vendor/binary/resolvedArgv/timeoutMs)。
  * 出力: ExecResult(exitCode/stdout/stderr)。
  * 失敗時の方針: UDS接続失敗（ソケット未起動等）はProxyUnavailableError、
  *              応答タイムアウトはProxyTimeoutErrorへ変換して投げる（呼び出し元で502/504にマッピングする）。
  */
-export async function executeVendorCommand(input: ExecInput): Promise<ExecResult> {
+export async function executeVendorCommand(providerId: string, input: ExecInput): Promise<ExecResult> {
   const bodyTimeout = input.timeoutMs + 2000;
 
   try {
-    const response = await pool.request({
+    const response = await runnerPool(providerId).request({
       path: "/exec",
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -78,7 +98,7 @@ const SettingsResultSchema = Type.Object({
 });
 
 /**
- * 目的: ユーザ向け設定の最新値をプロキシの`POST /settings`へ通知し、nftables等への実反映を要求する。
+ * 目的: ユーザ向け設定の最新値をネットワークコンテナの`POST /settings`へ通知し、nftables等への実反映を要求する。
  *      `executeVendorCommand`（VPNベンダーCLI実行系）とは別の内部プロトコルのため、最初から関数を分離する
  *      （proxyserver/design.md「内部プロトコル拡張」参照）。
  * 入力: settings(UserSettings全体。プロキシ側が実際に用いるのはkillSwitch/transparentGatewayEnabledのみだが、
@@ -90,7 +110,7 @@ const SettingsResultSchema = Type.Object({
  */
 export async function notifySettings(settings: Record<string, unknown>): Promise<{ applied: boolean }> {
   try {
-    const response = await pool.request({
+    const response = await netPool.request({
       path: "/settings",
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -110,7 +130,7 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
 }
 
 /**
- * 目的: プロキシの`GET /status`から透過ゲートウェイ等の実際の稼働状況を取得する（読み取り専用）。
+ * 目的: ネットワークコンテナの`GET /status`から透過ゲートウェイ等の実際の稼働状況を取得する（読み取り専用）。
  * 入力: なし。
  * 出力: GatewayStatus（スキーマはschemas/gateway.ts。プロキシのレスポンス形状を実行時に検証する）。
  * 失敗時の方針: 他の内部通信と同じ分類でProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる
@@ -119,7 +139,7 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
  */
 export async function fetchProxyStatus(): Promise<GatewayStatus> {
   try {
-    const response = await pool.request({
+    const response = await netPool.request({
       path: "/status",
       method: "GET",
       bodyTimeout: 3000,
@@ -133,6 +153,51 @@ export async function fetchProxyStatus(): Promise<GatewayStatus> {
     return body;
   } catch (error) {
     throw toProxyClientError(error);
+  }
+}
+
+/**
+ * 目的: ベンダーのランナーが応答するか（利用可能か）を、`GET /health`で確認する。
+ * 入力: providerId(確認するベンダーID)。
+ * 出力: 200で応答すればtrue。ソケットが無い・接続拒否・タイムアウト・想定外の応答はfalse（例外にしない）。
+ * 副作用: なし（ランナー内でCLIは起動されない）。一覧表示を遅くしないよう短いタイムアウトにする。
+ * 例: await checkRunnerHealth("protonvpn") // => false（ランナー未起動）
+ */
+export async function checkRunnerHealth(providerId: string): Promise<boolean> {
+  try {
+    const response = await runnerPool(providerId).request({
+      path: "/health",
+      method: "GET",
+      bodyTimeout: 2000,
+      headersTimeout: 2000,
+    });
+    await response.body.dump();
+    return response.statusCode === 200;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 目的: ネットワークコンテナへ、接続状態の即時再確認（トンネル検出→ゲートウェイルールの再構成）を依頼する
+ *      （`POST /connection-checks`）。接続・切断・ログアウトの実行後と、ベンダー切替後に呼ぶ。
+ * 入力: なし。
+ * 出力: 再確認できたか（`checked`）。
+ * 失敗時の方針: 通信失敗・タイムアウト・想定外の応答は例外にせずfalseを返す（ルールの反映は接続監視ループが
+ *              いずれ追従するため、操作の成否には影響させない）。
+ */
+export async function requestConnectionCheck(): Promise<boolean> {
+  try {
+    const response = await netPool.request({
+      path: "/connection-checks",
+      method: "POST",
+      bodyTimeout: 5000,
+      headersTimeout: 5000,
+    });
+    const body: unknown = await response.body.json();
+    return typeof body === "object" && body !== null && (body as Record<string, unknown>).checked === true;
+  } catch {
+    return false;
   }
 }
 

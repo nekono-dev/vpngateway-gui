@@ -6,9 +6,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { matchesPattern } from "../lib/regex-match.js";
+import { providerStatePath } from "../providers/provider-state-paths.js";
 import { LOCATION_ID_PATTERN } from "./location-id.js";
 
-const FAVORITES_FILE = process.env.FAVORITE_LOCATIONS_FILE ?? "/var/lib/vpngwgui/favorite-locations.json";
+/** ベンダー別の保存先（Phase 11: `$STATE_DIR/providers/<ベンダーID>/favorite-locations.json`）。接続先IDはベンダー固有のため分ける。 */
+function favoritesFile(providerId: string): string {
+  return providerStatePath(providerId, "favorite-locations.json");
+}
 
 // 無制限にファイルが肥大化しないための上限。実CLIの接続先数（約80件）に対して十分大きい値。
 export const MAX_FAVORITE_LOCATIONS = 200;
@@ -18,12 +22,14 @@ export class FavoriteLocationsError extends Error {}
 
 /**
  * 目的: 登録済みのお気に入り接続先IDを読み出す。
+ * 入力: providerId(対象のベンダーID)。
  * 出力: 登録順のID配列。未保存・破損（JSON不正・形状不正）の場合は空配列。形式不正なIDは除外する。
  */
-export function readFavoriteLocationIds(): string[] {
-  if (!existsSync(FAVORITES_FILE)) return [];
+export function readFavoriteLocationIds(providerId: string): string[] {
+  const file = favoritesFile(providerId);
+  if (!existsSync(file)) return [];
   try {
-    const parsed: unknown = JSON.parse(readFileSync(FAVORITES_FILE, "utf8"));
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     if (typeof parsed !== "object" || parsed === null) return [];
     const ids = (parsed as Record<string, unknown>).ids;
     if (!Array.isArray(ids)) return [];
@@ -35,35 +41,36 @@ export function readFavoriteLocationIds(): string[] {
 
 /**
  * 目的: 接続先をお気に入りに登録する（既に登録済みなら何もしない＝冪等）。
- * 入力: locationId(接続先ID。`^[a-z]{2}-[a-z0-9-]{1,64}$`)。
+ * 入力: providerId(対象のベンダーID), locationId(接続先ID。`^[a-z]{2}-[a-z0-9-]{1,64}$`)。
  * 出力: なし。
  * 失敗時の方針: 形式不正、または登録数が上限に達している場合はFavoriteLocationsErrorを投げる。
- * 副作用: FAVORITES_FILEへ書き込む（ディレクトリが無ければ作成）。
+ * 副作用: ベンダー別の保存ファイルへ書き込む（ディレクトリが無ければ作成）。
  */
-export function addFavoriteLocation(locationId: string): void {
+export function addFavoriteLocation(providerId: string, locationId: string): void {
   if (!matchesPattern(locationId, LOCATION_ID_PATTERN)) {
     throw new FavoriteLocationsError(`invalid location id: ${locationId}`);
   }
-  const ids = readFavoriteLocationIds();
+  const ids = readFavoriteLocationIds(providerId);
   if (ids.includes(locationId)) return;
   if (ids.length >= MAX_FAVORITE_LOCATIONS) {
     throw new FavoriteLocationsError(`too many favorite locations (max ${MAX_FAVORITE_LOCATIONS})`);
   }
-  writeFavorites([...ids, locationId]);
+  writeFavorites(providerId, [...ids, locationId]);
 }
 
 /**
  * 目的: 接続先のお気に入りを解除する（登録されていなければ何もしない＝冪等）。
- * 入力: locationId(接続先ID)。形式は検証しない（不正な値は登録されていないため、単に何も起きない）。
- * 副作用: 変更があった場合のみFAVORITES_FILEへ書き込む。
+ * 入力: providerId(対象のベンダーID), locationId(接続先ID)。形式は検証しない（不正な値は登録されていないため、単に何も起きない）。
+ * 副作用: 変更があった場合のみベンダー別の保存ファイルへ書き込む。
  */
-export function removeFavoriteLocation(locationId: string): void {
-  const ids = readFavoriteLocationIds();
+export function removeFavoriteLocation(providerId: string, locationId: string): void {
+  const ids = readFavoriteLocationIds(providerId);
   if (!ids.includes(locationId)) return;
-  writeFavorites(ids.filter((id) => id !== locationId));
+  writeFavorites(providerId, ids.filter((id) => id !== locationId));
 }
 
-function writeFavorites(ids: string[]): void {
-  mkdirSync(dirname(FAVORITES_FILE), { recursive: true });
-  writeFileSync(FAVORITES_FILE, JSON.stringify({ ids }));
+function writeFavorites(providerId: string, ids: string[]): void {
+  const file = favoritesFile(providerId);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ ids }));
 }

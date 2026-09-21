@@ -8,14 +8,20 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/profiles/adguardvpn.json");
+process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../config/profiles");
+process.env.ENABLED_PROVIDERS = "adguardvpn";
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
-process.env.CONNECTION_STATE_FILE = join(dir, "connection-state.json");
-process.env.LAST_LOCATION_FILE = join(dir, "last-location.json");
-process.env.FAVORITE_LOCATIONS_FILE = join(dir, "favorite-locations.json");
+process.env.STATE_DIR = dir;
+/** AdGuard VPNのベンダー別状態ファイルのパス。 */
+const statePath = (name: string) => join(dir, "providers", "adguardvpn", name);
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));
-vi.mock("../proxy-client/proxy-client.js", () => ({ executeVendorCommand: executeVendorCommandMock }));
+// 第1引数を入力、第2引数をベンダーIDとして記録する（呼び出し内容の検証を、入力を先頭にして書けるようにするため）。
+vi.mock("../proxy-client/proxy-client.js", () => ({
+  executeVendorCommand: (providerId: string, input: unknown) => executeVendorCommandMock(input, providerId),
+  requestConnectionCheck: async () => true,
+  checkRunnerHealth: async () => true,
+}));
 
 const { buildApp } = await import("../app.js");
 
@@ -57,7 +63,7 @@ describe("/v1/connection の接続先", () => {
     executeVendorCommandMock.mockImplementation(fakeCli);
     connectedNames.length = 0;
     currentStatus = "VPN is disconnected";
-    rmSync(process.env.LAST_LOCATION_FILE!, { force: true });
+    rmSync(statePath("last-location.json"), { force: true });
     await app.inject({ method: "GET", url: "/v1/connection" }); // 切断観測で保存内容を初期化
   });
 

@@ -10,7 +10,7 @@ import { getLoginMethod, validateProfile } from "./profile-loader.js";
 
 const load = (relative: string): VendorProfile => JSON.parse(readFileSync(join(import.meta.dirname, relative), "utf8")) as VendorProfile;
 const adguard = load("../../config/profiles/adguardvpn.json");
-const protonLike = load("../../test-fixtures/protonvpn-like.json");
+const protonLike = load("../../test-fixtures/profiles/mockproton.json");
 
 describe("プロファイルのスキーマ・検証", () => {
   it("AdGuard VPNプロファイル（Phase 8形式）が、追加項目なしのままスキーマ・組合せ検証を通る", () => {

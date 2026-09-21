@@ -1,6 +1,7 @@
 // 責務: Web UIから実VPNの接続・切断を操作し、画面上の接続状態表示（ポーリングで更新）が切り替わることを検証する。
 // 実行:
-//   node e2e/phase3/webgui-connection.mjs <baseUrl> connect <country例:jp>
+//   node e2e/phase3/webgui-connection.mjs <baseUrl> connect <ISO国コード例:jp>
+//     （Phase 8以降は接続先リストから選ぶ。指定した国コードの、ping昇順で先頭の接続先を選んで接続する）
 //   node e2e/phase3/webgui-connection.mjs <baseUrl> disconnect
 // 接続状態カードの表示は5秒間隔ポーリングで更新されるため、待機上限は余裕を持って60秒とする。
 
@@ -14,7 +15,10 @@ try {
   await page.locator("strong", { hasText: /^(接続中|切断)$/ }).first().waitFor({ timeout: 30000 });
 
   if (action === "connect") {
-    await page.getByLabel("接続国").selectOption(country);
+    // 接続先リストから、指定した国コードのバッジを持つ先頭の行（ping昇順）を選ぶ。
+    const row = page.locator("li.location-item", { has: page.locator(".location-iso", { hasText: new RegExp(`^${country.toUpperCase()}$`) }) }).first();
+    await row.waitFor({ timeout: 30000 });
+    await row.locator("label.location-row").click();
     await page.getByRole("button", { name: "接続", exact: true }).click();
     await page.locator("strong", { hasText: "接続中" }).waitFor({ timeout: 60000 });
     assert(true, `Web UIから接続(${country})でき、画面が「接続中」表示に切り替わる`);

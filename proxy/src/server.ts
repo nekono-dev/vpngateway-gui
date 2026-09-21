@@ -1,17 +1,21 @@
-// 責務: APIコンテナからUDS経由で受信した解決済みコマンドを実行する内部専用HTTPサーバ。
-// コンテナ外部（LAN含む）から一切到達不能なUnixドメインソケット上でのみlistenする。
-// 正式なAPI（OpenAPI公開対象）ではなく、テキスト化された解決済みコマンドをそのまま実行させるための内部チャネル。
+// 責務: ネットワークコンテナ（`proxy`）のエントリポイント。透過ゲートウェイ・Kill Switch・明示的プロキシ・
+// トンネル検出・接続監視を担い、APIコンテナからUDS経由で設定反映・状態取得・接続状態の再確認を受ける内部専用HTTPサーバ。
+// コンテナ外部（LAN含む）から一切到達不能なUnixドメインソケット上でのみlistenする。ベンダーCLIは実行しない
+// （Phase 11でランナー`runner.ts`へ分離。specs/proxyserver/design.md「コンテナ構成（Phase 11）」）。
+//   POST /settings         : ユーザ向け設定の反映
+//   GET  /status           : 稼働状況の取得
+//   POST /connection-checks: 接続状態の即時再確認（接続・切断・ベンダー切替の直後にAPIが呼ぶ）
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { isAllowedBinary } from "./allowlist.js";
-import { runCommand, runDetachableCommand } from "./exec/command-runner.js";
+import { logAuditEvent } from "./lib/audit-event.js";
+import { readRequestBody, sendJson } from "./lib/http-json.js";
 import { listenOnUnixSocket } from "./lib/socket-bootstrap.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController, type GatewaySettings } from "./network/gateway-controller.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 
-const SOCKET_PATH = process.env.CTL_SOCKET_PATH ?? "/var/run/vpngw-ctl/exec.sock";
+const SOCKET_PATH = process.env.CTL_SOCKET_PATH ?? "/var/run/vpngw-ctl/net.sock";
 const SOCKET_MODE = 0o770;
 
 // インストールスクリプトが検出しnetwork.env経由で渡すLAN側インターフェース名（proxyserver/design.md
@@ -66,133 +70,24 @@ function isValidSettingsRequestBody(value: unknown): value is SettingsRequestBod
   );
 }
 
-// 内部プロトコルのリクエスト形状（OpenAPI非公開）。apiserver/design.md「プロキシとの内部通信仕様」参照。
-interface ExecRequestBody {
-  vendor: string;
-  binary: string;
-  resolvedArgv: string[];
-  timeoutMs: number;
-  // 設定されている場合、プロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、
-  // プロセスはバックグラウンドで実行継続させる（`login`アクション用、command-runner.ts参照）。
-  completionPattern?: string;
-  // 設定されている場合、子プロセスの標準入力へ書き込んで閉じる（ユーザー名・パスワード入力型のログイン用）。
-  // 秘密情報を含みうるため内容はログへ出さない（有無のみ記録する）。completionPatternとは併用できない
-  // （その場合は無視する。バックグラウンド継続する`login`はURL提示型のみで入力を要しないため）。
-  stdin?: string;
-}
-
-// stdinの最大バイト数。想定外の巨大な入力でプロセス・メモリを消費させないための上限
-// （パスワード最大512文字＋2FAコード程度で足りる）。
-const MAX_STDIN_BYTES = 4096;
-
 /**
- * 目的: unknownな入力(JSONパース結果)がExecRequestBodyの最小要件を満たすかを検証する。
- * 入力: JSON.parse()の戻り値（unknown）。
- * 出力: 形状が正しければ true（TypeScriptの型ガードとしても機能する）。
- * 期待する入力形状: vendor/binaryが非空文字列、resolvedArgvが文字列配列、timeoutMsが正の数値、
- *                completionPatternは省略可能だが指定時は文字列。stdinは省略可能だが指定時は
- *                MAX_STDIN_BYTES以下の文字列。
+ * 目的: `POST /connection-checks`を処理する。トンネル検出→ゲートウェイルールの再構成を即時に1回行う
+ *      （接続監視ループの次回ポーリングを待たない。proxyserver/design.md「再接続・国変更時の旧ルール撤去→新IFでの再適用処理」）。
+ * 入力: res(応答)。ボディは使わない。
+ * 出力: なし。`200 { checked: boolean }`を返す。再構成に失敗しても200（checked: false）で、監視ループが追従する。
+ * 副作用: 監視ループと同じ再構成（冪等）。失敗は監査ログへ記録する。
  */
-function isValidExecRequestBody(value: unknown): value is ExecRequestBody {
-  if (typeof value !== "object" || value === null) return false;
-  const body = value as Record<string, unknown>;
-  return (
-    typeof body.vendor === "string" &&
-    body.vendor.length > 0 &&
-    typeof body.binary === "string" &&
-    body.binary.length > 0 &&
-    Array.isArray(body.resolvedArgv) &&
-    body.resolvedArgv.every((item) => typeof item === "string") &&
-    typeof body.timeoutMs === "number" &&
-    body.timeoutMs > 0 &&
-    (body.completionPattern === undefined || typeof body.completionPattern === "string") &&
-    (body.stdin === undefined || (typeof body.stdin === "string" && Buffer.byteLength(body.stdin, "utf8") <= MAX_STDIN_BYTES))
-  );
-}
-
-function readRequestBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
-  const payload = JSON.stringify(body);
-  res.writeHead(statusCode, { "Content-Type": "application/json" });
-  res.end(payload);
-}
-
-/**
- * 目的: 実行要求・結果を構造化ログとして標準出力へ記録する（監査ログ、apiserver/design.md参照）。
- * 入力: ログに残すイベント種別と付随情報。
- * 出力: なし（副作用としてstdoutへJSON1行を出力）。
- * 副作用: 監査目的のため、成功・失敗を問わず全リクエストを記録する。
- */
-function logAuditEvent(event: Record<string, unknown>): void {
-  console.log(JSON.stringify({ timestamp: new Date().toISOString(), ...event }));
-}
-
-async function handleExec(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  let parsed: unknown;
+async function handleConnectionCheck(res: ServerResponse): Promise<void> {
   try {
-    parsed = JSON.parse(await readRequestBody(req));
-  } catch {
-    sendJson(res, 400, { error: "invalid_json" });
-    return;
-  }
-
-  if (!isValidExecRequestBody(parsed)) {
-    sendJson(res, 400, { error: "invalid_request_shape" });
-    return;
-  }
-
-  // 内部防御: APIコンテナが将来侵害・バグ混入した場合でも、任意コマンド実行の踏み台にならないための最後の防波堤。
-  if (!isAllowedBinary(parsed.binary)) {
-    logAuditEvent({ event: "exec_rejected", reason: "binary_not_allowed", binary: parsed.binary });
-    sendJson(res, 403, { error: "binary_not_allowed" });
-    return;
-  }
-
-  const result = parsed.completionPattern
-    ? await runDetachableCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs, parsed.completionPattern, {
-        // バックグラウンド継続後の最終的な終了（自然終了・強制kill問わず）を監査ログに残す。
-        // 呼び出し元へのレスポンスは既に返却済みのため、ここでは別途ログ出力のみ行う。
-        onBackgroundExit: (info) => {
-          logAuditEvent({
-            event: "background_exec_completed",
-            vendor: parsed.vendor,
-            binary: parsed.binary,
-            argv: parsed.resolvedArgv,
-            exitCode: info.exitCode,
-            killedByTimeout: info.killedByTimeout,
-          });
-        },
-      })
-    : await runCommand(parsed.binary, parsed.resolvedArgv, parsed.timeoutMs, { stdin: parsed.stdin });
-  // stdinは秘密情報（パスワード等）を含みうるため、内容は記録せず有無のみ残す。
-  logAuditEvent({
-    event: "exec_completed",
-    vendor: parsed.vendor,
-    binary: parsed.binary,
-    argv: parsed.resolvedArgv,
-    exitCode: result.exitCode,
-    ...(parsed.stdin !== undefined ? { stdinProvided: true } : {}),
-  });
-  sendJson(res, 200, result);
-
-  // connect/disconnect/国変更等、VPN接続状態に影響しうるコマンド実行の直後にゲートウェイルールを
-  // 即座に再構成する（監視ループの次回ポーリングを待たない。proxyserver/design.md
-  // 「再接続・国変更時の旧ルール撤去→新IFでの再適用処理」参照）。失敗してもレスポンスには影響させない
-  // （既にクライアントへ応答済みのため、監視ループが後続のポーリングで追従する）。
-  checkConnectionOnce(gatewayController, LAN_IFACE).catch((error: unknown) => {
+    await checkConnectionOnce(gatewayController, LAN_IFACE);
+    sendJson(res, 200, { checked: true });
+  } catch (error) {
     logAuditEvent({
       event: "gateway_reconcile_error",
       message: error instanceof Error ? error.message : String(error),
     });
-  });
+    sendJson(res, 200, { checked: false });
+  }
 }
 
 async function handleSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -241,9 +136,9 @@ const server = createServer((req, res) => {
     });
     return;
   }
-  if (req.method === "POST" && req.url === "/exec") {
-    handleExec(req, res).catch((error: unknown) => {
-      logAuditEvent({ event: "exec_error", message: error instanceof Error ? error.message : String(error) });
+  if (req.method === "POST" && req.url === "/connection-checks") {
+    handleConnectionCheck(res).catch((error: unknown) => {
+      logAuditEvent({ event: "connection_check_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });
     return;

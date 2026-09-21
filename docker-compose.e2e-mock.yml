@@ -1,7 +1,9 @@
-# 責務: Phase 9のE2E（プロバイダ抽象化基盤の検証）専用のoverride。実VPNベンダーCLIの代わりに、Proton VPN公式CLIの挙動を
-# 模擬するモックCLI（proxy/mock-cli/protonvpn-mock.mjs）を使う。**本番では使わない**（許可リストを緩めるため）。
+# 責務: E2E専用のoverride。実VPNベンダーCLIの代わりに、Proton VPN公式CLIの挙動を模擬するモックCLI
+# （proxy/mock-cli/protonvpn-mock.mjs）を、専用のモックランナー（runner-mock）で実行する。**本番では使わない**。
 # 使い方: docker compose -p vpngwgui-e2e-mock -f docker-compose.yml -f docker-compose.e2e-mock.yml up -d --build
-#   （e2e/phase9/mock-scenarios.shが実行する。Web UIは http://localhost:18080）
+#   （e2e/phase9/mock-scenarios.sh・e2e/phase11/provider-scenarios.shが実行する。Web UIは http://localhost:18080）
+#   E2E_PROFILES_DIR: プロファイルを集めたディレクトリ（e2e/lib/e2e-profiles.shの`make_e2e_profiles_dir`が作る）
+#   E2E_PROVIDERS（既定mockproton）: 有効にするベンダー。例 E2E_PROVIDERS=adguardvpn,mockproton
 services:
   web:
     # 他のスタックと衝突しないよう、公開ポートを差し替える（listの合成は追記になるため!overrideで置換する）。
@@ -9,12 +11,26 @@ services:
       - "18080:8080"
   api:
     volumes:
-      # Proton VPN相当のテスト用プロファイル（binaryはモックCLIのパス）へ差し替える。マウント先が同じなので置換される。
-      - ./api/test-fixtures/protonvpn-like.json:/etc/vpngwgui/vpn-profile.json:ro
-  proxy:
+      # プロファイルのディレクトリを、実運用のプロファイル（api/config/profiles/）とテスト用プロファイル
+      # （mockproton。binaryはモックCLIのパス）を併せたものへ差し替える（マウント先が同じなので置換される）。
+      # 読み取り専用のバインドマウントの中へ単一ファイルを重ねられないため、E2Eのスクリプトが
+      # 併せたディレクトリを作り、E2E_PROFILES_DIRで渡す。
+      - ${E2E_PROFILES_DIR:?E2E_PROFILES_DIRにプロファイルを集めたディレクトリを指定すること}:/etc/vpngwgui/profiles:ro
+    environment:
+      ENABLED_PROVIDERS: ${E2E_PROVIDERS:-mockproton}
+  # モックプロバイダ用ランナー。実運用のランナーとは別のサービス・イメージで、許可バイナリ・ソケット名はここで与える。
+  runner-mock:
+    restart: always
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile.runner-mock
+    network_mode: host
+    user: "10001:10001"
+    init: true
     volumes:
+      - ctl-socket:/var/run/vpngw-ctl
       - ./proxy/mock-cli/protonvpn-mock.mjs:/usr/local/bin/protonvpn-mock:ro
     environment:
-      # 検証専用の追加許可（proxyserver/design.md「検証用の追加許可バイナリ」）。
-      EXTRA_ALLOWED_BINARIES: /usr/local/bin/protonvpn-mock
+      CTL_SOCKET_PATH: /var/run/vpngw-ctl/runner-mockproton.sock
+      RUNNER_ALLOWED_BINARY: /usr/local/bin/protonvpn-mock
       MOCK_STATE_FILE: /tmp/protonvpn-mock-state.json

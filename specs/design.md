@@ -33,7 +33,7 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 
 ## ランナーコンテナの責務
 
-ランナーコンテナ（`runner-<ベンダー>`）は、そのベンダーのCLIを実行する環境と、実行要求の受け口（許可リストで自ベンダーのバイナリのみ許可する内部HTTPサーバ）だけを持つ。CLIが確立するトンネルをホストのネットワーク名前空間に作るため`network_mode: host`で動くが、透過ゲートウェイ・Kill Switch・明示的プロキシには関与しない。
+ランナーコンテナ（`runner-<ベンダー>`。要件・設計・タスクは`runner/`）は、そのベンダーのCLIを実行する環境と、実行要求の受け口（許可リストで自ベンダーのバイナリのみ許可する内部HTTPサーバ）だけを持つ。CLIが確立するトンネルをホストのネットワーク名前空間に作るため`network_mode: host`で動くが、透過ゲートウェイ・Kill Switch・明示的プロキシには関与しない。
 
 # プロバイダ抽象化アーキテクチャ（Phase 9・10）
 
@@ -65,7 +65,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
    （proxy・runner-*はいずれも network_mode: host。ランナーのCLIはトンネルをホストのネットワーク名前空間に作る）
 ```
 
-- **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視だけを担い、ベンダーCLIを実行しない。ランナー（`runner-<ベンダー>`）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
+- **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視だけを担い、ベンダーCLIを実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
 - **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
 - **有効化**: 管理者は`.env`の`VPN_PROVIDERS`（例 `adguardvpn,protonvpn`）で有効なベンダーを指定する。APIはこれを`ENABLED_PROVIDERS`として受け取り、composeのランナーは`profiles:`でベンダーごとに起動を選択する（`COMPOSE_PROFILES`。`install/select-providers.sh`が両方を`.env`へ書く）。プロファイルは`api/config/profiles/<ベンダー>.json`（ファイル名＝ベンダーID）。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
 - **ランナーの許可リスト**: ランナーは、自分のベンダーのバイナリ1つだけを実行対象とする（イメージにビルド時に焼き込む`RUNNER_ALLOWED_BINARY`）。APIコンテナが侵害されても、別ベンダーのランナー経由で任意のバイナリを実行できず、許可リストによる「最後の防波堤」は従来どおり働く。
@@ -77,7 +77,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 | ランナーイメージ | `proxy/Dockerfile.runner-adguardvpn`（Alpine。単体バイナリ同梱） | `proxy/Dockerfile.runner-protonvpn`（Ubuntu。CLI・NetworkManager・D-Bus・keyringを同梱） |
 | composeのサービス | `runner-adguardvpn` | `runner-protonvpn` |
 
-Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 10の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細はproxyserver/design.md「Proton VPN用ランナー」、`wbs/phase10.md`）。
+Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 10の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細は`runner/design.md`「Proton VPN用ランナー」、`wbs/phase10.md`）。
 
 # 認証・認可の設計方針
 

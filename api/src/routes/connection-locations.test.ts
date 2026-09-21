@@ -7,14 +7,20 @@ import { tmpdir } from "node:os";
 import { ProxyUnavailableError } from "../errors.js";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/profiles/adguardvpn.json");
+process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../config/profiles");
+process.env.ENABLED_PROVIDERS = "adguardvpn";
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
-process.env.CONNECTION_STATE_FILE = join(dir, "connection-state.json");
-process.env.LAST_LOCATION_FILE = join(dir, "last-location.json");
-process.env.FAVORITE_LOCATIONS_FILE = join(dir, "favorite-locations.json");
+process.env.STATE_DIR = dir;
+/** AdGuard VPNのベンダー別状態ファイルのパス。 */
+const statePath = (name: string) => join(dir, "providers", "adguardvpn", name);
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));
-vi.mock("../proxy-client/proxy-client.js", () => ({ executeVendorCommand: executeVendorCommandMock }));
+// 第1引数を入力、第2引数をベンダーIDとして記録する（呼び出し内容の検証を、入力を先頭にして書けるようにするため）。
+vi.mock("../proxy-client/proxy-client.js", () => ({
+  executeVendorCommand: (providerId: string, input: unknown) => executeVendorCommandMock(input, providerId),
+  requestConnectionCheck: async () => true,
+  checkRunnerHealth: async () => true,
+}));
 
 const { buildApp } = await import("../app.js");
 const { saveLastLocationId } = await import("../locations/last-location-store.js");
@@ -33,12 +39,12 @@ describe("/v1/connection/locations", () => {
   beforeEach(() => {
     executeVendorCommandMock.mockReset();
     executeVendorCommandMock.mockResolvedValue({ exitCode: 0, stdout: LIST_OUTPUT, stderr: "" });
-    rmSync(process.env.FAVORITE_LOCATIONS_FILE!, { force: true });
-    rmSync(process.env.LAST_LOCATION_FILE!, { force: true });
+    rmSync(statePath("favorite-locations.json"), { force: true });
+    rmSync(statePath("last-location.json"), { force: true });
   });
 
   it("ping昇順で、favorite・lastConnectedを付けて返し、接続時の指定名は含めない", async () => {
-    saveLastLocationId("jp-tokyo");
+    saveLastLocationId("adguardvpn", "jp-tokyo");
     await app.inject({ method: "PUT", url: "/v1/connection/locations/cn-shanghai-virtual/favorite" });
 
     const response = await app.inject({ method: "GET", url: "/v1/connection/locations" });

@@ -2,7 +2,7 @@
 // `GET /v1/connection/locations`と、接続時の接続先ID解決（`PUT /v1/connection`）の両方が使う。
 // キャッシュはしない（ping値の鮮度は利用者の「再計測」操作で決める。apiserver/design.md参照）。
 
-import { loadVendorProfile } from "../profile/profile-loader.js";
+import type { Provider } from "../providers/provider-registry.js";
 import { resolveArgv } from "../profile/placeholder-resolver.js";
 import { requireAction } from "../profile/require-action.js";
 import { executeVendorCommand } from "../proxy-client/proxy-client.js";
@@ -18,12 +18,13 @@ import { parseLocationList, type ParsedLocation } from "./location-list-parser.j
  *              それ以外（未ログイン等）はCommandExecutionError（422）、
  *              プロキシ未応答・タイムアウトはproxy-clientの例外（502/504）、
  *              出力が想定外の書式なら通常のError（500）を、いずれもそのまま呼び出し元へ伝える。
- * 副作用: プロキシ上でベンダーCLIを1回実行する（約1秒）。
+ * 入力: provider(対象のベンダー)。
+ * 副作用: そのベンダーのランナー上でCLIを1回実行する（約1秒）。
  */
-export async function fetchLocations(): Promise<ParsedLocation[]> {
-  const profile = loadVendorProfile();
+export async function fetchLocations(provider: Provider): Promise<ParsedLocation[]> {
+  const { profile } = provider;
   const action = requireAction(profile, "listLocations");
-  const result = await executeVendorCommand({
+  const result = await executeVendorCommand(provider.id, {
     vendor: profile.vendor,
     binary: profile.binary,
     resolvedArgv: resolveArgv(profile, "listLocations", {}),
@@ -33,6 +34,7 @@ export async function fetchLocations(): Promise<ParsedLocation[]> {
   const exitCode = result.exitCode ?? -1;
   if (exitCode !== 0) {
     throwCommandFailure(
+      provider.id,
       "list-locations command failed",
       exitCode,
       pickFailureOutput(result.stderr, result.stdout),

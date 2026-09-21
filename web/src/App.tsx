@@ -1,13 +1,14 @@
 // 責務: 接続状態ダッシュボード画面の組み立てのみを行う。業務ロジック（コマンド解決等）は持たない
 // （webserver/requirements.md「責務の範囲」参照）。API呼び出しは生成クライアント以外を使わない。
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDashboardPolling, type ConnectionState } from "./hooks/useDashboardPolling";
 import { ConnectionStatusCard } from "./components/dashboard/ConnectionStatusCard";
 import { GatewayStatusCard } from "./components/dashboard/GatewayStatusCard";
 import { LocationList } from "./components/dashboard/LocationList";
 import { ConnectionActions, type SubmittingAction } from "./components/dashboard/ConnectionActions";
 import { SessionCard } from "./components/dashboard/SessionCard";
+import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
@@ -25,12 +26,23 @@ export function App() {
   const [submitting, setSubmitting] = useState<SubmittingAction>();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(false);
+  // ベンダーの切替中（切断を伴う。その間、接続操作を止める）。
+  const [isSwitchingProvider, setIsSwitchingProvider] = useState(false);
   const { notifyError, notifySuccess } = useToast();
   const { data, isLoading, error: pollingError, refresh } = useDashboardPolling();
   // 操作の実行可否。最初の取得が終わるまで（data未取得）は接続先一覧を取得しない。取得に失敗しても
   // `capabilities`はundefinedのまま「制限しない」として扱う（判定できないことを理由に操作を塞がない）。
   const capabilities = data?.capabilities;
-  const locations = useLocations(data !== undefined && isAvailable(capabilities, "locationList"));
+  // 選択中のベンダー。有効なベンダーが複数あるときだけ、画面へ選択部品とベンダー名を出す。
+  const providers = data?.providers;
+  const activeProvider = providers?.find((provider) => provider.active);
+  const activeProviderId = activeProvider?.id;
+  const activeProviderName = providers && providers.length > 1 ? activeProvider?.displayName : undefined;
+  const locations = useLocations(data !== undefined && isAvailable(capabilities, "locationList"), activeProviderId);
+  // ベンダーが替わったら、明示的に選んでいた接続先は前のベンダーのものなので消す。
+  useEffect(() => {
+    setSelectedId(undefined);
+  }, [activeProviderId]);
   // 接続先を指定できず自動接続が使えるプロバイダ・プラン（Proton VPN無料版等）では、［接続］は接続先を指定しない接続になる。
   const autoConnect = usesAutoConnect(capabilities);
   // 接続状態の取得が一時的に失敗しても操作ボタン（接続/切断）を使えるよう、最後に取得できた値を保持する
@@ -103,9 +115,21 @@ export function App() {
           </button>
         </div>
       </header>
-      <ConnectionStatusCard connection={connection} isLoading={isLoading} error={error} />
+      {providers ? (
+        <section className="card" aria-label="VPNベンダー">
+          <ProviderSelector
+            providers={providers}
+            connected={connection?.status === "connected"}
+            onSwitched={refresh}
+            onSwitchingChange={setIsSwitchingProvider}
+            disabled={submitting !== undefined || isSwitchingProvider}
+          />
+        </section>
+      ) : null}
+      <ConnectionStatusCard connection={connection} isLoading={isLoading} error={error} providerName={activeProviderName} />
       <GatewayStatusCard gateway={data?.gateway} gatewayError={data?.gatewayError} isLoading={isLoading} />
-      <section className="card controls" aria-label="接続操作">
+      {/* ベンダーが替わったら、接続操作カード内のローカルな状態（絞り込み・タブ・ログインの入力・URL）を捨てるため、IDをkeyにして再マウントする。 */}
+      <section key={activeProviderId} className="card controls" aria-label="接続操作">
         <SessionCard session={data?.session} capabilities={capabilities} onChanged={refresh} />
         <LocationList
           locations={locations.locations}
@@ -133,6 +157,7 @@ export function App() {
           hasTarget={autoConnect || target !== undefined}
           canChange={canChange}
           capabilities={capabilities}
+          disabled={isSwitchingProvider}
           onConnect={() => void handleSubmit("connect")}
           onChange={() => void handleSubmit("change")}
           onDisconnect={() => void handleSubmit("disconnect")}

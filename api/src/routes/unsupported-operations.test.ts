@@ -7,19 +7,24 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-const base = JSON.parse(readFileSync(join(import.meta.dirname, "../../test-fixtures/protonvpn-like.json"), "utf8"));
+const base = JSON.parse(readFileSync(join(import.meta.dirname, "../../test-fixtures/profiles/mockproton.json"), "utf8"));
 delete base.actions.logout;
 delete base.actions.listLocations;
 delete base.actions.login;
 delete base.actions.account;
-const profilePath = join(dir, "profile.json");
-writeFileSync(profilePath, JSON.stringify(base));
-process.env.VPN_PROFILE_PATH = profilePath;
+writeFileSync(join(dir, "mockproton.json"), JSON.stringify(base));
+process.env.VPN_PROFILES_DIR = dir;
+process.env.ENABLED_PROVIDERS = "mockproton";
+process.env.STATE_DIR = dir;
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
-process.env.CONNECTION_STATE_FILE = join(dir, "connection-state.json");
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));
-vi.mock("../proxy-client/proxy-client.js", () => ({ executeVendorCommand: executeVendorCommandMock }));
+// 第1引数を入力、第2引数をベンダーIDとして記録する（呼び出し内容の検証を、入力を先頭にして書けるようにするため）。
+vi.mock("../proxy-client/proxy-client.js", () => ({
+  executeVendorCommand: (providerId: string, input: unknown) => executeVendorCommandMock(input, providerId),
+  requestConnectionCheck: async () => true,
+  checkRunnerHealth: async () => true,
+}));
 
 const { buildApp } = await import("../app.js");
 

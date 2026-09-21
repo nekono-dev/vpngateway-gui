@@ -512,3 +512,36 @@ dialog [role="alert"] {
   border-radius: 8px;
   font-size: 0.875rem;
 }
+
+/* VPNベンダーの選択（Phase 11） */
+.provider-selector {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0;
+}
+
+.provider-selector legend {
+  font-size: 0.875rem;
+  padding: 0 4px;
+}
+
+.provider-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.provider-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-active {
+  font-weight: 600;
+}
+
+.provider-name {
+  margin: 0;
+}

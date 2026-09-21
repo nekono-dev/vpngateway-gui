@@ -21,11 +21,11 @@ check() { # check <説明> <条件が真のときexit 0となるコマンド...>
 }
 
 if [ "$GW_MODE" = ssh ]; then
-  export PROXY_STOP_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose stop proxy'"
-  export PROXY_START_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose start proxy'"
+  export PROXY_STOP_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose stop proxy runner-adguardvpn'"
+  export PROXY_START_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose start proxy runner-adguardvpn'"
 else
-  export PROXY_STOP_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose stop proxy"
-  export PROXY_START_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose start proxy"
+  export PROXY_STOP_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose stop proxy runner-adguardvpn"
+  export PROXY_START_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose start proxy runner-adguardvpn"
 fi
 
 echo "== 準備: 透過ゲートウェイON・Kill Switch ON・VPN切断・お気に入り全解除"

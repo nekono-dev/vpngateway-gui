@@ -44,6 +44,12 @@ describe("describeApiError", () => {
     expect(content.detail).toBe("not available on the free plan");
   });
 
+  it("409（ベンダーの切替中の競合）は、切替中であることを示す", () => {
+    expect(describeApiError(409, { error: "provider_switching" }, "接続に失敗しました").summary).toBe(
+      "接続に失敗しました（ベンダーの切替中です。完了してから再度お試しください）",
+    );
+  });
+
   it("501（プロバイダ非対応）は、非対応であることを示す", () => {
     expect(describeApiError(501, { error: "operation_unsupported" }, "ログアウトに失敗しました").summary).toBe(
       "ログアウトに失敗しました（このVPNプロバイダでは利用できない操作です）",

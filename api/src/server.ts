@@ -3,8 +3,16 @@
 import { buildApp } from "./app.js";
 import { getSettings } from "./settings/settings-store.js";
 import { notifySettings } from "./proxy-client/proxy-client.js";
+import { getProviders } from "./providers/provider-registry.js";
+import { migrateLegacyState } from "./providers/provider-state-paths.js";
+
+// 有効なベンダーのプロファイルを起動時に読み込み、不正なら起動を失敗させる（実行時に初めて壊れるのを避ける）。
+const providers = getProviders();
+// Phase 10以前の旧形式の状態ファイル（接続状態・最後の接続先・お気に入り。全てAdGuard VPNのもの）を移す。
+const migrated = migrateLegacyState(providers.map((provider) => provider.id));
 
 const app = buildApp();
+app.log.info({ providers: providers.map((provider) => provider.id), migrated }, "enabled VPN providers loaded");
 const port = Number(process.env.PORT ?? 3000);
 
 app.listen({ port, host: "0.0.0.0" }).catch((error: unknown) => {

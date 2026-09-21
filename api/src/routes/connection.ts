@@ -7,11 +7,12 @@ import {
   ConnectionPutBodySchema,
   ErrorResponseSchema,
 } from "../schemas/connection.js";
-import { loadVendorProfile } from "../profile/profile-loader.js";
+import { getActiveProvider } from "../providers/active-provider-store.js";
+import { assertNotSwitching } from "../providers/provider-switcher.js";
 import { resolveArgv, PlaceholderValidationError } from "../profile/placeholder-resolver.js";
 import { requireAction } from "../profile/require-action.js";
 import { parseConnectionOutput } from "../profile/response-parser.js";
-import { executeVendorCommand } from "../proxy-client/proxy-client.js";
+import { executeVendorCommand, requestConnectionCheck } from "../proxy-client/proxy-client.js";
 import { CommandExecutionError } from "../errors.js";
 import { throwCommandFailure } from "../capabilities/restriction-learner.js";
 import type { OperationKey } from "../capabilities/operations.js";
@@ -39,9 +40,10 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       },
     },
     async () => {
-      const profile = loadVendorProfile();
+      const provider = getActiveProvider();
+      const { profile } = provider;
       const argv = resolveArgv(profile, "status", {});
-      const result = await executeVendorCommand({
+      const result = await executeVendorCommand(provider.id, {
         vendor: profile.vendor,
         binary: profile.binary,
         resolvedArgv: argv,
@@ -57,7 +59,7 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
           pickFailureOutput(result.stderr, result.stdout),
         );
       }
-      return reconcileLocation(parseConnectionOutput(profile.outputFormat, result.stdout, profile.output));
+      return reconcileLocation(provider.id, parseConnectionOutput(profile.outputFormat, result.stdout, profile.output));
     },
   );
 
@@ -78,7 +80,9 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       },
     },
     async (request) => {
-      const profile = loadVendorProfile();
+      assertNotSwitching();
+      const provider = getActiveProvider();
+      const { profile } = provider;
       const body = request.body;
 
       // 監査ログ・タイムアウトの単位は接続系を"connect"にまとめる（接続先の指定有無は`input`で分かる）。
@@ -92,7 +96,7 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       let executed: { action: { timeoutMs: number; restrictedPattern?: string }; operation: OperationKey | undefined };
       if (body.connect && body.locationId) {
         const connectAction = requireAction(profile, "connect");
-        const locations = await fetchLocations();
+        const locations = await fetchLocations(provider);
         target = locations.find((location) => location.id === body.locationId);
         if (!target) {
           throw new PlaceholderValidationError(`unknown locationId: ${body.locationId}`);
@@ -115,7 +119,7 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
         executed = { action: profile.actions.disconnect, operation: undefined };
       }
 
-      const result = await executeVendorCommand({
+      const result = await executeVendorCommand(provider.id, {
         vendor: profile.vendor,
         binary: profile.binary,
         resolvedArgv: argv,
@@ -125,7 +129,10 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       // connect/disconnectはcompletionPatternを指定しないため、exitCodeがnull（プロセス実行継続中）
       // になることはない。念のため-1（既存のタイムアウト表現）へ正規化する。
       const exitCode = result.exitCode ?? -1;
-      appendAuditLog({ action: actionName, input: body, exitCode });
+      appendAuditLog({ action: actionName, provider: provider.id, input: body, exitCode });
+      // 接続・切断の実行直後にゲートウェイルールを再構成させる（監視ループの次回ポーリングを待たない）。
+      // ネットワークコンテナは別コンテナのため、ここで通知する。失敗は握りつぶす（監視ループが追従する）。
+      await requestConnectionCheck();
 
       if (exitCode !== 0) {
         const output = pickFailureOutput(result.stderr, result.stdout);
@@ -133,7 +140,7 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
           throw new CommandExecutionError(`${actionName} command failed`, exitCode, output);
         }
         // プラン制限による失敗（restrictedPattern一致）は403で通知し、そのオペレーションを制限として学習する。
-        throwCommandFailure(`${actionName} command failed`, exitCode, output, {
+        throwCommandFailure(provider.id, `${actionName} command failed`, exitCode, output, {
           pattern: executed.action.restrictedPattern,
           operation: executed.operation,
         });
@@ -143,11 +150,11 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       // GET /v1/connection・リロード後の表示でも返せるようにする。あわせて「最後に接続した接続先」を記憶する
       // （こちらは切断しても消さない。次回の既定選択に使う）。
       if (target && status.status === "connected") {
-        saveConnectedLocation({ locationId: target.id, country: target.country }, status.location);
-        saveLastLocationId(target.id);
+        saveConnectedLocation(provider.id, { locationId: target.id, country: target.country }, status.location);
+        saveLastLocationId(provider.id, target.id);
         return { ...status, country: target.country, locationId: target.id };
       }
-      clearConnectedLocation();
+      clearConnectedLocation(provider.id);
       return status;
     },
   );

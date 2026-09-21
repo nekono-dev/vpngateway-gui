@@ -6,9 +6,11 @@ interface Props {
   connection: ConnectionState | undefined;
   isLoading: boolean;
   error: string | undefined;
+  // 選択中のベンダー名。有効なベンダーが複数あるときだけ渡し、「接続中（<ベンダー名>）」の形で示す（Phase 11）。
+  providerName?: string;
 }
 
-export function ConnectionStatusCard({ connection, isLoading, error }: Props) {
+export function ConnectionStatusCard({ connection, isLoading, error, providerName }: Props) {
   if (error) {
     return (
       <div role="alert" className="card card-danger">
@@ -25,6 +27,7 @@ export function ConnectionStatusCard({ connection, isLoading, error }: Props) {
   return (
     <div className={`card card-${connection.status}`}>
       <strong className="connection-label">{connection.status === "connected" ? "接続中" : "切断"}</strong>
+      {providerName ? <span className="hint">（{providerName}）</span> : null}
       {connection.status === "connected" && connection.country ? (
         <span>
           {" "}

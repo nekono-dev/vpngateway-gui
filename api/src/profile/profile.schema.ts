@@ -87,6 +87,8 @@ export type LoginMethod = Static<typeof LoginMethodSchema>;
 
 export const VendorProfileSchema = Type.Object({
   vendor: Type.String(),
+  // 画面に出すベンダー名（Phase 11）。省略時は`vendor`。
+  displayName: Type.Optional(Type.String()),
   binary: Type.String(),
   outputFormat: OutputFormatSchema,
   loginMethod: Type.Optional(LoginMethodSchema),

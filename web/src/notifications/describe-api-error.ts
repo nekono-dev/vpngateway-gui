@@ -26,6 +26,9 @@ export function describeApiError(status: number, data: unknown, fallback: string
   switch (status) {
     case 400:
       return { summary: `${fallback}（入力が不正です）`, detail };
+    case 409:
+      // ベンダーの切替中に、ベンダーへの操作が競合した場合（operation: provider_switching）。
+      return { summary: `${fallback}（ベンダーの切替中です。完了してから再度お試しください）`, detail };
     case 403:
       // プラン制限による失敗（operation_restricted）。通常の実行失敗と区別して、原因が契約プランであることを示す。
       return { summary: `${fallback}（現在のプランでは利用できない操作です）`, detail };

@@ -1,35 +1,33 @@
-// 責務: 実行可能バイナリ許可リスト（allowlist.ts）の単体テスト。
-// 追加許可（EXTRA_ALLOWED_BINARIES）がE2E専用の緩和として、絶対パスのみを受け付けることを確認する。
+// 責務: ランナーの許可バイナリ（allowlist.ts）の単体テスト。
+// 許可は環境変数RUNNER_ALLOWED_BINARYの1つだけで、未設定・相対パスでは何も許可しないことを確認する。
 
 import { afterEach, describe, expect, it } from "vitest";
-import { isAllowedBinary } from "./allowlist.js";
+import { getAllowedBinary, isAllowedBinary } from "./allowlist.js";
 
 describe("isAllowedBinary", () => {
   afterEach(() => {
-    delete process.env.EXTRA_ALLOWED_BINARIES;
+    delete process.env.RUNNER_ALLOWED_BINARY;
   });
 
-  it("ハードコードされたベンダーCLIを許可する", () => {
-    expect(isAllowedBinary("/usr/local/bin/adguardvpn-cli")).toBe(true);
+  it("RUNNER_ALLOWED_BINARYに一致するバイナリだけを許可する", () => {
+    process.env.RUNNER_ALLOWED_BINARY = "/usr/bin/protonvpn";
     expect(isAllowedBinary("/usr/bin/protonvpn")).toBe(true);
   });
 
-  it("許可リスト外のバイナリは拒否する", () => {
+  it("別ベンダーのバイナリ・任意のコマンドは拒否する（他ランナー経由の踏み台を防ぐ）", () => {
+    process.env.RUNNER_ALLOWED_BINARY = "/usr/bin/protonvpn";
+    expect(isAllowedBinary("/usr/local/bin/adguardvpn-cli")).toBe(false);
     expect(isAllowedBinary("/bin/sh")).toBe(false);
     expect(isAllowedBinary("protonvpn")).toBe(false);
   });
 
-  it("EXTRA_ALLOWED_BINARIESに指定した絶対パスを追加で許可する", () => {
-    process.env.EXTRA_ALLOWED_BINARIES = "/usr/local/bin/protonvpn-mock, /opt/other";
-    expect(isAllowedBinary("/usr/local/bin/protonvpn-mock")).toBe(true);
-    expect(isAllowedBinary("/opt/other")).toBe(true);
-    expect(isAllowedBinary("/bin/sh")).toBe(false);
+  it("未設定なら何も許可しない", () => {
+    expect(isAllowedBinary("/usr/bin/protonvpn")).toBe(false);
+    expect(getAllowedBinary()).toBeUndefined();
   });
 
-  it("EXTRA_ALLOWED_BINARIESの相対パス・空要素は無視する", () => {
-    process.env.EXTRA_ALLOWED_BINARIES = "sh, ,./evil,";
-    expect(isAllowedBinary("sh")).toBe(false);
-    expect(isAllowedBinary("./evil")).toBe(false);
-    expect(isAllowedBinary("")).toBe(false);
+  it("相対パスの設定は無効（何も許可しない）", () => {
+    process.env.RUNNER_ALLOWED_BINARY = "protonvpn";
+    expect(isAllowedBinary("protonvpn")).toBe(false);
   });
 });

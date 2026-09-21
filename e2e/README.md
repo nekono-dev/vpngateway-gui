@@ -21,6 +21,9 @@
 | `phase4/proxy-scenarios.sh` | Phase4完了基準を通しで自動検証（LAN端末役からSOCKS5/HTTPで通信。実VPNログイン済みのゲートウェイ役が必要。`GW_MODE=ssh`可） |
 | `phase9/webgui-provider.mjs` | Phase9（プロバイダ抽象化基盤）のステップ別Playwright検証（未ログイン・無料/有料・入力型ログイン・2FA・実行失敗からの学習） |
 | `phase9/mock-scenarios.sh` | Phase9完了基準を、モックプロバイダCLI（Proton VPN公式CLIの挙動を模擬）で通しで自動検証（開発ホストのdocker compose。実VPN不要） |
+| `phase11/webgui-providers.mjs` | Phase11（Web UIからのベンダー選択）のステップ別Playwright検証（選択部品・切替・接続中の確認と自動切断・ベンダー別状態・利用不可） |
+| `phase11/provider-scenarios.sh` | Phase11完了基準を、AdGuard VPN（未ログイン）＋モックProton VPNの2ベンダーで通しで自動検証（開発ホストのdocker compose。ランナーの許可バイナリ・ネットワークコンテナのCLI非同梱も確認） |
+| `lib/e2e-profiles.sh` | モックランナーを使うE2E用に、実運用のプロファイルとテスト用プロファイル（mockproton）を集めた一時ディレクトリを作る（`E2E_PROFILES_DIR`） |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
 
@@ -87,6 +90,17 @@ bash e2e/phase9/mock-scenarios.sh        # 起動（ビルド含む）→ unauth
 - モックのアカウント（パスワードは全て`mock-pass`）: `free@example.com`（無料）／`paid@example.com`（有料）／`free2fa@example.com`（無料・2FAコード`123456`が必要）。
 - `learned`は、ログイン状態のキャッシュ（30秒）の期限切れを待つため約31秒待つ（全体で約2分）。
 - **実VPN（AdGuard VPN）でのリグレッション**は、従来どおり`GW_MODE=ssh bash e2e/lxc/sync.sh`のあと`GW_MODE=ssh bash e2e/phase8/locations-scenarios.sh`を実行する。
+
+## Phase 11の実行手順
+
+Phase 9と同じ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）に、AdGuard VPN（ランナーは同梱するが未ログイン）とモックProton VPNの2ベンダーを有効にして検証する（`E2E_PROVIDERS=adguardvpn,mockproton`）。
+
+```sh
+bash e2e/phase11/provider-scenarios.sh   # 起動（ビルド含む）→ initial/switch-idle/mock-login-connect/switch-decline/switch-accept/switch-back → ランナー・ネットワークコンテナの構成確認 → unavailable → 後始末
+```
+
+- モックランナーを使うE2E（Phase 9・11）は、プロファイルのディレクトリをcomposeへ渡す必要がある（読み取り専用マウントの中へ単一ファイルを重ねられないため）。スクリプトが`e2e/lib/e2e-profiles.sh`で一時ディレクトリを作り`E2E_PROFILES_DIR`で渡す。
+- **実VPN（AdGuard VPN・ネットワーク分離後）でのリグレッション**は、`GW_MODE=ssh bash e2e/lxc/sync.sh`のあと、`GW_MODE=ssh bash e2e/phase8/locations-scenarios.sh`・`GW_MODE=ssh bash e2e/phase3/gateway-scenarios.sh A B C D E F`・`GW_MODE=ssh bash e2e/phase4/proxy-scenarios.sh`を実行する（Phase 11でVPNデーモンはネットワークコンテナ`proxy`ではなくランナー`runner-adguardvpn`内で動くため、各スクリプトの`docker compose exec`・停止対象を改めた。LAN端末役のmacvlanコンテナは`GW_MODE=ssh bash e2e/lxc/setup.sh`で作る）。
 
 ## Phase 8の実行手順
 

@@ -21,30 +21,57 @@ services:
     networks:
       - app-net
     user: "10001:10001"
+    # ランナーは有効化したベンダーの分だけ起動する任意のサービスのため、依存に含めない
+    # （起動していないランナーは、APIが「利用不可」として扱う。specs/apiserver/design.md「ランナーの利用可否」）。
     depends_on:
       - proxy
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
-      # プロバイダは.envのVPN_PROVIDER（既定adguardvpn）で選ぶ（specs/design.md「プロバイダの選択と実行基盤」）。
-      - ./api/config/profiles/${VPN_PROVIDER:-adguardvpn}.json:/etc/vpngwgui/vpn-profile.json:ro
+      # 管理者が用意したベンダーのプロファイル（ファイル名＝ベンダーID）。有効にするのは下のENABLED_PROVIDERS。
+      - ./api/config/profiles:/etc/vpngwgui/profiles:ro
       - api-data:/var/lib/vpngwgui
     environment:
-      VPN_PROFILE_PATH: /etc/vpngwgui/vpn-profile.json
-      PROXY_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
+      VPN_PROFILES_DIR: /etc/vpngwgui/profiles
+      # 有効なベンダー（カンマ区切り）。install/select-providers.shが.envのVPN_PROVIDERSとCOMPOSE_PROFILESを書く。
+      ENABLED_PROVIDERS: ${VPN_PROVIDERS:-adguardvpn}
+      CTL_SOCKET_DIR: /var/run/vpngw-ctl
+      STATE_DIR: /var/lib/vpngwgui
       SETTINGS_FILE: /var/lib/vpngwgui/settings.json
       AUDIT_LOG_FILE: /var/lib/vpngwgui/audit.log
-      CONNECTION_STATE_FILE: /var/lib/vpngwgui/connection-state.json
 
+  # ネットワークコンテナ: 透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出・接続監視。
+  # ベンダーCLIは実行しない（Phase 11でランナーへ分離。specs/proxyserver/design.md「コンテナ構成（Phase 11）」）。
   proxy:
     restart: always
     build:
       context: .
-      dockerfile: proxy/Dockerfile.${VPN_PROVIDER:-adguardvpn}
-    # 本来はPhase3（wbs/phase3.md）で行う予定だった変更だが、実機検証でDockerブリッジネットワークが
-    # IPv6を透過しないためコンテナ再作成のたびに実CLIのログインセッションが失効する不具合が発覚し、
-    # host networkへの切替が唯一の解決策と確認できたため、この部分のみPhase2で前倒しする
-    # （wbs/phase2.md「次フェーズへの申し送り」参照）。透過ゲートウェイ・nftables・インストール
-    # スクリプト等、host化に付随する他のタスクはPhase3のまま。
+      dockerfile: proxy/Dockerfile
+    # 透過ゲートウェイ・明示的プロキシがホストのネットワーク名前空間を直接操作するため（Phase 2で前倒し、Phase 3で確定）。
+    network_mode: host
+    user: "10001:10001"
+    # nftables・ipの操作に必要。トンネルはランナーが作るため/dev/net/tunは不要。
+    cap_add:
+      - NET_ADMIN
+    init: true
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+    environment:
+      CTL_SOCKET_PATH: /var/run/vpngw-ctl/net.sock
+      # install/detect-lan-interface.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
+      # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
+      # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
+      LAN_IFACE: ${LAN_IFACE:-}
+      # フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため通常は未設定のまま
+      # LAN_IFACEを流用する（proxyserver/design.md「Kill Switch」参照）。
+
+  # AdGuard VPN用ランナー: AdGuard VPN CLIの実行環境。既定で起動する（profilesを付けない）。
+  runner-adguardvpn:
+    restart: always
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile.runner-adguardvpn
+    # CLIが確立するトンネルをゲートウェイのネットワーク名前空間に作らせるため（Phase 2で前倒し。
+    # Dockerブリッジネットワークはコンテナ再作成のたびに実CLIのログインセッションが失効する不具合があった）。
     network_mode: host
     user: "10001:10001"
     # 実VPNベンダーCLIがトンネルを確立するために必要（Phase 2）。
@@ -58,17 +85,8 @@ services:
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
       # 実CLIのログイン情報（および永続化したmachine-id、proxy/docker-entrypoint.sh参照）の永続化。
-      # 無ければコンテナ再作成のたびに再ログインが必要になる（上記network_mode: hostとあわせて必須。
-      # wbs/phase2.md「次フェーズへの申し送り」参照）。
+      # 無ければコンテナ再作成のたびに再ログインが必要になる（wbs/phase2.md「次フェーズへの申し送り」参照）。
       - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
-    environment:
-      CTL_SOCKET_PATH: /var/run/vpngw-ctl/exec.sock
-      # install/detect-lan-interface.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
-      # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
-      # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
-      LAN_IFACE: ${LAN_IFACE:-}
-      # フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため通常は未設定のまま
-      # LAN_IFACEを流用する（proxyserver/design.md「Kill Switch」参照）。
 
 networks:
   app-net: {}

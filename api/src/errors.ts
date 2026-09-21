@@ -30,3 +30,7 @@ export class OperationRestrictedError extends Error {
 
 // プロファイルがその操作に対応するアクションを持たない（プロバイダ非対応）場合のエラー。501で通知する。
 export class OperationUnsupportedError extends Error {}
+
+// ベンダーの切替中に、ベンダーに対する他の操作（接続・ログイン等）が来た場合のエラー。409で通知する
+// （切替の途中状態に対して操作を実行して、切替前後どちらのベンダーへ作用するか曖昧になるのを避けるため）。
+export class ProviderSwitchingError extends Error {}

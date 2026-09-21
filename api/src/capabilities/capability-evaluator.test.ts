@@ -12,7 +12,7 @@ function loadJson(name: string): VendorProfile {
 }
 
 const adguard = loadJson("../../config/profiles/adguardvpn.json");
-const protonLike = loadJson("../../test-fixtures/protonvpn-like.json");
+const protonLike = loadJson("../../test-fixtures/profiles/mockproton.json");
 
 const freePlan: SessionInfo = {
   loggedIn: true,

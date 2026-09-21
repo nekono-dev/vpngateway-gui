@@ -4,24 +4,16 @@
 
 # コンテナ構成（Phase 11）
 
-Phase 10までは、1つのproxyコンテナがネットワーク制御とベンダーCLIの実行を兼ね、ベンダーごとにイメージを切り替えていた。Web UIからのベンダー選択（`specs/design.md`「ベンダーの選択と実行基盤」）のため、次のように分割する。
+Phase 10までは、1つのproxyコンテナがネットワーク制御とベンダーCLIの実行を兼ね、ベンダーごとにイメージを切り替えていた。Web UIからのベンダー選択（`specs/design.md`「ベンダーの選択と実行基盤」）のため、次のように分割する。**ベンダーCLIを実行するランナーは、別のアプリケーションとして`specs/runner/`（要件・設計・タスク）に切り出した**。本ファイルはネットワークコンテナ（`proxy`）を扱う。
 
 | コンテナ（compose service） | 責務 | イメージ | 内部HTTP（UDS） |
 |---|---|---|---|
 | `proxy`（ネットワーク） | 透過ゲートウェイ・Kill Switch・3proxy・トンネル検出・接続監視 | `proxy/Dockerfile`（Alpine。nftables・iproute2・3proxy。**ベンダーCLIを含まない**） | `net.sock`: `POST /settings`・`GET /status`・`POST /connection-checks` |
-| `runner-adguardvpn` | AdGuard VPN CLIの実行 | `proxy/Dockerfile.runner-adguardvpn`（Alpine＋CLI＋sudo。従来のAdGuard用proxyから、ネットワーク制御を除いたもの） | `runner-adguardvpn.sock`: `POST /exec`・`GET /health` |
-| `runner-protonvpn` | Proton VPN CLIの実行（NetworkManager等を同梱） | `proxy/Dockerfile.runner-protonvpn`（Ubuntu。下記「Proton VPN用ランナー」） | `runner-protonvpn.sock`: `POST /exec`・`GET /health` |
-| `runner-mock`（E2E専用） | モックプロバイダCLIの実行 | `proxy/Dockerfile.runner-mock`（Alpine。CLIなし。モックをマウント） | `runner-mockproton.sock` |
+| `runner-<ベンダー>` | ベンダーCLIの実行（**別仕様: `../runner/`**） | `proxy/Dockerfile.runner-<ベンダー>` | `runner-<ベンダーID>.sock`: `POST /exec`・`GET /health` |
 
-- **1つのnpmパッケージ、2つのエントリポイント**: `proxy/`パッケージから`dist/server.js`（ネットワーク）と`dist/runner.js`（ランナー）を作る。ランナーは、従来の`server.ts`の実行系（`isAllowedBinary`・`runCommand`・`runDetachableCommand`・`handleExec`）だけを持つ薄いサーバで、ネットワーク系（`GatewayController`・`ExplicitProxyController`・接続監視）は`server.ts`のみが持つ。共通の処理（UDSソケットの待受・JSONの入出力・監査ログ）は共有モジュールに置く。
-- **`network_mode: host`**: ネットワークコンテナ・全ランナーが使う。ランナーのCLIが確立するトンネル（AdGuard: TUN、Proton: NMのWireGuard）を、ゲートウェイのネットワーク名前空間に作らせるため。ランナーは`cap_add: [NET_ADMIN]`と`/dev/net/tun`を持つ。ネットワークコンテナは`NET_ADMIN`（nftables・ip）のみ（`/dev/net/tun`は不要になる）。
+- **1つのnpmパッケージ、2つのエントリポイント**: `proxy/`パッケージから`dist/server.js`（ネットワーク）と`dist/runner.js`（ランナー。`specs/runner/design.md`）を作る。ネットワーク系（`GatewayController`・`ExplicitProxyController`・接続監視）は`server.ts`のみが持つ。共通の処理（UDSソケットの待受・JSONの入出力・監査ログ）は共有モジュール（`lib/`）に置く。
+- **`network_mode: host`**: ネットワークコンテナ・全ランナーが使う（ランナー側の理由は`specs/runner/design.md`）。ネットワークコンテナは`NET_ADMIN`（nftables・ip）のみ持つ（`/dev/net/tun`は不要になった）。
 - **UDS**: `ctl-socket`ボリュームを全コンテナで共有する。各コンテナは自分のソケットファイル（環境変数`CTL_SOCKET_PATH`。ネットワーク: `/var/run/vpngw-ctl/net.sock`、ランナー: `runner-<ベンダーID>.sock`）だけを作る。ソケットは`0660`、所有者は`vpngwgui`（UID 10001。APIコンテナも同UID）。
-
-## ランナー（`dist/runner.js`）
-
-- **`POST /exec`**: 仕様は従来（下記「内部コマンド受信サーバの仕様」）のまま。**許可リストは自分のベンダーのバイナリ1つだけ**（環境変数`RUNNER_ALLOWED_BINARY`。実運用のイメージには`ENV`でビルド時に焼き込み、composeでは上書きしない）。他のバイナリは`403 binary_not_allowed`。**従来の`EXTRA_ALLOWED_BINARIES`は廃止**し、E2Eのモックランナーは、compose（`docker-compose.e2e-mock.yml`）で`RUNNER_ALLOWED_BINARY`をモックのパスにする（モックランナーは専用のサービスで、実運用のランナーとはイメージ・許可が別）。
-- **`GET /health`**: `200 { "ok": true, "binary": "<許可バイナリ>" }`。副作用なし。APIの`GET /v1/providers`が利用可否の判定に使う（ランナー内でCLIは起動しない。実行環境の準備（例: Proton VPN用ランナーのNM・keyring）が整ってからソケットを作る）。
-- **実行後の即時再構成の廃止**: 従来の`handleExec`後段の`checkConnectionOnce`（接続・切断コマンド実行直後のゲートウェイルール再構成）は、ネットワークの状態を持たないランナーでは行えない。代わりにAPIが`POST /connection-checks`（下記）をネットワークコンテナへ送る。
 
 ## ネットワークコンテナ（`dist/server.js`）の変更
 
@@ -31,11 +23,11 @@ Phase 10までは、1つのproxyコンテナがネットワーク制御とベン
 
 ## composeの構成（Phase 11）
 
-- サービス: `web`・`api`・`proxy`・`runner-adguardvpn`・`runner-protonvpn`・（E2Eのみ）`runner-mock`。**ランナーは`profiles: [<ベンダー>]`**で起動を選択する（`runner-adguardvpn`は既定で起動する。`profiles`を付けない）。`.env`の`COMPOSE_PROFILES`と`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）を`install/select-providers.sh`が書く。例: `install/select-providers.sh adguardvpn protonvpn`。
+- サービス: `web`・`api`・`proxy`・`runner-<ベンダー>`（`runner-adguardvpn`・`runner-protonvpn`・E2Eのみ`runner-mock`。`specs/runner/design.md`）。**ランナーは`profiles: [<ベンダー>]`**で起動を選択する（`runner-adguardvpn`は既定で起動する。`profiles`を付けない）。`.env`の`COMPOSE_PROFILES`と`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）を`install/select-providers.sh`が書く。例: `install/select-providers.sh adguardvpn protonvpn`。
 - `api`は、`./api/config/profiles`を`/etc/vpngwgui/profiles:ro`へ、`ctl-socket`・`api-data`をマウントし、`ENABLED_PROVIDERS: ${VPN_PROVIDERS:-adguardvpn}`を受け取る。`depends_on`は`proxy`のみ（ランナーは任意のため）。従来の`VPN_PROVIDER`・`docker-compose.protonvpn.yml`・`Dockerfile.<ベンダー>`による切替は廃止する。
-- ボリューム: ベンダーごと（`adguard-data`、`proton-config`・`proton-keyrings`・`proton-cache`）。ベンダーを切り替えても各ベンダーのログイン情報は別々に永続化され、失われない。
+- ボリューム: ネットワークコンテナは`ctl-socket`のみ。ベンダーごとのログイン情報のボリュームはランナーの仕様（`specs/runner/design.md`）。
 
-# Phase 1における縮小構成
+# Phase 1における縮小構成（履歴。Phase 1のモックVPN CLI仕様は`../runner/design.md`へ移動）
 
 実装は`wbs/phase1.md`から段階的に行う。Phase 1では以下のように構成を縮小する。
 
@@ -48,23 +40,6 @@ Phase 10までは、1つのproxyコンテナがネットワーク制御とベン
 | インストールスクリプト | 実装する | 実装しない | Phase 1と同じ（Phase 3で実装） |
 
 実VPNベンダーCLIへの置換を、ネットワーク基盤移行（`network_mode: host`、透過ゲートウェイ、Kill Switch）より前のPhase 2で行う理由は`wbs/README.md`「フェーズ分割の考え方」を参照。
-
-## Phase 1: モックVPN CLI仕様
-
-実VPNベンダーCLIの代わりに、Node.jsスクリプト（shebang付き、`proxy/mock-cli/adguardvpn-cli-mock.mjs`）で代用する。状態は`/tmp/vpngwgui-mock-state.json`（環境変数`MOCK_STATE_FILE`で上書き可）に保存する。
-
-| argv | 動作 | stdout | exit |
-|---|---|---|---|
-| `connection -l <COUNTRY>` | 状態を`{"status":"connected","country":"<COUNTRY>"}`に更新 | 同JSON | 0 |
-| `connection -d` | 状態を`{"status":"disconnected"}`に更新 | 同JSON | 0 |
-| `connection -s` | 状態ファイルを読み取り出力（無ければdisconnected） | 状態JSON | 0 |
-| `connection -l zz`（エラー注入用の特殊国コード） | 変更なし | stderrに`ERROR: no server available for zz` | 1 |
-
-`connection -l zz`のエラー注入により、実CLIなしでAPI側の422ハンドリングを検証できる。stdoutはJSON固定とし、Phase 2で実CLI統合する際はベンダー別テキストパーサーに置換する（apiserver/design.md「Phase 1における具体プロファイル」の`outputFormat`参照）。
-
-**実装時に判明した注意点**: APIサーバはプレースホルダー値をプロファイルの`countries`（enumFrom参照先）に対して必ず列挙値チェックする（apiserver/design.md「入力検証・セキュリティ方針」）。そのため`zz`をプロファイルの`countries`に含めておかないと、この422検証用リクエストはプロキシに到達する前にAPIサーバの400（入力エラー）で弾かれてしまう。Phase 1のプロファイル（apiserver/design.md「Phase 1における具体プロファイル」）では`countries`に`"zz"`をテスト用として含めている。
-
-内部コマンド受信サーバの待受パスは`POST /exec`に固定する（Phase 3で設定反映用`POST /settings`を追加する際、既存仕様の変更ではなく追加で済むようにするため）。
 
 # ネットワーク構成
 
@@ -83,8 +58,8 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 ## 内部コマンド受信サーバ（UDS制御チャネル）
 
 - Node.js組み込み `http` モジュールで実装する（外部フレームワーク不要、極小のエンドポイント数のため）。
-- Unixドメインソケット上でlistenする（`server.listen('/var/run/vpngw-ctl/exec.sock')`）。TCPは使用しない。
-- ソケットファイルはAPI・プロキシ両コンテナで共有するDocker名前付きボリュームに配置する。
+- Unixドメインソケット上でlistenする（ネットワークコンテナは`/var/run/vpngw-ctl/net.sock`、ランナーは`runner-<ベンダーID>.sock`。Phase 10までは単一の`exec.sock`）。TCPは使用しない。
+- ソケットファイルはAPIと各コンテナ（ネットワーク・ランナー）で共有するDocker名前付きボリュームに配置する。
 - 起動時、残存ソケットファイル（前回異常終了時の残骸）を `unlink` してから `listen` する（`EADDRINUSE` 対策）。
 - `listen` 完了後、`fs.chmodSync(socketPath, 0o770)` でパーミッションを明示的に制限する（Node.jsの `listen()` はソケットファイルのパーミッションを引き継がない）。
 - API・プロキシ両コンテナを同一UID/GID（例: 専用ユーザー、両コンテナで `user: "1000:1000"` を明示）で起動し、ソケットファイルへのアクセスをそのUIDに限定する。
@@ -178,15 +153,7 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 
 `excludedDomains`（ドメイン単位のsplit-tunnel除外）はIPベースのnftables/ルーティングでは本来IP単位でしか制御できないため、名前解決結果の変化（DNS TTL）に伴うルール更新の仕組みが必要になる。この点は実装時に別途詳細設計を行う（本ファイルでは方針のみ示す）。
 
-# 内部コマンド受信サーバの仕様
-
-- リクエスト（APIサーバから、apiserver/design.md参照）: `{ vendor, binary, resolvedArgv, timeoutMs, completionPattern? }`
-- **実行可能バイナリの許可リストによる内部防御**: 受信した `binary` を、プロキシコンテナ内にあらかじめ定義された既知のVPNベンダーCLIバイナリパスの許可リスト（例 `/usr/bin/adguardvpn-cli`, `/usr/bin/nordvpn`）と照合し、一致しない場合は実行を拒否する。この許可リストは、../requirements.mdで定義した「管理者向け設定」「ユーザ向け設定」とは別の、プロキシ実装内部にハードコードされたセキュリティ機構であり、両設定カテゴリとは独立して扱う。APIコンテナが将来何らかの理由で侵害・バグ混入した場合でも、プロキシ側が任意コマンド実行の踏み台にならないようにする最後の防波堤である。
-- 実行:
-  - `completionPattern`省略時（`connect`/`disconnect`/`status`）: `child_process.spawn(binary, resolvedArgv)`でプロセスを起動し、子プロセス自身の`'exit'`イベント（`timeoutMs`超過時はkillの上`exitCode: -1`）で完了と判定する。シェル（`exec()`）は使用しない。**`child_process.execFile`は使用しない**: execFileの完了判定は子プロセスの`'close'`イベント（stdout/stderrパイプが完全に閉じるまで）に依存するが、`connect`はバックグラウンドにVPNデーモン（孫プロセス）をforkして自身は先に終了するため、forkされたデーモンが標準出力/エラーのパイプを引き継いだまま存在し続け、`'close'`が永久に発火せずハングする不具合が実機検証で発覚した（`proxy/src/exec/command-runner.ts`の`runCommand`）。
-  - `completionPattern`指定時（`login`、Phase 2で追加）: `child_process.spawn(binary, resolvedArgv)`でプロセスを起動し、stdoutを蓄積しながら`completionPattern`（正規表現）との一致を都度判定する。一致した時点でプロセスをkillせず（`child.unref()`）、その時点までのstdout/stderrを添えて`exitCode: null`で応答する。一致せずプロセスが自然終了した場合は実際のexitCodeで応答し、一致せず`timeoutMs`を超過した場合はプロセスをkillし`exitCode: -1`（タイムアウトの既存表現）で応答する。ログイン代行のようにブラウザでの認証完了まで数分かかる長時間プロセスに、応答不要な待機区間だけ非同期に対応するための拡張点である（実装: `proxy/src/exec/command-runner.ts`の`runDetachableCommand`）。
-- レスポンス: `{ exitCode, stdout, stderr }`。`exitCode`は`completionPattern`一致時のみ`null`になりうる。
-- すべての実行要求と結果を構造化ログとして記録する（監査ログ、apiserver/design.md参照）。
+（ベンダーCLIの実行要求`POST /exec`は、Phase 11でランナーへ移動した。仕様は`../runner/design.md`「`POST /exec`（内部コマンド受信サーバ）の仕様」。以下はネットワークコンテナ（`net.sock`）の内部HTTP。）
 
 ## `POST /settings`（設定反映、Phase 3で追加）
 
@@ -206,50 +173,6 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 - レスポンスは`{ "transparentGateway": { "state", "vpnInterface"?, "killSwitchBlocking" }, "explicitProxy": { "state", "socksPort"?, "httpPort"?, "restartCount" } }`（`GatewayController.getStatus()`・`ExplicitProxyController.getStatus()`）。`transparentGateway.state`は`active`/`stopped`/`unconfigured`/`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）。設定受信前（プロセス起動直後）は既定設定に基づき`stopped`を返す。
 - `explicitProxy.state`は`active`（稼働中。一時的な再起動待ちを含む。`socksPort`・`httpPort`はこの状態のみ付く）/`stopped`（無効）/`unconfigured`（有効設定だが許可CIDRが空）/`crashLoop`（起動直後の異常終了を連続して繰り返している）/`error`（設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数（設定変更による意図的な再起動は含まない）。プロセスの実在確認のための外部コマンドは実行しない。
 - **異常状態のAPIへの通知経路**: `crashLoop`等は、APIサーバが`GET /v1/connection/gateway`のたびにこのエンドポイントを引いて中継する（pull方式）ことでUI・API利用者へ届く。proxy→apiへの能動的なpush用の経路（APIサーバ側の受信口）は新設しない: APIサーバは状態を持たない方針（apiserver/design.md）で、UIは5秒ポーリングにより最大約5秒で異常を表示でき、push経路を足すと内部プロトコルの信頼境界（proxyからapiへの経路は無い）を広げるため。異常は監査ログにも残る。
-
-## `stdin`の受け渡し（Phase 9で追加）
-
-`POST /exec`のリクエストは任意で`stdin`（文字列、最大4096バイト。apiserver/design.md「プロキシとの内部通信仕様」）を受け取る。指定された場合、`runCommand`は子プロセスの標準入力を`"pipe"`にし、`stdin`を書き込んで閉じる（未指定なら従来どおり`"ignore"`）。パスワード入力型のログイン（Proton VPN CLIの`signin`）で、パスワードをコマンド引数（`ps`で他プロセスから見える）へ載せずに渡すための手段である。
-
-- **内容をログへ出さない**: 監査ログ（`exec_completed`等）は`argv`と`exitCode`のみを記録し、`stdin`は`stdinProvided: true`（有無）だけを記録する。標準出力・標準エラーの内容も従来どおりログしない（レスポンスにのみ含める）。
-- 4096バイトを超える`stdin`は`400`（不正な形状）で拒否する（想定外の巨大な入力でプロセス・メモリを消費させないため）。
-- 書き込み中の`EPIPE`（CLIが入力を読まずに終了）は無視する（プロセスの終了コードと出力で結果が分かるため）。
-
-## 検証用の追加許可バイナリ（Phase 9で追加）
-
-許可リスト（`allowlist.ts`）は原則ハードコードのままとするが、環境変数`EXTRA_ALLOWED_BINARIES`（カンマ区切りの絶対パス）が設定されている場合に限り、それらも許可する。**モックプロバイダCLIを使うE2E（`docker-compose.e2e-mock.yml`）専用**であり、本番の`docker-compose.yml`では設定しない。**Phase 11で`RUNNER_ALLOWED_BINARY`（ランナーごとに1つ）へ置き換え、この環境変数は廃止する**（上記「コンテナ構成（Phase 11）」）。設定できるのはコンテナを起動する管理者のみで、APIコンテナからは変更できないため、「APIコンテナ侵害時に任意コマンド実行の踏み台にならない」という許可リストの目的は損なわれない。
-
-## Proton VPN用ランナー（Phase 10。Phase 11でproxyイメージからランナーイメージへ位置づけを変更）
-
-Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーションで、以下に依存する（公式リポジトリのパッケージ定義・ソースで確認）。
-
-| 依存 | 用途 | コンテナ内での用意 |
-|---|---|---|
-| NetworkManager（`network-manager`、`python3-proton-vpn-network-manager`系） | WireGuardトンネルの確立（NMの接続として作成・有効化） | コンテナ内でNMをシステムD-Bus上に起動する。ホストの他のインターフェースを管理させない設定にする（下記） |
-| `proton-vpn-daemon` | 分割トンネリング用のD-Bus活性化サービス（公式CLIはaptの依存で要求するが、接続・ログインには不要。PoCで確認） | **起動しない**（導入のみ。postinstがsystemd無しで失敗するため、導入時の回避が必要。`wbs/phase10.md`「PoC途中の知見」） |
-| gnome-keyring（Secret Service。`python3-proton-keyring-linux`） | ログインセッション（トークン）の保管 | コンテナ内のセッションバスで`gnome-keyring-daemon`を起動し、空パスワードで解錠する。保管先を永続化ボリュームにする |
-| セッションD-Bus | keyring・GUI二重起動検知（CLIは起動時にセッションバスを見て、GUIアプリが動作中なら実行を拒否する） | コンテナ内でセッションバスを起動する（GUIは存在しないため二重起動検知は素通しになる） |
-
-- **イメージ**: `proxy/Dockerfile.runner-protonvpn`（Phase 10の当初案の`Dockerfile.protonvpn`から、ランナーとして改名・縮小する。3proxy・nftables用の設定は不要になる）。Ubuntu 24.04ベース（検証環境と同一で、依存解決が確認済み）。Node.jsは公式イメージからバイナリをコピーする。3proxyはネットワークコンテナ（Alpine）にのみ含めるため、このイメージには不要。Protonの公式リポジトリ（`protonvpn-stable-release`）を追加し、`proton-vpn-cli`を導入する。イメージは大きくなる（GTK等の依存を含む）が、ランナーが分離されているためAdGuard用ランナー・ネットワークコンテナには影響しない。**Proton用ランナーは、Proton VPNを有効化した場合のみ起動する**（`COMPOSE_PROFILES`）。
-- **起動構成**: PID 1は`init: true`のtiniの下でエントリポイントのスクリプトが動き、root権限でシステムD-Bus→NetworkManagerを起動し、`vpngwgui`ユーザーでセッションバス・keyringを起動してから、`vpngwgui`権限でproxy本体（Node.js）を`exec`する。バックグラウンドのいずれかが終了したらエントリポイントも終了し、`restart: always`でコンテナごと再起動する（片方だけ死んだ半端な状態で稼働し続けない）。
-- **NetworkManagerの制限**: `network_mode: host`のため、NMはホストのインターフェースを見る。ホストのネットワーク（DHCP・静的設定・Docker・LXC）を奪わないよう、NMの設定で**WireGuardデバイス以外を全て`unmanaged`にする**（`[keyfile] unmanaged-devices=*,except:type:wireguard`相当。書式はPoCで確認）。Proton VPNのトンネルは、NMが作るWireGuardインターフェース（`proton0`等）で、本システムのトンネル検出（`ip route get`の出力先。`tunnel-interface.ts`）はインターフェース名に依存しないためそのまま使える。
-- **Kill Switch**: Proton VPN CLIのKill Switch（`config set kill-switch`）は使わず、既定（無効）のままとして、本システムのnftablesのKill Switchに一本化する（二重の遮断規則による競合・切断後の通信不能を避ける）。PoCで既定値と、有効化されていた場合の切り戻しを確認する。
-- **権限**: `cap_add: [NET_ADMIN]`、`/dev/net/tun`（従来と同じ）に加え、NMの起動のためにrootで動く。`privileged: true`は使わず、追加の権限が必要と判明した場合のみPoCの結果として個別に追加する。ノード本体・CLIの実行は`vpngwgui`（非root）とする。
-- **永続化**: `~/.config/Proton/VPN`（設定）・`~/.local/share/keyrings`（keyring）・`~/.cache/Proton/VPN`（サーバー一覧のキャッシュ）と、`/etc/machine-id`（コンテナ再作成でログインが失効しないよう、AdGuard用の`docker-entrypoint.sh`と同じ方針でボリュームから復元）を永続化する。
-- **PoCの合否基準**（`wbs/phase10.md`で先に実施する。不合格の場合は、ホストへ`proton-vpn-cli`・NM・daemonを導入しD-Bus・keyringのソケットをコンテナへ共有する代替へ切り替え、本節と`wbs/phase10.md`を改訂する）:
-  1. コンテナ内でNM・keyringが起動し、`protonvpn status`が終了コード0で応答する。
-  2. `protonvpn signin`が、TTYの無いコンテナで標準入力からパスワードを受け取れ、ログイン情報がコンテナ再作成後も保持される（keyringの永続化）。
-  3. `protonvpn connect`でWireGuardのインターフェースが作られ、`ip route get 1.1.1.1`がそのインターフェースを指す。切断で元に戻る。
-  4. NMがホストの既存インターフェース（物理NIC・Docker・LXC）の設定を変更しない。
-  5. 本システムの透過ゲートウェイ（nftablesのNAT/FORWARD）が、そのインターフェースを経由してLAN端末の通信をVPNへ通す。
-
-# VPNベンダーCLIの追加方法
-
-1. （Phase 11以降）新規ベンダーのランナーコンテナのDockerイメージに、ベンダーCLIバイナリを同梱する（従来はproxyコンテナのイメージ）。
-2. 管理者向け設定（VPNクライアント操作プロファイルJSON、apiserver/design.md参照）に新規ベンダーのエントリを追加する。
-3. ランナーの許可バイナリ（`RUNNER_ALLOWED_BINARY`。ランナーのイメージに焼き込む）に新規バイナリのパスを設定する。
-4. **【Phase 9】** プロバイダごとの機能差・プラン制限をプロファイルの`account`・`features`・`restrictedPattern`等で表現する（apiserver/design.md「Phase 9における具体プロファイル」）。
-5. **【Phase 11】** そのベンダーのランナー（`proxy/Dockerfile.runner-<ベンダー>`と、`docker-compose.yml`の`runner-<ベンダー>`サービス（`profiles: [<ベンダー>]`）、ベンダー専用のボリューム）を追加する。CLIが特殊な実行環境（NetworkManager等）を必要とする場合も、その環境はこのランナーに閉じる（他のベンダーのランナー・ネットワークコンテナに影響しない）。プロファイルは`api/config/profiles/<ベンダーID>.json`。
 
 # 障害時の挙動
 

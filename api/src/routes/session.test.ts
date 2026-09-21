@@ -7,15 +7,21 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../config/profiles/adguardvpn.json");
-process.env.AUDIT_LOG_FILE = join(mkdtempSync(join(tmpdir(), "vpngwgui-test-")), "audit.log");
+const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../config/profiles");
+process.env.ENABLED_PROVIDERS = "adguardvpn";
+process.env.STATE_DIR = dir;
+process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({
   executeVendorCommandMock: vi.fn(),
 }));
 
+// 第1引数を入力、第2引数をベンダーIDとして記録する（呼び出し内容の検証を、入力を先頭にして書けるようにするため）。
 vi.mock("../proxy-client/proxy-client.js", () => ({
-  executeVendorCommand: executeVendorCommandMock,
+  executeVendorCommand: (providerId: string, input: unknown) => executeVendorCommandMock(input, providerId),
+  requestConnectionCheck: async () => true,
+  checkRunnerHealth: async () => true,
 }));
 
 const { buildApp } = await import("../app.js");
@@ -114,8 +120,8 @@ describe("GET/DELETE /v1/session と capabilities（URL提示型・AdGuard VPN�
     executeVendorCommandMock.mockReset();
     const { invalidateSessionInfo } = await import("../session/session-probe.js");
     const { clearLearnedRestrictions } = await import("../capabilities/restriction-learner.js");
-    invalidateSessionInfo();
-    clearLearnedRestrictions();
+    invalidateSessionInfo("adguardvpn");
+    clearLearnedRestrictions("adguardvpn");
   });
 
   it("GET /v1/session: licenseの出力からログイン状態・プランを判定して返す（実機のPREMIUM出力）", async () => {

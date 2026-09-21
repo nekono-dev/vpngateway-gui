@@ -9,6 +9,7 @@ import { registerConnectionCapabilitiesRoute } from "./routes/connection-capabil
 import { registerConnectionConfigRoute } from "./routes/connection-config.js";
 import { registerConnectionGatewayRoute } from "./routes/connection-gateway.js";
 import { registerConnectionLogRoute } from "./routes/connection-log.js";
+import { registerProvidersRoute } from "./routes/providers.js";
 import { registerSessionRoute } from "./routes/session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
@@ -19,6 +20,7 @@ import {
   CommandExecutionError,
   OperationRestrictedError,
   OperationUnsupportedError,
+  ProviderSwitchingError,
 } from "./errors.js";
 
 /**
@@ -77,6 +79,10 @@ export function buildApp() {
       reply.code(501).send({ error: "operation_unsupported", message: error.message });
       return;
     }
+    if (error instanceof ProviderSwitchingError) {
+      reply.code(409).send({ error: "provider_switching", message: error.message });
+      return;
+    }
     if (error instanceof CommandExecutionError) {
       reply.code(422).send({ error: "command_failed", exitCode: error.exitCode, stderr: error.stderr });
       return;
@@ -94,6 +100,7 @@ export function buildApp() {
   app.register(registerConnectionLogRoute);
   app.register(registerConnectionGatewayRoute);
   app.register(registerSessionRoute);
+  app.register(registerProvidersRoute);
 
   return app;
 }

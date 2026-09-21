@@ -17,6 +17,8 @@ interface Props {
   canChange: boolean;
   // 操作の実行可否。未取得ならundefined（制限しない）。
   capabilities: CapabilitiesState | undefined;
+  // ベンダーの切替中など、全ての操作を止める（Phase 11）。
+  disabled?: boolean;
   onConnect: () => void;
   onChange: () => void;
   onDisconnect: () => void;
@@ -28,11 +30,12 @@ export function ConnectionActions({
   hasTarget,
   canChange,
   capabilities,
+  disabled = false,
   onConnect,
   onChange,
   onDisconnect,
 }: Props) {
-  const isBusy = submitting !== undefined;
+  const isBusy = submitting !== undefined || disabled;
   const disconnectReason = reasonOf(capabilities, "disconnect");
 
   if (connection?.status === "connected") {

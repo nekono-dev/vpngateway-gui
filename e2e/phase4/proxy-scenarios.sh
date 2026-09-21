@@ -135,15 +135,16 @@ scenario_D() {
   sleep 2
   local pid direct vpn_ip
   pid=$(proxy_pid); direct=$(direct_ip)
-  api PUT /v1/connection '{"connect":true,"locationId":"jp-tokyo"}' >/dev/null
+  # 検証環境ではjp-tokyoの出口IPがLANの直接の出口IPと一致するため、最初の接続にはus-las-vegasを使い、国変更でjp-tokyoへ変える。
+  api PUT /v1/connection '{"connect":true,"locationId":"us-las-vegas"}' >/dev/null
   wait_for 30 'api GET /v1/connection | grep -q "\"status\":\"connected\""'
   sleep 3
   vpn_ip=$(via_socks)
   check "VPN接続中: SOCKS5の出口IPがVPN側になる（直接=$direct、プロキシ経由=$vpn_ip）" '[ -n "$vpn_ip" ] && [ "$vpn_ip" != "$direct" ]'
   check "VPN接続中: HTTP CONNECTの出口IPもVPN側になる" '[ "$(via_http)" = "$vpn_ip" ]'
   check "VPN接続で3proxyが再起動されない（PID不変）" '[ "$(proxy_pid)" = "$pid" ]'
-  api PUT /v1/connection '{"connect":true,"locationId":"us-las-vegas"}' >/dev/null
-  wait_for 30 'api GET /v1/connection | grep -q "us-las-vegas"'
+  api PUT /v1/connection '{"connect":true,"locationId":"jp-tokyo"}' >/dev/null
+  wait_for 30 'api GET /v1/connection | grep -q "jp-tokyo"'
   sleep 3
   check "国変更（再接続）で3proxyが再起動されず、出口IPが変わる" '[ "$(proxy_pid)" = "$pid" ] && [ -n "$(via_socks)" ] && [ "$(via_socks)" != "$vpn_ip" ]'
   api PUT /v1/connection '{"connect":false}' >/dev/null

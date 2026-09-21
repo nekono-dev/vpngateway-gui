@@ -9,6 +9,7 @@ import {
   LocationsResponseSchema,
 } from "../schemas/location.js";
 import { fetchLocations } from "../locations/location-fetcher.js";
+import { getActiveProvider } from "../providers/active-provider-store.js";
 import {
   addFavoriteLocation,
   readFavoriteLocationIds,
@@ -32,9 +33,10 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
       },
     },
     async () => {
-      const locations = await fetchLocations();
-      const favorites = new Set(readFavoriteLocationIds());
-      const lastId = readLastLocationId();
+      const provider = getActiveProvider();
+      const locations = await fetchLocations(provider);
+      const favorites = new Set(readFavoriteLocationIds(provider.id));
+      const lastId = readLastLocationId(provider.id);
       // 接続時の指定名（connectName）は内部値のためレスポンスへ含めない。
       return locations.map((location) => ({
         id: location.id,
@@ -59,7 +61,7 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
       },
     },
     async (request) => {
-      addFavoriteLocation(request.params.locationId);
+      addFavoriteLocation(getActiveProvider().id, request.params.locationId);
       return { locationId: request.params.locationId, favorite: true };
     },
   );
@@ -73,7 +75,7 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
       },
     },
     async (request) => {
-      removeFavoriteLocation(request.params.locationId);
+      removeFavoriteLocation(getActiveProvider().id, request.params.locationId);
       return { locationId: request.params.locationId, favorite: false };
     },
   );

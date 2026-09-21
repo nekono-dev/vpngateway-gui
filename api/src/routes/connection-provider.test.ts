@@ -9,14 +9,18 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-process.env.VPN_PROFILE_PATH = join(import.meta.dirname, "../../test-fixtures/protonvpn-like.json");
+process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../test-fixtures/profiles");
+process.env.ENABLED_PROVIDERS = "mockproton";
+process.env.STATE_DIR = dir;
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
-process.env.CONNECTION_STATE_FILE = join(dir, "connection-state.json");
-process.env.LAST_LOCATION_FILE = join(dir, "last-location.json");
-process.env.FAVORITE_LOCATIONS_FILE = join(dir, "favorite-locations.json");
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));
-vi.mock("../proxy-client/proxy-client.js", () => ({ executeVendorCommand: executeVendorCommandMock }));
+// 第1引数を入力、第2引数をベンダーIDとして記録する（呼び出し内容の検証を、入力を先頭にして書けるようにするため）。
+vi.mock("../proxy-client/proxy-client.js", () => ({
+  executeVendorCommand: (providerId: string, input: unknown) => executeVendorCommandMock(input, providerId),
+  requestConnectionCheck: async () => true,
+  checkRunnerHealth: async () => true,
+}));
 
 const { buildApp } = await import("../app.js");
 const { invalidateSessionInfo } = await import("../session/session-probe.js");
@@ -66,8 +70,8 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
     state.plan = "free";
     state.loggedIn = true;
     state.connectedTo = undefined;
-    invalidateSessionInfo();
-    clearLearnedRestrictions();
+    invalidateSessionInfo("mockproton");
+    clearLearnedRestrictions("mockproton");
     rmSync(process.env.AUDIT_LOG_FILE!, { force: true });
     await app.inject({ method: "GET", url: "/v1/connection" }); // 切断観測で保存内容を初期化
   });
@@ -150,7 +154,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
       const put = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true } });
       expect(put.statusCode).toBe(422);
       state.plan = "paid";
-      invalidateSessionInfo();
+      invalidateSessionInfo("mockproton");
       const { capabilities } = (await app.inject({ method: "GET", url: "/v1/connection/capabilities" })).json();
       expect(capabilities.connectAuto.available).toBe(true);
     });
@@ -197,7 +201,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
         plan: { id: "free", label: "Free" },
       });
       state.loggedIn = false;
-      invalidateSessionInfo();
+      invalidateSessionInfo("mockproton");
       expect((await app.inject({ method: "GET", url: "/v1/session" })).json()).toEqual({ loginMethod: "credentials", loggedIn: false });
     });
 

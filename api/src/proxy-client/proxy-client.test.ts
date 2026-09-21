@@ -4,15 +4,19 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
+const { requestMock, sockets } = vi.hoisted(() => ({ requestMock: vi.fn(), sockets: [] as string[] }));
 
 vi.mock("undici", () => ({
   Pool: class {
     request = requestMock;
+    constructor(_origin: string, options: { socketPath: string }) {
+      sockets.push(options.socketPath);
+    }
   },
 }));
 
-const { executeVendorCommand, notifySettings, fetchProxyStatus } = await import("./proxy-client.js");
+const { executeVendorCommand, notifySettings, fetchProxyStatus, checkRunnerHealth, requestConnectionCheck } =
+  await import("./proxy-client.js");
 
 function jsonResponse(body: unknown) {
   return { body: { json: async () => body } };
@@ -22,7 +26,7 @@ describe("executeVendorCommand", () => {
   it("プロキシが期待通りの形状で応答した場合はそのまま返す", async () => {
     requestMock.mockResolvedValue(jsonResponse({ exitCode: 0, stdout: "connected", stderr: "" }));
 
-    const result = await executeVendorCommand({
+    const result = await executeVendorCommand("adguardvpn", {
       vendor: "adguardvpn",
       binary: "/usr/local/bin/adguardvpn-cli",
       resolvedArgv: ["status"],
@@ -36,7 +40,7 @@ describe("executeVendorCommand", () => {
     requestMock.mockResolvedValue(jsonResponse({ exitCode: "0", stdout: "connected" }));
 
     await expect(
-      executeVendorCommand({
+      executeVendorCommand("adguardvpn", {
         vendor: "adguardvpn",
         binary: "/usr/local/bin/adguardvpn-cli",
         resolvedArgv: ["status"],
@@ -113,5 +117,45 @@ describe("fetchProxyStatus", () => {
     await expect(fetchProxyStatus()).rejects.toThrow(/failed to connect/);
     requestMock.mockRejectedValue(Object.assign(new Error("x"), { code: "UND_ERR_HEADERS_TIMEOUT" }));
     await expect(fetchProxyStatus()).rejects.toThrow(/did not respond/);
+  });
+});
+
+describe("宛先のUDS（Phase 11: ランナーはベンダー別、ネットワークコンテナはnet.sock）", () => {
+  it("ネットワークコンテナ宛はnet.sock、ランナー宛はrunner-<ベンダーID>.sockに接続する", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ exitCode: 0, stdout: "", stderr: "" }));
+    await executeVendorCommand("protonvpn", { vendor: "protonvpn", binary: "/usr/bin/protonvpn", resolvedArgv: ["status"], timeoutMs: 1000 });
+    await executeVendorCommand("adguardvpn", { vendor: "adguardvpn", binary: "/x", resolvedArgv: ["status"], timeoutMs: 1000 });
+    expect(sockets).toContain("/var/run/vpngw-ctl/net.sock");
+    expect(sockets).toContain("/var/run/vpngw-ctl/runner-protonvpn.sock");
+    expect(sockets).toContain("/var/run/vpngw-ctl/runner-adguardvpn.sock");
+  });
+});
+
+describe("checkRunnerHealth", () => {
+  it("200で応答すれば利用可能", async () => {
+    requestMock.mockResolvedValue({ statusCode: 200, body: { dump: async () => undefined } });
+    expect(await checkRunnerHealth("protonvpn")).toBe(true);
+  });
+
+  it("接続失敗・タイムアウト・200以外は利用不可（例外にしない）", async () => {
+    requestMock.mockRejectedValue(Object.assign(new Error("connect ENOENT"), { code: "ENOENT" }));
+    expect(await checkRunnerHealth("protonvpn")).toBe(false);
+    requestMock.mockResolvedValue({ statusCode: 500, body: { dump: async () => undefined } });
+    expect(await checkRunnerHealth("protonvpn")).toBe(false);
+  });
+});
+
+describe("requestConnectionCheck", () => {
+  it("checked=trueで応答すればtrue", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ checked: true }));
+    expect(await requestConnectionCheck()).toBe(true);
+    expect(requestMock).toHaveBeenLastCalledWith(expect.objectContaining({ path: "/connection-checks", method: "POST" }));
+  });
+
+  it("失敗しても例外にせずfalse（ルールの反映は接続監視ループが追従する）", async () => {
+    requestMock.mockRejectedValue(new Error("down"));
+    expect(await requestConnectionCheck()).toBe(false);
+    requestMock.mockResolvedValue(jsonResponse({ checked: false }));
+    expect(await requestConnectionCheck()).toBe(false);
   });
 });

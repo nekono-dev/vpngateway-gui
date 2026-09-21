@@ -1,5 +1,6 @@
 {
-  "vendor": "protonvpn-mock",
+  "vendor": "mockproton",
+  "displayName": "Proton VPN（モック）",
   "binary": "/usr/local/bin/protonvpn-mock",
   "outputFormat": "text",
   "loginMethod": "credentials",

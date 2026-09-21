@@ -18,11 +18,11 @@ api() { curl -s -m 30 -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} 
 
 # proxy停止・起動コマンド（error-502用。GW_MODEの差はgw.shと同じ方針で吸収する）
 if [ "$GW_MODE" = ssh ]; then
-  export PROXY_STOP_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose stop proxy'"
-  export PROXY_START_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose start proxy'"
+  export PROXY_STOP_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose stop proxy runner-adguardvpn'"
+  export PROXY_START_CMD="ssh $SSH_OPTS $GW_SSH 'cd $GW_REPO_DIR && sudo docker compose start proxy runner-adguardvpn'"
 else
-  export PROXY_STOP_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose stop proxy"
-  export PROXY_START_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose start proxy"
+  export PROXY_STOP_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose stop proxy runner-adguardvpn"
+  export PROXY_START_CMD="lxc exec $GW_NAME --cwd $GW_REPO_DIR -- docker compose start proxy runner-adguardvpn"
 fi
 
 echo "== 準備: 透過ゲートウェイON・Kill Switch ON・VPN切断へ初期化"

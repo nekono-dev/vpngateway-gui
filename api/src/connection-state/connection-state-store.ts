@@ -7,9 +7,13 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { providerStatePath } from "../providers/provider-state-paths.js";
 import type { ConnectionStatus } from "../schemas/connection.js";
 
-const STATE_FILE = process.env.CONNECTION_STATE_FILE ?? "/var/lib/vpngwgui/connection-state.json";
+/** ベンダー別の保存先（Phase 11: `$STATE_DIR/providers/<ベンダーID>/connection-state.json`）。 */
+function stateFile(providerId: string): string {
+  return providerStatePath(providerId, "connection-state.json");
+}
 
 interface StoredConnection {
   country: string;
@@ -21,12 +25,14 @@ interface StoredConnection {
 
 /**
  * 目的: 保存済みの接続情報を読み出す。
+ * 入力: providerId(対象のベンダーID)。
  * 出力: 保存内容。未保存・破損（JSON不正・形状不正）の場合はundefined（国を表示しないだけで動作は継続する）。
  */
-function readStored(): StoredConnection | undefined {
-  if (!existsSync(STATE_FILE)) return undefined;
+function readStored(providerId: string): StoredConnection | undefined {
+  const file = stateFile(providerId);
+  if (!existsSync(file)) return undefined;
   try {
-    const parsed: unknown = JSON.parse(readFileSync(STATE_FILE, "utf8"));
+    const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const { country, location, locationId } = parsed as Record<string, unknown>;
     if (typeof country !== "string" || country.length === 0) return undefined;
@@ -42,46 +48,49 @@ function readStored(): StoredConnection | undefined {
 
 /**
  * 目的: 接続成功時に、要求した接続先（ID・国コード）と、CLIが報告した都市名を保存する。
- * 入力: requested(接続時に要求した接続先の`{ locationId, country }`), location(CLIが報告した都市名。不明ならundefined)。
- * 副作用: STATE_FILEへ書き込む（ディレクトリが無ければ作成）。
- * 例: saveConnectedLocation({ locationId: "jp-tokyo", country: "jp" }, "TOKYO")
+ * 入力: providerId(対象のベンダーID), requested(接続時に要求した接続先の`{ locationId, country }`), location(CLIが報告した都市名。不明ならundefined)。
+ * 副作用: ベンダー別の保存ファイルへ書き込む（ディレクトリが無ければ作成）。
+ * 例: saveConnectedLocation("adguardvpn", { locationId: "jp-tokyo", country: "jp" }, "TOKYO")
  */
 export function saveConnectedLocation(
+  providerId: string,
   requested: { locationId: string; country: string },
   location: string | undefined,
 ): void {
-  mkdirSync(dirname(STATE_FILE), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify({ ...requested, location }));
+  const file = stateFile(providerId);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ ...requested, location }));
 }
 
 /**
  * 目的: 保存済みの接続情報を消去する（切断時・切断の観測時・接続先の不一致時）。
- * 副作用: STATE_FILEを削除する。無ければ何もしない。
+ * 入力: providerId(対象のベンダーID)。
+ * 副作用: ベンダー別の保存ファイルを削除する。無ければ何もしない。
  */
-export function clearConnectedLocation(): void {
-  rmSync(STATE_FILE, { force: true });
+export function clearConnectedLocation(providerId: string): void {
+  rmSync(stateFile(providerId), { force: true });
 }
 
 /**
  * 目的: CLIから観測した接続状態に、保存済みの国コード・接続先IDを突き合わせて付与する。
- * 入力: observed(`status`コマンド出力から得た接続状態)。
+ * 入力: providerId(対象のベンダーID), observed(`status`コマンド出力から得た接続状態)。
  * 出力: 接続中かつ保存済みの接続先と整合すれば`country`（と、保存されていれば`locationId`）を付与した状態。
  *       それ以外は付与なし。
  * 副作用（整合性維持）: 切断を観測した場合、または接続先の都市名が保存時と異なる（別経路で再接続された）
  *   場合は、古い接続先を返し続けないよう保存内容を消去する。都市名がどちらかで不明な場合は判定できないため
  *   保存内容を信頼する。
- * 例: reconcileLocation({ status: "connected", location: "TOKYO" })
+ * 例: reconcileLocation("adguardvpn", { status: "connected", location: "TOKYO" })
  *     // => { status: "connected", location: "TOKYO", country: "jp", locationId: "jp-tokyo" }
  */
-export function reconcileLocation(observed: ConnectionStatus): ConnectionStatus {
+export function reconcileLocation(providerId: string, observed: ConnectionStatus): ConnectionStatus {
   if (observed.status !== "connected") {
-    clearConnectedLocation();
+    clearConnectedLocation(providerId);
     return observed;
   }
-  const stored = readStored();
+  const stored = readStored(providerId);
   if (!stored) return observed;
   if (stored.location && observed.location && stored.location !== observed.location) {
-    clearConnectedLocation();
+    clearConnectedLocation(providerId);
     return observed;
   }
   return { ...observed, country: stored.country, ...(stored.locationId ? { locationId: stored.locationId } : {}) };

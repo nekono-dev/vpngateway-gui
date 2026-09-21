@@ -1,5 +1,6 @@
 {
   "vendor": "protonvpn",
+  "displayName": "Proton VPN",
   "binary": "/usr/bin/protonvpn",
   "outputFormat": "text",
   "loginMethod": "credentials",

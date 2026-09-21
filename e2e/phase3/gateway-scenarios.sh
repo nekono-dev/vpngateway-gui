@@ -28,9 +28,13 @@ GW_IP=$(gw_lan_ip)
 CLIENT_IP=$(lxc exec "$CLIENT_NAME" -- ip -4 -o addr show eth0 | awk '{sub("/.*","",$4); print $4}')
 BASE="http://$GW_IP:8080"
 FAILS=0
+# VPN接続のE2Eに使う国（ISO国コード）。検証環境のLAN出口IPと出口IPが一致する接続先（例: 環境によりjpのTokyo）を避けるため、既定はus。
+VPN_COUNTRY=${VPN_COUNTRY:-us}
 
 client()  { lxc exec "$CLIENT_NAME" -- "$@"; }
 proxy_sh(){ gw docker compose exec -T proxy sh -c "$1"; }
+# ベンダーCLI（VPNデーモン）はPhase 11以降、ネットワークコンテナ（proxy）ではなくランナー（runner-adguardvpn）内で動く。
+runner_sh(){ gw docker compose exec -T runner-adguardvpn sh -c "$1"; }
 ok()      { echo "PASS: $1"; }
 ng()      { echo "FAIL: $1"; FAILS=$((FAILS+1)); }
 check()   { if eval "$2"; then ok "$1"; else ng "$1"; fi; }
@@ -78,7 +82,7 @@ scenario_C() {
   reset_vpn
   gui webgui-settings.mjs on on
   BASE_IP=$(gw_ip)
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "接続後: 公開IP宛の経路(ip route get)が tun 系インターフェースを指す（実CLIはポリシールーティング）" 'proxy_sh "ip route get 1.1.1.1" | grep -q "dev tun"'
   check "接続後: nftに tun経由のmasquerade/forward acceptルールが動的に入る" 'has_vpn_rule && gw nft list table inet vpngwgui | grep -q "oifname \"tun[0-9]*\" masquerade"'
@@ -95,10 +99,10 @@ scenario_C() {
   check "切断後(KS ON): LAN端末の外部通信が遮断される" '[ -z "$(client_ip)" ]'
 
   # 再接続 → 瞬断（VPNデーモンをkill）→ KS ON なので遮断（監視ループによる検知）
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "再接続後: LAN端末がVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
-  proxy_sh "sudo pkill -9 -f adguardvpn-cli; sleep 1; sudo ip link del tun0 2>/dev/null; true"
+  runner_sh "sudo pkill -9 -f adguardvpn-cli; sleep 1; sudo ip link del tun0 2>/dev/null; true"
   check "瞬断(KS ON): 監視ループ(10秒周期)内にVPN向けacceptルールが撤去される" 'wait_for 15 "! has_vpn_rule"'
   check "瞬断(KS ON): LAN端末の外部通信が遮断される（リークしない）" '[ -z "$(client_ip)" ]'
 
@@ -108,7 +112,7 @@ scenario_C() {
 
   # 国変更: 別国へ接続し直し、新しいトンネルでルールが再適用される
   gui webgui-settings.mjs on on
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   JP_IP=$(client_ip)
   gui webgui-connection.mjs disconnect
@@ -125,13 +129,14 @@ scenario_D() {
   reset_vpn
   gui webgui-settings.mjs on on
   BASE_IP=$(gw_ip)
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "前提: VPN接続中・KS ONでLAN端末がVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
 
-  # D1: proxyコンテナのみ再起動（APIは動き続ける）。VPNデーモンもproxyコンテナ内のため落ちる。
+  # D1: proxyコンテナ（ネットワーク）とランナーのみ再起動（APIは動き続ける）。VPNデーモンはランナー内のため落ちる
+  # （Phase 10まではproxyコンテナ1つの再起動で同じ状況になった。Phase 11以降はネットワークコンテナとランナーの両方を再起動して再現する）。
   # 再起動中・直後にKS ONのままリークしない（実IPが見えない）ことを、複数回サンプリングして確認する。
-  gw docker compose restart proxy >/dev/null 2>&1
+  gw docker compose restart proxy runner-adguardvpn >/dev/null 2>&1
   LEAK=0
   for _ in $(seq 12); do
     ip=$(client_ip)
@@ -171,7 +176,7 @@ scenario_E() {
   BASE_IP=$(gw_ip)
   gw docker pull -q curlimages/curl >/dev/null 2>&1
   check "KS ON・VPN未接続: 同居Dockerコンテナのインターネット通信は遮断されない（LAN端末は遮断される）" '[ "$(docker_ip)" = "$BASE_IP" ] && [ -z "$(client_ip)" ]'
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "VPN接続中: 同居Dockerコンテナの通信も正常（通信経路はホストの経路に従う）" '[ -n "$(docker_ip)" ]'
   check "VPN接続中: LAN端末はVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
@@ -185,7 +190,7 @@ scenario_F() {
   BASE_IP=$(gw_ip)
   V6_OFF=$(client_ip6)
   echo "INFO: KS ON・VPN未接続でのLAN端末のIPv6外部アドレス: '${V6_OFF:-(取得不能)}'（IPv4は遮断: '$(client_ip)'）"
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   V6_ON=$(client_ip6)
   echo "INFO: VPN接続中(IPv4=$(client_ip))でのLAN端末のIPv6外部アドレス: '${V6_ON:-(取得不能)}'"
@@ -199,7 +204,7 @@ scenario_G() {
   reset_vpn
   gui webgui-settings.mjs on on
   BASE_IP=$(gw_ip)
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "前提: VPN接続中でLAN端末がVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
   # ホスト自身の送信（VPNデーモンの外側トンネル通信）のうち、LAN外向けをNIC上で落として上流断を模擬する。
@@ -218,7 +223,7 @@ scenario_G() {
     echo "INFO: 上流復旧後90秒経ってもVPNは自動回復せず（KSにより遮断のまま）。手動での再接続が必要"
   fi
   reset_vpn
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "手動再接続後: LAN端末がVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
   reset_vpn
@@ -230,7 +235,7 @@ scenario_H() {
   reset_vpn
   gui webgui-settings.mjs on on
   BASE_IP=$(gw_ip)
-  gui webgui-connection.mjs connect jp
+  gui webgui-connection.mjs connect "$VPN_COUNTRY"
   wait_for 20 has_vpn_rule
   check "前提: VPN接続中でLAN端末がVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
   # 再起動を開始し、LAN端末から1秒間隔で外部IPをサンプリングして、実IPが見えた（=リークした）回数を数える
