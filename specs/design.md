@@ -1,10 +1,10 @@
 # システムの構成
 
-システムはWebサーバ用のコンテナと、Webサーバの信号を受け、VPNクライアントのCLI命令に変更するコンテナ、ホストに対するプロキシサーバとして動作させるコンテナの3台構成で構築する。システムはdocker-composeによりサービス化する。
+システムは、Webサーバ用のコンテナ、Webサーバの信号を受けてVPNクライアントのCLI命令へ変換するAPIコンテナ、ホストに対するプロキシサーバ（透過ゲートウェイ・Kill Switch・明示的プロキシ）として動作する**ネットワークコンテナ（`proxy`）**、およびVPNベンダーごとに用意しCLIを実行する**ランナーコンテナ（`runner-<ベンダー>`）**で構成する（Phase 11で、従来の「ベンダーごとに別のproxyコンテナ」から、ネットワーク制御とCLI実行の責務を分離した）。システムはdocker-composeによりサービス化する。
 
-APIサーバからプロキシコンテナへの制御は、SSHではなく、**プロキシコンテナ内でのみlistenする内部専用HTTPサーバ**（受け取ったテキスト＝解決済みコマンドをそのまま実行するのみで、OpenAPI等の仕様を持つ正式なAPIではない）を介して行う。この内部HTTPサーバは、コンテナ外部（LAN含む）から一切到達不能でなければならない。この制約を満たすため、TCP通信ではなく、APIコンテナとプロキシコンテナ間で共有するDockerボリューム上に配置したUnixドメインソケット（UDS）を通信経路とする。
+APIサーバから、ネットワークコンテナ・各ランナーコンテナへの制御は、SSHではなく、**各コンテナ内でのみlistenする内部専用HTTPサーバ**（ランナーは受け取ったテキスト＝解決済みコマンドをそのまま実行するのみ。OpenAPI等の仕様を持つ正式なAPIではない）を介して行う。この内部HTTPサーバは、コンテナ外部（LAN含む）から一切到達不能でなければならない。この制約を満たすため、TCP通信ではなく、APIコンテナと各コンテナ間で共有するDockerボリューム上に、コンテナごとに1つ配置したUnixドメインソケット（UDS）を通信経路とする（ネットワークコンテナ: `net.sock`、ランナー: `runner-<ベンダー>.sock`）。
 
-プロキシコンテナは、透過ゲートウェイモードを実現するためホストのネットワーク名前空間を共有する必要があり（詳細はSPEC-PROXY.md）、`network_mode: host` を用いる。docker-composeの仕様上 `network_mode: host` と `networks:`（ユーザー定義ブリッジ）は併用できないため、プロキシコンテナは他コンテナと同一のDockerブリッジネットワークには参加できない。API⇄プロキシ間の通信を前述のUDS方式に限定しているのはこの制約への対応でもある。
+ネットワークコンテナは、透過ゲートウェイモードを実現するためホストのネットワーク名前空間を共有する必要があり（詳細はSPEC-PROXY.md）、`network_mode: host` を用いる。**ランナーコンテナも、ベンダーCLIが確立するトンネルインターフェースをホスト（ゲートウェイ）のネットワーク名前空間に作らせるため、`network_mode: host`・`NET_ADMIN`・`/dev/net/tun`を用いる**。docker-composeの仕様上 `network_mode: host` と `networks:`（ユーザー定義ブリッジ）は併用できないため、これらのコンテナは他コンテナと同一のDockerブリッジネットワークには参加できない。API⇄各コンテナ間の通信を前述のUDS方式に限定しているのはこの制約への対応でもある。
 
 インストール用のスクリプトを作成し、このスクリプトではホスト（VPNゲートウェイ）に届く通信を、内部のプロキシコンテナを通して外部通信するように設定を行う。設定はコマンドではなく設定値ベースで行う。
 
@@ -18,18 +18,22 @@ WebサーバはGUIの表示、およびAPIのkick、実行結果のユーザ表�
 
 ## APIサーバの責務
 
-APIサーバはWebサーバから送信されたAPI命令、および管理者向け設定（VPNクライアント操作プロファイル）とユーザ向け設定を元に、プレースホルダーに投入される値をallowlist・正規表現で検証した上でコマンド（argv配列）を解決し、プロキシサーバの内部HTTPサーバへUDS経由でそのコマンドを送信することで、プロキシサーバを制御することが責務である。
+APIサーバはWebサーバから送信されたAPI命令、および管理者向け設定（VPNクライアント操作プロファイル）とユーザ向け設定を元に、プレースホルダーに投入される値をallowlist・正規表現で検証した上でコマンド（argv配列）を解決し、**選択中のベンダー**のランナーの内部HTTPサーバへUDS経由でそのコマンドを送信することで、ベンダーCLIを制御することが責務である（ネットワーク設定の反映は、ネットワークコンテナの内部HTTPサーバへ別途通知する）。Web UIで選択されたベンダーの保持・切替も責務とする（`specs/design.md`「ベンダーの選択と実行基盤」）。
 
 この内部HTTPサーバとの通信経路は、テキスト（解決済みコマンド）をそのまま実行させるための内部チャネルであり、正式なAPIではないため、後述のOpenAPI定義の対象外とする。
 
-## プロキシサーバの責務
+## プロキシサーバ（ネットワークコンテナ）の責務
 
-プロキシコンテナサーバは、以下2つのモードに両対応する。
+ネットワークコンテナ（`proxy`）は、以下2つのモードに両対応する。ベンダーCLIは実行しない（それはランナーの責務）。
 
 - **透過ゲートウェイモード**: LAN機器がこのホストをデフォルトゲートウェイとして設定した場合に、そのフォワード通信をVPNトンネル経由でNAT/MASQUERADEし、実際にクライアントがホスト（ゲートウェイ）を介した通信にあたってVPNトンネル越しに通信できるようにする。
 - **明示的プロキシモード**: ホストがSOCKS5/HTTPプロキシサーバとして利用できるようなポート解放を行い、クライアントが個別にプロキシ設定することでVPNトンネル越しに通信できるようにする。
 
 VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**Kill Switch**」で制御する。ONの場合はLAN機器の通信を遮断し（フェイルクローズ）、VPN非経由での通信を防ぐ。OFFの場合は直接インターネットに抜ける（フェイルオープン）。デフォルトはONを推奨する。
+
+## ランナーコンテナの責務
+
+ランナーコンテナ（`runner-<ベンダー>`）は、そのベンダーのCLIを実行する環境と、実行要求の受け口（許可リストで自ベンダーのバイナリのみ許可する内部HTTPサーバ）だけを持つ。CLIが確立するトンネルをホストのネットワーク名前空間に作るため`network_mode: host`で動くが、透過ゲートウェイ・Kill Switch・明示的プロキシには関与しない。
 
 # プロバイダ抽象化アーキテクチャ（Phase 9・10）
 
@@ -50,17 +54,30 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 - 判定に失敗・不能な場合は制限しない（fail-open）。実行時にCLIが失敗した場合の出力が`restrictedPattern`に一致すれば、以後その操作を制限として学習する（`403 operation_restricted`）。
 - ログイン方式は`loginMethod`（`deviceUrl`: URL提示型 / `credentials`: ユーザー名・パスワード入力型）で宣言する。
 
-## プロバイダの選択と実行基盤
+## ベンダーの選択と実行基盤（Phase 11）
 
-ベンダーは1台のサーバにつき1種類（apiserver/requirements.md）。プロバイダは`.env`の`VPN_PROVIDER`（`adguardvpn`（既定）／`protonvpn`）で選び、プロバイダごとに以下が切り替わる。
+Web UI利用者が、管理者の有効化したベンダーの中から使うベンダーを選ぶ（`specs/requirements.md`「VPNベンダーの選択（Web UI）」）。接続は常に1ベンダーのみ（切替式）。
+
+```
+ブラウザ ─▶ web ─▶ api ─┬─ UDS net.sock ────────▶ proxy（ネットワーク: 透過GW・Kill Switch・3proxy・トンネル検出・接続監視）
+                          ├─ UDS runner-adguardvpn.sock ─▶ runner-adguardvpn（AdGuard VPN CLI）
+                          └─ UDS runner-protonvpn.sock ──▶ runner-protonvpn（Proton VPN CLI＋NetworkManager・D-Bus・keyring）
+   （proxy・runner-*はいずれも network_mode: host。ランナーのCLIはトンネルをホストのネットワーク名前空間に作る）
+```
+
+- **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視だけを担い、ベンダーCLIを実行しない。ランナー（`runner-<ベンダー>`）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
+- **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
+- **有効化**: 管理者は`.env`の`VPN_PROVIDERS`（例 `adguardvpn,protonvpn`）で有効なベンダーを指定する。APIはこれを`ENABLED_PROVIDERS`として受け取り、composeのランナーは`profiles:`でベンダーごとに起動を選択する（`COMPOSE_PROFILES`。`install/select-providers.sh`が両方を`.env`へ書く）。プロファイルは`api/config/profiles/<ベンダー>.json`（ファイル名＝ベンダーID）。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
+- **ランナーの許可リスト**: ランナーは、自分のベンダーのバイナリ1つだけを実行対象とする（イメージにビルド時に焼き込む`RUNNER_ALLOWED_BINARY`）。APIコンテナが侵害されても、別ベンダーのランナー経由で任意のバイナリを実行できず、許可リストによる「最後の防波堤」は従来どおり働く。
+- **切替時のネットワーク**: 切断から新ベンダーへの接続までの間、トンネルは存在しない。Kill Switch ONならLAN機器の通信は遮断、OFFなら直接インターネットへ抜ける（従来の切断時と同じ。トンネル検出はベンダー非依存のため、新ベンダーに接続すればそのインターフェースへ自動的に追従する）。
 
 | 項目 | AdGuard VPN | Proton VPN |
 |---|---|---|
 | プロファイル | `api/config/profiles/adguardvpn.json` | `api/config/profiles/protonvpn.json` |
-| proxyイメージ | `proxy/Dockerfile.adguardvpn`（Alpine。単体バイナリ同梱） | `proxy/Dockerfile.protonvpn`（Ubuntu。CLI・NetworkManager・D-Bus・keyring・daemonを同梱） |
-| compose | `docker-compose.yml` | `docker-compose.yml`＋`docker-compose.protonvpn.yml`（`.env`の`COMPOSE_FILE`で合成） |
+| ランナーイメージ | `proxy/Dockerfile.runner-adguardvpn`（Alpine。単体バイナリ同梱） | `proxy/Dockerfile.runner-protonvpn`（Ubuntu。CLI・NetworkManager・D-Bus・keyringを同梱） |
+| composeのサービス | `runner-adguardvpn` | `runner-protonvpn` |
 
-Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）・`proton-vpn-daemon`に依存し、公式にはheadless非対応とされている。そのため、Phase 10の最初にコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細はproxyserver/design.md「Proton VPN向けproxyイメージ」、`wbs/phase10.md`）。
+Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 10の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細はproxyserver/design.md「Proton VPN用ランナー」、`wbs/phase10.md`）。
 
 # 認証・認可の設計方針
 
@@ -76,7 +93,7 @@ APIサーバは Fastify + TypeBox + `@fastify/swagger` を用い、TypeBoxで定
 
 # 実装フェーズ
 
-実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase10.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 10 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
+実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase11.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
 
 | 項目 | 最終形（本ファイル） | Phase 1（wbs/phase1.md） |
 |---|---|---|

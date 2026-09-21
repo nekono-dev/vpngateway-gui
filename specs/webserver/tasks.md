@@ -82,6 +82,15 @@
 - [x] `403 operation_restricted`／`501`のトースト文言（`describe-api-error.ts`）と、403後の`capabilities`再取得
 - [x] Web⇄API（モックプロバイダCLI）でのE2E（`e2e/phase9/`。Playwright。36項目PASS。2026-09-21）
 
+## ベンダーの選択（Phase 11）
+
+- [ ] orval再生成（`providers`）
+- [ ] `useDashboardPolling`へ`providers`を追加（独立した成否・取得失敗時は選択部品なし）
+- [ ] `ProviderSelector`（1つのときは名前のみ・利用不可の無効化＋理由・接続中の確認ダイアログ・送信中の無効化）とコンポーネントテスト
+- [ ] ベンダー切替時の状態の入れ替え（`key`による再マウント・`useLocations`の再取得・`selectedId`の消去）
+- [ ] `ConnectionStatusCard`へのベンダー名の表示、`409`のトースト文言（`describe-api-error.ts`）
+- [ ] Web⇄API（AdGuard VPN実VPN＋モックプロバイダ）でのE2E（`e2e/phase11/`。Playwright）
+
 # 将来課題
 
 - 認証UI（ログイン画面等）の追加。現時点では認証なし・LAN限定運用のため未実装。

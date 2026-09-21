@@ -66,6 +66,15 @@
 
 `defaultCountry`ドロップダウンと、それに使っていた`countries`の受け渡しを削除する（`CountrySelect.tsx`も削除）。
 
+# ベンダーの選択の実装方針（Phase 11）
+
+要件は`requirements.md`「ベンダーの選択」。ベンダーの保持・切替・切断の手順はAPI（`specs/apiserver/design.md`「ベンダーの選択」）が行い、Webは一覧の表示と切替の要求だけを行う。
+
+- **状態の取得**: `hooks/useDashboardPolling.ts`の並行取得に`GET /v1/providers`を加える（各部分が独立に成否を持つ）。取得に失敗した場合はベンダー選択部品を出さず、従来どおり動作する（APIが古い・応答しない場合の後方互換）。
+- **`components/dashboard/ProviderSelector.tsx`**: ラジオ入力のグループ（各ベンダーの表示名。`available: false`は`disabled`＋理由表示）。有効なベンダーが1つのときは名前のみ表示。選択時、接続中なら`window.confirm`で確認（文言に、切断されること・Kill Switchでの遮断を含める）してから`PUT /v1/providers/active`を呼ぶ。送信中は`disabled`（二重送信防止）。失敗（`409`/`422`/`502`）は`describeApiError`でトースト通知（`409`は「ベンダーの切替中です」、`422`は「現在のVPNを切断できませんでした」等）。成功後は`refresh()`。
+- **ベンダー切替時の状態の入れ替え**: `App`は、選択中のベンダーID（`providers`のうち`active`のもの）を`key`として、接続操作カード（`SessionCard`・`LocationList`・`ConnectionActions`）へ与える。IDが変わるとこれらが再マウントされ、ローカルの状態（絞り込み・タブ・URL提示型ログインの結果・入力中のフォーム）が捨てられる。`useLocations`も同じIDで取得し直す（`enabled`に加え、IDが変わったら一覧・エラー・「前回」を空へ戻して再取得する）。`selectedId`（明示的に選んだ接続先ID）もIDが変わったら消す。
+- **接続状態の表示**: `ConnectionStatusCard`に選択中のベンダー名を渡し、「接続中（<ベンダー名>）」の形で表示する。ベンダーが1つだけのときは従来の表示のまま。
+
 # プロバイダ機能差・プラン制限への対応の実装方針（Phase 9）
 
 要件は`requirements.md`「操作の制限表示」。制限の判定はAPI（`specs/apiserver/design.md`「オペレーションと実行可否（capability）」）が行い、Webは受け取った`capabilities`を部品へ配るだけとする。

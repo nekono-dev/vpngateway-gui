@@ -100,6 +100,17 @@
 - [x] `lib/redact.ts`（秘密の伏字化。汎用ヘルパー）と単体テスト
 - [x] AdGuard VPNプロファイルへ`account`（`license`）と`logout`を追加（PREMIUM・未ログインの出力は実機で確認。**無料版の出力（`using the FREE version`）は未確認**。2026-09-21）
 
+## ベンダーの選択（Phase 11）
+
+- [ ] 複数プロファイルの読み込み・検証（`providers/provider-registry.ts`。`ENABLED_PROVIDERS`・`VPN_PROFILES_DIR`・ファイル名＝ベンダーID・`displayName`。従来の`VPN_PROFILE_PATH`の廃止）
+- [ ] 選択中のベンダーの永続化（`providers/active-provider-store.ts`）
+- [ ] ベンダー別の状態（`providers/provider-state-paths.ts`。接続状態・最後の接続先・お気に入りを`providers/<ID>/`へ。旧形式からの移行）と、ログイン状態キャッシュ・学習した制限のベンダー別化
+- [ ] `proxy-client`のベンダー別ランナー宛（`runner-<ID>.sock`）・ネットワークコンテナ宛（`net.sock`）への分離、ランナーの`GET /health`による利用可否
+- [ ] `GET /v1/providers`・`PUT /v1/providers/active`（切替の手順・競合の直列化・`409`/`422`/`502`）と統合テスト
+- [ ] 接続・切断・ログアウト・切替後のネットワークコンテナへの`POST /connection-checks`通知
+- [ ] 監査ログへのベンダーID（`provider`）の付与
+- [ ] 既存の各ルートを選択中のベンダー対象へ改修
+
 # 将来課題
 
 - 認証・認可の追加（追加箇所: Fastifyの `preHandler` フックにセッション検証を挿入する想定）。

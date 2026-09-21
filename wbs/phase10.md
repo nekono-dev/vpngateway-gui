@@ -1,6 +1,6 @@
 # Phase 10: Proton VPN対応
 
-**【2026-09-21追加】実施順は Phase 9 の直後・Phase 6 の前（`1 → 2 → 3 → 5 → 8 → 4 → 9 → 10 → 6 → 7`）。** フェーズ番号は識別子であり実施順ではない（`README.md`参照）。
+**【2026-09-21追加】実施順は Phase 11 の直後・Phase 6 の前（`1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 6 → 7`）。** 当初はPhase 9の直後だったが、Web UIからのベンダー選択の要望（`phase11.md`）により、Proton VPNを「ベンダーごとに別のproxyコンテナ」ではなく**ランナーコンテナ（`runner-protonvpn`）**として追加する形へ改訂し、Phase 11の後に実施する。フェーズ番号は識別子であり実施順ではない（`README.md`参照）。
 
 ## 目的
 
@@ -9,6 +9,7 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 ## 前提
 
 - Phase 9完了（プロバイダ抽象化基盤・モックプロバイダCLIでの検証）。
+- **Phase 11完了**（ネットワークコンテナとランナーの分離、Web UIからのベンダー選択）。本フェーズは、その上にProton VPNのランナーとプロファイルを追加する。
 - 検証環境（`ubuntu@192.168.3.240`）に`proton-vpn-cli` 1.0.3をインストール済み（2026-09-21。`~/claude-installed.md`に記録。ホストへは依存パッケージ（NetworkManager・gnome-keyring等、約250）も導入された。検証環境の実機では、NetworkManagerはネットワークを管理しない（全て`unmanaged`）ことを確認済み）。
 - Proton VPNの**無料アカウント**（利用者が人手でログインする。認証情報は検証環境へ複製せず、Web UIのログインフォームから入力する）。有料アカウントは無いため、有料版の挙動（`connect --country`・`countries list`）は実機未検証となる。
 
@@ -21,18 +22,25 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 - 出力: `status`＝`Status: Connected`／`Server: <名> in <都市>, <国>`／`Load: N%`／`Protocol: <名>`、`connect`＝`Connected to <名> in <都市>, <国>.`＋`Your new IP address is <IP>.`、`countries list`＝`tabulate`のsimple形式（`Country`／`Code`）。ping値付きの一覧は無い。
 - **実行環境の制約**: NetworkManager・gnome-keyring（Secret Service）・`proton-vpn-daemon`・セッションD-Busに依存し、公式に「headless非対応」。GUIアプリと同時に動かせない。分割トンネリングは未対応。CLIのKill Switch（`config set kill-switch`）は本システムのKill Switchと競合しうる。
 
+## PoC途中の知見（2026-09-21。Phase 11の設計変更により中断。次の点は実機・実イメージで確認済み）
+
+- **`proton-vpn-daemon`は分割トンネリング用のD-Bus活性化サービス（`me.proton.vpn.split_tunneling`）で、接続・ログインには不要**。CLIはaptの依存でこれを要求するが、コンテナ内で起動する必要は無い（設計の「daemon起動」は不要。`specs/proxyserver/design.md`は本フェーズで訂正する）。接続の実体は`python3-proton-vpn-api-core`のNetworkManagerバックエンド（`proton/vpn/backend/networkmanager`）で、Kill Switchの別実装（`firewall_kill_switch`・D-Bus`me.proton.vpn.kill_switch`）は既定で無効。
+- **Ubuntu 24.04のイメージへ`apt-get install proton-vpn-cli`する際の落とし穴**: (1)リリースパッケージ`protonvpn-stable-release`は`gnupg`・`apt-transport-https`に依存する。(2)`proton-vpn-daemon`のpostinstがsystemd無しでも`systemctl daemon-reload/enable/start`を無条件に実行し、`systemctl`が失敗してdpkgが失敗する。`/usr/local/bin/systemctl`に何もしないスタブを置く方法は**効かなかった**（dpkgのmaintainerスクリプトで実際の`/usr/bin/systemctl`が呼ばれた。原因未特定）。対処案: `/usr/bin/systemctl`自体を導入中だけスタブへ差し替える、または`dpkg-divert`、または`proton-vpn-daemon`を導入せず`dpkg --force-depends`で`proton-vpn-cli`だけ入れる。(3)`network-manager`のpostinstは`file`コマンド不在の警告を出すが無害。
+- NetworkManagerの設定（WireGuard以外を`unmanaged`）は、ホスト側で`nmcli device status`が全デバイス`unmanaged`となる挙動を確認済み（検証環境にNMがインストール済みで、`systemd-networkd`管理のNICを奪わない）。コンテナ内での挙動（`network_mode: host`）は未検証。
+- 検証環境（`192.168.3.240`）のホストには`proton-vpn-cli`・NetworkManager・`proton-vpn-daemon`等が導入済み（`~/claude-installed.md`）。コンテナ内NMとホストのNMを同時に動かすと競合するため、PoC時はホストのNMを停止する。
+
 ## スコープ外
 
 - 都市指定（`--city`）・P2P・Secure Core・Tor・サーバID指定・`--random`（有料機能。接続先は国単位のみ）。
 - Proton VPN側の機能設定（NetShield・ポートフォワーディング等。`config set`のUI化）。
 - Proton VPN CLIによる分割トンネリング（公式に未対応。`excludedDomains`はPhase 6）。
-- 複数プロバイダの同時稼働（ベンダーは1台につき1種類）。
+- 複数ベンダーの同時接続（接続は常に1ベンダー。Web UIで切り替える。`phase11.md`）。
 
 ## 決定事項（利用者への確認結果、2026-09-21）
 
 | 項目 | 決定 |
 |---|---|
-| 実行基盤 | コンテナ内同梱（`proxy/Dockerfile.protonvpn`）。**先行PoCで合否を判定**し、不合格ならホスト導入＋D-Bus共有へ切り替える |
+| 実行基盤 | ランナーコンテナ内同梱（`proxy/Dockerfile.runner-protonvpn`）。**先行PoCで合否を判定**し、不合格ならホスト導入＋D-Bus共有へ切り替える |
 | ログイン方式 | Web UIのフォーム入力（Phase 9で汎用実装済み） |
 | UI制限の表示 | 無効化＋理由表示（Phase 9） |
 | 検証アカウント | 無料アカウントを利用者が人手でログイン |
@@ -43,7 +51,7 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 - [x] 要件定義・設計・タスク一覧の作成（`specs/`各ファイル、本ファイル）。
 
 ### 1. 実行基盤のPoC（最初に実施。合否基準は`specs/proxyserver/design.md`「Proton VPN向けproxyイメージ」）
-- [ ] コンテナ内でNetworkManager・`proton-vpn-daemon`・keyring・セッションD-Busが起動し、`protonvpn status`が応答する。
+- [ ] コンテナ内でNetworkManager・keyring・セッションD-Busが起動し（`proton-vpn-daemon`は起動不要）、`protonvpn status`が応答する。
 - [ ] NetworkManagerがホストの既存インターフェースを変更しない設定（`unmanaged-devices`）の確定。
 - [ ] TTYの無いコンテナで、標準入力からのパスワード入力で`signin`が成立する（人手：無料アカウント）。ログイン情報がコンテナ再作成後も保持される。
 - [ ] `connect`でWireGuardインターフェースが作られ、`ip route get`がそれを指す。切断で戻る。
@@ -51,12 +59,12 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 - [ ] PoC結果に基づく合否判定。**不合格の場合は本フェーズの設計（`specs/proxyserver/design.md`・本ファイル）を改訂してから先へ進む**。
 
 ### 2. 実装
-- [ ] `proxy/Dockerfile.protonvpn`・エントリポイント・`docker-compose.protonvpn.yml`（ボリューム・`!reset`でAdGuard用の定義を除去）。
+- [ ] `proxy/Dockerfile.runner-protonvpn`・エントリポイント（`docker-entrypoint.protonvpn.sh`）・NM設定（`networkmanager-vpngwgui.conf`）・`docker-compose.yml`の`runner-protonvpn`サービス（`profiles: [protonvpn]`・ボリューム）。**エントリポイント・NM設定・プロファイル（`api/config/profiles/protonvpn.json`）はPoC途中の下書きがある**（下記「PoC途中の知見」）。
 - [ ] プロキシの許可リストへ`/usr/bin/protonvpn`を追加。
 - [ ] `api/config/profiles/protonvpn.json`（`specs/apiserver/design.md`「Phase 9における具体プロファイル」）。実機の出力に合わせて`restrictedPattern`・`output.locationPattern`・`account.plans[].pattern`を確定する。
 - [ ] Proton VPN CLI既定のKill Switch設定の確認（本システムのKill Switchに一本化する。有効になっていた場合の扱い）。
 - [ ] `changeLocation`（接続中の再接続）の可否の確認（有料版のみ検証可能。無料版では接続先を選べないため対象外。`features.changeLocation`の値は有料版の検証まで既定値のまま）。
-- [ ] `install/`または文書へ、プロバイダ選択（`.env`の`VPN_PROVIDER`・`COMPOSE_FILE`）の手順を追記。
+- [ ] Proton VPNの有効化手順（`install/select-providers.sh adguardvpn protonvpn`）を文書へ追記。
 
 ### 3. 検証
 - [ ] 実機（検証環境・実LAN・Proton VPN無料アカウント）でのE2E（`e2e/phase10/`）: Web UIのフォームでログイン→プラン判定（Free）→接続先リストが理由付きで無効→自動接続→出口IPがProton側→LAN端末の透過ゲートウェイ通信→Kill Switch→切断→ログアウト→コンテナ再起動後もログイン保持。
@@ -67,7 +75,7 @@ Proton VPN（公式Linux CLI `proton-vpn-cli`）をVPNプロバイダとして�
 - 無料アカウントで、Web UIのみの操作（ログインフォーム→接続→切断→ログアウト）で完結すること。ログイン後、プランが「Free」と表示され、接続先リスト領域には無効の理由（無料プランでは接続先を選べない旨）が表示され、［接続］で最速の無料サーバへ接続できること。
 - 接続中、出口IPがProton VPN側になり、LAN端末（透過ゲートウェイ）の通信もVPN経由になること。VPN切断・瞬断でKill Switchが本システムのnftablesで効くこと（Proton VPN CLI側のKill Switchは使わない）。
 - proxyコンテナを再作成してもログインが保持されること。
-- AdGuard VPNプロバイダ（`VPN_PROVIDER=adguardvpn`）が従来どおり動くこと（プロバイダ切替で既存機能を壊していない）。
+- Web UIのベンダー選択でAdGuard VPNとProton VPNを切り替えられ、AdGuard VPNが従来どおり動くこと（Proton VPNの追加で既存機能を壊していない）。
 - パスワード・2FAコードが、APIのレスポンス・各種ログ・画面のいずれにも現れないこと（実CLIでの確認）。
 
 ## 検証手法

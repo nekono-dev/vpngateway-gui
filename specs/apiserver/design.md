@@ -39,9 +39,9 @@
 }
 ```
 
-- `binary` はプロキシサーバ側の実行可能バイナリ許可リスト（proxyserver/design.md参照）と突き合わせる値であり、APIサーバはこの値を信頼してプロキシへ送信する送信データの一部に含める。
+- `binary` はランナー側の実行可能バイナリ許可リスト（proxyserver/design.md参照。Phase 11以降は各ランナーが自ベンダーのバイナリ1つだけを許可する）と突き合わせる値であり、APIサーバはこの値を信頼してランナーへ送信する送信データの一部に含める。
 - `placeholders.<KEY>.pattern` は正規表現、`enumFrom` は同ファイル内の列挙値（例 `countries`）を指す。APIサーバはWeb UIから渡された値がこの許可条件を満たすかを必ず再検証する。
-- ベンダー追加時は、このJSONを1ファイル追加し、プロキシサーバ側の許可リストにバイナリパスを追加するだけで対応できる（詳細はproxyserver/design.md）。
+- ベンダー追加時は、このJSONを1ファイル追加し、そのベンダーのランナー（許可リストに自ベンダーのバイナリを持つコンテナ）を追加するだけで対応できる（Phase 11。詳細はproxyserver/design.md「VPNベンダーCLIの追加方法」）。
 
 ## Phase 1における具体プロファイル
 
@@ -206,6 +206,7 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 | `actions.listLocations.connectNameFrom` | 新規・省略可。`"city"`（既定。都市名から`(Virtual)`を除いたもの）／`"iso"`（ISO国コード）。`%LOCATION%`へ代入する接続時の指定名の出典。 |
 | `placeholders.<KEY>.source` | `"input"`を追加。利用者入力をそのまま使い、`pattern`のみで検証する（`enumFrom`・実行時許可値は不要）。ログインのユーザー名に使う。`pattern`は先頭が`-`でない（CLIオプションと解釈されない）ことを必ず要求する。 |
 | `output.locationPattern` | 新規・省略可。接続状態のテキスト出力から接続先（表示名）を取り出す正規表現（フラグ`im`、第1キャプチャ）。省略時は従来のAdGuard形式（`Connected to <都市> in <MODE> mode`）。接続中かの判定は従来どおり単語`connected`の有無（`disconnected`は除外）で、これはProton VPNの`Status: Connected`にも通用するため上書きしない。 |
+| `displayName` | 新規・省略可（Phase 11）。画面に出すベンダー名。省略時は`vendor`。 |
 | `features.changeLocation` / `features.locationPing` | 新規・省略可（既定`true`）。プロバイダが「接続中の接続先変更」「ping値の提供」に対応するか。`false`なら`unsupported`として扱う。 |
 
 `plans`の各要素: `id`（プラン識別子）、`label`（画面表示名）、`pattern`（`account`の出力に対する正規表現）、`restricts`（そのプランで制限するオペレーションの配列）、`restrictionMessage`（省略可。制限理由として画面に出す文）。
@@ -279,6 +280,8 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 
 | メソッド | パス | 説明 |
 |---|---|---|
+| `GET` | `/v1/providers` | 有効なベンダーの一覧（選択中・利用可否を含む）を取得する（Phase 11） |
+| `PUT` | `/v1/providers/active` | 使うベンダーを切り替える。接続中なら現在のVPNを切断してから切り替える（Phase 11） |
 | `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否を取得する。`{ "capabilities": { "login": {...}, "logout": {...}, "connectToLocation": {...}, "connectAuto": {...}, "changeLocation": {...}, "disconnect": {...}, "locationList": {...}, "locationFavorites": {...}, "pingMeasurement": {...} } }`。全キーを常に返す。ログイン状態・プランは`account`判定（30秒キャッシュ）を使う。判定不能でも`200`（制限しない） |
 | `GET` | `/v1/session` | 上記 |
 | `DELETE` | `/v1/session` | 上記 |
@@ -288,6 +291,68 @@ Phase 9（`wbs/phase9.md`）で、プロバイダごとの機能差・プラン�
 ## ファイル配置（AGENTS.mdの規約）
 
 プロバイダ抽象化のドメイン知識は責務ごとのディレクトリに置く: `api/src/capabilities/`（オペレーションの語彙・実行可否の評価・失敗からの学習）、`api/src/session/`（`account`判定・キャッシュ・ログイン入力の検証）。ドメイン非依存の文字列処理（秘密の伏字化）は`lib/`（`lib/redact.ts`）に置く。プロファイルのスキーマ拡張は`profile/profile.schema.ts`。
+
+## ベンダーの選択（Phase 11）
+
+Web UI利用者が、管理者の有効化したベンダーの中から使うベンダーを選ぶ（`specs/requirements.md`「VPNベンダーの選択（Web UI）」、`specs/design.md`「ベンダーの選択と実行基盤」）。**Phase 9までの「ベンダーは1台につき1種類」を改め、APIは複数ベンダーのプロファイルを持ち、選択中の1つを操作の対象とする**。ベンダーロックインを防ぐ手段（実行コマンドを管理者向け設定として外だしする）は変えない。利用者が選べるのは管理者が有効化したベンダーの識別子だけで、コマンド内容には関与できない。
+
+### 設定と読み込み
+
+| 項目 | 内容 |
+|---|---|
+| `ENABLED_PROVIDERS`（環境変数） | 有効なベンダーIDのカンマ区切り（既定`adguardvpn`）。compose側は`.env`の`VPN_PROVIDERS`から渡す |
+| `VPN_PROFILES_DIR`（環境変数） | プロファイルのディレクトリ（既定`/etc/vpngwgui/profiles`。`./api/config/profiles`を`:ro`でマウント）。**ファイル名（拡張子を除く）＝ベンダーID**で、ファイル内の`vendor`と一致しなければ起動失敗 |
+| `CTL_SOCKET_DIR`（環境変数） | UDSのディレクトリ（既定`/var/run/vpngw-ctl`）。ネットワークコンテナは`net.sock`、ランナーは`runner-<ベンダーID>.sock` |
+| `STATE_DIR`（環境変数） | 永続化の基点（既定`/var/lib/vpngwgui`）。ベンダー別の状態は`$STATE_DIR/providers/<ベンダーID>/`以下 |
+| プロファイルの`displayName`（新規・省略可） | 画面に出すベンダー名（例 `AdGuard VPN`）。省略時は`vendor` |
+
+- 起動時に、有効な全ベンダーのプロファイルを読み込み検証する（1つでも不正なら起動失敗。従来の`VPN_PROFILE_PATH`は廃止）。IDは`^[a-z][a-z0-9]{0,31}$`。有効なベンダーが0個なら起動失敗。
+- **選択中のベンダー**は`$STATE_DIR/active-provider.json`（`{ "id": "adguardvpn" }`）に永続化する。無い・壊れている・有効でないIDが入っている場合は、有効なベンダーの先頭を選択中とする（例外にしない）。
+- **ベンダー別の状態**（`$STATE_DIR/providers/<ID>/`）: `connection-state.json`（接続先ID・国・都市名）、`last-location.json`、`favorite-locations.json`。ログイン状態・プランの判定キャッシュ、学習した制限は、プロセス内でベンダーIDをキーに別々に保持する。**ユーザ向け設定（`settings.json`）・監査ログはベンダーに依存しないため従来の場所のまま**。
+- **旧形式からの移行**: 起動時、旧パス（`$STATE_DIR/connection-state.json`・`last-location.json`・`favorite-locations.json`）が存在し、`providers/adguardvpn/`に対応するファイルが無ければ、`providers/adguardvpn/`へ移す（Phase 10より前に保存された状態は全てAdGuard VPNのものであるため）。`adguardvpn`が有効でない場合は移さない。
+
+### エンドポイント
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `GET` | `/v1/providers` | 有効なベンダーの一覧を取得する。`[ { "id", "displayName", "active": boolean, "available": boolean, "unavailableReason"?: string } ]`（有効化された順）。`available`はそのランナーが応答するか（下記）。応答に時間がかかるランナーで一覧が遅くならないよう、各ランナーへの問い合わせは並行・短いタイムアウト（2秒）で行う |
+| `PUT` | `/v1/providers/active` | 使うベンダーを切り替える。ボディ`{ "providerId": string }`。成功時`{ "id", "displayName" }`。詳細は下記「切替の手順」 |
+
+`GET /v1/connection`等の既存エンドポイントは、パス・スキーマを変えず、選択中のベンダーを対象にする（`GET /v1/connection`の応答に、選択中のベンダーIDは含めない。ベンダーは`GET /v1/providers`で取得する。ベンダーを識別するためにパスへベンダーを含めない方針は変えない: 操作の対象は「選択中のベンダー」という状態で表す）。
+
+### ランナーの利用可否
+
+`GET /health`（ランナーの内部エンドポイント。proxyserver/design.md）が`200`を返せば`available: true`。ソケットが無い・接続拒否・タイムアウトなら`available: false`（`unavailableReason`は「ランナーが起動していません」）。**`available: false`のベンダーへは切り替えられない**（`PUT /v1/providers/active`は`502`）。選択中のベンダーのランナーが後から止まった場合、既存のエンドポイントは従来どおり`502`/`504`を返す（自動で他のベンダーへ切り替えない。意図しないベンダーへの接続を避けるため）。
+
+### 切替の手順（`PUT /v1/providers/active`）
+
+1. `providerId`が有効なベンダーでなければ`400`。選択中と同じなら何もせず`200`。
+2. 切替先のランナーが利用不可なら`502`（切替えない）。
+3. 他の切替・接続操作と競合しないよう、API内で直列化する（切替中に来た他のベンダー操作系リクエスト（`PUT /v1/connection`・`/v1/session`）は`409 provider_switching`。読み取り（GET）は影響しない）。
+4. 現在のベンダーのランナーが応答する場合、`status`を実行し、接続中なら`disconnect`を実行する。**切断に失敗したら切り替えず`422`**（VPNが繋がったまま別ベンダーを選ぶ状態を作らない）。現在のランナーが応答しない（`502`/`504`）場合は、切断できないが切替は許可する（止まったランナーに縛られて他のベンダーを使えなくならないため）。
+5. 選択中のベンダーを`active-provider.json`へ保存し、監査ログに`{ action: "switch-provider", input: { from, to }, exitCode }`を記録する。
+6. ネットワークコンテナへ接続状態の再確認を通知する（`POST /connection-checks`。Kill Switchの状態を即時に更新する）。失敗しても切替自体は成功とする（接続監視ループが追従する）。
+
+切替では、ベンダー別の保存内容（お気に入り・最後の接続先等）は消さない。切替先のベンダーの接続状態は、切替後の`GET /v1/connection`（`status`の実行）で取得する（切替直後は切断中のはずだが、API外で接続されていれば接続中と出る）。
+
+### ネットワークコンテナへの通知（`POST /connection-checks`）
+
+従来は、ベンダーCLIを実行するproxyが、接続・切断のコマンド実行直後にゲートウェイルールを即時に再構成していた（proxyserver/design.md「`POST /exec`」後段）。ランナー分離により、実行するコンテナとルールを持つコンテナが別になったため、**接続・切断・ログアウトのコマンド実行後、および切替後に、APIがネットワークコンテナへ`POST /connection-checks`を送る**（ボディなし。応答`{ "checked": true }`）。失敗（`502`/`504`相当）は握りつぶす（ルールの反映は接続監視ループがいずれ追従するため、操作の成否には影響させない）。
+
+### 監査ログ・エラー
+
+- 監査ログの各エントリに、操作の対象だったベンダーIDを`provider`として付ける（`switch-provider`以外の従来の操作も。旧形式のエントリは`provider`なし）。
+- `PUT /v1/providers/active`: `400`（未知・無効なID）、`409`（切替中）、`422`（現在のVPNの切断に失敗。`exitCode`・`stderr`を含む）、`502`（切替先のランナーが利用不可）。
+
+### 内部プロトコルの変更
+
+- `executeVendorCommand`は、ベンダーIDを受け取り、`$CTL_SOCKET_DIR/runner-<ID>.sock`へ送る（ベンダーごとに接続プールを持つ）。リクエストボディは従来（`vendor`・`binary`・`resolvedArgv`・`timeoutMs`・`completionPattern`・`stdin`）のまま。
+- `notifySettings`・`fetchProxyStatus`（`POST /settings`・`GET /status`）・`POST /connection-checks`は`$CTL_SOCKET_DIR/net.sock`（旧`exec.sock`）へ送る。
+- ランナーの`POST /exec`のレスポンスと、ネットワークコンテナの`/settings`・`/status`の形状は変えない。
+
+### ファイル配置（AGENTS.mdの規約）
+
+ベンダーの管理は`api/src/providers/`にまとめる（`provider-registry.ts`＝有効なプロファイルの読み込み・検証、`active-provider-store.ts`＝選択の永続化、`provider-switcher.ts`＝切替の手順、`provider-state-paths.ts`＝ベンダー別の状態ファイルのパス・旧形式からの移行）。従来のモジュール（`profile-loader`・`connection-state-store`・`last-location-store`・`favorite-locations-store`・`session-probe`・`restriction-learner`・`proxy-client`）は、ベンダーIDを受け取る（または選択中のベンダーを`provider-registry`から取得する）形へ改める。
 
 # ユーザ向け設定の具体スキーマ
 
@@ -307,7 +372,7 @@ Web UIから変更可能な運用設定（目的・意味は../requirements.md�
 
 AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッドで操作の意味を表現する、リソースを明確に特定する）に従う。
 
-ベンダー（VPNクライアント操作プロファイル）はサーバ管理者が1台のサーバにつき1種類のみ設定するものであり、APIの仕分け対象ではない。ベンダーロックインを防ぐ手段は実行コマンドを管理者向け設定に外だしすることであって、APIでベンダーを選択・識別できるようにすることではないため、パスにベンダーは含めない。`connection` をリソースの単位とする。
+ベンダー（VPNクライアント操作プロファイル）は、Phase 11以降、管理者が有効化した複数のベンダーからWeb UI利用者が選ぶ（下記「ベンダーの選択」）。ただし操作の対象は「選択中のベンダー」という**状態**で表し、既存のエンドポイントのパスにベンダーは含めない（操作ごとにベンダーを指定させると、クライアントが実行環境の違いを意識する必要が生じるため）。`connection` をリソースの単位とする。ベンダーの一覧・切替は専用のリソース（`/v1/providers`）で扱う。
 
 | メソッド | パス | 説明 |
 |---|---|---|
@@ -334,7 +399,7 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 
 # プロキシとの内部通信仕様
 
-- 通信経路: APIコンテナとプロキシコンテナが共有するDocker名前付きボリューム（例 `ctl-socket`）上のUnixドメインソケット（例 `/var/run/vpngw-ctl/exec.sock`）。
+- 通信経路: APIコンテナと各コンテナが共有するDocker名前付きボリューム（例 `ctl-socket`）上の、**コンテナごとに1つ**のUnixドメインソケット。ベンダーCLIの実行はランナー（`/var/run/vpngw-ctl/runner-<ベンダーID>.sock`、Phase 11）、設定反映（`/settings`）・稼働状況（`/status`）・接続状態の再確認（`/connection-checks`）はネットワークコンテナ（`/var/run/vpngw-ctl/net.sock`。Phase 10まで`exec.sock`）。以下の`POST /exec`はランナー、`/settings`・`/status`はネットワークコンテナの仕様である。
 - APIサーバ側は `undici` の `Agent({ socketPath })` 等でUDS経由のHTTPリクエストを送信する。
 - リクエストボディ（内部プロトコル、OpenAPI対象外）:
 
@@ -469,4 +534,5 @@ CN    China                Shanghai (Virtual)             59
 - プロキシサーバへの接続失敗（UDS未応答等）: `502 Bad Gateway`。
 - プロキシサーバ側でのコマンド実行失敗（非ゼロexit）: `422 Unprocessable Entity` とし、bodyに `exitCode`・`stderr` 要約を含める。実CLIはエラーメッセージをstderrではなくstdoutへ出力するため（例: 接続していない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）、`stderr`が空の場合はstdoutを同フィールドへ格納する（`lib/failure-output.ts`。ANSIエスケープ除去・前後空白除去）。
 - タイムアウト: `504 Gateway Timeout`。
+- **【Phase 11】** ベンダー切替中の競合: `409 Conflict`（`error: "provider_switching"`）。
 - **【Phase 9】** プラン制限によるコマンド失敗（`restrictedPattern`一致）: `403 Forbidden`（`error: "operation_restricted"`。`exitCode`・`stderr`要約を含む）。プロファイルがその操作に対応していない（アクション未定義）: `501 Not Implemented`（`error: "operation_unsupported"`）。

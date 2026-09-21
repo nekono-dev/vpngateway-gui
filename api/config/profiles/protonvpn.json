@@ -1,0 +1,110 @@
+{
+  "vendor": "protonvpn",
+  "binary": "/usr/bin/protonvpn",
+  "outputFormat": "text",
+  "loginMethod": "credentials",
+  "output": {
+    "locationPattern": "^(?:Server:|Connected to)\\s+(.+?)\\.?\\s*$"
+  },
+  "features": {
+    "changeLocation": true,
+    "locationPing": false
+  },
+  "actions": {
+    "connect": {
+      "argv": [
+        "connect",
+        "--country",
+        "%LOCATION%"
+      ],
+      "placeholders": {
+        "LOCATION": {
+          "pattern": "^[A-Za-z]{2}$",
+          "source": "locations"
+        }
+      },
+      "timeoutMs": 90000,
+      "restrictedPattern": "not available on the free plan"
+    },
+    "connectAuto": {
+      "argv": [
+        "connect"
+      ],
+      "placeholders": {},
+      "timeoutMs": 90000
+    },
+    "disconnect": {
+      "argv": [
+        "disconnect"
+      ],
+      "placeholders": {},
+      "timeoutMs": 30000
+    },
+    "status": {
+      "argv": [
+        "status"
+      ],
+      "placeholders": {},
+      "timeoutMs": 15000
+    },
+    "login": {
+      "argv": [
+        "signin",
+        "%USERNAME%"
+      ],
+      "placeholders": {
+        "USERNAME": {
+          "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$",
+          "source": "input"
+        }
+      },
+      "timeoutMs": 60000
+    },
+    "logout": {
+      "argv": [
+        "signout"
+      ],
+      "placeholders": {},
+      "timeoutMs": 30000
+    },
+    "listLocations": {
+      "argv": [
+        "countries",
+        "list"
+      ],
+      "placeholders": {},
+      "timeoutMs": 30000,
+      "table": {
+        "iso": "Code",
+        "country": "Country"
+      },
+      "connectNameFrom": "iso",
+      "restrictedPattern": "not available on the free plan"
+    },
+    "account": {
+      "argv": [
+        "config",
+        "list"
+      ],
+      "placeholders": {},
+      "timeoutMs": 15000,
+      "notLoggedInPattern": "Authentication required",
+      "plans": [
+        {
+          "id": "free",
+          "label": "Free",
+          "pattern": "Upgrade to enable|To upgrade to VPN Plus",
+          "restricts": [
+            "connectToLocation",
+            "locationList"
+          ],
+          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。"
+        }
+      ],
+      "defaultPlan": {
+        "id": "paid",
+        "label": "Paid"
+      }
+    }
+  }
+}

@@ -110,6 +110,15 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 - [ ] （Phase 10）`proxy/Dockerfile.protonvpn`・エントリポイント・`docker-compose.protonvpn.yml`・許可リストへの`/usr/bin/protonvpn`追加
 - [ ] （Phase 10）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持）
 
+## ネットワークコンテナとランナーの分離（Phase 11）
+
+- [ ] `proxy/src/runner.ts`（ランナー: `POST /exec`・`GET /health`。許可リストは`RUNNER_ALLOWED_BINARY`の1つのみ）と、UDS待受・JSON入出力の共有モジュール化
+- [ ] `server.ts`（ネットワーク）から`/exec`・許可リスト・コマンド実行を分離し、`POST /connection-checks`を追加（`/settings`・`/status`は不変）
+- [ ] `EXTRA_ALLOWED_BINARIES`の廃止と`RUNNER_ALLOWED_BINARY`への置換（`allowlist.ts`・テスト）
+- [ ] `proxy/Dockerfile`（ネットワーク。CLIなし）・`Dockerfile.runner-adguardvpn`（従来のAdGuard用から分離）・`Dockerfile.runner-mock`（E2E専用）
+- [ ] `docker-compose.yml`の再構成（`proxy`＋`runner-*`、`profiles`、`ENABLED_PROVIDERS`、ソケット名、ボリューム）、`install/select-providers.sh`、`docker-compose.e2e-mock.yml`の改修、`docker-compose.protonvpn.yml`・`VPN_PROVIDER`の廃止
+- [ ] 実VPN（AdGuard）で、ネットワークコンテナ分離後も透過ゲートウェイ・Kill Switch・明示的プロキシが従来どおり動くことの確認（`e2e/phase3`・`phase4`のリグレッション）
+
 # 将来課題
 
 - IPv6対応（現行設計はIPv4のNAT/FORWARDのみを前提としている）。
