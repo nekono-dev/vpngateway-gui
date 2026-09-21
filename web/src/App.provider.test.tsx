@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   getV1Connection: vi.fn(),
   putV1Connection: vi.fn(),
   getV1ConnectionLocations: vi.fn(),
+  getV1ConnectionAvailableLocations: vi.fn(),
   putV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   deleteV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   getV1ConnectionGateway: vi.fn(),
@@ -79,6 +80,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
     api.getV1ConnectionLocations.mockResolvedValue({ status: 200, data: LOCATIONS });
     api.getV1ConnectionCapabilities.mockResolvedValue(capabilitiesOf());
     api.getV1Session.mockResolvedValue({ status: 200, data: { loginMethod: "deviceUrl" } });
+    api.getV1ConnectionAvailableLocations.mockResolvedValue({ status: 200, data: { locations: [] } });
   });
 
   describe("無料プラン（接続先を選べない・自動接続のみ）", () => {
@@ -97,6 +99,33 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
       expect(screen.getByText(/ログイン済み（プラン: Free）/)).toBeInTheDocument();
       expect(api.getV1ConnectionLocations).not.toHaveBeenCalled();
+    });
+
+    it("接続できる国の参考一覧を、選択できない要素として理由の下に表示する", async () => {
+      api.getV1ConnectionAvailableLocations.mockResolvedValue({
+        status: 200,
+        data: {
+          locations: [
+            { code: "US", name: "アメリカ合衆国", cities: ["Ashburn", "Chicago"] },
+            { code: "JP", name: "日本", cities: [] },
+          ],
+        },
+      });
+      renderApp();
+      const group = await screen.findByRole("group", { name: "接続できる国（参考）" });
+      expect(group).toHaveTextContent("選択はできません");
+      expect(group).toHaveTextContent("アメリカ合衆国（Ashburn、Chicago）");
+      expect(group).toHaveTextContent("日本");
+      expect(group.querySelector("button, a, input")).toBeNull();
+    });
+
+    it("参考一覧が空、または取得に失敗しても、何も表示せず通知もしない", async () => {
+      api.getV1ConnectionAvailableLocations.mockRejectedValue(new Error("boom"));
+      renderApp();
+      await screen.findByText(FREE_MESSAGE);
+      await waitFor(() => expect(api.getV1ConnectionAvailableLocations).toHaveBeenCalled());
+      expect(screen.queryByRole("group", { name: "接続できる国（参考）" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     });
 
     it("［接続］は接続先を指定しない接続（locationIdなし）を要求する", async () => {
@@ -154,6 +183,8 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       await userEvent.click(radio);
       await userEvent.click(screen.getByRole("button", { name: "接続" }));
       expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: "jp-japan" });
+      // 接続先リストが使えるときは、参考一覧を取得も表示もしない。
+      expect(api.getV1ConnectionAvailableLocations).not.toHaveBeenCalled();
     });
   });
 

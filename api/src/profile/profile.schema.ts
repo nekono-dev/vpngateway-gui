@@ -62,6 +62,24 @@ export const PlanDefSchema = Type.Object({
   restricts: Type.Array(Type.Union(OPERATION_KEYS.map((key) => Type.Literal(key)))),
   // 制限理由として画面に出す文。省略時は「現在のプラン（<label>）では利用できません」。
   restrictionMessage: Type.Optional(Type.String()),
+  // このプランで接続できる接続先（国・都市）の参考一覧の出典（Phase 14）。CLIが接続先を指定させないプランでも、
+  // 「自動接続でどこへ繋がりうるか」を画面に出すため、CLIがキャッシュしたサーバ一覧（JSON）を宣言に従って読む。
+  availableLocations: Type.Optional(
+    Type.Object({
+      // `<PROVIDER_CACHE_DIR>/<ベンダーID>/`からの相対パス。
+      file: Type.String({ minLength: 1 }),
+      // サーバの配列を持つ最上位のキー、各サーバの国コード・都市名の項目名。
+      list: Type.String({ minLength: 1 }),
+      country: Type.String({ minLength: 1 }),
+      city: Type.Optional(Type.String({ minLength: 1 })),
+      // 当該プランで使えるサーバの条件（全て満たすもの）。
+      where: Type.Optional(
+        Type.Array(Type.Object({ field: Type.String({ minLength: 1 }), equals: Type.Union([Type.String(), Type.Number()]) })),
+      ),
+      // 国コードの読み替え（ISO 3166-1と異なる独自コードの名称解決用）。
+      countryAliases: Type.Optional(Type.Record(Type.String(), Type.String())),
+    }),
+  ),
 });
 export type PlanDef = Static<typeof PlanDefSchema>;
 

@@ -111,6 +111,14 @@
 - [x] 監査ログへのベンダーID（`provider`）の付与
 - [x] 既存の各ルートを選択中のベンダー対象へ改修（単体・統合テスト: api 214件。実VPNで旧形式の状態の移行・ログイン保持・既存E2Eを確認。2026-09-21）
 
+## プランで接続できる接続先の参考一覧（Phase 14）
+
+- [x] プロファイルスキーマ（`account.plans[].availableLocations`）と読み込み時の検証
+- [x] `plan-locations.ts`（宣言に従った抽出・置き場の外の拒否・空の一覧へのフォールバック）と単体テスト
+- [x] `GET /v1/connection/available-locations`と統合テスト（無料/有料/未ログイン・ファイル無し）
+- [x] `docker-compose.yml`の`api`へキャッシュボリュームの読み取り専用マウントと`PROVIDER_CACHE_DIR`
+- [x] Proton VPNプロファイルへの宣言の追加
+
 ## ベンダー非依存化（Phase 12）
 
 - [ ] プロファイルスキーマの明示化: `loginMethod`必須、text形式で`output.connectedPattern`・`output.locationPattern`必須、`listLocations.table`・`connectName`必須、`login.stdin`と`source: "secret"`（`optional`）。`enum`・`enumFrom`の削除。ロード時の検証（正規表現の妥当性、`secret`をargvに置かない、`secret`の`pattern`が制御文字を許さない）

@@ -41,7 +41,14 @@
           "label": "Free",
           "pattern": "Upgrade to enable|To upgrade to VPN Plus",
           "restricts": ["connectToLocation", "locationList"],
-          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。"
+          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。",
+          "availableLocations": {
+            "file": "serverlist.json",
+            "list": "Servers",
+            "country": "Country",
+            "city": "City",
+            "where": [{ "field": "Tier", "equals": 0 }]
+          }
         }
       ],
       "defaultPlan": { "id": "paid", "label": "Paid" }

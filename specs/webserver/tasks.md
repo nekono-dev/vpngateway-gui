@@ -91,6 +91,13 @@
 - [x] `ConnectionStatusCard`へのベンダー名の表示、`409`のトースト文言（`describe-api-error.ts`）
 - [x] Web⇄API（AdGuard VPN＋モックプロバイダ）でのE2E（`e2e/phase11/`。Playwright。27項目PASS。2026-09-21）
 
+## プランで接続できる接続先の参考表示（Phase 14）
+
+- [x] orval再生成（`GET /v1/connection/available-locations`）
+- [x] `useAvailableLocations`（取得・世代管理・失敗時は表示なし）と単体テスト
+- [x] `AvailableLocations`と`LocationList`への組み込み、コンポーネントテスト
+- [ ] Web⇄API（Proton VPN相当のモック）でのE2E（コンポーネントテストで代替。実機のブラウザ表示は利用者の目視待ち）
+
 # 将来課題
 
 - 認証UI（ログイン画面等）の追加。現時点では認証なし・LAN限定運用のため未実装。

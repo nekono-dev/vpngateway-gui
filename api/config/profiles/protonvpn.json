@@ -100,7 +100,18 @@
             "connectToLocation",
             "locationList"
           ],
-          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。"
+          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。",
+          "availableLocations": {
+            "file": "VPN/serverlist.json",
+            "list": "LogicalServers",
+            "country": "ExitCountry",
+            "city": "City",
+            "where": [
+              { "field": "Tier", "equals": 0 },
+              { "field": "Status", "equals": 1 }
+            ],
+            "countryAliases": { "UK": "GB" }
+          }
         }
       ],
       "defaultPlan": {

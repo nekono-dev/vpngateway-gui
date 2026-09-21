@@ -5,13 +5,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
 process.env.VPN_PROFILES_DIR = join(import.meta.dirname, "../../test-fixtures/profiles");
 process.env.ENABLED_PROVIDERS = "mockproton";
 process.env.STATE_DIR = dir;
+process.env.PROVIDER_CACHE_DIR = join(dir, "cache");
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
 
 const { executeVendorCommandMock } = vi.hoisted(() => ({ executeVendorCommandMock: vi.fn() }));
@@ -192,6 +193,54 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
       const connectCall = executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv).find((argv) => argv[0] === "connect");
       expect(connectCall).toEqual(["connect", "--country", "JP"]);
       expect(put.json()).toMatchObject({ status: "connected", country: "jp", locationId: "jp-japan" });
+    });
+  });
+
+  describe("GET /v1/connection/available-locations（プランで接続できる接続先の参考一覧）", () => {
+    const cacheDir = join(process.env.PROVIDER_CACHE_DIR!, "mockproton");
+    const writeServerList = () => {
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(
+        join(cacheDir, "serverlist.json"),
+        JSON.stringify({
+          Servers: [
+            { Country: "JP", City: "Tokyo", Tier: 0, Domain: "secret.example" },
+            { Country: "US", City: "Ashburn", Tier: 0 },
+            { Country: "DE", City: "Berlin", Tier: 2 },
+          ],
+        }),
+      );
+    };
+
+    it("無料プラン: 無料のサーバがある国・都市だけを返し、サーバのドメイン等は含めない", async () => {
+      writeServerList();
+      const response = await app.inject({ method: "GET", url: "/v1/connection/available-locations" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        locations: [
+          { code: "US", name: "アメリカ合衆国", cities: ["Ashburn"] },
+          { code: "JP", name: "日本", cities: ["Tokyo"] },
+        ],
+      });
+      expect(response.body).not.toContain("secret.example");
+    });
+
+    it("有料プラン（宣言なし）・未ログインでは空", async () => {
+      writeServerList();
+      state.plan = "paid";
+      invalidateSessionInfo("mockproton");
+      expect((await app.inject({ method: "GET", url: "/v1/connection/available-locations" })).json()).toEqual({ locations: [] });
+      state.plan = "free";
+      state.loggedIn = false;
+      invalidateSessionInfo("mockproton");
+      expect((await app.inject({ method: "GET", url: "/v1/connection/available-locations" })).json()).toEqual({ locations: [] });
+    });
+
+    it("サーバ一覧のファイルが無くても200で空（エラーにしない）", async () => {
+      rmSync(join(cacheDir, "serverlist.json"), { force: true });
+      const response = await app.inject({ method: "GET", url: "/v1/connection/available-locations" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ locations: [] });
     });
   });
 

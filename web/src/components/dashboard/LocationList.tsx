@@ -6,7 +6,9 @@ import { useState } from "react";
 import { filterLocations, type LocationItem, type LocationTab } from "../../locations/location-filter";
 import type { ErrorContent } from "../../notifications/describe-api-error";
 import { LocationRow } from "./LocationRow";
+import { AvailableLocations } from "./AvailableLocations";
 import { RestrictionNote } from "./RestrictionNote";
+import type { AvailableLocation } from "../../hooks/useAvailableLocations";
 
 interface Props {
   locations: LocationItem[];
@@ -23,6 +25,8 @@ interface Props {
   // 接続先の一覧そのものが使えない理由（capabilityの`locationList`が不可のとき）。指定されると一覧・タブ・
   // 絞り込みを出さず、この理由文の枠だけを表示する（一覧を取得しない。webserver/requirements.md「操作の制限表示」）。
   unavailableReason?: string;
+  // 一覧が使えないプランで接続できる国の参考一覧（理由文の下に表示する。空・未指定なら何も出さない）。
+  availableLocations?: AvailableLocation[];
   // ★（お気に入り）・「再計測」を操作できない理由。指定されていれば該当ボタンを無効化して理由を表示する。
   favoritesDisabledReason?: string;
   refreshDisabledReason?: string;
@@ -42,6 +46,7 @@ export function LocationList({
   onRefresh,
   onToggleFavorite,
   unavailableReason,
+  availableLocations,
   favoritesDisabledReason,
   refreshDisabledReason,
 }: Props) {
@@ -55,7 +60,12 @@ export function LocationList({
   const showPing = locations.some((location) => location.pingMs !== undefined);
 
   if (unavailableReason !== undefined) {
-    return <RestrictionNote message={unavailableReason} />;
+    return (
+      <>
+        <RestrictionNote message={unavailableReason} />
+        <AvailableLocations locations={availableLocations ?? []} />
+      </>
+    );
   }
   if (isLoading) {
     return <p className="hint">接続先を取得中...</p>;

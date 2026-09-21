@@ -6,6 +6,7 @@ import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { registerConnectionLocationsRoute } from "./routes/connection-locations.js";
 import { registerConnectionRoute } from "./routes/connection.js";
 import { registerConnectionCapabilitiesRoute } from "./routes/connection-capabilities.js";
+import { registerConnectionAvailableLocationsRoute } from "./routes/connection-available-locations.js";
 import { registerConnectionConfigRoute } from "./routes/connection-config.js";
 import { registerConnectionGatewayRoute } from "./routes/connection-gateway.js";
 import { registerConnectionLogRoute } from "./routes/connection-log.js";
@@ -96,6 +97,7 @@ export function buildApp() {
   app.register(registerConnectionLocationsRoute);
   app.register(registerConnectionRoute);
   app.register(registerConnectionCapabilitiesRoute);
+  app.register(registerConnectionAvailableLocationsRoute);
   app.register(registerConnectionConfigRoute);
   app.register(registerConnectionLogRoute);
   app.register(registerConnectionGatewayRoute);

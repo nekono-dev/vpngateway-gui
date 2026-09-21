@@ -14,6 +14,7 @@ import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog"
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
 import { useToast } from "./notifications/ToastProvider";
 import { putV1Connection } from "./generated/api/default/default";
+import { useAvailableLocations } from "./hooks/useAvailableLocations";
 import { useLocations } from "./hooks/useLocations";
 import { findCurrentLocationId, resolveEffectiveId } from "./locations/current-location";
 import { locationLabel } from "./locations/location-filter";
@@ -39,6 +40,12 @@ export function App() {
   const activeProviderId = activeProvider?.id;
   const activeProviderName = providers && providers.length > 1 ? activeProvider?.displayName : undefined;
   const locations = useLocations(data !== undefined && isAvailable(capabilities, "locationList"), activeProviderId);
+  // 接続先リストがプラン制限で使えないときだけ、そのプランで接続できる国の参考一覧を取得する（プラン変更でも取得し直す）。
+  const availableLocations = useAvailableLocations(
+    data !== undefined && reasonOf(capabilities, "locationList") !== undefined,
+    activeProviderId,
+    data?.session?.plan?.id,
+  );
   // ベンダーが替わったら、明示的に選んでいた接続先は前のベンダーのものなので消す。
   useEffect(() => {
     setSelectedId(undefined);
@@ -143,6 +150,7 @@ export function App() {
           onRefresh={locations.refresh}
           onToggleFavorite={(locationId, favorite) => void locations.setFavorite(locationId, favorite)}
           unavailableReason={reasonOf(capabilities, "locationList")}
+          availableLocations={availableLocations}
           favoritesDisabledReason={reasonOf(capabilities, "locationFavorites")}
           refreshDisabledReason={reasonOf(capabilities, "pingMeasurement")}
         />

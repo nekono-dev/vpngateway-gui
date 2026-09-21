@@ -513,6 +513,13 @@ dialog [role="alert"] {
   font-size: 0.875rem;
 }
 
+/* プランで接続できる国の参考表示（Phase 14） */
+.available-locations ul {
+  margin: 4px 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
+}
+
 /* VPNベンダーの選択（Phase 11） */
 .provider-selector {
   border: 1px solid var(--border);

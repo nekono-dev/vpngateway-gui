@@ -576,3 +576,45 @@ CN    China                Shanghai (Virtual)             59
 - **【Phase 11】** ベンダー切替中の競合: `409 Conflict`（`error: "provider_switching"`）。
 - **【Phase 9】** プラン制限によるコマンド失敗（`restrictedPattern`一致）: `403 Forbidden`（`error: "operation_restricted"`。`exitCode`・`stderr`要約を含む）。プロファイルがその操作に対応していない（アクション未定義）: `501 Not Implemented`（`error: "operation_unsupported"`）。
 
+## プランで接続できる接続先の参考一覧（Phase 14）
+
+要件は`requirements.md`「プランで接続できる接続先の参考一覧」。
+
+### プロファイルの拡張（`account.plans[].availableLocations`、省略可）
+
+```json
+"availableLocations": {
+  "file": "VPN/serverlist.json",
+  "list": "LogicalServers",
+  "country": "ExitCountry",
+  "city": "City",
+  "where": [ { "field": "Tier", "equals": 0 }, { "field": "Status", "equals": 1 } ],
+  "countryAliases": { "UK": "GB" }
+}
+```
+
+| 項目 | 内容 |
+|---|---|
+| `file` | サーバ一覧（JSON）のパス。`<PROVIDER_CACHE_DIR>/<ベンダーID>/`からの相対。この配下の外を指す指定（`..`・絶対パス）は無効（空の一覧になる）。 |
+| `list` | サーバの配列を持つ最上位のキー。 |
+| `country` / `city` | 各サーバの、国コード（文字列）・都市名（文字列。省略可・欠けたサーバは都市なしとして数える）の項目名。 |
+| `where` | 当該プランで使えるサーバの条件（全て満たすもの）。`field`が`equals`と等しい（数値・文字列）。 |
+| `countryAliases` | 国コードの読み替え（ISO 3166-1と異なる独自コードのため。省略可）。名称の解決にだけ使い、返す`code`は元の値。 |
+
+- 読み込み時の検証: `list`・`country`・`file`が空でないこと。
+
+### エンドポイント（`GET /v1/connection/available-locations`）
+
+- 選択中のベンダーの現在のプラン（`account`の判定結果。30秒キャッシュ）の`availableLocations`を読む。プランが不明・未ログイン・`availableLocations`が無い場合は空。
+- 応答: `{ "locations": [ { "code": "JP", "name": "日本", "cities": ["Osaka", "Tokyo"] } ] }`。`name`は`Intl.DisplayNames`（ja）で解決し、解決できなければ`code`。国名の日本語順に並べる。`cities`は重複を除き昇順。
+- ファイルの読み取り失敗（無い・壊れている・置き場の外）は空の一覧（`200`）。サーバのドメイン・IP・IDは応答に含めない。
+- ファイルはリクエストごとに読む（数MBのJSON。Web UIは、制限表示の間、ベンダー切替・プラン変更時にだけ取得するため頻度は低い）。
+
+### 参照するキャッシュの置き場
+
+- `PROVIDER_CACHE_DIR`（既定`/var/lib/vpngwgui-provider-cache`）配下に、ベンダーごとの読み取り専用のキャッシュを`<ベンダーID>/`として置く。ランナーがCLIのキャッシュに使うボリュームを、APIコンテナへ読み取り専用でマウントする（ランナーの実行部は変更しない。APIはCLIを起動せずファイルだけを読む）。マウントの記述はベンダー固有のため、Phase 12のベンダーバンドルへ移す対象（現状は`docker-compose.yml`）。
+- APIは非rootで起動し、ランナーのキャッシュファイルと同じUID/GID（10001）で読む。
+
+### ファイル配置（AGENTS.mdの規約）
+
+- `api/src/locations/plan-locations.ts`（抽出。純粋関数＋ファイル読み取り）、`api/src/routes/connection-available-locations.ts`（ルート）、`api/src/profile/profile.schema.ts`（スキーマ）。

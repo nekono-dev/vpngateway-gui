@@ -30,11 +30,15 @@ services:
       # 管理者が用意したベンダーのプロファイル（ファイル名＝ベンダーID）。有効にするのは下のENABLED_PROVIDERS。
       - ./api/config/profiles:/etc/vpngwgui/profiles:ro
       - api-data:/var/lib/vpngwgui
+      # ランナーのCLIキャッシュ（サーバ一覧）を読み取り専用で参照する（runner-protonvpnと同じボリューム）。Phase 12でベンダーバンドルへ移す。
+      - proton-cache:/var/lib/vpngwgui-provider-cache/protonvpn:ro
     environment:
       VPN_PROFILES_DIR: /etc/vpngwgui/profiles
       # 有効なベンダー（カンマ区切り）。install/select-providers.shが.envのVPN_PROVIDERSとCOMPOSE_PROFILESを書く。
       ENABLED_PROVIDERS: ${VPN_PROVIDERS:-adguardvpn}
       CTL_SOCKET_DIR: /var/run/vpngw-ctl
+      # ベンダーCLIのキャッシュ（読み取り専用）の置き場（<置き場>/<ベンダーID>/）。プランで接続できる接続先の参考一覧を読むため。
+      PROVIDER_CACHE_DIR: /var/lib/vpngwgui-provider-cache
       STATE_DIR: /var/lib/vpngwgui
       SETTINGS_FILE: /var/lib/vpngwgui/settings.json
       AUDIT_LOG_FILE: /var/lib/vpngwgui/audit.log
