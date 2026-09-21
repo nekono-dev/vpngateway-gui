@@ -1,0 +1,84 @@
+# 責務: インストーラ（ブートストラップ install.sh）の検査と頒布。ブランチ・タグへのpushごとに、そのコミットに固定した install.sh を生成する。
+#   - 検査: シェルの構文・shellcheck、npm test（単体テスト・ベンダー中立性の検査・インストーラ関連の検査）
+#   - ブランチ: 生成した install.sh・install.sh.sha256 を、ワークフローのartifact（installer-<ブランチ名>）として保存する（Releaseは作らない）
+#   - タグ（v*）: GitHub Releaseへ install.sh・install.sh.sha256 を添付する
+#       最新:   https://github.com/<owner>/<repo>/releases/latest/download/install.sh
+#       版固定: https://github.com/<owner>/<repo>/releases/download/<タグ>/install.sh
+# 設計: specs/design.md「インストーラと頒布（Phase 13）」。
+name: installer
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: シェルの検査（構文・shellcheck）
+        run: |
+          for f in install/*.sh install/tests/*.sh; do sh -n "$f"; done
+          shellcheck install/*.sh install/tests/*.sh
+
+      - name: 単体テスト・中立性の検査・インストーラの検査
+        run: |
+          npm ci
+          npm run generate:api-client
+          npm test
+
+      - name: インストーラ（ブートストラップ）を生成
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          REPO_URL: https://github.com/${{ github.repository }}.git
+        run: |
+          mkdir -p dist
+          sh install/build-bootstrap.sh "$REF_NAME" "$COMMIT" "$REPO_URL" > dist/install.sh
+          sh -n dist/install.sh
+          (cd dist && sha256sum install.sh > install.sh.sha256)
+          cat dist/install.sh.sha256
+
+      - name: artifactの名前（ブランチ名の/を-にする）
+        id: names
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: echo "artifact=installer-$(printf '%s' "$REF_NAME" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.names.outputs.artifact }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    # タグのpushのときだけ、GitHub Releaseへ添付する。
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: GitHub Releaseへ添付
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes
+          gh release upload "$TAG" dist/install.sh dist/install.sh.sha256 --repo "$GITHUB_REPOSITORY" --clobber

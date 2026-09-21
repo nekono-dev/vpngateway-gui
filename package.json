@@ -9,10 +9,11 @@
   ],
   "scripts": {
     "build": "npm run build -w proxy && npm run build -w api && npm run build -w web",
-    "test": "npm run test -w proxy && npm run test -w api && npm run test -w web && npm run check:neutrality",
+    "test": "npm run test -w proxy && npm run test -w api && npm run test -w web && npm run check:neutrality && npm run test:install",
     "export-openapi": "npm run export-openapi -w api",
     "generate:api-client": "npm run export-openapi && npm run generate:api-client -w web",
-    "check:neutrality": "node scripts/check-vendor-neutrality.mjs"
+    "check:neutrality": "node scripts/check-vendor-neutrality.mjs",
+    "test:install": "sh install/tests/run.sh"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

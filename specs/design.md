@@ -161,7 +161,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 1. **事前検査**: root、Debian系（`/etc/os-release`の`ID`・`ID_LIKE`）、systemd、CPU（Dockerの公式リポジトリが対応するamd64・arm64・armhfのうち、Debian系の対応するもの）。満たさなければ理由を示して失敗する。
 2. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
-3. **ホストの設定**: `/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
+3. **ホストの設定**: `/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
 4. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`VPN_PROVIDERS`、`COMPOSE_FILE`。
 5. **ベンダーの決定**: 優先順は`--providers` ＞ `.env`の既存の`VPN_PROVIDERS`（引数なしの再実行は、変更せず更新だけをする）＞ 端末（`/dev/tty`。`curl | sh`では標準入力がパイプのため`/dev/tty`から読む）での対話選択 ＞ 失敗。対話の選択肢は`vendors/*/profile.json`の`displayName`（無ければID）。
 6. **ベンダーのホスト側手順**: 有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
@@ -172,12 +172,12 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 **ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
 
-**既知の制約**: Debian・Raspberry Pi OSでは、`nftables`パッケージの`nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）が有効な場合、起動時のルールが消されうる。**未検証**（検証環境はUbuntu 24.04のみ）。インストーラは、`nftables.service`が有効なら警告を表示するに留め、利用者の設定を書き換えない。アンインストール・IPv6は対象外。
+**既知の制約**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）が有効な環境では、起動時のルールが消去されうる。Debian 12（bookworm）では、`nftables`パッケージを導入しても`nftables.service`は既定で**無効**であることを確認した（LXC）。管理者が有効にしている場合に限り問題になるため、インストーラは、有効なら警告を表示するに留め、利用者の設定を書き換えない。起動時のガードが実際に維持されるか（ホストの再起動）と、Raspberry Pi OSでの動作は**未検証**（検証はUbuntu 24.04・Debian 12のLXCのみ）。アンインストール・IPv6は対象外。
 
 ## 頒布（CI）
 
 - ワークフロー`.github/workflows/installer.yml`。**トリガー**: ブランチへのpush、`v*`タグのpush。**検査**: `sh -n`・`shellcheck`（`install/`）、`npm ci`と`npm test`（中立性の検査を含む）、ブートストラップの生成テスト（置換漏れが無いこと）。
-- **ブランチ**: `install-<ブランチ名>.sh`をワークフローのartifactとして保存する（Releaseは作らない）。
+- **ブランチ**: `install.sh`と`install.sh.sha256`を、ワークフローのartifact`installer-<ブランチ名>`（`/`は`-`にする）として保存する（Releaseは作らない）。
 - **タグ**: `install.sh`と`install.sh.sha256`をGitHub Releaseへ添付する。利用者が使うURLは、最新: `https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh`、版の固定: `https://github.com/nekono-dev/vpngateway-gui/releases/download/<タグ>/install.sh`。
 - **信頼の範囲**: `curl | sh`はスクリプトの取得元（GitHub ReleaseのHTTPS）を信頼する方式である。ブートストラップは取得するコミットを固定し、取得後にSHAを照合するため、スクリプトとソースの食い違い（タグの付け替え等）は検出できる。`install.sh.sha256`で、ダウンロードして検証してから実行することもできる。
 

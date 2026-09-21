@@ -52,10 +52,10 @@ has_vpn_rule() { gw nft list table inet vpngwgui 2>/dev/null | grep -q 'oifname 
 
 scenario_A() {
   echo "=== A: 静的前提 ==="
-  check "install/setup-sysctl.sh が作る sysctl 設定が存在する" 'gw grep -q "net.ipv4.ip_forward=1" /etc/sysctl.d/99-vpngwgui.conf'
+  check "install/install.sh が作る sysctl 設定が存在する" 'gw grep -q "net.ipv4.ip_forward=1" /etc/sysctl.d/99-vpngwgui.conf'
   check ".env に LAN_IFACE が書き出されている" 'gw grep -q "^LAN_IFACE=$LAN_IF$" .env'
   check "proxyコンテナが network_mode: host（コンテナ内のIFにLAN側NICが見える）" 'proxy_sh "ip -o link show $LAN_IF" >/dev/null'
-  check "install/setup-boot-guard.sh の起動ガード(systemd)が有効化されている" 'gw systemctl is-enabled vpngwgui-boot-guard.service | grep -q enabled'
+  check "install/install.sh の起動ガード(systemd)が有効化されている" 'gw systemctl is-enabled vpngwgui-boot-guard.service | grep -q enabled'
   check "proxyの非rootユーザー(vpngwgui)から sudo nft が実行できる" 'proxy_sh "id -un | grep -q vpngwgui && sudo nft list ruleset >/dev/null"'
   check "proxyコンテナ内の iproute2 の ip route show default が実行できる" 'proxy_sh "ip route show default | grep -q default"'
 }

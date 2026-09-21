@@ -85,10 +85,10 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 ## ベンダー非依存化・インストーラ（Phase 12・13）
 
 - [x] （Phase 12）ネットワークコンテナのコード・コメントからベンダー固有名を除去（存在しない`proxy/Dockerfile.adguardvpn`への参照の修正を含む）
-- [ ] （Phase 13）`install/install.sh`（本体。`setup-sysctl.sh`・`detect-lan-interface.sh`・`setup-boot-guard.sh`・`select-providers.sh`の統合。従来の4本は削除）
-- [ ] （Phase 13）`install/bootstrap.sh`（頒布物の雛形）・`install/build-bootstrap.sh`
-- [ ] （Phase 13）`.github/workflows/installer.yml`（検査・ブランチのartifact・タグのRelease）
-- [ ] （Phase 13）クリーンな環境（LXC）での検証: 導入・ベンダーの追加/削除・再実行・`install-host.sh`のフック
+- [x] （Phase 13）`install/install.sh`（本体。`setup-sysctl.sh`・`detect-lan-interface.sh`・`setup-boot-guard.sh`・`select-providers.sh`の統合。従来の4本は削除）
+- [x] （Phase 13）`install/bootstrap.sh`（頒布物の雛形）・`install/build-bootstrap.sh`
+- [x] （Phase 13）`.github/workflows/installer.yml`（検査・ブランチのartifact・タグのRelease。**GitHub上では未実行**。YAML構文・shellcheck・生成物の検査はローカルで確認）
+- [x] （Phase 13）クリーンな環境（LXC）での検証: 導入・ベンダーの追加/削除・再実行・`install-host.sh`のフック
 
 # 将来課題
 
