@@ -11,6 +11,7 @@ import { resolveArgv } from "../profile/placeholder-resolver.js";
 import { extractLoginUrl } from "../profile/response-parser.js";
 import { executeVendorCommand } from "../proxy-client/proxy-client.js";
 import { CommandExecutionError } from "../errors.js";
+import { pickFailureOutput } from "../lib/failure-output.js";
 import { appendAuditLog } from "../audit-log/audit-log-store.js";
 import { stripAnsi } from "../lib/strip-ansi.js";
 
@@ -54,7 +55,11 @@ export const registerSessionRoute: FastifyPluginAsyncTypebox = async (fastify) =
       }
 
       if (result.exitCode !== 0) {
-        throw new CommandExecutionError("login command failed", result.exitCode, result.stderr);
+        throw new CommandExecutionError(
+          "login command failed",
+          result.exitCode,
+          pickFailureOutput(result.stderr, result.stdout),
+        );
       }
 
       // completionPatternに一致せずプロセスが正常終了した場合（既にログイン済み等）。

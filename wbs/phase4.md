@@ -8,6 +8,7 @@
 
 - Phase2完了（実VPNベンダーCLIによる接続・切断が動作確認済み）。
 - Phase3完了（proxyコンテナが`network_mode: host`で稼働しており、LANインターフェースへ直接bindできる状態）。
+- **【2026-09-21】Phase5（Web UI）はPhase4より前に実施する（`wbs/README.md`参照）。** 本フェーズ着手時点でダッシュボード・設定ダイアログ・`GET /v1/connection/gateway`・proxy `GET /status`が存在する前提とする。
 - Phase3で追加した内部プロトコル`POST /settings`（設定反映エンドポイント）が利用可能であること。
 
 ## スコープ外
@@ -21,6 +22,8 @@
 - [ ] `child_process.spawn`による3proxy起動・監視・異常終了時再起動（指数バックオフ）実装。
 - [ ] `explicitProxyEnabled`切替による3proxyプロセスの起動/停止。
 - [ ] VPN接続状態変化時は3proxyを再起動しない（ルーティングに自動追従するため。design.md記載の通り、独立して機能することを確認する）。
+- [ ] `GET /status`（proxy内部）・`GET /v1/connection/gateway`（api）のレスポンスへ`explicitProxy`（有効/実稼働/クラッシュループ状態）を追加する（Phase5で用意した拡張余地を利用。`specs/apiserver/design.md`参照）。
+- [ ] ダッシュボードの明示的プロキシ稼働状況欄・設定ダイアログの「未対応」暫定表示（Phase5で追加）を、実稼働状況表示へ置き換える。
 - [ ] 3proxyクラッシュループ検知時のAPIサーバへのエラー状態通知（`GET /v1/connection`等のレスポンスに反映できるよう、proxy→api方向の状態通知経路を検討・実装）。
 
 ## 完了基準
@@ -32,4 +35,4 @@
 
 ## 次フェーズへの申し送り
 
-- （Phase3完了後に実装しながら追記する）
+- （実装しながら追記する）

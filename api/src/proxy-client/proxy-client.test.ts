@@ -12,7 +12,7 @@ vi.mock("undici", () => ({
   },
 }));
 
-const { executeVendorCommand } = await import("./proxy-client.js");
+const { executeVendorCommand, notifySettings, fetchProxyStatus } = await import("./proxy-client.js");
 
 function jsonResponse(body: unknown) {
   return { body: { json: async () => body } };
@@ -43,5 +43,56 @@ describe("executeVendorCommand", () => {
         timeoutMs: 8000,
       }),
     ).rejects.toThrow(/unexpected response shape from proxy/);
+  });
+});
+
+describe("notifySettings", () => {
+  it("プロキシが期待通りの形状で応答した場合はそのまま返す", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ applied: true }));
+
+    const result = await notifySettings({ killSwitch: true, transparentGatewayEnabled: true });
+
+    expect(result).toEqual({ applied: true });
+  });
+
+  it("プロキシが期待と異なる形状で応答した場合は例外を投げる", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ applied: "yes" }));
+
+    await expect(notifySettings({ killSwitch: true, transparentGatewayEnabled: true })).rejects.toThrow(
+      /unexpected response shape from proxy/,
+    );
+  });
+});
+
+describe("fetchProxyStatus", () => {
+  it("プロキシが期待通りの形状で応答した場合はそのまま返し、GET /statusを呼ぶ", async () => {
+    const status = { transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false } };
+    requestMock.mockResolvedValue(jsonResponse(status));
+
+    const result = await fetchProxyStatus();
+
+    expect(result).toEqual(status);
+    expect(requestMock).toHaveBeenLastCalledWith(expect.objectContaining({ path: "/status", method: "GET" }));
+  });
+
+  it("vpnInterface省略（未接続）でも受理する", async () => {
+    requestMock.mockResolvedValue(
+      jsonResponse({ transparentGateway: { state: "stopped", killSwitchBlocking: false } }),
+    );
+    await expect(fetchProxyStatus()).resolves.toEqual({
+      transparentGateway: { state: "stopped", killSwitchBlocking: false },
+    });
+  });
+
+  it("プロキシが期待と異なる形状で応答した場合は例外を投げる", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ transparentGateway: { state: "weird" } }));
+    await expect(fetchProxyStatus()).rejects.toThrow(/unexpected response shape from proxy/);
+  });
+
+  it("ソケット未起動はProxyUnavailableError、タイムアウトはProxyTimeoutErrorへ変換する", async () => {
+    requestMock.mockRejectedValue(Object.assign(new Error("x"), { code: "ENOENT" }));
+    await expect(fetchProxyStatus()).rejects.toThrow(/failed to connect/);
+    requestMock.mockRejectedValue(Object.assign(new Error("x"), { code: "UND_ERR_HEADERS_TIMEOUT" }));
+    await expect(fetchProxyStatus()).rejects.toThrow(/did not respond/);
   });
 });

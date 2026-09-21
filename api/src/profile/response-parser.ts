@@ -42,19 +42,29 @@ function parseJsonOutput(stdout: string): ConnectionStatus {
 // （"connected"の直前に英字があれば"disconnected"等の一部であり、単独の"connected"ではない）。
 const CONNECTED_WORD_PATTERN = /(?<![a-zA-Z])connected(?![a-zA-Z])/i;
 
+// 接続先の都市名を取り出す。`status`は"Connected to TOKYO in TUN mode, running on tun0"、
+// `connect`は"Successfully Connected to TOKYO"の形式（いずれもANSI除去後）。都市名は空白を含みうる
+// （例: "NEW YORK"）ため、" in <MODE> mode"または行末までを最短一致で取る。
+const LOCATION_PATTERN = /(?<![a-zA-Z])Connected to (.+?)(?: in \S+ mode|\s*$)/im;
+
 /**
  * 目的: 実VPNベンダーCLI（例: AdGuard VPN CLI）のテキスト出力から接続状態を判定する。
  * 入力: stdout(status/connect/disconnectコマンドの標準出力、exitCode=0の場合のみ呼び出される想定)。
- * 出力: 接続状態オブジェクト。
+ * 出力: 接続状態オブジェクト。接続中で接続先の都市名が読み取れれば`location`を含める。
  * 実装上の制約: 実CLIのstdout書式はベンダー・バージョンにより変化しうる
  *              （サードパーティ製ラッパーの実装でも、この語のみを安定した判定基準としている実績がある）。
- *              そのため接続先国(country)は確実に抽出できる固定書式を確認できておらず取得しない
- *              （apiserver/design.md「Phase 2における具体プロファイル」参照。要実機検証）。
+ *              接続状態は"connected"という語の有無のみで判定し、都市名（`location`）は取れれば付与する
+ *              補助情報とする（取れなくても状態判定には影響しない）。CLIは国コードを出力しないため、
+ *              国コード(country)はここでは取得しない（接続時に要求した国をroutes/connection.tsが永続化する。
+ *              apiserver/design.md「接続先国の永続化」参照）。
  */
 function parseTextOutput(stdout: string): ConnectionStatus {
   const clean = stripAnsi(stdout);
-  const status: ConnectionStatus["status"] = CONNECTED_WORD_PATTERN.test(clean) ? "connected" : "disconnected";
-  return { status };
+  if (!CONNECTED_WORD_PATTERN.test(clean)) {
+    return { status: "disconnected" };
+  }
+  const location = LOCATION_PATTERN.exec(clean)?.[1]?.trim();
+  return location ? { status: "connected", location } : { status: "connected" };
 }
 
 const URL_PATTERN = /https?:\/\/[^\s`'"]+/;

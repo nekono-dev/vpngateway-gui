@@ -4,6 +4,7 @@
 import { Pool } from "undici";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
 import { ProxyUnavailableError, ProxyTimeoutError } from "../errors.js";
 
 const SOCKET_PATH = process.env.PROXY_SOCKET_PATH ?? "/var/run/vpngw-ctl/exec.sock";
@@ -67,8 +68,70 @@ export async function executeVendorCommand(input: ExecInput): Promise<ExecResult
   }
 }
 
-// Phase 2でユーザ向け設定変更をプロキシへ通知するnotifySettings()をここに追加する予定。
-// 実行系(executeVendorCommand)とは別関数として最初から分離しておく（wbs/phase1.md参照）。
+// レスポンスは`{ applied: boolean }`のみを含む単純な形状。実行系(ExecResultSchema)ほど複雑でないため
+// 個別に定義する。
+const SettingsResultSchema = Type.Object({
+  applied: Type.Boolean(),
+});
+
+/**
+ * 目的: ユーザ向け設定の最新値をプロキシの`POST /settings`へ通知し、nftables等への実反映を要求する。
+ *      `executeVendorCommand`（VPNベンダーCLI実行系）とは別の内部プロトコルのため、最初から関数を分離する
+ *      （proxyserver/design.md「内部プロトコル拡張」参照）。
+ * 入力: settings(UserSettings全体。プロキシ側が実際に用いるのはkillSwitch/transparentGatewayEnabledのみだが、
+ *      将来のPhase 4（explicitProxyEnabled等）に備え全体を送信する)。
+ * 出力: プロキシがルール再構成を実際に適用できたか（applied）。
+ * 失敗時の方針: executeVendorCommandと同じ分類でProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる
+ *              （呼び出し元で502/504にマッピングする）。
+ * 例: await notifySettings({ killSwitch: true, transparentGatewayEnabled: true, ... })
+ */
+export async function notifySettings(settings: Record<string, unknown>): Promise<{ applied: boolean }> {
+  try {
+    const response = await pool.request({
+      path: "/settings",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(settings),
+      bodyTimeout: 5000,
+      headersTimeout: 5000,
+    });
+    const body: unknown = await response.body.json();
+    if (!Value.Check(SettingsResultSchema, body)) {
+      const errors = [...Value.Errors(SettingsResultSchema, body)].slice(0, 5);
+      throw new Error(`unexpected response shape from proxy: ${JSON.stringify(errors)}`);
+    }
+    return body;
+  } catch (error) {
+    throw toProxyClientError(error);
+  }
+}
+
+/**
+ * 目的: プロキシの`GET /status`から透過ゲートウェイ等の実際の稼働状況を取得する（読み取り専用）。
+ * 入力: なし。
+ * 出力: GatewayStatus（スキーマはschemas/gateway.ts。プロキシのレスポンス形状を実行時に検証する）。
+ * 失敗時の方針: 他の内部通信と同じ分類でProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる
+ *              （呼び出し元で502/504にマッピングする）。ポーリング用途のため短いタイムアウトとする。
+ * 例: const { transparentGateway } = await fetchProxyStatus();
+ */
+export async function fetchProxyStatus(): Promise<GatewayStatus> {
+  try {
+    const response = await pool.request({
+      path: "/status",
+      method: "GET",
+      bodyTimeout: 3000,
+      headersTimeout: 3000,
+    });
+    const body: unknown = await response.body.json();
+    if (!Value.Check(GatewayStatusSchema, body)) {
+      const errors = [...Value.Errors(GatewayStatusSchema, body)].slice(0, 5);
+      throw new Error(`unexpected response shape from proxy: ${JSON.stringify(errors)}`);
+    }
+    return body;
+  } catch (error) {
+    throw toProxyClientError(error);
+  }
+}
 
 function toProxyClientError(error: unknown): Error {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;

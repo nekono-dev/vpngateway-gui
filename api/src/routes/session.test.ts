@@ -56,6 +56,19 @@ describe("POST /v1/session", () => {
     expect(response.json()).toEqual({ message: "You are already logged in as user@example.com" });
   });
 
+  it("失敗時にstderrが空ならstdoutを診断として返す（実CLIはエラーをstdoutへ出力する）", async () => {
+    executeVendorCommandMock.mockResolvedValue({
+      exitCode: 14,
+      stdout: "Failed to disconnect. Process is not running\n",
+      stderr: "",
+    });
+
+    const response = await buildApp().inject({ method: "POST", url: "/v1/session" });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ exitCode: 14, stderr: "Failed to disconnect. Process is not running" });
+  });
+
   it("コマンドが失敗した場合、422でexitCode/stderrを返す", async () => {
     executeVendorCommandMock.mockResolvedValue({
       exitCode: 1,

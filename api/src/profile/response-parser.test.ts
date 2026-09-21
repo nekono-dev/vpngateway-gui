@@ -23,7 +23,25 @@ describe("parseConnectionOutput", () => {
   it("outputFormat=textで'connected'を含む出力はconnectedと判定する", () => {
     expect(parseConnectionOutput("text", "Connected to TOKYO in TUN mode, running on tun0")).toEqual({
       status: "connected",
+      location: "TOKYO",
     });
+  });
+
+  it("接続先の都市名を抽出する（status形式・ANSI装飾・空白を含む都市名・connect形式）", () => {
+    expect(
+      parseConnectionOutput("text", "Connected to \x1B[1mBRUSSELS\x1B[0m in \x1B[1mTUN\x1B[0m mode, running on \x1B[1mtun0\x1B[0m\n"),
+    ).toEqual({ status: "connected", location: "BRUSSELS" });
+    expect(parseConnectionOutput("text", "Connected to NEW YORK in TUN mode, running on tun0")).toEqual({
+      status: "connected",
+      location: "NEW YORK",
+    });
+    expect(
+      parseConnectionOutput("text", "Log is being written to: /x/tunnel.log\nSuccessfully Connected to \x1B[1mTOKYO\x1B[0m\nYou are now connected."),
+    ).toEqual({ status: "connected", location: "TOKYO" });
+  });
+
+  it("都市名を読み取れない出力でも接続状態は判定する（locationなし）", () => {
+    expect(parseConnectionOutput("text", "connected")).toEqual({ status: "connected" });
   });
 
   it("outputFormat=textで'disconnected'を含む出力はconnectedの部分一致として誤検出しない", () => {
