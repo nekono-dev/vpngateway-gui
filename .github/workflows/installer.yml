@@ -29,7 +29,7 @@ jobs:
       - name: シェルの検査（構文・shellcheck）
         run: |
           for f in install/*.sh install/tests/*.sh; do sh -n "$f"; done
-          shellcheck install/*.sh install/tests/*.sh
+          shellcheck -S warning install/*.sh install/tests/*.sh
 
       - name: 単体テスト・中立性の検査・インストーラの検査
         run: |

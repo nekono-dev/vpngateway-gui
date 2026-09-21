@@ -31,7 +31,7 @@ sh "$INSTALL_DIR/build-bootstrap.sh" feature/x-1 "$COMMIT" file:///srv/repo.git 
 check "生成: ブランチ名（/を含む）・file://も受け付ける" grep -q "^REF='feature/x-1'" "$TMP/branch.sh"
 
 # 目的: 生成スクリプトが、引数を拒否する（終了コードが非ゼロで、標準出力に何も出さない）ことを検査する。 入力: 生成スクリプトへ渡す引数。
-# shellcheck disable=SC2329  # check経由で呼ばれる（間接呼び出し）
+# shellcheck disable=SC2317,SC2329  # check経由で呼ばれる（間接呼び出し。shellcheckの版により指摘のコードが異なる）
 rejects() {
   out=$(sh "$INSTALL_DIR/build-bootstrap.sh" "$@" 2>/dev/null)
   rc=$?
