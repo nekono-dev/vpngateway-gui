@@ -67,7 +67,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 
 - **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視だけを担い、ベンダーCLIを実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
 - **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
-- **有効化**: 管理者は、インストーラの`--providers`（例 `--providers adguardvpn,protonvpn`。`install/install.sh`が`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`へ書く）で有効なベンダーを指定する。APIは`VPN_PROVIDERS`を`ENABLED_PROVIDERS`として受け取り、有効なベンダーのバンドル（`vendors/<ベンダーID>/`。下記「ベンダー非依存の設計原則」）のcompose fragmentだけが`COMPOSE_FILE`に載り、そのランナーだけが起動する。**既定のベンダーは無い**（指定が無ければAPI・インストーラとも失敗する）。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
+- **有効化**: 管理者は、インストーラの`--providers`（例 `--providers adguardvpn,protonvpn`。`install/install.sh`が`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`へ書く）で有効なベンダーを指定する。**省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする**（`specs/requirements.md`「インストール」）。APIは`VPN_PROVIDERS`を`ENABLED_PROVIDERS`として受け取り、有効なベンダーのバンドル（`vendors/<ベンダーID>/`。下記「ベンダー非依存の設計原則」）のcompose fragmentだけが`COMPOSE_FILE`に載り、そのランナーだけが起動する。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
 - **ランナーの許可リスト**: ランナーは、自分のベンダーのバイナリ1つだけを実行対象とする（イメージにビルド時に焼き込む`RUNNER_ALLOWED_BINARY`）。APIコンテナが侵害されても、別ベンダーのランナー経由で任意のバイナリを実行できず、許可リストによる「最後の防波堤」は従来どおり働く。
 - **切替時のネットワーク**: 切断から新ベンダーへの接続までの間、トンネルは存在しない。Kill Switch ONならLAN機器の通信は遮断、OFFなら直接インターネットへ抜ける（従来の切断時と同じ。トンネル検出はベンダー非依存のため、新ベンダーに接続すればそのインターフェースへ自動的に追従する）。
 
@@ -88,7 +88,7 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 
 | 従来のベンダー固有の埋め込み | 抽象化後 |
 |---|---|
-| 有効なベンダーの既定値（API・composeとも`adguardvpn`） | 既定を持たない。`VPN_PROVIDERS`が無ければ失敗する |
+| 有効なベンダーの既定値（API・composeとも`adguardvpn`） | 特定のベンダーへの既定は持たない。`VPN_PROVIDERS`（`--providers`）が無ければ、その時点の全ベンダー（all）を既定とする（Phase 17） |
 | 旧形式の状態ファイルの移行先（`adguardvpn`固定） | 移行処理を廃止する（未リリースで、実機はPhase 8で移行済み） |
 | 接続先の表の列名の既定（`ISO/COUNTRY/CITY/PING`） | `listLocations.table`を必須にする |
 | 接続時の指定名の加工（`(Virtual)`の除去） | `listLocations.connectName`（`{ from: "city"\|"iso", stripPattern? }`）。加工はプロファイルの`stripPattern`で表す |
@@ -152,7 +152,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 | 引数 | 意味 |
 |---|---|
-| `--providers <ID>[,<ID>...]` | 有効にするベンダー。`vendors/<ID>/`が無ければ失敗する |
+| `--providers <ID>[,<ID>...]` | 有効にするベンダー。`vendors/<ID>/`が無ければ失敗する。省略時は、その時点の全ベンダー（all）を有効にする（Phase 17） |
 | `--lan-iface <名前>` | LAN側インターフェース名を手動で指定する（検出できない・複数NICの場合） |
 | `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を捨てて再検出する |
 | `--no-start` | 起動（`docker compose up`）をしない |
@@ -163,7 +163,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 2. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
 3. **ホストの設定**: `/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
 4. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`VPN_PROVIDERS`、`COMPOSE_FILE`。
-5. **ベンダーの決定**: 優先順は`--providers` ＞ `.env`の既存の`VPN_PROVIDERS`（引数なしの再実行は、変更せず更新だけをする）＞ 端末（`/dev/tty`。`curl | sh`では標準入力がパイプのため`/dev/tty`から読む）での対話選択 ＞ 失敗。対話の選択肢は`vendors/*/profile.json`の`displayName`（無ければID）。
+5. **ベンダーの決定（Phase 17改訂）**: `--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
 6. **ベンダーのホスト側手順**: 有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
 7. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。Web UIが応答するまで待つ（最大約3分）。
 8. **完了の表示**: Web UIのURL（`http://<LAN側アドレス>:8080`）、有効なベンダー、次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）。

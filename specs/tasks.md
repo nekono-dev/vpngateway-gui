@@ -8,6 +8,10 @@
 
 - 詳細は`proxyserver/tasks.md`「ベンダー非依存化・インストーラ」と`../wbs/phase11.md`
 
+# インストーラの`--providers`省略時のall化（Phase 17）
+
+- 詳細は`../wbs/phase17.md`
+
 
 # 将来課題
 
