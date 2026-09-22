@@ -1,6 +1,9 @@
-// 責務: 有効なVPNベンダーの選択部品（ラジオ入力のグループ）と、選択時の確認・切替の要求のみを行う
+// 責務: 有効なVPNベンダーの選択部品（プルダウン）と、選択時の確認・切替の要求のみを行う
 // （webserver/requirements.md「ベンダーの選択」、design.md「ベンダーの選択の実装方針」）。ベンダーの保持・切断の手順はAPIが行う。
 // 有効なベンダーが1つのときは選択肢を出さず名前のみ表示する（従来の画面と同じ操作感）。
+// 【Phase 23】ラジオボタンの並び（画面のデッドスペースが目立つ）からプルダウンへ変更する
+// （webserver/requirements.md「ベンダー選択のプルダウン化」）。プルダウンの隣にログイン/ログアウトボタンを
+// 並べられるよう、このコンポーネントは選択部品のみを返し、親（App）がCSS Gridで同じ行へ配置する。
 import { useState } from "react";
 import type { ProviderItem } from "../../hooks/useDashboardPolling";
 import { putV1ProvidersActive } from "../../generated/api/default/default";
@@ -68,26 +71,31 @@ export function ProviderSelector({ providers, connected, onSwitched, onSwitching
   }
 
   return (
-    <fieldset className="provider-selector" disabled={disabled || isSwitching}>
-      <legend>VPNベンダー</legend>
-      <div className="provider-options" role="radiogroup" aria-label="VPNベンダー">
-        {providers.map((provider) => (
-          <label key={provider.id} className={`provider-option${provider.active ? " provider-active" : ""}`}>
-            <input
-              type="radio"
-              name="provider"
-              checked={provider.active}
-              disabled={!provider.available && !provider.active}
-              onChange={() => void handleSwitch(provider)}
-            />
-            <span>{provider.displayName}</span>
-            {!provider.available ? (
-              <span className="hint provider-unavailable">（利用不可: {provider.unavailableReason ?? "ランナーが起動していません"}）</span>
-            ) : null}
-          </label>
-        ))}
-      </div>
-      {isSwitching ? <p className="hint">切り替え中...</p> : null}
-    </fieldset>
+    <div className="provider-select-row">
+      <label className="provider-select-label" htmlFor="provider-select">
+        VPNベンダー
+      </label>
+      <span className="provider-select-wrap">
+        <select
+          id="provider-select"
+          className="provider-select"
+          aria-label="VPNベンダー"
+          value={active?.id}
+          disabled={disabled || isSwitching}
+          onChange={(event) => {
+            const target = providers.find((provider) => provider.id === event.target.value);
+            if (target) void handleSwitch(target);
+          }}
+        >
+          {providers.map((provider) => (
+            <option key={provider.id} value={provider.id} disabled={!provider.available && !provider.active}>
+              {provider.displayName}
+              {!provider.available ? `（利用不可: ${provider.unavailableReason ?? "ランナーが起動していません"}）` : ""}
+            </option>
+          ))}
+        </select>
+      </span>
+      {isSwitching ? <span className="hint">切り替え中...</span> : null}
+    </div>
   );
 }

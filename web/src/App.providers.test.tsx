@@ -68,7 +68,7 @@ describe("App（VPNベンダーの選択）", () => {
     api.getV1Providers.mockResolvedValue({ status: 200, data: [TWO[0]] });
     renderApp();
     expect(await screen.findByText("AdGuard VPN")).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup", { name: "VPNベンダー" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "VPNベンダー" })).not.toBeInTheDocument();
     expect(screen.queryByText("（AdGuard VPN）")).not.toBeInTheDocument();
   });
 
@@ -76,15 +76,14 @@ describe("App（VPNベンダーの選択）", () => {
     api.getV1Providers.mockRejectedValue(new Error("not found"));
     renderApp();
     expect(await screen.findByRole("radio", { name: /Tokyo/ })).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup", { name: "VPNベンダー" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "VPNベンダー" })).not.toBeInTheDocument();
   });
 
-  it("複数のときは選択部品（選択中が分かる）と、状態カードのベンダー名を表示する", async () => {
+  it("複数のときはプルダウン（選択中が分かる）と、状態カードのベンダー名を表示する", async () => {
     renderApp();
-    const group = await screen.findByRole("radiogroup", { name: "VPNベンダー" });
-    expect(group).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "AdGuard VPN" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "Proton VPN" })).not.toBeChecked();
+    const select = await screen.findByRole("combobox", { name: "VPNベンダー" });
+    expect(select).toBeInTheDocument();
+    expect(select).toHaveValue("adguardvpn");
     expect(await screen.findByText("（AdGuard VPN）")).toBeInTheDocument();
   });
 
@@ -94,9 +93,9 @@ describe("App（VPNベンダーの選択）", () => {
       data: [TWO[0], provider("protonvpn", "Proton VPN", { available: false, unavailableReason: "ランナーが起動していません" })],
     });
     renderApp();
-    const radio = await screen.findByRole("radio", { name: /Proton VPN/ });
-    expect(radio).toBeDisabled();
-    expect(screen.getByText(/利用不可: ランナーが起動していません/)).toBeInTheDocument();
+    const option = await screen.findByRole("option", { name: /Proton VPN/ });
+    expect(option).toBeDisabled();
+    expect(option).toHaveTextContent("利用不可: ランナーが起動していません");
   });
 
   it("切断中の切替は確認なしで要求し、成功後に状態と接続先リストを新しいベンダーのものへ入れ替える", async () => {
@@ -112,7 +111,7 @@ describe("App（VPNベンダーの選択）", () => {
       status: 200,
       data: [{ id: "us-united-states", country: "us", countryName: "United States", favorite: false, lastConnected: false }],
     });
-    await userEvent.click(screen.getByRole("radio", { name: "Proton VPN" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "VPNベンダー" }), "protonvpn");
 
     expect(confirm).not.toHaveBeenCalled();
     expect(api.putV1ProvidersActive).toHaveBeenCalledWith({ providerId: "protonvpn" });
@@ -129,18 +128,18 @@ describe("App（VPNベンダーの選択）", () => {
     api.putV1ProvidersActive.mockResolvedValue({ status: 200, data: { id: "protonvpn", displayName: "Proton VPN" } });
     const confirm = vi.spyOn(window, "confirm");
     renderApp();
-    const target = await screen.findByRole("radio", { name: "Proton VPN" });
+    const select = await screen.findByRole("combobox", { name: "VPNベンダー" });
     await waitFor(() => expect(document.querySelector("strong.connection-label")).toHaveTextContent("接続中"));
 
     confirm.mockReturnValueOnce(false);
-    await userEvent.click(target);
+    await userEvent.selectOptions(select, "protonvpn");
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm.mock.calls[0][0]).toContain("切断");
     expect(confirm.mock.calls[0][0]).toContain("Kill Switch");
     expect(api.putV1ProvidersActive).not.toHaveBeenCalled();
 
     confirm.mockReturnValueOnce(true);
-    await userEvent.click(target);
+    await userEvent.selectOptions(select, "protonvpn");
     await waitFor(() => expect(api.putV1ProvidersActive).toHaveBeenCalledWith({ providerId: "protonvpn" }));
     confirm.mockRestore();
   });
@@ -148,7 +147,8 @@ describe("App（VPNベンダーの選択）", () => {
   it("切替に失敗（切断失敗の422）したら原因をトーストで通知する", async () => {
     api.putV1ProvidersActive.mockResolvedValue({ status: 422, data: { error: "command_failed", exitCode: 1, stderr: "Failed to disconnect" } });
     renderApp();
-    await userEvent.click(await screen.findByRole("radio", { name: "Proton VPN" }));
+    const select = await screen.findByRole("combobox", { name: "VPNベンダー" });
+    await userEvent.selectOptions(select, "protonvpn");
     expect(await screen.findByText(/ベンダーの切替に失敗しました（VPNコマンドが異常終了: exit code 1）/)).toBeInTheDocument();
   });
 

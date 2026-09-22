@@ -16,3 +16,12 @@ createRoot(rootElement).render(
     </ToastProvider>
   </StrictMode>,
 );
+
+// PWAとしてホーム画面追加・オフライン起動を可能にする（Service Workerが使える環境のみ）。
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // 登録に失敗してもアプリ自体の動作には影響しないため、握りつぶす。
+    });
+  });
+}

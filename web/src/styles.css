@@ -10,8 +10,10 @@
   --muted-bg: #eaeef2;
   --border: #d0d7de;
   --accent: #0969da;
-  /* 入力欄の枠線色（Phase 22）。ブラウザ・OS既定の枠線色（--border）とは区別し、意図的に定める。 */
-  --input-border: #6e40c9;
+  /* 入力欄の枠線色（Phase 22）。ブラウザ・OS既定の枠線色（--border）とは区別し、意図的に定める。
+     【Phase 23】紫（#6e40c9）は他のUI（枠線・アクセント色）と系統が異なり一貫性を欠くため、
+     グレー系（--mutedと同系統）へ変更する（webserver/requirements.md「入力欄の枠線色の一貫性」）。 */
+  --input-border: #6e7781;
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
   color: #1f2328;
 }
@@ -25,6 +27,9 @@ body,
 body {
   margin: 0;
   background: #f6f8fa;
+  /* iOS Safari等でページ全体を引っ張って伸縮させる挙動（ラバーバンドスクロール）を防ぎ、
+     意図しないスクロールが発生しないようにする（Phase 23）。 */
+  overscroll-behavior-y: none;
 }
 
 /* 画面の縦幅をビューポートに収める（Phase 21）。接続先リストの内部スクロール
@@ -35,11 +40,41 @@ main {
   max-width: 640px;
   margin: 0 auto;
   padding: 16px;
+  padding-top: max(16px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
+}
+
+/* スマートフォン幅（Phase 23）: カードの余白・行間を詰め、ベンダー選択カードの
+   プルダウン＋ボタンの行を縦に積んで、狭い画面でも折り返し・はみ出しでスクロールが
+   発生しないようにする（webserver/requirements.md「スマートフォンでのスクロール防止」）。 */
+@media (max-width: 420px) {
+  main {
+    padding: 10px;
+    padding-top: max(10px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    gap: 8px;
+  }
+
+  .card {
+    padding: 10px 12px;
+  }
+
+  .provider-card {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "select"
+      "action"
+      "extra";
+  }
+
+  .session-action {
+    justify-content: flex-end;
+  }
 }
 
 h1 {
@@ -523,12 +558,6 @@ dialog [role="alert"] {
 }
 
 /* プロバイダの機能差・プラン制限への対応（Phase 9）: ログイン状態・ログインフォーム・制限理由 */
-.session-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .session-status {
   margin: 0;
 }
@@ -543,13 +572,6 @@ dialog [role="alert"] {
 
 .status-top-row .connection-summary {
   margin: 0;
-}
-
-.session-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
 }
 
 .login-form {
@@ -595,37 +617,97 @@ dialog [role="alert"] {
   cursor: default;
 }
 
-/* VPNベンダーの選択（Phase 11） */
-.provider-selector {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin: 0;
+/* VPNベンダーの選択（Phase 11）。
+   【Phase 23】ラジオボタンの並び（利用不可の分岐を除きベンダー数ぶんの行を必要とし、画面のデッドスペースが
+   目立っていた）からプルダウンへ変更する。プルダウンの隣にログイン/ログアウトボタンを並べ、
+   その下にアカウント状態・ログインフォーム等を続けることで、カード内の空白を減らす
+   （webserver/requirements.md「ベンダー選択のプルダウン化」）。
+   `.provider-card`はCSS Gridで2行（1行目: プルダウンとボタン、2行目: 状態・フォーム）に分け、
+   `ProviderSelector`（`select`）と`SessionCard`（`session-action`・`session-extra`）という別コンポーネントの
+   直接の子（section要素の子）をgrid-areaで並べ替える。DOM上の親子構造を変えずに済むため、
+   ログイン状態の保持等の既存ロジックには手を入れない。 */
+.provider-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "select action"
+    "extra  extra";
+  align-items: start;
+  column-gap: 10px;
+  row-gap: 6px;
 }
 
-.provider-selector legend {
-  font-size: 0.875rem;
-  padding: 0 4px;
-}
-
-.provider-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-}
-
-.provider-option {
+.provider-select-row,
+.provider-name {
+  grid-area: select;
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.provider-active {
-  font-weight: 600;
-}
-
-.provider-name {
+  gap: 8px;
+  min-width: 0;
   margin: 0;
+}
+
+.provider-select-label {
+  flex: none;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.provider-select-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* プルダウンはブラウザ・OS既定の見た目（system UI）を使わず、他のテキスト入力欄と揃った
+   テキストボックス風の装飾にする（`appearance: none`でOS既定の矢印等を消し、代わりに
+   `.provider-select-wrap::after`で自前の矢印を描く）。枠線・padding・フォーカス時のoutlineは
+   他の入力欄と同じ`--input-border`を使い、見た目の一貫性を保つ。 */
+.provider-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding-right: 32px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.provider-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.provider-select-wrap::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: translateY(-65%) rotate(45deg);
+  pointer-events: none;
+}
+
+.session-action {
+  grid-area: action;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-extra {
+  grid-area: extra;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.session-extra:empty {
+  display: none;
 }
 
 /* 画面末尾の小さなフッター（Phase 22）: 本リポジトリのGitHubページへのリンクのみを控えめに表示する。

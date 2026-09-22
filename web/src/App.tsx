@@ -131,7 +131,7 @@ export function App() {
         </div>
       </header>
       {/* ベンダーが替わったら、ログイン導線のローカルな状態（入力中のフォーム・URL提示の結果）を捨てるため、IDをkeyにして再マウントする。 */}
-      <section key={`provider-${activeProviderId}`} className="card" aria-label="VPNベンダー">
+      <section key={`provider-${activeProviderId}`} className="card provider-card" aria-label="VPNベンダー">
         {providers ? (
           <ProviderSelector
             providers={providers}
