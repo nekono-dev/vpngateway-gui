@@ -83,18 +83,14 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
   // プラン名の直後に補足情報（例: 今月分の残りデータ通信量）があれば括弧書きで併記する（Phase 13）。
   // CLIの文言をそのまま出し、意味の解釈・翻訳はしない。
   const planText = session?.plan ? `${session.plan.label}${session.plan.usageNote ? `・${session.plan.usageNote}` : ""}` : undefined;
-  const statusText =
-    loggedIn === true
-      ? `ログイン済み${planText ? `（プラン: ${planText}）` : ""}`
-      : loggedIn === false
-        ? "未ログイン"
-        : undefined;
 
   return (
     <div className="session-card">
-      {statusText ? (
+      {/* ログイン状態は接続状態の表示と同様に色で分かるようにする（Phase 22）。未ログインはログインフォーム・
+          ログインボタン自体が示すため、「未ログイン」の文言は表示しない。 */}
+      {loggedIn === true ? (
         <p className="session-status">
-          アカウント: <strong>{statusText}</strong>
+          アカウント: <span className="badge badge-ok">ログイン済み{planText ? `（プラン: ${planText}）` : ""}</span>
         </p>
       ) : null}
       {loggedIn !== true && canLogin ? (

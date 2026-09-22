@@ -231,7 +231,8 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       const connect = await screen.findByRole("button", { name: "接続" });
       await waitFor(() => expect(connect).toBeDisabled());
       expect(connect).toHaveAccessibleDescription("ログインしてください");
-      expect(screen.getByText(/アカウント:/)).toHaveTextContent("未ログイン");
+      // 未ログイン時は「アカウント: 未ログイン」を表示しない（ログインフォーム自体が示すため。Phase 22）。
+      expect(screen.queryByText(/アカウント:/)).not.toBeInTheDocument();
       expect(screen.getByLabelText("パスワード")).toBeInTheDocument();
       expect(api.getV1ConnectionLocations).not.toHaveBeenCalled();
     });

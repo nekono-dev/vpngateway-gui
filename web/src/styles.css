@@ -10,6 +10,8 @@
   --muted-bg: #eaeef2;
   --border: #d0d7de;
   --accent: #0969da;
+  /* 入力欄の枠線色（Phase 22）。ブラウザ・OS既定の枠線色（--border）とは区別し、意図的に定める。 */
+  --input-border: #6e40c9;
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
   color: #1f2328;
 }
@@ -95,13 +97,25 @@ button.danger {
   font-weight: 600;
 }
 
+/* チェックボックス・ラジオボタンはブラウザ既定の小さな部品のままにし、文字入力欄（テキスト・パスワード・
+   数値・検索等）のみを対象にする（チェックボックスへpadding・枠線を付けると見た目が崩れるため）。 */
 select,
 textarea,
-input[type="search"] {
+input:not([type="checkbox"]):not([type="radio"]) {
   font: inherit;
-  padding: 6px;
-  border: 1px solid var(--border);
+  /* スマートフォン（iOS Safari等）はフォーカスした入力欄の文字サイズが16px未満だと
+     ページ全体を自動拡大するため、16px（1rem）以上にする（Phase 22）。 */
+  font-size: 1rem;
+  padding: 8px 10px;
+  border: 1px solid var(--input-border);
   border-radius: 6px;
+}
+
+select:focus-visible,
+textarea:focus-visible,
+input:not([type="checkbox"]):not([type="radio"]):focus-visible {
+  outline: 2px solid var(--input-border);
+  outline-offset: 1px;
 }
 
 .card {
@@ -138,6 +152,13 @@ input[type="search"] {
   flex-direction: column;
   gap: 12px;
   border-left-width: 1px;
+  /* 表示する接続先が無いとき（取得中・0件・制限のみで参考一覧も無いとき）は内容に必要な高さのみを占め、
+     画面の残り高さを不要に確保しない（Phase 22）。表示項目があるときだけ`.controls-expanded`が付き、
+     Phase 21の「残り高さを接続先リストの内部スクロールへ吸収させる」挙動になる。 */
+  flex: 0 0 auto;
+}
+
+.controls-expanded {
   /* 接続先リストの内部スクロールへ残り高さを吸収させるため、このカード自体も縮んでよいようにする（Phase 21）。 */
   flex: 1 1 auto;
   min-height: 0;
@@ -605,4 +626,32 @@ dialog [role="alert"] {
 
 .provider-name {
   margin: 0;
+}
+
+/* 画面末尾の小さなフッター（Phase 22）: 本リポジトリのGitHubページへのリンクのみを控えめに表示する。
+   `.controls`が展開していない（接続操作カードの内容が少ない）ときに画面内へ収まる高さに留める。 */
+.app-footer {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.app-footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: var(--accent);
+}
+
+.app-footer svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }

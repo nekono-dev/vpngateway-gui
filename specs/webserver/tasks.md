@@ -134,16 +134,16 @@
 - [x] 検証環境（実機）のブラウザ（Playwright）でのカード配置・重複表示なし・画面が1画面に収まることの確認
 - [x] 【不具合修正】「接続できる国（参考）」一覧がページ全体を突き破る不具合を修正（`.location-list`の外枠漏れ）。回帰防止のコンポーネントテスト・実機E2E（`e2e/phase21/webgui-phase21.mjs`）を追加
 
-## モバイル表示・入力欄の視認性改善（Phase 22）
+## モバイル表示・入力欄の視認性改善（Phase 22、実装完了・検証完了）
 
-- [ ] `specs/webserver/requirements.md`「モバイル表示・入力欄の視認性改善（Phase 22）」に要件を追記
-- [ ] `specs/webserver/design.md`に実装方針を追記
-- [ ] `styles.css`の入力欄スタイルを`input`全体へ拡大し、`--input-border`・`font-size: 1rem`・`padding`拡大を適用
-- [ ] `SessionCard.tsx`の「アカウント: 未ログイン」表示を削除し、ログイン済み時は`badge badge-ok`で色分け表示
-- [ ] `App.tsx`に`.controls`の展開判定（`controls-expanded`）を追加し、`styles.css`の`.controls`既定を`flex: 0 0 auto`へ変更
-- [ ] `components/icons/GithubIcon.tsx`（インラインSVG）とフッター（`App.tsx`・`styles.css`）を追加
-- [ ] 既存コンポーネントテスト（`App.test.tsx`・`SessionCard.test.tsx`等）の回帰確認・必要な追従修正
-- [ ] 検証環境（実機）のブラウザ（Playwright）で、①入力欄の見た目（枠線色・文字サイズ・padding）、②「アカウント: 未ログイン」が表示されないこと、③ログイン済み時の色分け表示、④接続先が0件・制限時に接続操作カードが余分な高さを取らないこと、⑤フッターのGitHubリンクを確認する
+- [x] `specs/webserver/requirements.md`「モバイル表示・入力欄の視認性改善（Phase 22）」に要件を追記
+- [x] `specs/webserver/design.md`に実装方針を追記
+- [x] `styles.css`の入力欄スタイルを`input`全体へ拡大し、`--input-border`・`font-size: 1rem`・`padding`拡大を適用
+- [x] `SessionCard.tsx`の「アカウント: 未ログイン」表示を削除し、ログイン済み時は`badge badge-ok`で色分け表示
+- [x] `App.tsx`に`.controls`の展開判定（`controls-expanded`）を追加し、`styles.css`の`.controls`既定を`flex: 0 0 auto`へ変更
+- [x] `components/icons/GithubIcon.tsx`（インラインSVG）とフッター（`App.tsx`・`styles.css`）を追加
+- [x] 既存コンポーネントテスト（`App.provider.test.tsx`）の回帰確認・追従修正
+- [x] 検証環境（実機）のブラウザ（Playwright）で、①入力欄の見た目（枠線色・文字サイズ・padding）、②「アカウント: 未ログイン」が表示されないこと、③ログイン済み時の色分け表示、④接続先が0件・制限時に接続操作カードが余分な高さを取らないこと、⑤フッターのGitHubリンクを確認（`e2e/phase22/webgui-phase22.mjs`）
 
 # 将来課題
 

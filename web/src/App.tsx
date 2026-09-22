@@ -13,6 +13,7 @@ import { ConnectButton } from "./components/dashboard/ConnectButton";
 import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
+import { GithubIcon } from "./components/icons/GithubIcon";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
 import { useToast } from "./notifications/ToastProvider";
 import { putV1Connection } from "./generated/api/default/default";
@@ -63,6 +64,10 @@ export function App() {
   }
   const connection = data?.connection ?? lastConnection.current;
   const error = pollingError ?? data?.connectionError;
+
+  // 接続操作カードは、接続先リストまたは参考一覧に実際に表示する項目があるときだけ画面の残り高さいっぱいに
+  // 広げる。取得中・0件・制限理由のみ（参考一覧も空）のときは、内容に必要な高さのみを占める（Phase 22）。
+  const hasVisibleList = locations.locations.length > 0 || availableLocations.length > 0;
 
   const currentId = findCurrentLocationId(connection, locations.locations);
   const lastConnectedId = locations.locations.find((location) => location.lastConnected)?.id;
@@ -162,7 +167,7 @@ export function App() {
         <GatewayStatusCard gateway={data?.gateway} gatewayError={data?.gatewayError} isLoading={isLoading} />
       </section>
       {/* ベンダーが替わったら、接続操作カード内のローカルな状態（絞り込み・タブ）を捨てるため、IDをkeyにして再マウントする。 */}
-      <section key={activeProviderId} className="card controls" aria-label="接続操作">
+      <section key={activeProviderId} className={`card controls${hasVisibleList ? " controls-expanded" : ""}`} aria-label="接続操作">
         <LocationList
           locations={locations.locations}
           isLoading={locations.isLoading}
@@ -197,6 +202,12 @@ export function App() {
       </section>
       <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       <ConnectionLogDialog open={isLogOpen} onClose={() => setIsLogOpen(false)} />
+      <footer className="app-footer">
+        <a href="https://github.com/nekono-dev/vpngateway-gui" target="_blank" rel="noreferrer">
+          <GithubIcon />
+          GitHub
+        </a>
+      </footer>
     </main>
   );
 }

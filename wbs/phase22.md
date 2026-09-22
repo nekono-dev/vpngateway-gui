@@ -17,12 +17,12 @@
 
 - [x] `specs/webserver/requirements.md`「モバイル表示・入力欄の視認性改善（Phase 22）」に要件を追記
 - [x] `specs/webserver/design.md`に実装方針を追記
-- [ ] `styles.css`の入力欄スタイルを`input`全体へ拡大し、`--input-border`（システム既定と区別できる色）・`font-size: 1rem`（16px、iOS自動拡大の防止）・`padding`拡大を適用
-- [ ] `SessionCard.tsx`の「アカウント: 未ログイン」表示を削除し、ログイン済み時は`badge badge-ok`で色分け表示
-- [ ] `App.tsx`に接続操作カード（`.controls`）の展開判定（`controls-expanded`。接続先リストまたは参考一覧に表示項目があるときのみ）を追加し、`styles.css`の`.controls`既定を`flex: 0 0 auto`へ変更
-- [ ] `components/icons/GithubIcon.tsx`（インラインSVG）とフッター（`App.tsx`・`styles.css`）を追加し、本リポジトリのGitHubページへリンクする
-- [ ] 既存コンポーネントテスト（`App.test.tsx`・`App.provider.test.tsx`・`App.providers.test.tsx`・`SessionCard.test.tsx`等）の回帰確認・必要な追従修正
-- [ ] 検証環境（実機、`ubuntu@192.168.3.240`）のブラウザ（Playwright、モバイル幅を含む）で確認
+- [x] `styles.css`の入力欄スタイルを`input`全体（チェックボックス・ラジオボタンを除く）へ拡大し、`--input-border`（システム既定と区別できる色）・`font-size: 1rem`（16px、iOS自動拡大の防止）・`padding`拡大を適用
+- [x] `SessionCard.tsx`の「アカウント: 未ログイン」表示を削除し、ログイン済み時は`badge badge-ok`で色分け表示
+- [x] `App.tsx`に接続操作カード（`.controls`）の展開判定（`controls-expanded`。接続先リストまたは参考一覧に表示項目があるときのみ）を追加し、`styles.css`の`.controls`既定を`flex: 0 0 auto`へ変更
+- [x] `components/icons/GithubIcon.tsx`（インラインSVG）とフッター（`App.tsx`・`styles.css`）を追加し、本リポジトリのGitHubページへリンクする
+- [x] 既存コンポーネントテスト（`App.provider.test.tsx`）の回帰確認・追従修正（「アカウント: 未ログイン」の存在を前提にしていたアサーションを、非表示であることの確認へ変更）
+- [x] 検証環境（実機、`ubuntu@192.168.3.240`）のブラウザ（Playwright、モバイル幅を含む）で確認、恒久的なE2Eスクリプト（`e2e/phase22/webgui-phase22.mjs`）を追加
 
 ## 完了基準
 
@@ -33,10 +33,22 @@
 
 `web`のユニット/コンポーネントテスト（`npm test`）、`npm run build`・`tsc`（型チェック）、`scripts/check-vendor-neutrality.mjs`を実行する。実機は検証環境（`ubuntu@192.168.3.240`）の`web`コンテナを本フェーズの資材で再ビルド・再起動し、Playwrightで複数のビューポート（デスクトップ幅・モバイル幅375x667程度）を用いて、入力欄のスタイル（`getComputedStyle`のフォントサイズ・枠線色・padding）、「アカウント: 未ログイン」テキストの不在、ログイン状態のバッジ表示、接続操作カードの高さ（内容が無いときに残り高さを占有しないこと）、フッターのリンク先を確認する。
 
-## 検証結果
+## 検証結果（2026-09-22、検証環境ubuntu@192.168.3.240）
 
-（実装完了後、実機検証を行ってから記載する）
+- `npm test`（web）: FAIL 0（103件PASS。「アカウント: 未ログイン」の非表示化に追従した`App.provider.test.tsx`の修正を含む）。
+- `tsc -p tsconfig.json`・`npm run build`: エラー無し。
+- `scripts/check-vendor-neutrality.mjs`: OK（禁止語12語）。
+- 実機（`web`コンテナのみ本フェーズの資材で再ビルド・再起動。`api`・`proxy`・`runner-*`は未変更のため未再ビルド）をPlaywright（デスクトップ幅・モバイル幅375x667）で確認:
+  - フッターにGitHubロゴ（インラインSVG）とリンクが表示され、リンク先が`https://github.com/nekono-dev/vpngateway-gui`であることを確認。
+  - ログイン済みベンダー（AdGuard VPN、Premiumプラン）で、「未ログイン」の文言が画面上に無いこと、ログイン状態が`badge badge-ok`（緑色）で「ログイン済み」と表示されることを確認。
+  - 未ログインベンダー（Proton VPN）でも、「未ログイン」の文言が画面上に無いこと（ログインフォームの表示のみで示す）を確認。
+  - 接続先リストに項目があるとき（AdGuard VPN）は接続操作カードが`controls-expanded`クラスを持ち、項目が無いとき（Proton VPN、未ログインで参考一覧も空）は同クラスを持たず、画面の残り高さを占有しないことを確認。
+  - 入力欄（接続先の絞り込み・ログインフォームのユーザー名/パスワード）の`getComputedStyle`で、文字サイズ16px、枠線色`rgb(110, 64, 201)`（`--input-border`）、padding`8px 10px`（従来の`6px`から変更）を確認。
+  - モバイル幅（375x667）でも入力欄の文字サイズが16px以上であること、`viewport`メタタグが`user-scalable=no`を含まない（ピンチズーム自体は禁止しない）ことを確認。フォーカス時の自動拡大はブラウザ側の挙動でありPlaywrightのヘッドレスChromiumでは再現されないため、16px以上の文字サイズという原因側の条件を満たしていることの確認に留めた。
+  - コンソールエラー無し。
+  - 検証はベンダー切替（AdGuard VPN⇄Proton VPN）を伴うため、検証後に元のベンダー（Proton VPN。検証開始時点の選択中ベンダー）へ戻し、環境の状態を変えないようにした。恒久的なE2Eスクリプト（`e2e/phase22/webgui-phase22.mjs`）として自動化し、再実行してFAIL 0を確認。
 
 ## 次フェーズへの申し送り
 
-（実機検証完了後に記載する）
+- 検証環境（`ubuntu@192.168.3.240`）の`web`コンテナは本フェーズの資材で更新済みのまま残している（`api`・`proxy`・`runner-*`はPhase21時点のまま）。選択中のベンダーはPhase22開始前と同じProton VPN（未ログイン）へ戻して放置した。
+- フォーカス時の自動拡大防止（iOS Safariの挙動）は、ヘッドレスChromiumのPlaywrightでは実機のSafari特有の拡大動作そのものは再現できないため、原因となる条件（文字サイズ16px以上）の充足確認に留まっている。実iOS端末での確認は本フェーズでは未実施。
