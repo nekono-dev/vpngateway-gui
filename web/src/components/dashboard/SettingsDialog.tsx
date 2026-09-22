@@ -88,7 +88,7 @@ export function SettingsDialog({ open, onClose }: Props) {
             value={settings.excludedDomains}
             onChange={(excludedDomains) => setSettings({ ...settings, excludedDomains })}
           />
-          <p className="unsupported">未対応: 保存はされますが現在は通信に反映されません（Phase 6で対応予定）。</p>
+          <p className="unsupported">未対応: 保存はされますが現在は通信に反映されません（Phase 14で対応予定）。</p>
 
           <label>
             <input

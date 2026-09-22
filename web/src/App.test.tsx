@@ -336,7 +336,7 @@ describe("App", () => {
     expect(await screen.findByText("履歴はありません。")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "設定" }));
-    expect(await screen.findByText(/Phase 6で対応予定）。$/)).toBeInTheDocument();
+    expect(await screen.findByText(/Phase 14で対応予定）。$/)).toBeInTheDocument();
     // 明示的プロキシはPhase 4で実装したため「未対応」の暫定表示は出さない。
     expect(screen.queryByText(/Phase 4で対応予定/)).not.toBeInTheDocument();
     // Phase 8でデフォルト接続国は廃止した
