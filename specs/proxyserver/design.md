@@ -24,7 +24,7 @@ Phase 9までは、1つのproxyコンテナがネットワーク制御とベン�
 
 ## composeの構成（Phase 8）
 
-- サービス: **Phase 24までは**composeの本体（`docker-compose.yml`）が`web`・`api`・`proxy`だけを持ち、`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べていた（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。**Phase 25で**、`web`・`api`・`proxy`は`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`proxy`を含む）へ分割し、ロール別インストール（`--role`）で選んだファイルだけを`.env`の`COMPOSE_FILE`へ並べる（`specs/design.md`「デプロイメント構成の分離とロール別インストール」）。ベンダーバンドルのcompose fragmentは、引き続き`compose/gateway.yml`と合成する。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`install/install.sh`が書く。
+- サービス: **Phase 24までは**composeの本体（`docker-compose.yml`）が`web`・`api`・`proxy`だけを持ち、`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べていた（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。**Phase 25で**、`web`・`api`・`proxy`は`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`proxy`を含む）へ分割し、`install/install.sh`（`--api`・`--web`・`--gateway`引数によるオーケストレーション型インストール）が、各ホストに配置したロールのファイルだけを、そのホストの`.env`の`COMPOSE_FILE`へ並べる（`specs/design.md`「デプロイメント構成の分離とロール別インストール」「オーケストレーション型インストーラ」）。ベンダーバンドルのcompose fragmentは、引き続き`compose/gateway.yml`と合成する。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`install/install.sh`が書く。
 - `api`は、`./vendors`を`/etc/vpngwgui/vendors:ro`へマウントし、`ENABLED_PROVIDERS: ${VPN_PROVIDERS:?...}`（必須。既定なし）を受け取る。**Phase 25で`ctl-socket`（UDS）を経由しなくなったため、`api`側はマウントしない**（ゲートウェイとの通信はmTLS TCP。`GATEWAY_HOST`・`GATEWAY_PORT`環境変数で接続先を指定する）。
 - ボリューム: ネットワークコンテナは`ctl-socket`（`proxy`⇄`runner-<ベンダー>`間、Phase 25以降も維持）のみ。ベンダーごとのログイン情報のボリュームはランナーの仕様（`specs/runner/design.md`）。
 

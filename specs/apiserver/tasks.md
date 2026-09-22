@@ -152,7 +152,7 @@
 - [ ] Web UI利用者の認証: パスワードのハッシュ保存（`api/src/auth/password-store.ts`）、`POST/GET/DELETE /v1/operator-session`（`api/src/routes/operator-session.ts`）、`preHandler`フックによる認可（`require-operator-session.ts`）、レート制限（`login-rate-limiter.ts`）
 - [ ] ゲートウェイとの内部通信をUDSからmTLS TCPへ変更（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`等を`undici`のmTLSクライアントへ置き換え）
 - [ ] APIサーバ自身のHTTPS化（Fastifyの`https`オプション）
-- [ ] インストーラのペアリング手順（`--gateway-ssh`等）で配置された証明書の読み込み
+- [ ] インストーラ（オーケストレーター）が配置した証明書の読み込み
 - [ ] 単体・結合テスト、実機検証（詳細は`../../wbs/phase25.md`）
 
 # 将来課題
