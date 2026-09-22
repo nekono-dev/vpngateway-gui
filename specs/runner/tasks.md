@@ -59,6 +59,10 @@
 - [x] `proxy/`直下のベンダー別ファイル・`proxy/mock-cli/`の整理、ランナーの実行部（`runner.ts`等）のコメント・メッセージの中立化
 - [x] `docker-compose.yml`本体から`runner-*`・ベンダー別ボリュームを除去し、`COMPOSE_FILE`合成で起動できることの確認（`docker compose config`）
 
+## デプロイメント構成の分離（Phase 25）
+
+- [ ] ランナー自体の実装（`POST /exec`・`GET /health`・UDS）は変更しない。呼び出し元が`api`から`proxy`（同一ホスト内のUDS転送）へ変わる点のみ、`../runner/design.md`「UDS」に追記済み（詳細は`../../wbs/phase25.md`）
+
 # 将来課題
 
 - ベンダーの追加（NordVPN CLI等）: ランナー（イメージ・composeサービス・ボリューム）とプロファイルの追加（design.md「VPNベンダーCLI（ランナー）の追加方法」）。

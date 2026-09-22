@@ -1,8 +1,10 @@
 # システムの構成
 
-システムは、Webサーバ用のコンテナ、Webサーバの信号を受けてVPNクライアントのCLI命令へ変換するAPIコンテナ、ホストに対するプロキシサーバ（透過ゲートウェイ・Kill Switch・明示的プロキシ）として動作する**ネットワークコンテナ（`proxy`）**、およびVPNベンダーごとに用意しCLIを実行する**ランナーコンテナ（`runner-<ベンダー>`）**で構成する（Phase 8で、従来の「ベンダーごとに別のproxyコンテナ」から、ネットワーク制御とCLI実行の責務を分離した）。システムはdocker-composeによりサービス化する。
+システムは3つの実行単位（**ロール**）で構成する。**Webサーバ**（`web`）、**APIサーバ**（`api`）、**ゲートウェイ**（`gateway`。ホストに対するプロキシサーバ（透過ゲートウェイ・Kill Switch・明示的プロキシ）として動作する**ネットワークコンテナ（`proxy`）**と、VPNベンダーごとに用意しCLIを実行する**ランナーコンテナ（`runner-<ベンダー>`）**の組）である（Phase 8で、従来の「ベンダーごとに別のproxyコンテナ」から、ネットワーク制御とCLI実行の責務を分離した）。各ロールはdocker-composeによりサービス化する。
 
-APIサーバから、ネットワークコンテナ・各ランナーコンテナへの制御は、SSHではなく、**各コンテナ内でのみlistenする内部専用HTTPサーバ**（ランナーは受け取ったテキスト＝解決済みコマンドをそのまま実行するのみ。OpenAPI等の仕様を持つ正式なAPIではない）を介して行う。この内部HTTPサーバは、コンテナ外部（LAN含む）から一切到達不能でなければならない。この制約を満たすため、TCP通信ではなく、APIコンテナと各コンテナ間で共有するDockerボリューム上に、コンテナごとに1つ配置したUnixドメインソケット（UDS）を通信経路とする（ネットワークコンテナ: `net.sock`、ランナー: `runner-<ベンダー>.sock`）。
+**ロールは、それぞれ独立したホストへ分離して配置できる（Phase 25。下記「デプロイメント構成の分離」）。** ゲートウェイ内の`proxy`・`runner-<ベンダー>`は、透過ゲートウェイ機能が`network_mode: host`を要するため常に同一ホストに同居し、分離の単位としては常に1つにまとまる。単一ホストへ全ロールをまとめて配置する構成（`--role all`。既定）を、最も簡単な導入経路として維持する。
+
+APIサーバからゲートウェイへの制御は、SSHではなく、**ゲートウェイが公開する内部専用HTTPSサーバ**（ランナーは受け取ったテキスト＝解決済みコマンドをそのまま実行するのみ。OpenAPI等の仕様を持つ正式なAPIではない）を介して行う。この経路は、ホストのネットワーク制御（nftables）・VPNベンダーCLIの実行という強い権限を行使できるため、**相互TLS（mTLS。クライアント証明書必須）**で送受信者を認証する。Phase 24までは、同一ホスト内の共有Dockerボリューム上のUnixドメインソケット（UDS）を使い、コンテナ外部からの到達をネットワーク層で物理的に遮断することで安全性を担保していたが、Phase 25でホストを分離できるようにしたため、ネットワーク到達性ではなく暗号学的な認証を境界とする方式へ改めた（詳細は`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）。ゲートウェイ内部（`proxy`⇄`runner-<ベンダー>`）は、両者が同一ホストに常在する前提が変わらないため、従来どおり共有Dockerボリューム上のUDSを使う。
 
 ネットワークコンテナは、透過ゲートウェイモードを実現するためホストのネットワーク名前空間を共有する必要があり（詳細はSPEC-PROXY.md）、`network_mode: host` を用いる。**ランナーコンテナも、ベンダーCLIが確立するトンネルインターフェースをホスト（ゲートウェイ）のネットワーク名前空間に作らせるため、`network_mode: host`・`NET_ADMIN`・`/dev/net/tun`を用いる**。docker-composeの仕様上 `network_mode: host` と `networks:`（ユーザー定義ブリッジ）は併用できないため、これらのコンテナは他コンテナと同一のDockerブリッジネットワークには参加できない。API⇄各コンテナ間の通信を前述のUDS方式に限定しているのはこの制約への対応でもある。
 
@@ -14,11 +16,11 @@ APIサーバから、ネットワークコンテナ・各ランナーコンテ�
 
 WebサーバはGUIの表示、およびAPIのkick、実行結果のユーザ表示など、プレゼンテーション層以上の責務を持たない。
 
-ブラウザからAPIサーバへ直接クロスオリジンでリクエストを送るのではなく、Webサーバがブラウザから見て同一オリジンで `/api/*` をAPIサーバへリバースプロキシする。これによりCORS設定が不要になるほか、将来Cookieベースの認証を追加する際にドメイン分離に起因する問題（レガシー構成での実例あり）を避けられる。
+ブラウザからAPIサーバへ直接クロスオリジンでリクエストを送るのではなく、Webサーバがブラウザから見て同一オリジンで `/api/*` をAPIサーバへリバースプロキシする。これによりCORS設定が不要になるほか、Cookieベースの認証（Phase 25「認証・認可の設計方針」）をドメイン分離に起因する問題（レガシー構成での実例あり）を避けて追加できる。**Webサーバ⇄APIサーバ間がホストをまたぐ構成（Phase 25）でも、この同一オリジン構成は変えない。** Webサーバのリバースプロキシ先（`API_ORIGIN`）を任意ホストのHTTPS URLへ向けられるようにするだけで、ブラウザからは常にWebサーバの単一オリジンにのみアクセスする構成を維持する（`specs/webserver/design.md`「Web⇄API通信経路の実装」）。
 
 ## APIサーバの責務
 
-APIサーバはWebサーバから送信されたAPI命令、および管理者向け設定（VPNクライアント操作プロファイル）とユーザ向け設定を元に、プレースホルダーに投入される値をallowlist・正規表現で検証した上でコマンド（argv配列）を解決し、**選択中のベンダー**のランナーの内部HTTPサーバへUDS経由でそのコマンドを送信することで、ベンダーCLIを制御することが責務である（ネットワーク設定の反映は、ネットワークコンテナの内部HTTPサーバへ別途通知する）。Web UIで選択されたベンダーの保持・切替も責務とする（`specs/design.md`「ベンダーの選択と実行基盤」）。
+APIサーバはWebサーバから送信されたAPI命令、および管理者向け設定（VPNクライアント操作プロファイル）とユーザ向け設定を元に、プレースホルダーに投入される値をallowlist・正規表現で検証した上でコマンド（argv配列）を解決し、**選択中のベンダー**のランナーへ、ゲートウェイの内部HTTPS（mTLS）サーバ経由でそのコマンドを送信することで、ベンダーCLIを制御することが責務である（ネットワーク設定の反映は、同じ経路でネットワークコンテナへ別途通知する）。Web UIで選択されたベンダーの保持・切替も責務とする（`specs/design.md`「ベンダーの選択と実行基盤」）。
 
 この内部HTTPサーバとの通信経路は、テキスト（解決済みコマンド）をそのまま実行させるための内部チャネルであり、正式なAPIではないため、後述のOpenAPI定義の対象外とする。
 
@@ -59,13 +61,15 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 Web UI利用者が、管理者の有効化したベンダーの中から使うベンダーを選ぶ（`specs/requirements.md`「VPNベンダーの選択（Web UI）」）。接続は常に1ベンダーのみ（切替式）。
 
 ```
-ブラウザ ─▶ web ─▶ api ─┬─ UDS net.sock ────────▶ proxy（ネットワーク: 透過GW・Kill Switch・3proxy・トンネル検出・接続監視）
-                          ├─ UDS runner-adguardvpn.sock ─▶ runner-adguardvpn（AdGuard VPN CLI）
-                          └─ UDS runner-protonvpn.sock ──▶ runner-protonvpn（Proton VPN CLI＋NetworkManager・D-Bus・keyring）
-   （proxy・runner-*はいずれも network_mode: host。ランナーのCLIはトンネルをホストのネットワーク名前空間に作る）
+ブラウザ ─▶ web ─▶ api ─ mTLS TCP ─▶ proxy（ゲートウェイ制御チャネルの受信・ルーティング。ネットワーク: 透過GW・Kill Switch・3proxy・トンネル検出・接続監視）
+                                       ├─ UDS net.sock（自分自身）
+                                       ├─ UDS runner-adguardvpn.sock ─▶ runner-adguardvpn（AdGuard VPN CLI）
+                                       └─ UDS runner-protonvpn.sock ──▶ runner-protonvpn（Proton VPN CLI＋NetworkManager・D-Bus・keyring）
+   （proxy・runner-*はいずれも network_mode: host。ランナーのCLIはトンネルをホストのネットワーク名前空間に作る。
+    APIからゲートウェイへは常にmTLS TCPの単一経路（`proxy`が窓口）で到達し、proxy⇄runner-*間は同一ホスト常在を前提に従来どおりUDSを使う。Phase 25「ゲートウェイ制御チャネル」参照）
 ```
 
-- **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視だけを担い、ベンダーCLIを実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
+- **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視に加え、**ゲートウェイ制御チャネル（APIからのmTLS TCP接続の受信と、ランナーへのUDS転送。Phase 25）**を担い、ベンダーCLIそのものは実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
 - **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
 - **有効化**: 管理者は、インストーラの`--providers`（例 `--providers adguardvpn,protonvpn`。`install/install.sh`が`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`へ書く）で有効なベンダーを指定する。**省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする**（`specs/requirements.md`「インストール」）。APIは`VPN_PROVIDERS`を`ENABLED_PROVIDERS`として受け取り、有効なベンダーのバンドル（`vendors/<ベンダーID>/`。下記「ベンダー非依存の設計原則」）のcompose fragmentだけが`COMPOSE_FILE`に載り、そのランナーだけが起動する。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
 - **ランナーの許可リスト**: ランナーは、自分のベンダーのバイナリ1つだけを実行対象とする（イメージにビルド時に焼き込む`RUNNER_ALLOWED_BINARY`）。APIコンテナが侵害されても、別ベンダーのランナー経由で任意のバイナリを実行できず、許可リストによる「最後の防波堤」は従来どおり働く。
@@ -124,6 +128,49 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 - **中立性の検査**（`scripts/check-vendor-neutrality.mjs`。ルートの`npm test`から実行する）: 対象は、`api/src`・`proxy/src`・`web/src`・`web/server`・`api/scripts`・`install/`・`docker-compose.yml`・共通のDockerfile・共通のエントリポイントのうち、テストファイル（`*.test.*`）・生成物・依存物を除いたファイル。**コメントも検査する。** 禁止語は、`vendors/*/profile.json`の`vendor`・`displayName`・`binary`のファイル名から動的に作り、加えて`scripts/vendor-neutrality.words`（まだバンドルが無い既知のベンダー名。要件書に登場するもの）を足す。大文字小文字は区別しない。1件でも見つかれば失敗する。
 - **バンドルの適合テスト**（`api/src/profile/vendor-samples.test.ts`）: `vendors/*/profile.json`をすべて読み込み検証し、`samples.json`の各ケースを、共通のパーサー・判定処理へ流して期待値と照合する。ベンダーごとの出力の知識がバンドルに閉じる。
 
+# デプロイメント構成の分離とロール別インストール（Phase 25）
+
+`specs/requirements.md`「デプロイメント構成の分離」「通信路の保護」を実現するための設計。
+
+## ロールとcomposeの分割
+
+- `web`・`api`・`gateway`（`proxy`＋有効化した`runner-<ベンダー>`）の3ロールへ、composeファイルを分割する。
+  - `compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`gateway.yml`はベンダーバンドルの`compose.yml`と従来どおり合成する）。
+  - ルートの`docker-compose.yml`は、`--role all`（既定）向けに3ファイルをまとめて含む薄いラッパーとする。
+- `install/install.sh`は新規引数`--role <all|web|api|gateway>`（既定`all`）で、そのホストに配置するロールを選ぶ。`.env`の`COMPOSE_FILE`は選んだロールのcomposeファイルだけを並べる（ベンダーの有効化と同じ、追加ファイルの合成方式）。
+- 1ホストに複数ロールを配置する構成（例: web＋apiは同居、gatewayだけ別ホスト）も、`--role`を組み合わせて実行することで可能（各ロールのインストールは独立して冪等）。
+
+## ゲートウェイ制御チャネル
+
+APIサーバからゲートウェイへの制御を、Phase 24までのUDS（コンテナごとに1つ、同一ホストの共有Dockerボリューム）から、**`proxy`が単一の窓口となるmTLS TCP**へ置き換える。
+
+- **単一の受信口**: `proxy`（ネットワークコンテナ）だけが、ゲートウェイのLAN側インターフェースでTCPポート（既定`8443`。環境変数`GATEWAY_PORT`）をlistenする。ランナー（`runner-<ベンダー>`）は従来どおり自分のUDS（`runner-<ベンダー>.sock`）だけをlistenし、ゲートウェイホストの外から直接到達可能にはしない。理由: ランナーは有効化したベンダーの数だけ動的に増減し、各ランナーへ個別にTCPポート・証明書を割り当てるとポート管理・証明書発行の手間がベンダー数に比例して増える。`proxy`は常に1つだけ起動する既存の前提（`specs/proxyserver/design.md`「コンテナ構成」）を活かし、単一の証明書・単一のポートに集約する。
+- **ルーティング**: `proxy`はTLSを終端した後、パスで振り分ける。
+  - `/net/*`: 自分自身の処理（`/net/settings`→`/settings`、`/net/status`→`/status`、`/net/connection-checks`→`/connection-checks`。Phase 24までの処理をそのまま呼ぶ）。
+  - `/runners/<ベンダーID>/*`: 対応する`runner-<ベンダーID>.sock`へUDS経由でHTTPリクエストとして転送する（`/runners/<ベンダーID>/exec`→`POST /exec`、`/runners/<ベンダーID>/health`→`GET /health`）。`<ベンダーID>`に対応するソケットが無ければ`502`。
+  - `proxy`はリクエストボディを検証・改変せず素通しする（`api/src`が組み立てたリクエストボディの形状は変わらない）。ランナー側の許可リスト（`RUNNER_ALLOWED_BINARY`）による「最後の防波堤」は、転送経路が変わっても従来どおり独立して働く。
+- **TLS**: TLS 1.3以上。Node.js組み込みの`tls`/`https`モジュールを使う（外部フレームワーク不要という既存方針を踏襲）。サーバは`requestCert: true`・`rejectUnauthorized: true`とし、APIサーバのクライアント証明書がゲートウェイのCA（下記「証明書のペアリング」）で発行されたものでなければ接続を拒否する。
+- **既存の`/settings`・`/status`・`/connection-checks`・`/exec`・`/health`のリクエスト/レスポンス形状は変えない**（`specs/apiserver/design.md`「プロキシとの内部通信仕様」、`specs/runner/design.md`「`POST /exec`の仕様」）。変わるのは、APIサーバがこれらを呼び出す際の経路（UDSのソケットパス→mTLS TCPのURL＋パスプレフィックス）だけである。
+- **ファイアウォール（推奨・必須ではない）**: mTLSが主たる境界になるが、多層防御として、ゲートウェイ機のファイアウォールで`GATEWAY_PORT`への到達元をAPIサーバのIPアドレスへ制限することをREADMEで推奨する（本システムが自動設定するものではない）。
+
+## 証明書のペアリング
+
+ロール間の信頼関係（Webサーバ⇄APIサーバ、APIサーバ⇄ゲートウェイ）は、いずれも**「サーバ役がローカルに認証局（CA）と自分のサーバ証明書を生成し、クライアント役がその公開証明書（CA証明書。APIサーバ⇄ゲートウェイ間はさらにクライアント証明書）を、インストーラがSSH経由で取得して配置する」**という共通の仕組みで確立する。個別のペアリングプロトコル（独自のエンドポイント・ペアリングコード等）は作らず、運用者が既に持つSSHアクセス（各ホストへインストーラを実行するために必要な資格情報と同じもの）を再利用する。
+
+| 経路 | 認証方式 | サーバ役 | クライアント役 |
+|---|---|---|---|
+| ブラウザ⇄web | 片方向TLS | web | ブラウザ（証明書検証はブラウザの自己署名警告に委ねる） |
+| web⇄api | 片方向TLS（CA証明書のみ配布） | api | web |
+| api⇄gateway | 相互TLS（クライアント証明書も発行） | gateway（`proxy`） | api |
+
+- **単一ホスト構成（`--role all`。既定）**: SSHを使わず、同一ファイルシステム上でCA生成・証明書発行・配置をすべてインストーラが直接行う（追加の引数は不要。従来どおり1コマンドで完結する）。
+- **分離構成**: `--role gateway`・`--role api`・`--role web`のうち、**信頼する側（クライアント役）のインストーラが、信頼される側（サーバ役）のホストへSSH接続してペアリングを行う**（サーバ役はSSH接続を待つだけで、能動的な操作をしない）。
+  - `install.sh --role gateway [--advertise-host <ゲートウェイのapiから見えるホスト名/IP>]`: 初回実行時、自己署名CA（`gateway-ca`）と、それで署名した`proxy`のサーバ証明書（SAN=`--advertise-host`。省略時は検出したLAN側アドレス）を生成する（`/etc/vpngwgui/pki/gateway/`）。加えて、クライアント証明書の署名要求（CSR）に署名するための補助スクリプト（`install/gateway-issue-client-cert.sh`。CA秘密鍵はゲートウェイ機から出さない）を配置する。
+  - `install.sh --role api --gateway-ssh <ユーザー>@<ゲートウェイのSSH先>[:ポート] [--gateway-ssh-key <秘密鍵のパス>] [--gateway-host <apiが接続するゲートウェイのホスト名/IP。省略時は`--gateway-ssh`のホスト部>] [--gateway-port <既定8443>]`: APIサーバ用の鍵ペアとCSRをローカルで生成し、`ssh`で`--gateway-ssh`先へCSRを送って`gateway-issue-client-cert.sh`を実行させ、署名済みのクライアント証明書とゲートウェイのCA証明書を標準出力経由で受け取り配置する（秘密鍵はAPIサーバのホストから外へ出ない）。あわせて、Webサーバ用に自分自身のCA（`api-ca`）とサーバ証明書も生成する。
+  - `install.sh --role web --api-ssh <ユーザー>@<APIのSSH先>[:ポート] [--api-ssh-key <秘密鍵のパス>] [--api-host <webが接続するAPIのホスト名/IP>] [--api-port <既定3443>]`: `ssh`で`--api-ssh`先の補助スクリプト（`install/api-export-ca.sh`）を呼び、`api-ca`のCA証明書だけを受け取り配置する（片方向TLSのためクライアント証明書は不要）。`.env`の`API_ORIGIN`を`https://<--api-host>:<--api-port>`へ設定する。
+- **再実行（冪等）**: 既にCA・証明書が存在する場合は再生成しない（`install/install.sh`の既存の冪等方針に合わせる）。ペアリングのやり直し（相手ホストの再構築等）が必要な場合は、明示的な`--rotate-pairing`（新設）で再発行する。
+- **既知の制約（将来課題）**: 証明書の失効・ローテーションの自動化、外部認証局（Let's Encrypt等）との連携、SSHが使えない環境（踏み台経由等）への対応は、初版のスコープ外とする。
+
 # インストーラと頒布（Phase 11）
 
 要件は`requirements.md`「インストール」。クリーンなDebian系ベアメタルへ、1コマンドで導入・起動する。**インストーラは2層**で、利用者が実行するのは頒布される1本のブートストラップだけである。
@@ -152,21 +199,27 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 | 引数 | 意味 |
 |---|---|
-| `--providers <ID>[,<ID>...]` | 有効にするベンダー。`vendors/<ID>/`が無ければ失敗する。省略時は、その時点の全ベンダー（all）を有効にする（Phase 17） |
-| `--lan-iface <名前>` | LAN側インターフェース名を手動で指定する（検出できない・複数NICの場合） |
+| `--providers <ID>[,<ID>...]` | 有効にするベンダー。`vendors/<ID>/`が無ければ失敗する。省略時は、その時点の全ベンダー（all）を有効にする（Phase 17）。`--role web`では無視する |
+| `--lan-iface <名前>` | LAN側インターフェース名を手動で指定する（検出できない・複数NICの場合）。`--role gateway`・`all`のみ |
 | `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を捨てて再検出する |
 | `--no-start` | 起動（`docker compose up`）をしない |
+| `--role <all\|web\|api\|gateway>`（Phase 25） | このホストに配置するロール。既定`all`（従来どおり単一ホストに全ロール）。`specs/design.md`「デプロイメント構成の分離とロール別インストール」参照 |
+| `--web-password <パスワード>`（Phase 25） | Web UIログインの共有パスワード。`--role api`・`all`のみ。省略時はランダム生成し完了画面に1回表示する |
+| `--gateway-ssh <ユーザー>@<ホスト>[:ポート]`、`--gateway-ssh-key <パス>`、`--gateway-host <ホスト名/IP>`、`--gateway-port <既定8443>`（Phase 25） | `--role api`のみ。ゲートウェイとのmTLSペアリングに使う接続情報 |
+| `--api-ssh <ユーザー>@<ホスト>[:ポート]`、`--api-ssh-key <パス>`、`--api-host <ホスト名/IP>`、`--api-port <既定3443>`（Phase 25） | `--role web`のみ。APIサーバとのTLSペアリング・`API_ORIGIN`設定に使う接続情報 |
+| `--rotate-pairing`（Phase 25） | 既存の証明書・ペアリングを破棄し、再ペアリングする |
 
-処理の順序:
+処理の順序（`--role`ごとに実施する項目が変わる。詳細は`specs/design.md`「デプロイメント構成の分離とロール別インストール」）:
 
 1. **事前検査**: root、Debian系（`/etc/os-release`の`ID`・`ID_LIKE`）、systemd、CPU（Dockerの公式リポジトリが対応するamd64・arm64・armhfのうち、Debian系の対応するもの）。満たさなければ理由を示して失敗する。
 2. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
-3. **ホストの設定**: `/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
-4. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`WEB_PORT`（Web UIを配信するホスト側のポート。優先順は`--web-port` ＞ `.env`の既存値 ＞ 既定80。`docker-compose.yml`の`services.web.ports`が`"${WEB_PORT:-80}:8080"`で参照する。コンテナ内は常に8080固定）、`VPN_PROVIDERS`、`COMPOSE_FILE`。
-5. **ベンダーの決定（Phase 17改訂）**: `--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
-6. **ベンダーのホスト側手順**: 有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
-7. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。Web UIが応答するまで待つ（最大約3分）。
-8. **完了の表示**: Web UIのURL（`http://<LAN側アドレス>:<WEB_PORT>`）、有効なベンダー、次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）。
+3. **ホストの設定**: `--role gateway`・`all`のみ、`/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
+4. **証明書のペアリング（Phase 25新設）**: `--role`に応じて「ゲートウェイ制御チャネル」「証明書のペアリング」（`specs/design.md`）の手順を実施する。
+5. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`--role gateway`・`all`のみ。`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`WEB_PORT`（Web UIを配信するホスト側のポート。優先順は`--web-port` ＞ `.env`の既存値 ＞ 既定80。`docker-compose.yml`の`services.web.ports`が`"${WEB_PORT:-80}:8080"`で参照する。コンテナ内は常に8080固定）、`VPN_PROVIDERS`、`API_ORIGIN`（`--role web`のみ）、`GATEWAY_HOST`・`GATEWAY_PORT`（`--role api`のみ）、`COMPOSE_FILE`（選んだロールのcomposeファイルを並べる）。
+6. **ベンダーの決定（Phase 17改訂）**: `--role gateway`・`all`のみ。`--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
+7. **ベンダーのホスト側手順**: `--role gateway`・`all`のみ。有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
+8. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。`--role web`・`all`は、Web UIが応答するまで待つ（最大約3分）。
+9. **完了の表示**: ロールに応じて、Web UIのURL（`--role web`・`all`。`https://<LAN側アドレス>:<WEB_PORT>`）・生成したWeb UIパスワード（未指定時のみ、`--role api`・`all`）・有効なベンダー（`--role gateway`・`all`）・次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）を表示する。
 
 **`install-host.sh`の契約**（ベンダーバンドルの任意ファイル）: rootで`sh`により実行される。冪等で、非対話であること。実行時の環境変数`VPNGW_ROOT`（取得先）・`VPNGW_VENDOR_ID`が与えられ、カレントディレクトリはバンドルのディレクトリ。ホスト（ベアメタル）へ導入・設定するのはこのファイルだけで、共通インストーラはその内容を知らない。非ゼロ終了はインストールの中止を意味する。現在のバンドル（AdGuard VPN・Proton VPN）は、ホストの追加導入が不要なため、このファイルを持たない（実行環境は全てランナーのコンテナに閉じている）。
 
@@ -183,9 +236,19 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 - **タグ**: `install.sh`と`install.sh.sha256`をGitHub Releaseへ添付する。利用者が使うURLは、最新: `https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh`、版の固定: `https://github.com/nekono-dev/vpngateway-gui/releases/download/<タグ>/install.sh`。
 - **信頼の範囲**: `curl | sh`はスクリプトの取得元（GitHub ReleaseのHTTPS）を信頼する方式である。ブートストラップは取得するコミットを固定し、取得後にSHAを照合するため、スクリプトとソースの食い違い（タグの付け替え等）は検出できる。`install.sh.sha256`で、ダウンロードして検証してから実行することもできる。
 
-# 認証・認可の設計方針
+# 認証・認可の設計方針（Phase 25で改訂）
 
-将来的にセッション認証（Cookieベース等）を追加する可能性があるため、Web⇄API間は前述の通り同一オリジン構成とし、将来の認証導入時の設計変更コストを抑える。
+分離配置によりLAN外からの到達性が生じうるため、Web UI利用者の認証を導入する（`specs/requirements.md`「認証・認可」）。Web⇄API間は前述の通り同一オリジン構成のため、ドメイン分離に起因する問題を避けてセッションCookie認証を追加できる（この設計判断はPhase 1〜24から変えていない）。
+
+- **リソース設計**: ブラウザのログイン状態を表す新規リソースを`/v1/operator-session`とする。既存の`/v1/session`（VPNベンダーへのログイン状態。`specs/apiserver/design.md`）とは別のリソースであり、混同を避けるため命名を分ける（前者はWeb UIの利用者、後者はVPNベンダーアカウントの認証状態を表す）。
+  - `POST /v1/operator-session`: ボディ`{ "password": string }`。一致すれば`Set-Cookie`でhttpOnly・Secure・SameSite=Laxのセッションcookieを発行し`200`。不一致は`401`。
+  - `GET /v1/operator-session`: 現在のcookieが有効なら`200`、無効・無ければ`401`。
+  - `DELETE /v1/operator-session`: cookieを失効させ`200`。
+- **認可の適用範囲**: `/v1/operator-session`（ログイン自体）を除く、すべての`/v1/*`エンドポイントは有効なセッションcookieを要求する（Fastifyの`preHandler`フック）。cookie無し・無効は`401`。
+- **パスワードの保管**: インストーラの引数（`--web-password`）で指定した平文パスワードを、インストーラがハッシュ化（Node.js組み込み`crypto.scrypt`）して`STATE_DIR`配下（`api-data`ボリューム）に保存する。APIサーバのコード・環境変数・ログに平文を残さない。未指定時はインストーラがランダムなパスワードを生成し、完了画面に1回だけ表示する（`specs/design.md`「本体インストーラ」の完了表示に追記）。
+- **セッションの保持**: APIサーバはステートフル（既存の`settings.json`等と同様）なため、セッションはプロセスメモリ上のマップで保持する（軽量なファイル永続化の要否は実装時に判断。複数APIプロセスへのスケールアウトは対象外）。
+- **レート制限**: `POST /v1/operator-session`への総当たり対策として、連続失敗時の一時的な受付制限を設ける（具体的な閾値は実装時に決定）。
+- **Webサーバ側**: 未認証（`GET /v1/operator-session`が`401`）を検知した場合、Web UIはログイン画面へ誘導する（`specs/webserver/design.md`「利用者認証の実装方針」）。Webサーバ自体はcookieの中身を解釈せず、ブラウザ⇄API間で透過的に転送するだけである。
 
 # コーディングルール
 

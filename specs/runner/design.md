@@ -13,7 +13,7 @@
 | `runner-mock`（E2E専用） | モックプロバイダCLI | `e2e/vendors/mockproton/Dockerfile`（Alpine。CLIなし。モックをマウント） | `runner-mockproton.sock` |
 
 - **`network_mode: host`・`cap_add: [NET_ADMIN]`・`/dev/net/tun`**: CLIが確立するトンネル（AdGuard: TUN、Proton: NMのWireGuard）を、ゲートウェイ（ホスト）のネットワーク名前空間に作らせるため。`privileged: true`は使わない。
-- **UDS**: 各ランナーは自分のソケットファイル（環境変数`CTL_SOCKET_PATH`。`/var/run/vpngw-ctl/runner-<ベンダーID>.sock`）だけを作る。起動時に残存ソケットを`unlink`してから`listen`し、`chmodSync(0o770)`で制限する。所有者は`vpngwgui`（UID 10001。APIコンテナも同UID）。ネットワーク的にコンテナ外部から到達不能である理由・方式はネットワークコンテナと同じ（../proxyserver/design.md「内部コマンド受信サーバ（UDS制御チャネル）」）。
+- **UDS**: 各ランナーは自分のソケットファイル（環境変数`CTL_SOCKET_PATH`。`/var/run/vpngw-ctl/runner-<ベンダーID>.sock`）だけを作る。起動時に残存ソケットを`unlink`してから`listen`し、`chmodSync(0o770)`で制限する。所有者は`vpngwgui`（UID 10001。`proxy`コンテナも同UID）。ネットワーク的にゲートウェイホスト外部から到達不能である理由・方式はネットワークコンテナと同じ（../proxyserver/design.md「内部コマンド受信サーバ（UDS制御チャネル）」）。**Phase 25以降、APIサーバはこのUDSへ直接アクセスせず、`proxy`が公開するmTLS TCP（../proxyserver/design.md「ゲートウェイ制御チャネル」）経由で到達する。**`proxy`は同一ホスト内から、Phase 24までと同じUDSへ転送するだけであり、ランナー自身の実装（`POST /exec`・`GET /health`の仕様）は変わらない。
 - **起動しないランナー**: 有効化されていないベンダーのランナーは起動しない（有効なベンダーのバンドルの`compose.yml`だけを`COMPOSE_FILE`へ並べる。`../design.md`「ベンダー非依存の設計原則」）。起動していない・応答しないランナーのベンダーは、APIが「利用不可」として扱い、選択できない（../apiserver/design.md「ランナーの利用可否」）。
 - **ボリューム**: ベンダーごとにログイン情報を別々に永続化する（`adguard-data`、`proton-config`・`proton-keyrings`・`proton-cache`）。ベンダーを切り替えても各ベンダーのログイン情報は失われない。
 

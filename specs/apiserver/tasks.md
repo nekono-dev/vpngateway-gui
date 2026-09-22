@@ -147,8 +147,15 @@
 - [x] 単体テスト（`restore-connection.test.ts`。保存なし・接続先指定あり/自動接続・既接続・ランナー未起動の各ケース）、既存テスト（`connection-state-store.test.ts`・ルート統合テスト）の回帰確認
 - [x] 検証環境（実機）での検証（Proton VPN無料プラン。意図しない切断→APIコンテナ再起動→自動的に再接続されることを確認。`wbs/phase16.md`「検証結果」）。**未検証**: ホスト全体の再起動（ランナー・proxyも同時に起動し直す場合）、AdGuard VPN側での確認
 
+## デプロイメント構成の分離（Phase 25）
+
+- [ ] Web UI利用者の認証: パスワードのハッシュ保存（`api/src/auth/password-store.ts`）、`POST/GET/DELETE /v1/operator-session`（`api/src/routes/operator-session.ts`）、`preHandler`フックによる認可（`require-operator-session.ts`）、レート制限（`login-rate-limiter.ts`）
+- [ ] ゲートウェイとの内部通信をUDSからmTLS TCPへ変更（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`等を`undici`のmTLSクライアントへ置き換え）
+- [ ] APIサーバ自身のHTTPS化（Fastifyの`https`オプション）
+- [ ] インストーラのペアリング手順（`--gateway-ssh`等）で配置された証明書の読み込み
+- [ ] 単体・結合テスト、実機検証（詳細は`../../wbs/phase25.md`）
+
 # 将来課題
 
-- 認証・認可の追加（追加箇所: Fastifyの `preHandler` フックにセッション検証を挿入する想定）。
-- レート制限（接続操作の連続実行を防ぐ）。
+- レート制限の閾値のチューニング（Web UIログイン以外の操作系エンドポイントへの適用要否を含む）。
 - 監査ログの長期保存・ローテーション方針。

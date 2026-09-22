@@ -6,10 +6,10 @@
 
 Phase 9までは、1つのproxyコンテナがネットワーク制御とベンダーCLIの実行を兼ね、ベンダーごとにイメージを切り替えていた。Web UIからのベンダー選択（`specs/design.md`「ベンダーの選択と実行基盤」）のため、次のように分割する。**ベンダーCLIを実行するランナーは、別のアプリケーションとして`specs/runner/`（要件・設計・タスク）に切り出した**。本ファイルはネットワークコンテナ（`proxy`）を扱う。
 
-| コンテナ（compose service） | 責務 | イメージ | 内部HTTP（UDS） |
+| コンテナ（compose service） | 責務 | イメージ | 内部HTTP |
 |---|---|---|---|
-| `proxy`（ネットワーク） | 透過ゲートウェイ・Kill Switch・3proxy・トンネル検出・接続監視 | `proxy/Dockerfile`（Alpine。nftables・iproute2・3proxy。**ベンダーCLIを含まない**） | `net.sock`: `POST /settings`・`GET /status`・`POST /connection-checks` |
-| `runner-<ベンダー>` | ベンダーCLIの実行（**別仕様: `../runner/`**） | `vendors/<ベンダーID>/Dockerfile` | `runner-<ベンダーID>.sock`: `POST /exec`・`GET /health` |
+| `proxy`（ネットワーク） | 透過ゲートウェイ・Kill Switch・3proxy・トンネル検出・接続監視・**ゲートウェイ制御チャネルの受信/ルーティング（Phase 25）** | `proxy/Dockerfile`（Alpine。nftables・iproute2・3proxy。**ベンダーCLIを含まない**） | mTLS TCP（`GATEWAY_PORT`。外部＝APIサーバ向け）: `/net/settings`・`/net/status`・`/net/connection-checks`・`/runners/<ベンダーID>/exec`・`/runners/<ベンダーID>/health`。UDS（`net.sock`。自分自身の内部処理用、Phase 24までの唯一の外部窓口） |
+| `runner-<ベンダー>` | ベンダーCLIの実行（**別仕様: `../runner/`**） | `vendors/<ベンダーID>/Dockerfile` | UDS（`runner-<ベンダーID>.sock`。`proxy`からのみ到達可能）: `POST /exec`・`GET /health` |
 
 - **1つのnpmパッケージ、2つのエントリポイント**: `proxy/`パッケージから`dist/server.js`（ネットワーク）と`dist/runner.js`（ランナー。`specs/runner/design.md`）を作る。ネットワーク系（`GatewayController`・`ExplicitProxyController`・接続監視）は`server.ts`のみが持つ。共通の処理（UDSソケットの待受・JSONの入出力・監査ログ）は共有モジュール（`lib/`）に置く。
 - **`network_mode: host`**: ネットワークコンテナ・全ランナーが使う（ランナー側の理由は`specs/runner/design.md`）。ネットワークコンテナは`NET_ADMIN`（nftables・ip）のみ持つ（`/dev/net/tun`は不要になった）。
@@ -20,12 +20,13 @@ Phase 9までは、1つのproxyコンテナがネットワーク制御とベン�
 - **`POST /exec`を持たない**（実行系はランナーへ移動。許可リスト（`allowlist.ts`）・`command-runner.ts`はランナー側のみ）。
 - **`POST /connection-checks`（新規）**: ボディなしで呼ばれると、`checkConnectionOnce`（トンネル検出→ルールの再構成）を即時に1回行い、`200 { "checked": true }`を返す。副作用は接続監視ループが行うものと同じで、冪等。失敗しても`200`（`checked: false`）とし、監視ループが追従する。APIは、接続・切断・ログアウトの実行後と、ベンダー切替後に呼ぶ。
 - `POST /settings`・`GET /status`は従来どおり。トンネル検出（`ip route get`）はインターフェース名に依存しないため、ベンダーが替わっても（AdGuardのTUN・ProtonのWireGuard）そのまま追従する。
+- **ゲートウェイ制御チャネル（Phase 25で追加）**: 上記の`/settings`・`/status`・`/connection-checks`は、Phase 24まではUDS（`net.sock`）上でパスそのまま待ち受けていたが、Phase 25で`/net/settings`・`/net/status`・`/net/connection-checks`としてmTLS TCPリスナー配下へ移した（下記「ゲートウェイ制御チャネル（Phase 25）」）。ハンドラ本体（`GatewayController`等）は変更しない。
 
 ## composeの構成（Phase 8）
 
-- サービス: composeの本体（`docker-compose.yml`）は`web`・`api`・`proxy`だけを持つ。`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べる（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`install/install.sh`が書く。
-- `api`は、`./vendors`を`/etc/vpngwgui/vendors:ro`へ、`ctl-socket`・`api-data`をマウントし、`ENABLED_PROVIDERS: ${VPN_PROVIDERS:?...}`（必須。既定なし）を受け取る。`depends_on`は`proxy`のみ（ランナーは任意のため）。
-- ボリューム: ネットワークコンテナは`ctl-socket`のみ。ベンダーごとのログイン情報のボリュームはランナーの仕様（`specs/runner/design.md`）。
+- サービス: **Phase 24までは**composeの本体（`docker-compose.yml`）が`web`・`api`・`proxy`だけを持ち、`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べていた（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。**Phase 25で**、`web`・`api`・`proxy`は`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`proxy`を含む）へ分割し、ロール別インストール（`--role`）で選んだファイルだけを`.env`の`COMPOSE_FILE`へ並べる（`specs/design.md`「デプロイメント構成の分離とロール別インストール」）。ベンダーバンドルのcompose fragmentは、引き続き`compose/gateway.yml`と合成する。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`install/install.sh`が書く。
+- `api`は、`./vendors`を`/etc/vpngwgui/vendors:ro`へマウントし、`ENABLED_PROVIDERS: ${VPN_PROVIDERS:?...}`（必須。既定なし）を受け取る。**Phase 25で`ctl-socket`（UDS）を経由しなくなったため、`api`側はマウントしない**（ゲートウェイとの通信はmTLS TCP。`GATEWAY_HOST`・`GATEWAY_PORT`環境変数で接続先を指定する）。
+- ボリューム: ネットワークコンテナは`ctl-socket`（`proxy`⇄`runner-<ベンダー>`間、Phase 25以降も維持）のみ。ベンダーごとのログイン情報のボリュームはランナーの仕様（`specs/runner/design.md`）。
 
 # Phase 1における縮小構成（履歴。Phase 1のモックVPN CLI仕様は`../runner/design.md`へ移動）
 
@@ -55,15 +56,24 @@ docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー
 - `devices: ["/dev/net/tun:/dev/net/tun"]` — VPNベンダーCLIがtunデバイスを利用する場合に必要。
 - `privileged: true` は使用しない。上記2つで不足する場合（一部ベンダーCLIがWireGuardカーネルモジュールのロードに`SYS_MODULE`を要求する等）のみ、実装時のPoCで個別に追加検討する。対象OS（Debian/RaspberryPiOS、Ubuntu 24.04）は標準カーネルにWireGuardがビルトインされているため、通常は不要と想定する。
 
-## 内部コマンド受信サーバ（UDS制御チャネル）
+## 内部コマンド受信サーバ（UDS制御チャネル。`proxy`⇄`runner-<ベンダー>`間、Phase 25以降も維持）
 
 - Node.js組み込み `http` モジュールで実装する（外部フレームワーク不要、極小のエンドポイント数のため）。
 - Unixドメインソケット上でlistenする（ネットワークコンテナは`/var/run/vpngw-ctl/net.sock`、ランナーは`runner-<ベンダーID>.sock`。Phase 9までは単一の`exec.sock`）。TCPは使用しない。
-- ソケットファイルはAPIと各コンテナ（ネットワーク・ランナー）で共有するDocker名前付きボリュームに配置する。
+- ソケットファイルは`proxy`・各ランナーコンテナで共有するDocker名前付きボリューム（`ctl-socket`）に配置する。
 - 起動時、残存ソケットファイル（前回異常終了時の残骸）を `unlink` してから `listen` する（`EADDRINUSE` 対策）。
 - `listen` 完了後、`fs.chmodSync(socketPath, 0o770)` でパーミッションを明示的に制限する（Node.jsの `listen()` はソケットファイルのパーミッションを引き継がない）。
-- API・プロキシ両コンテナを同一UID/GID（例: 専用ユーザー、両コンテナで `user: "1000:1000"` を明示）で起動し、ソケットファイルへのアクセスをそのUIDに限定する。
-- **この経路は、ネットワーク的にコンテナ外部（LAN含む）から到達不可能である。** TCP + `127.0.0.1` バインドは、`network_mode: host` のプロキシコンテナに対しては別ネットワーク名前空間のAPIコンテナから到達できないため不採用。TCP + `0.0.0.0` バインドはLAN全体に露出し要件に抵触するため不採用。UDSはネットワーク層を経由しないため、この制約を確実に満たす。
+- `proxy`・ランナー両コンテナを同一UID/GID（例: 専用ユーザー、両コンテナで `user: "1000:1000"` を明示）で起動し、ソケットファイルへのアクセスをそのUIDに限定する。
+- **この経路は、ネットワーク的にゲートウェイホスト外部（LAN含む）から到達不可能である。** `proxy`・`runner-<ベンダー>`は常に同一ホストに同居する前提（`specs/design.md`「システムの構成」）が変わらないため、Phase 25以降もこの内部経路にはUDSを使い続ける（TCP化する動機がない）。**APIサーバが到達する経路（下記「ゲートウェイ制御チャネル（Phase 25）」）とは別の経路であり、APIサーバはこのUDSへ直接アクセスしない。**
+
+## ゲートウェイ制御チャネル（Phase 25）
+
+APIサーバからゲートウェイへの経路。設計判断の背景は`specs/design.md`「デプロイメント構成の分離とロール別インストール」を参照。要点は次のとおり。
+
+- `proxy`が、mTLS TCP（既定ポート`8443`。環境変数`GATEWAY_PORT`）でゲートウェイのLAN側インターフェースをlistenする。Node.js組み込みの`tls`/`https`モジュールを使い、`requestCert: true`・`rejectUnauthorized: true`で、APIサーバのクライアント証明書がゲートウェイのCA（`specs/design.md`「証明書のペアリング」）で発行されたものであることを検証する。検証に失敗した接続は確立しない。
+- パスでルーティングする: `/net/*`は`proxy`自身の処理（`/settings`・`/status`・`/connection-checks`）、`/runners/<ベンダーID>/*`は対応する`runner-<ベンダーID>.sock`へUDS経由で転送する（`/exec`・`/health`）。対応するソケットが無ければ`502`。
+- **Phase 24までの方針からの転換（重要）**: Phase 24までは「TCP + `127.0.0.1`バインドは`network_mode: host`のプロキシコンテナに対しては別ネットワーク名前空間のAPIコンテナから到達できないため不採用」「TCP + `0.0.0.0`バインドはLAN全体に露出し要件に抵触するため不採用」とし、UDSのみを許容していた。Phase 25で「APIサーバとゲートウェイを別ホストへ分離できること」（`specs/requirements.md`「デプロイメント構成の分離」）が要件に加わったため、ネットワーク到達性そのものを遮断する方式は維持できなくなった。その代替として、**到達性ではなく暗号学的な認証（mTLS）を境界とする**方式へ転換した。この転換は意図的な方針変更であり、見落としではない。
+- **多層防御（推奨・必須ではない）**: mTLSが主たる境界になるが、ゲートウェイ機のファイアウォールで`GATEWAY_PORT`への到達元をAPIサーバのIPアドレスへ制限することをREADMEで推奨する（本システムが自動設定するものではない）。
 
 # 透過ゲートウェイモードの実現方式
 

@@ -6,6 +6,10 @@
 
 コンポーネント配置・命名規約はAGENTS.mdの規約に従う。
 
+# Webサーバ自身のTLS（Phase 25）
+
+ブラウザ⇄Webサーバ間をHTTPSにする（`specs/requirements.md`「通信路の保護」）。`web/server/index.ts`のFastifyを`https`オプション（証明書はインストーラが配置する自己署名証明書・秘密鍵。`specs/design.md`「証明書のペアリング」）で起動する。証明書はWebサーバのホスト名・IPを対象に発行され、ブラウザは初回アクセス時に自己署名警告を表示する（運用者が手動で信頼する運用を前提とし、Let's Encrypt等の自動化は対象外）。
+
 # APIクライアント生成方針
 
 - APIサーバがFastify + TypeBox + `@fastify/swagger` から自動生成するOpenAPI仕様を、orvalの入力として利用する。
@@ -15,8 +19,19 @@
 
 # Web⇄API通信経路の実装
 
-- ブラウザは常にWebサーバの単一オリジンにのみアクセスし、Webサーバが `/api/*` パス配下のリクエストを内部ネットワーク経由でAPIコンテナ（`http://api:3000` 等、Docker内部DNS名）へリバースプロキシする。
+- ブラウザは常にWebサーバの単一オリジンにのみアクセスし、Webサーバが `/api/*` パス配下のリクエストを、`API_ORIGIN`（既定`http://api:3000`。Phase 25以降は分離配置向けに`https://<APIサーバのホスト名/IP>:<ポート>`も指定できる）へリバースプロキシする。
 - 実装は Fastify の `@fastify/http-proxy` を用いる。
+- **【Phase 25】TLS検証**: `API_ORIGIN`が`https://`の場合、`@fastify/http-proxy`の`https.Agent`へ、インストーラがペアリングで取得したAPIサーバのCA証明書（`ca`オプション）を渡し、検証を行う（`specs/design.md`「証明書のペアリング」）。証明書検証を無効化するオプション（`rejectUnauthorized: false`等）は使わない。
+- **Cookieの透過転送**: ブラウザ⇄API間のセッションCookie（`vpngwgui_session`。下記「利用者認証の実装方針」）は、リバースプロキシがそのまま転送する。Webサーバ自身はCookieの中身を解釈・検証しない（検証はAPIサーバの責務）。同一オリジン構成のため、追加のCORS設定・`credentials`指定は不要。
+
+# 利用者認証の実装方針（Phase 25）
+
+設計方針は`specs/design.md`「認証・認可の設計方針」、要件は`../webserver/requirements.md`「利用者認証の要件」。
+
+- **未認証時の誘導**: アプリ起動時（`App`のマウント時）に`GET /v1/operator-session`を呼ぶ。`401`ならログイン画面（`components/auth/LoginPage.tsx`）を表示し、ダッシュボードをレンダリングしない。以後、いずれかのAPI呼び出しが`401`を返した場合も、その場でログイン画面へ切り替える（実行中の操作はエラートーストで失敗を通知する）。
+- **ログイン画面**: パスワード入力欄と送信ボタンのみの単純なフォーム。送信は生成されたAPIクライアントの`postOperatorSession`（orval生成）を呼ぶ。成功時はダッシュボードへ遷移し、以後のポーリング等を開始する。失敗（`401`）時は「パスワードが正しくありません」を表示する。`429`（レート制限）時は専用の文言を表示する。
+- **ログアウト**: 既存のヘッダー等に配置するログアウト操作から`DELETE /v1/operator-session`を呼び、成功したらログイン画面へ戻る。
+- **状態の持ち方**: 認証状態はReactのコンテキスト（`contexts/AuthContext.tsx`）で保持する。Cookie自体はブラウザが管理するため、Web UI側で別途トークンを保持しない。
 
 # 状態管理の実装方針
 

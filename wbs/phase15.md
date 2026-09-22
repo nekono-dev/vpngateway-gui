@@ -11,6 +11,9 @@ specs各ファイルの「将来課題」節に列挙された、初回リリー
 ## 主要タスク（specsの「将来課題」節からの集約）
 
 ### 認証・認可（specs/tasks.md, apiserver/tasks.md, webserver/tasks.md）
+
+**【2026-09-22追記】本節はPhase25（`wbs/phase25.md`）へ前倒し・吸収した。Phase25完了後、本節は除去する。**
+
 - [ ] セッション認証（Cookieベース等）の追加。Web⇄API間は既に同一オリジン構成のため、ドメイン分離に起因する問題を避けつつ追加できる。
 - [ ] Fastifyの`preHandler`フックへのセッション検証挿入。
 - [ ] 認証UI（ログイン画面等）の追加。

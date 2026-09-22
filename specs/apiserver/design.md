@@ -383,15 +383,28 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 - 監査ログの各エントリに、操作の対象だったベンダーIDを`provider`として付ける（`switch-provider`以外の従来の操作も。旧形式のエントリは`provider`なし）。
 - `PUT /v1/providers/active`: `400`（未知・無効なID）、`409`（切替中）、`422`（現在のVPNの切断に失敗。`exitCode`・`stderr`を含む）、`502`（切替先のランナーが利用不可）。
 
-### 内部プロトコルの変更
+### 内部プロトコルの変更（Phase 25で、UDSからmTLS TCPへ変更）
 
-- `executeVendorCommand`は、ベンダーIDを受け取り、`$CTL_SOCKET_DIR/runner-<ID>.sock`へ送る（ベンダーごとに接続プールを持つ）。リクエストボディは従来（`vendor`・`binary`・`resolvedArgv`・`timeoutMs`・`completionPattern`・`stdin`）のまま。
-- `notifySettings`・`fetchProxyStatus`（`POST /settings`・`GET /status`）・`POST /connection-checks`は`$CTL_SOCKET_DIR/net.sock`（旧`exec.sock`）へ送る。
-- ランナーの`POST /exec`のレスポンスと、ネットワークコンテナの`/settings`・`/status`の形状は変えない。
+- `executeVendorCommand`は、ベンダーIDを受け取り、ゲートウェイの`https://$GATEWAY_HOST:$GATEWAY_PORT/runners/<ID>/exec`へ送る（接続はゲートウェイ1台に対し1つのHTTP/1.1 keep-aliveプールで共有し、ベンダーごとの個別プールは持たない。パスでランナーを識別する）。リクエストボディは従来（`vendor`・`binary`・`resolvedArgv`・`timeoutMs`・`completionPattern`・`stdin`）のまま。
+- `notifySettings`・`fetchProxyStatus`（`POST /settings`・`GET /status`）・`POST /connection-checks`は`https://$GATEWAY_HOST:$GATEWAY_PORT/net/settings`・`/net/status`・`/net/connection-checks`へ送る。
+- 送信には`undici`の`Agent({ connect: { ca, cert, key } })`等でmTLSクライアントを構成する（`ca`＝ゲートウェイのCA証明書、`cert`・`key`＝ペアリングで取得したAPIサーバのクライアント証明書・秘密鍵。`specs/design.md`「証明書のペアリング」）。証明書検証に失敗する接続はエラーとし、平文・検証省略へのフォールバックは行わない。
+- ランナーの`POST /exec`のレスポンスと、ネットワークコンテナの`/settings`・`/status`の形状は変えない。Phase 24までの`$CTL_SOCKET_DIR/runner-<ID>.sock`・`$CTL_SOCKET_DIR/net.sock`は廃止する（APIサーバはゲートウェイに対しUDSを一切使わない）。
 
 ### ファイル配置（AGENTS.mdの規約）
 
 ベンダーの管理は`api/src/providers/`にまとめる（`provider-registry.ts`＝有効なプロファイルの読み込み・検証、`active-provider-store.ts`＝選択の永続化、`provider-switcher.ts`＝切替の手順、`provider-state-paths.ts`＝ベンダー別の状態ファイルのパス・旧形式からの移行）。従来のモジュール（`profile-loader`・`connection-state-store`・`last-location-store`・`favorite-locations-store`・`session-probe`・`restriction-learner`・`proxy-client`）は、ベンダーIDを受け取る（または選択中のベンダーを`provider-registry`から取得する）形へ改める。
+
+## Web UI利用者の認証（`/v1/operator-session`。Phase 25で追加）
+
+設計方針は`specs/design.md`「認証・認可の設計方針」、要件は`requirements.md`「Web UI利用者の認証」。
+
+- `POST /v1/operator-session`: ボディ`{ "password": string }`。`api/src/auth/password-store.ts`（`scrypt`によるハッシュの読み込み・検証）で照合する。一致すれば`api/src/auth/session-store.ts`（プロセスメモリのMap。`sessionId → { createdAt }`）にセッションを作成し、`Set-Cookie: vpngwgui_session=<sessionId>; HttpOnly; Secure; SameSite=Lax; Path=/`を返す。不一致は`401`。
+- `GET /v1/operator-session`: Cookieのセッションが有効なら`200 { "authenticated": true }`、無効・無ければ`401`。
+- `DELETE /v1/operator-session`: セッションストアから削除し、Cookieを`Max-Age=0`で失効させ`200`を返す。
+- **`preHandler`フック（`api/src/auth/require-operator-session.ts`）**: `/v1/operator-session`（自分自身）を除く全ての`/v1/*`ルートへ適用する。Cookie欠如・不正・期限切れは`401 { "error": "unauthenticated" }`。
+- **レート制限**: `POST /v1/operator-session`は、送信元IPごとに直近1分間の失敗回数を数え、一定回数（既定5回）を超えると一時的に`429`を返す（`api/src/auth/login-rate-limiter.ts`。プロセスメモリ保持、APIコンテナ再起動でリセットされる）。
+- **パスワードの保存**: インストーラが`crypto.scrypt`でハッシュ化し`$STATE_DIR/operator-password.json`（`{ "algorithm": "scrypt", "salt": "...", "hash": "..." }`）へ書く。APIサーバはこのファイルを起動時に読み込むのみで、変更・平文化を行わない（パスワード変更は現時点ではインストーラの再実行のみで対応し、Web UIからの変更機能は将来課題とする）。
+- **ファイル配置（AGENTS.mdの規約）**: `api/src/auth/`にまとめる（`password-store.ts`・`session-store.ts`・`require-operator-session.ts`・`login-rate-limiter.ts`、ルートは`api/src/routes/operator-session.ts`）。
 
 # ユーザ向け設定の具体スキーマ
 
@@ -428,18 +441,22 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 | `GET` | `/v1/session` | ログイン方式・ログイン状態・プランを取得する（Phase 7） |
 | `DELETE` | `/v1/session` | VPNクライアントからログアウトする（Phase 7） |
 | `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否（プロバイダ非対応・未ログイン・プラン制限）を取得する（Phase 7） |
+| `POST` | `/v1/operator-session` | Web UI利用者のログイン（共有パスワード照合、セッションCookie発行。Phase 25） |
+| `GET` | `/v1/operator-session` | Web UI利用者のログイン状態を取得する（Phase 25） |
+| `DELETE` | `/v1/operator-session` | Web UI利用者をログアウトする（Phase 25） |
 
 # OpenAPI仕様の生成・公開方針
 
 - Fastify + TypeBox でリクエスト/レスポンスのスキーマを定義し、`@fastify/swagger` によりOpenAPI仕様を自動生成する。
 - 手書きのOpenAPI YAMLやサーバスタブの生成・同期は行わない（スキーマがそのまま実装かつ仕様書の唯一の情報源となる）。
 - 生成されたOpenAPI仕様は `/openapi.json`（または同等のパス）で公開し、orvalがこれを読み込んでWeb側クライアントを生成する。
-- 後述のプロキシとの内部通信経路（UDS）は、このOpenAPI仕様の対象に含めない。
+- 後述のゲートウェイとの内部通信経路（mTLS TCP）は、このOpenAPI仕様の対象に含めない。
+- **【Phase 25】APIサーバ自身のTLS**: Fastifyを`https`オプション（証明書は`specs/design.md`「証明書のペアリング」でインストーラが配置したサーバ証明書・秘密鍵）で起動する。Webサーバ（同一ホスト構成では`localhost`、分離構成ではネットワーク経由）はこの証明書をCA経由で検証してから接続する。
 
-# プロキシとの内部通信仕様
+# ゲートウェイとの内部通信仕様（Phase 25で、UDSからmTLS TCPへ変更）
 
-- 通信経路: APIコンテナと各コンテナが共有するDocker名前付きボリューム（例 `ctl-socket`）上の、**コンテナごとに1つ**のUnixドメインソケット。ベンダーCLIの実行はランナー（`/var/run/vpngw-ctl/runner-<ベンダーID>.sock`、Phase 8）、設定反映（`/settings`）・稼働状況（`/status`）・接続状態の再確認（`/connection-checks`）はネットワークコンテナ（`/var/run/vpngw-ctl/net.sock`。Phase 9まで`exec.sock`）。以下の`POST /exec`はランナー、`/settings`・`/status`はネットワークコンテナの仕様である。
-- APIサーバ側は `undici` の `Agent({ socketPath })` 等でUDS経由のHTTPリクエストを送信する。
+- 通信経路: ゲートウェイの`proxy`が単一の窓口として公開する、mTLS TCP（既定ポート`8443`。環境変数`GATEWAY_PORT`）。ベンダーCLIの実行は`/runners/<ベンダーID>/exec`（`proxy`が`runner-<ベンダーID>.sock`へUDSで転送）、設定反映（`/net/settings`）・稼働状況（`/net/status`）・接続状態の再確認（`/net/connection-checks`）は`proxy`自身が処理する。以下の`POST /exec`相当（`/runners/<ID>/exec`）はランナー、`/net/settings`・`/net/status`は`proxy`の仕様である（詳細は`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）。Phase 24までの「コンテナごとに1つのUDS」（`ctl-socket`ボリューム上の`net.sock`・`runner-<ベンダーID>.sock`）は廃止した。
+- APIサーバ側は `undici` の `Agent({ connect: { ca, cert, key } })` 等でmTLS TCP経由のHTTPSリクエストを送信する。
 - リクエストボディ（内部プロトコル、OpenAPI対象外）:
 
 ```json
@@ -460,7 +477,7 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 
 ## 設定反映（`POST /settings`）内部プロトコル仕様（Phase 3で追加）
 
-`POST /exec`とは別の待受パス（proxyserver/design.md「Phase 1における縮小構成」参照、`/exec`のパスをPhase 1時点で固定していたのはこの追加のため）。`/exec`同様OpenAPI非公開・同一UDSソケット上で待ち受ける。
+`/runners/<ベンダーID>/exec`とは別の待受パス（`/net/settings`。proxyserver/design.md「Phase 1における縮小構成」参照、`/exec`のパスをPhase 1時点で固定していたのはこの追加のため）。`/runners/<ベンダーID>/exec`同様OpenAPI非公開・`proxy`が公開する同一のmTLS TCPリスナー上で待ち受ける（Phase 24までは同一UDSソケット上）。
 
 - 送信タイミング: `PUT /v1/connection/config`でユーザ向け設定が更新されるたび（`api/src/routes/connection-config.ts`）。当初案では`killSwitch`変更時のみの通知を想定していたが、`transparentGatewayEnabled`もプロキシ側のnftables再構成（テーブルの適用/撤去）を要するため、更新後の設定全体を毎回送信する方式に変更した。加えて、APIサーバ起動時にも永続化済みの現在設定を一度送信する（`api/src/server.ts`）。これは、プロキシコンテナが自身では設定を永続化せず本エンドポイントでの通知のみに依存するため、APIコンテナは再作成されずプロキシコンテナのみが再作成された場合に生じうる「再起動後、次の設定変更まで最後に永続化された設定が反映されない」空白期間を緩和するための措置（起動順序の都合上、数回リトライする）。さらに、起動時1回では「APIコンテナは動き続けたままプロキシコンテナだけが再起動された」場合を救えないため、10秒周期（`SETTINGS_RESYNC_INTERVAL_MS`環境変数で変更可）で現在設定を再通知する（`api/src/server.ts`。通知は冪等で、失敗は無視して次周期で再試行する。実機検証で、これが無いとプロキシ単体の再起動後にKill Switchが再構成されずリークすることを確認した）。
 - リクエストボディ: `UserSettings`（`api/src/schemas/settings.ts`）をそのまま送信する。
@@ -482,7 +499,7 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 
 ## 稼働状況取得（`GET /v1/connection/gateway`、Phase 4で追加）
 
-Web UIのダッシュボードが「設定値」ではなく「実際に適用されている状態」を表示するための読み取り専用エンドポイント。`GET /v1/connection/config`（永続化された設定値）とは別リソースとして扱う（設定はONだがLAN_IFACE未設定で未構成、といった乖離を利用者に示すため）。APIサーバは状態を保持せず、プロキシ内部エンドポイント`GET /status`（proxyserver/design.md参照）へUDS経由で問い合わせた結果を中継する。
+Web UIのダッシュボードが「設定値」ではなく「実際に適用されている状態」を表示するための読み取り専用エンドポイント。`GET /v1/connection/config`（永続化された設定値）とは別リソースとして扱う（設定はONだがLAN_IFACE未設定で未構成、といった乖離を利用者に示すため）。APIサーバは状態を保持せず、ゲートウェイの内部エンドポイント`GET /net/status`（proxyserver/design.md参照）へmTLS TCP経由で問い合わせた結果を中継する。
 
 ```json
 {
@@ -570,7 +587,8 @@ CN    China                Shanghai (Virtual)             59
 
 - **【Phase 5】** Fastifyのスキーマ検証エラー（不正なbody・パスパラメータ）も`400`（`invalid_input`）で返す。従来は500になっていた。
 - プレースホルダー検証失敗、未知のベンダー指定等の入力エラー: `400 Bad Request`。
-- プロキシサーバへの接続失敗（UDS未応答等）: `502 Bad Gateway`。
+- ゲートウェイへの接続失敗（mTLS TCP未応答・証明書検証エラー等）: `502 Bad Gateway`。
+- **【Phase 25】** 未認証（セッションCookie欠如・不正・期限切れ）: `401 Unauthorized`（`/v1/operator-session`自身を除く）。ログイン試行のレート制限超過: `429 Too Many Requests`。
 - プロキシサーバ側でのコマンド実行失敗（非ゼロexit）: `422 Unprocessable Entity` とし、bodyに `exitCode`・`stderr` 要約を含める。実CLIはエラーメッセージをstderrではなくstdoutへ出力するため（例: 接続していない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）、`stderr`が空の場合はstdoutを同フィールドへ格納する（`lib/failure-output.ts`。ANSIエスケープ除去・前後空白除去）。
   - **`GET /v1/connection`（`status`アクション）の非ゼロexitも、`successPattern`が定義されていれば`isCommandSuccess`（`profile/command-success.ts`）により成功とみなす**（`PUT /v1/connection`・接続復元と同じ判定関数を使う。バグ修正、2026-09-22）。AdGuard VPN CLIは未ログイン時`status`がexit code 11で終了する（本ファイル「実機検証で判明した点」参照）のに対し、ProtonVPN CLIは未ログインでもexit 0で「切断中」を返すため、修正前はAdGuardVPNだけ未ログイン時に422（Web UIへ「接続状態の取得に失敗しました」エラーが表面化）していた。AdGuardVPNの`vendors/adguardvpn/profile.json`の`status`に`"successPattern": "You are not logged in|not logged in"`を追加し、この出力を成功として扱う（`parseConnectionOutput`は`connectedPattern`に一致しないため自然に`disconnected`と判定する）。
 - タイムアウト: `504 Gateway Timeout`。

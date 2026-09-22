@@ -90,8 +90,16 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 - [x] （Phase 11）`.github/workflows/installer.yml`（検査・ブランチのartifact・タグのRelease。**GitHub上では未実行**。YAML構文・shellcheck・生成物の検査はローカルで確認）
 - [x] （Phase 11）クリーンな環境（LXC）での検証: 導入・ベンダーの追加/削除・再実行・`install-host.sh`のフック
 
+## デプロイメント構成の分離（Phase 25）
+
+- [ ] ゲートウェイ制御チャネル: `proxy`にmTLS TCPリスナー（`GATEWAY_PORT`）を追加し、`/net/*`（自分自身）・`/runners/<ID>/*`（UDS転送）のパスルーティングを実装
+- [ ] compose分割（`compose/gateway.yml`）
+- [ ] インストーラの証明書ペアリング（ゲートウェイ役: CA・サーバ証明書生成、`install/gateway-issue-client-cert.sh`）
+- [ ] 単体・結合テスト（証明書検証失敗時の拒否、ルーティング）、実機検証（詳細は`../../wbs/phase25.md`）
+
 # 将来課題
 
 - IPv6対応（現行設計はIPv4のNAT/FORWARDのみを前提としている）。
 - 複数VPNベンダー・複数トンネルの同時稼働可否。
 - `excludedDomains` のDNS TTL追従の詳細実装。
+- 証明書の失効・自動ローテーション、外部認証局（Let's Encrypt等）との連携（Phase 25）。
