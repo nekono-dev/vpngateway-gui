@@ -168,3 +168,36 @@
 - `main`はflexの縦積みのまま、接続操作カード（`.controls`）と接続先リスト（`.location-list`・`.location-scroll`）に`flex: 1; min-height: 0;`を連鎖させ、他のカード（VPNベンダー・接続状態）の実高さぶんを差し引いた残りの高さを接続先リストの内部スクロール領域が吸収する（`.location-scroll`の`max-height`固定値は廃止する）。
 - ページ全体としてはスクロールせず、接続先リストが多い場合のみ`.location-scroll`の内部だけがスクロールする（Phase 16での「接続/切断ボタンをスクロールなしで押せる位置に置く」という意図を、カード構成が変わった後も引き続き満たす）。
 - **【2026-09-22追記・実機検証で判明】** 接続先リストが使えない（`locationList`が制限されている）ときの分岐（`LocationList.tsx`）は、通常時の`.location-list`（flexの縦積み、`flex: 1; min-height: 0;`）の外枠を使わずFragmentを返していたため、この分岐で表示される「接続できる国（参考）」一覧（`AvailableLocations.tsx`）が高さの制約を受けず、国数の多いベンダー・プラン（実機確認: Proton VPN無料版、10か国）でページ全体がビューポートを超えて表示される不具合が生じた（利用者からの指摘で発覚）。`LocationList.tsx`のこの分岐を`.location-list`で囲み、`AvailableLocations`のラッパー（`.available-locations`）にも同じflexの縦積み（`flex: 1; min-height: 0;`）を与え、内部の`.location-scroll`まで残り高さのflex連鎖を通すことで修正した。回帰防止のため、コンポーネントテストに「参考一覧が`.location-list`に囲まれていること」の構造チェックを追加し、実機E2E（`e2e/phase21/webgui-phase21.mjs`）にページ全体がビューポートを超えないことの確認を追加した。
+
+# モバイル表示・入力欄の視認性改善の実装方針（Phase 22）
+
+要件は`requirements.md`「モバイル表示・入力欄の視認性改善」。
+
+## フォーカス時の意図しない拡大の防止
+
+- iOS Safari等は、フォーカスした入力欄のフォントサイズが16px未満のとき、そのフォントサイズが画面に収まるよう自動的にページ全体を拡大する。`viewport`メタタグの`maximum-scale`固定・`user-scalable=no`によるピンチズーム自体の禁止は、拡大操作を必要とする利用者のアクセシビリティを損なうため行わない。
+- 代わりに、`styles.css`が入力欄（`input`・`select`・`textarea`）のフォントサイズを`16px`以上に統一する。次項「入力欄の視認性向上」で文字サイズを拡大する対応と合わせて満たされる。
+
+## 入力欄の視認性向上
+
+- `styles.css`の入力欄セレクタ（従来`select, textarea, input[type="search"]`のみに限定していたものを、`input`全体（`type`を問わない。`LoginForm.tsx`のユーザー名・パスワード・2段階認証コード欄を含む）へ拡大する）に、以下をまとめて適用する。
+  - `font-size`: `1rem`（16px。「フォーカス時の意図しない拡大の防止」と両立）
+  - `border`: 既定の`var(--border)`（灰色、ボタン等と共通）ではなく、入力欄専用の新しいCSSカスタムプロパティ`--input-border`（`:root`に追加。ブラウザ・OS既定の枠線色と区別できる、システムで意図的に定めた色）を使う
+  - `padding`: `8px 10px`程度（従来の`6px`のみから拡大し、枠線内に余白を持たせる）
+- フォーカス時は`outline`を`--input-border`と同系色で表示し、枠線色とフォーカス表示の一貫性を保つ（既存の`.location-row:has(input:focus-visible)`等、個別に`outline`を定義している箇所とは独立に扱い、干渉しない）。
+
+## アカウントのログイン状態表示の簡素化
+
+- `SessionCard.tsx`の状態表示（`session-status`）は、ログイン済み（`loggedIn === true`）のときのみ描画する。未ログイン（`loggedIn === false`）のときは、従来表示していた「アカウント: 未ログイン」を描画しない（ログインフォーム・ログインボタン自体が未ログインであることを示すため）。ログイン状態が未確定（`loggedIn === undefined`）のときも同様に何も描画しない（従来どおり）。
+- ログイン済みの表示は、他のカードの状態表示（`LocationRow.tsx`の「接続中」バッジ等）と同じ`badge badge-ok`クラスを使い、プラン名（あれば`usageNote`併記）とともに緑色の背景で示す。接続状態の表示（`connectionCardClassName`による枠色）と同様に、色で状態が分かるようにする狙いを、既存の`badge`という共通の仕組みで満たす（ログイン状態専用の新しい配色ルールは設けない）。
+
+## 接続先設定フォームの高さ
+
+- `App.tsx`が、接続操作カード（`.controls`）に実際に表示する行があるかどうか（`locations.locations.length > 0`、または参考一覧が使われる状況で`availableLocations`に1件以上あるか）を判定し、あるときだけ`.controls`へ`controls-expanded`クラスを追加する。
+- `styles.css`は、`.controls`の既定を`flex: 0 0 auto`（内容に必要な高さのみ）とし、`.controls-expanded`のときのみ従来どおり`flex: 1 1 auto; min-height: 0;`（画面の残り高さいっぱいに広がり、内部の`.location-scroll`がスクロールを吸収する。Phase 21「画面の縦幅をビューポートに収める」の実装をそのまま流用する）を適用する。
+- 取得中・0件・制限理由のみ（参考一覧も空）のときは`.controls`が内容に応じた高さのみを占めるため、画面下部に不要な空白が生じない。
+
+## フッターの追加
+
+- `App.tsx`の`<main>`直下、既存の各カードの後ろに`<footer className="app-footer">`を追加し、本リポジトリのGitHubページ（`https://github.com/nekono-dev/vpngateway-gui`）へのリンクを、GitHubのロゴ（インラインSVG。外部画像・アイコンフォントへの追加の依存を避けるため`components/icons/GithubIcon.tsx`として置く）とともに表示する。
+- `styles.css`の`main`はflexの縦積み（`display: flex; flex-direction: column;`）のため、フッターは他のカードと同じ流れの末尾に置くだけで追加のレイアウト変更は不要。ただし画面の縦幅をビューポートに収める制約（Phase 21）と両立させるため、フッターは小さく（アイコン+リンクの1行程度）に留め、`.controls`が`controls-expanded`でない（内容が少ない）ときに画面内に収まるようにする。
