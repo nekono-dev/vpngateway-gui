@@ -201,3 +201,34 @@
 
 - `App.tsx`の`<main>`直下、既存の各カードの後ろに`<footer className="app-footer">`を追加し、本リポジトリのGitHubページ（`https://github.com/nekono-dev/vpngateway-gui`）へのリンクを、GitHubのロゴ（インラインSVG。外部画像・アイコンフォントへの追加の依存を避けるため`components/icons/GithubIcon.tsx`として置く）とともに表示する。
 - `styles.css`の`main`はflexの縦積み（`display: flex; flex-direction: column;`）のため、フッターは他のカードと同じ流れの末尾に置くだけで追加のレイアウト変更は不要。ただし画面の縦幅をビューポートに収める制約（Phase 21）と両立させるため、フッターは小さく（アイコン+リンクの1行程度）に留め、`.controls`が`controls-expanded`でない（内容が少ない）ときに画面内に収まるようにする。
+
+# ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善の実装方針（Phase 23）
+
+要件は`requirements.md`「ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善」。
+
+## VPNベンダー選択のプルダウン化とログイン/ログアウト導線の同じ行への配置
+
+- `ProviderSelector.tsx`は、複数ベンダーのときの部品を`<fieldset><div role="radiogroup">`（ラジオボタンの並び）から`<select>`（プルダウン）へ変更する。選択中の値は`value={active?.id}`（controlled）とし、`onChange`で選ばれたベンダーを`handleSwitch`（既存の確認・切替ロジック。変更なし）へ渡す。利用不可ベンダーは`<option disabled>`にし、理由（`unavailableReason`）は選択肢の文言に括弧書きで含める（従来はラジオの横に別要素で表示していたが、プルダウンの各選択肢はテキストのみのため文言に含めるほかない）。
+- ベンダーが1つだけのとき（`providers.length <= 1`）の名前のみ表示（`.provider-name`）は変更しない。
+- プルダウンの隣にログイン/ログアウトボタンを並べるため、`ProviderSelector`（`select`を含む要素）と`SessionCard`は、従来どおり`App.tsx`の同じ`<section className="card provider-card">`の直接の子（DOM上の兄弟）のまま維持し、CSSのみで行内配置を実現する。`SessionCard.tsx`は返り値を単一の`<div className="session-card">`から`Fragment`へ変更し、「単発ボタンで済む導線（ログアウトボタン、またはURL提示型ログインのボタン）」を`<div className="session-action">`、「それ以外（アカウント状態のバッジ、資格情報入力型のログインフォーム、ログインURL提示の結果、制限理由）」を`<div className="session-extra">`として、それぞれ独立した要素で返す。資格情報入力型のログイン（`loginMethod === "credentials"`）は、フォーム自体をボタンだけに切り出せないため`session-action`には何も置かず、`session-extra`側にフォームごと表示する。
+- `styles.css`の`.provider-card`をCSS Grid（`grid-template-areas: "select action" / "extra extra"`）にし、`.provider-select-row`・`.provider-name`（ベンダー1つのときの名前表示）を`select`領域、`.session-action`を`action`領域、`.session-extra`を`extra`領域に割り当てる。DOM上の親子構造（`ProviderSelector`・`SessionCard`という別コンポーネントの出力）を変えずに、CSSのgrid-areaだけで見た目の行を組み替えられるため、両コンポーネントの既存ロジック（ログイン状態の保持、切替の確認等）には手を入れない。`session-extra`が空（何も表示するものが無い、例: URL提示型ログインで未クリック）のときは`:empty`セレクタで`display: none`にし、余分な行の高さを持たない。
+
+## プルダウンの装飾（テキストボックス風）
+
+- `styles.css`の`.provider-select`に`appearance: none`を適用してブラウザ・OS既定の矢印等を消し、他の入力欄と同じ枠線色（`--input-border`）・padding・フォーカス時のoutlineを適用する（既存の`select, textarea, input:not(...)`の共通ルールをそのまま継承し、`.provider-select`では`padding-right`（自前の矢印ぶんの余白）のみ上書きする）。矢印は`.provider-select-wrap::after`（絶対配置した疑似要素、border-right/border-bottomで作る三角形）で自前に描画する。
+
+## 入力欄の枠線色のグレー化
+
+- `styles.css`の`:root`の`--input-border`を、紫（`#6e40c9`）からグレー系（`#6e7781`。`--muted`と同系統でブラウザ既定の`--border`より濃く、視認性は維持する）へ変更する。この変数を参照している箇所（入力欄全般、プルダウン）はすべて自動的に追従するため、他のファイルの変更は不要。
+
+## スマートフォンでのスクロール防止
+
+- `styles.css`に`@media (max-width: 420px)`を追加し、`main`・`.card`の余白（padding・gap）を詰める。`.provider-card`は、この幅では`grid-template-columns: 1fr`・`grid-template-areas: "select" / "action" / "extra"`へ切り替え、プルダウンとボタンを縦に積む（狭い画面でベンダー名が長い場合でも折り返し・はみ出しでスクロールが発生しないようにするため）。
+- `body`に`overscroll-behavior-y: none`を追加し、iOS Safari等のラバーバンドスクロール（ページ全体を引っ張って伸縮させる挙動）による意図しないスクロールを防ぐ。`main`のpaddingに`env(safe-area-inset-top/bottom)`を加味し、ノッチ・ホームインジケータのある端末でも内容が隠れないようにする。
+- Phase 21・22で確立した「`main`は`100dvh`固定・`overflow: hidden`、`.controls-expanded`のみ残り高さを内部スクロール（`.location-scroll`）へ渡す」という縦幅の制御方針自体は変更しない。
+
+## PWA対応
+
+- `web/public/manifest.webmanifest`（Webアプリマニフエスト）を追加し、アプリ名・アイコン（`/icons/icon-192.png`・`icon-512.png`・`icon-maskable-512.png`・`apple-touch-icon.png`。外部の画像編集ツールに依存せず、Node標準の`zlib`のみでPNGを生成するビルド前のワンショットスクリプトで作成し、リポジトリには生成済みのPNGを配置する）・`display: standalone`・`theme_color`等を定義する。`index.html`に`<link rel="manifest">`・`<meta name="theme-color">`・`<link rel="apple-touch-icon">`等を追加する。
+- `web/public/sw.js`（Service Worker）を追加し、`/api/*`は常に最新の状態を扱う必要があるためキャッシュ対象から除外し、アプリの静的シェル（`index.html`・`manifest.webmanifest`等）のみをキャッシュ優先（取得後に裏で更新）で扱う。`main.tsx`が`window`の`load`イベントで`navigator.serviceWorker.register("/sw.js")`を呼ぶ（`"serviceWorker" in navigator`で対応環境のみ）。
+- **制約**: Service Workerの登録（`navigator.serviceWorker`自体の存在）は、ブラウザのセキュアコンテキスト要件により、配信がHTTPSまたは`localhost`でなければ有効化されない。検証環境（`http://192.168.3.240:8080`、LAN IPへの素のHTTP配信）で確認したところ、`window.isSecureContext`が`false`となり`navigator.serviceWorker`自体が存在しない（実機確認、2026-09-22）。本フェーズはこの制約を認識のうえ、資材（manifest・アイコン・Service Worker本体・登録コード）を用意することまでをスコープとし、配信のHTTPS化は別途の判断（利用者へ確認のうえ、スコープ外とした）とする。
