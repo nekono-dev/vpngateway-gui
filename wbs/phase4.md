@@ -1,74 +1,91 @@
-# Phase 4: 明示的プロキシモード（3proxy）
+# Phase 4: Web UI完成（簡易機能版プロトタイプ向け）
+
+（2026-09-21: 当初はネットワーク制御系フェーズの後段に予定していたWeb UI整備を、簡易機能版プロトタイプとして早期に通し利用できる状態にするため、Phase 3の直後に繰り上げた。判断根拠は`README.md`「フェーズ分割の考え方」参照。）
 
 ## 目的
 
-3proxyを用いたSOCKS5/HTTPプロキシモードを実装し、`explicitProxyEnabled`・`explicitProxyAllowedCidrs`のユーザ向け設定をproxyコンテナへ反映できるようにする。
+webserver/requirements.mdで定義された画面のうち、未実装の「接続ログ」「トースト表示」「透過ゲートウェイ稼働状況表示」を実装し、最小限のスタイルを与えて、Phase 6（明示的プロキシ）未実装の段階でも「VPN接続操作＋透過ゲートウェイ運用」を通しで操作できるプロトタイプ状態に到達させる。
 
 ## 前提
 
-- Phase2完了（実VPNベンダーCLIによる接続・切断が動作確認済み）。
-- Phase3完了（proxyコンテナが`network_mode: host`で稼働しており、LANインターフェースへ直接bindできる状態）。
-- **【2026-09-21】Phase5（Web UI）はPhase4より前に実施する（`wbs/README.md`参照）。** 本フェーズ着手時点でダッシュボード・設定ダイアログ・`GET /v1/connection/gateway`・proxy `GET /status`が存在する前提とする。
-- Phase3で追加した内部プロトコル`POST /settings`（設定反映エンドポイント）が利用可能であること。
+- Phase2完了（ログイン代行APIが利用可能）。ログイン代行の簡易UI（`web/src/components/dashboard/VpnLoginButton.tsx`）と設定ダイアログ（`SettingsDialog.tsx`）は前倒し実装済み（`wbs/phase2.md`「Step 3」参照）。
+- Phase3の**実装**が完了していること（`killSwitch`・`transparentGatewayEnabled`がAPI経由でproxyへ反映される。`POST /settings`）。実機検証（`phase3.md`「次フェーズへの申し送り」）は本フェーズと並行して進めてよいが、透過ゲートウェイ稼働状況表示の実機確認は検証環境が必要。
+- **Phase6は未実施のまま着手する。** `explicitProxyEnabled`・`explicitProxyAllowedCidrs`は設定ダイアログで編集・永続化できるが、proxyへは反映されない（3proxy未実装）。この点をUI上で利用者に誤解させない配慮を本フェーズのタスクに含める。
 
 ## スコープ外
 
-（なし。実VPNベンダーCLIへの置換はPhase2で完了済み）
+- 明示的プロキシの稼働状況表示（Phase 6で3proxy実装と合わせて実施。下記「暫定表示」参照）。
+- `excludedDomains`の実処理（Phase 14）。設定編集UI自体は実装済みだが、反映されない旨は暫定表示で示す。
+- 認証UI（ログイン画面等）、多言語対応、WebSocket通知（いずれもphase15.mdの将来課題。LAN限定・認証なしのプロトタイプ運用のため本フェーズでは扱わない）。
 
 ## 主要タスク
 
-- [x] 3proxy設定ファイルのテンプレート作成（SOCKS5:1080, HTTP:3128。HTTPをWeb UIの8080と衝突しない3128にした。`proxy/src/explicit-proxy/config-builder.ts`）。
-- [x] `POST /settings`受信時、`explicitProxyAllowedCidrs`から3proxy設定ファイルを再生成する処理（`ExplicitProxyController.applySettings()`）。
-- [x] `child_process.spawn`による3proxy起動・監視・異常終了時再起動（指数バックオフ）実装（`explicit-proxy-controller.ts`）。
-- [x] `explicitProxyEnabled`切替による3proxyプロセスの起動/停止。
-- [x] VPN接続状態変化時は3proxyを再起動しない（ルーティングに自動追従するため。design.md記載の通り、独立して機能することを実機で確認した）。
-- [x] `GET /status`（proxy内部）・`GET /v1/connection/gateway`（api）のレスポンスへ`explicitProxy`（有効/実稼働/クラッシュループ状態）を追加する。
-- [x] ダッシュボードの明示的プロキシ稼働状況欄・設定ダイアログの「未対応」暫定表示（Phase5で追加）を、実稼働状況表示へ置き換える。
-- [x] 3proxyクラッシュループ検知時のAPIサーバへのエラー状態通知。proxy→apiのpush経路は新設せず、既存の`GET /status`→`GET /v1/connection/gateway`の中継（pull）で`crashLoop`を利用者へ届ける方式とした（理由: `proxyserver/design.md`「`GET /status`」）。
-- [x] （計画外・必要となったもの）3proxyのDockerイメージへの同梱。Alpineの安定版リポジトリにパッケージが無いため、`proxy/Dockerfile`の専用ビルドステージでソースからビルドする。
-- [x] （計画外・必要となったもの）`explicitProxyAllowedCidrs`のIPv4 CIDR形式検証（API・proxyの両方）。CIDRは3proxyの設定ファイルの行へ埋め込まれるため、改行による設定行の注入で許可範囲が拡大するのを防ぐ。
+### 実装済み（前倒し済み）
+- [x] 設定ダイアログ（モーダル）実装: `killSwitch`トグル、`excludedDomains`リスト編集、`defaultCountry`ドロップダウン、`transparentGatewayEnabled`トグル、`explicitProxyEnabled`トグル、`explicitProxyAllowedCidrs`リスト編集（`explicitProxyEnabled=false`時disabled連動）。**2026-09-14、phase2の未完了項目解消の一環として前倒し実装済み**（`web/src/components/dashboard/SettingsDialog.tsx`）。ヘッドレスChromiumで開閉・トグル連動・保存後の永続化を確認済み。
+- [x] ダイアログ内保存ボタンによる一括`PUT /v1/connection/config`実装。（上記と同時に実装済み）
+
+### 透過ゲートウェイ稼働状況の取得経路（proxy → api → web）
+現状、APIは透過ゲートウェイ／Kill Switchの実際の適用状態を返すエンドポイントを持たない（`POST /settings`の応答`applied`は設定変更時の一回限りの結果）。ダッシュボードに稼働状況を表示するため、状態取得経路を新設する。
+- [x] proxy: 内部エンドポイント`GET /status`（UDS上、`/exec`・`/settings`と同様OpenAPI非公開）を追加し、`GatewayController`の現在状態（適用中の設定・検出中のVPN IF名・nftables適用有無・Kill Switchによる遮断中か）を返す。詳細は`specs/proxyserver/design.md`「`GET /status`」参照。
+- [x] api: `proxy-client.ts`に`fetchProxyStatus()`を追加し、`GET /v1/connection/gateway`（新規、TypeBoxスキーマ定義・OpenAPI公開）として中継する。proxy未応答は既存方針どおり502/504。詳細は`specs/apiserver/design.md`。
+- [x] web: orval再生成（`web/src/generated/api/`）。
+- [x] 上記の単体/統合テスト（`proxy-client.test.ts`、`routes/`配下のテスト）。
+
+### Web UI
+- [x] ダッシュボードに透過ゲートウェイ稼働状況表示を追加（稼働中/停止/Kill Switchにより遮断中/未構成（`LAN_IFACE`未設定））。既存の5秒ポーリング（`useConnectionPolling`）に合流させる。
+- [x] 暫定表示: 明示的プロキシ・`excludedDomains`は「未対応（Phase 6/Phase14で対応予定）」である旨を設定ダイアログの該当項目と、ダッシュボードの明示的プロキシ稼働状況欄に表示する（設定値が保存されても反映されないことの明示）。Phase 6で3proxyが実装された時点で、この暫定表示を実稼働状況表示へ置き換える（`phase6.md`のタスク）。
+- [x] 接続ログ画面実装（`GET /v1/connection/log`の履歴を時系列表示。ダッシュボードからのモーダルまたは折りたたみセクション）。
+- [x] APIエラーレスポンスのトースト表示実装（詳細は折りたたみ表示、stderr等の生ログは要約のみを通常表示）。現状の`role="alert"`によるインライン表示（`App.tsx`の`actionError`、`VpnLoginButton`等）をトーストへ集約する。
+- [x] 接続先国の表示補完: 実CLIは国コードを出力せず`ConnectionStatus.country`が常に`undefined`（`phase2.md`「次フェーズへの申し送り」）だった。当初はクライアントのメモリで保持する暫定対応としたが、**再読み込みで消える不具合**（下記「申し送り」）のため、APIサーバ側で接続時に要求した国を永続化して`GET /v1/connection`が返す方式へ改めた（2026-09-21）。
+- [x] 最小限のスタイル適用（現状は無スタイル）。レイアウト・状態の色分け（接続中/切断/エラー）・操作ボタンの視認性のみ。デザインシステム導入等は行わない。
+- [x] 画面単位のコンポーネントテスト追加（vitest。`web/package.json`にvitestは導入済みだがテストファイルは未作成）。
 
 ## 完了基準
 
-- クライアント端末から本ホストのSOCKS5/HTTPポートへプロキシ設定し、`explicitProxyAllowedCidrs`に含まれるCIDRからのみ接続を許可、それ以外を拒否することを確認する。
-- `explicitProxyEnabled=false`にするとプロセスが停止し、ポートが閉じることを確認する。
-- 3proxyを強制終了（`kill`）した際、監視処理が自動再起動することを確認する。
-- Phase3で検証したnftables連携と、実際のトンネルインターフェース名（Phase2で統合済みの実CLIが確立するもの）の下で3proxyが独立して問題なく動作することを確認する。
-
-## 検証手法（2026-09-21）
-
-- 環境: Phase 3と同じ実機ゲートウェイ（Ubuntu 24.04・単一NIC・実LAN。`GW_MODE=ssh`）。LAN端末役は開発ホスト上のmacvlan LXCコンテナ（実LANのIPv4を持つ）。実VPN（AdGuard VPN CLI、ログイン済み）。
-- 実行: `GW_MODE=ssh bash e2e/lxc/sync.sh`（転送・3proxyのソースビルドを含むイメージビルド・起動）→ `GW_MODE=ssh bash e2e/phase4/proxy-scenarios.sh`。Web UI操作は`e2e/phase4/webgui-explicit-proxy.mjs`（Playwright）。詳細は`e2e/README.md`。
-- 単体・コンポーネントテスト: proxy 87件・api 107件・web 64件がすべて成功（`npx vitest run`）。3proxyの実プロセスは単体テストでは使わず、`ExplicitProxyController`へspawn・書き込み・時計のスタブを注入して検証した（実プロセスの挙動は下記のE2Eで確認）。
-
-## 検証結果（2026-09-21）
-
-`proxy-scenarios.sh`が**全項目PASS（FAIL 0件）**。
-
-| シナリオ | 確認内容 |
-|---|---|
-| A | 有効化でSOCKS5(1080)・HTTP(3128)がホストのLAN側でlisten。許可CIDR内のLAN端末からSOCKS5・HTTP CONNECT(HTTPS)・平文HTTPで通信でき、許可CIDR外は3種すべて拒否（出口IPが返らない）。CIDRを許可外→許可へ戻すと通信が回復する |
-| B | 無効化でプロセスが停止しポートが閉じる（状態`stopped`）。再有効化で再びlisten。有効でも許可CIDRが空なら起動せず`unconfigured`。不正なCIDR（設定行の注入を含む・プレフィックス長なし）のPUTは400で拒否され保存されない |
-| C | `kill -9`後に自動再起動（別PID・再listen・通信回復・`restartCount`+1）、1回では`crashLoop`にならない。短時間の連続kill（バックオフ1→2→4→8秒）で`crashLoop`を報告（Web UIに危険色で表示、監査ログに`explicit_proxy_crash_loop`）。再起動は試み続け、安定稼働30秒後に`active`へ回復 |
-| D | VPN接続中はSOCKS5・HTTP CONNECTの出口IPがVPN側（直接212.102.42.196→Tokyo 156.146.34.246）。接続・国変更（再接続）・切断のいずれでも3proxyのPIDは不変（再起動されない）。透過ゲートウェイのnftテーブルと同居して稼働 |
-| E | APIの設定定期再通知（10秒周期を複数回またぐ）、Kill Switch・透過ゲートウェイの設定変更、同一CIDRでのPUTのいずれでも3proxyが再起動されない |
-| F | Web UIで有効化・許可CIDR保存→稼働状況が「稼働中」＋ポート併記、再読み込み後も設定が保持、不正CIDRはダイアログ内エラーで閉じない、空CIDRは「未構成」、無効化で「停止」・CIDR欄disabled・ポートが閉じる |
-| H | proxyコンテナ再起動後、APIの設定再通知で3proxyが自動的に復帰し、LAN端末から通信できる（`restartCount`は0に戻る） |
-| G（INFO） | VPN未接続・Kill Switch ONでも、明示的プロキシ経由の通信は実回線から直接出る（下記「既知の制約」） |
-
-- Phase 5のE2E（`e2e/phase5/webgui-dashboard.mjs`）の`initial`（明示的プロキシ欄が実状態表示・暫定表示の消失）・`ks-off`は本フェーズ後も通る。
-- 検証中に発見・修正した不具合:
-  1. **`dd`要素の`aria-labelledby`が実ブラウザで機能しない**: 稼働状況カードの各行を`getByRole("definition", { name })`で特定していたが、単体テスト（jsdom）では通る一方、実ブラウザ（Chromium）のE2Eでは名前が計算されず要素を見つけられなかった（ARIA上`definition`はアクセシブルネームを付けられない）。`data-testid`での特定へ変更した。jsdomのアクセシビリティ計算が実ブラウザと異なることによる。
-  2. **3proxyのSIGTERMからの終了に約5秒かかる**: 当初のSIGKILL切替猶予（5秒）と衝突しうるため、猶予を10秒へ延ばした（実測は`docker run`で確認）。
-  3. E2E側の不備: プロキシが拒否時に返す403エラーページ本文を「通信成功」と誤判定していた（拒否の判定を出口IPかどうかにした）。LAN端末役自身の直接通信は透過GW+KS ONで遮断されるため、「直接の出口IP」はGW自身の外部IPで代用するよう改めた。
-- 未検証: 透過ゲートウェイと明示的プロキシを同時に有効にした状態での長時間・高負荷の安定性、多数の同時接続、ホスト再起動を伴う復帰（コンテナ再起動は確認済み）、複数NIC構成（bindは全インターフェースのため許可CIDRのみに依存する）、IPv6クライアント（対象外）、HTTPプロキシでのFTP・WebSocket等の特殊なプロトコル。
+- 設定ダイアログから全項目を変更し保存すると、`GET /v1/connection/config`が更新後の値を返すことを確認する。（実施済み）
+- `explicitProxyEnabled`をOFFにすると、`explicitProxyAllowedCidrs`入力欄が視覚的にdisabledになることを確認する。（実施済み）
+- 接続ログ画面に過去の接続/切断/エラー操作が時系列で表示されることを確認する。（実施済み）
+- 意図的にプロキシ未応答（502）・実行失敗（422）を発生させ、トーストにエラー要約が表示され、詳細（stderr）は折りたたみ内に表示されることを確認する。（実施済み）
+- `transparentGatewayEnabled`のON/OFF、VPN接続/切断、`killSwitch`切替に応じて、ダッシュボードの透過ゲートウェイ稼働状況表示が、次回ポーリング（5秒以内）で実際の状態に追従することを確認する。（実機で実施済み）
+- Web UIのみで「ログイン→国選択→接続→透過ゲートウェイON→状態確認→切断」まで操作でき、プロトタイプとして通し利用できることを確認する。（実施済み）
 
 ## 次フェーズへの申し送り
 
-- **【重要・既知の制約】明示的プロキシはKill Switchの対象外**: Kill Switchは`forward`チェーンのみを制御するため、VPN未接続の間は`killSwitch=true`でも明示的プロキシ経由の通信が実回線から直接出る（実測、シナリオG）。利用者にはVPN接続時のみプロキシを使うよう案内が必要。対処案（3proxy専用UIDに対する`output`チェーンのdrop）は`phase7.md`に追加した。
-- 3proxyはホストの全インターフェースへbindし、接続の可否は許可CIDRのみで決まる。複数NIC構成（LAN以外に外向けNICがある場合）では、許可CIDRを実際にLAN側に限る運用とすること。認証はIPのみ（ユーザ名・パスワード認証は未実装。`phase7.md`）。
-- 設定変更（CIDR変更等）では3proxyの終了待ち（約5秒）のあいだプロキシが応答しない。無停止化（SIGUSR1による設定再読み込み）は`phase7.md`の課題に追加した。
-- 3proxyのバージョンは`proxy/Dockerfile`の`THREEPROXY_VERSION`（0.9.5）で固定し、ソースをビルドする（ビルド時にGitHubへのアクセスが必要）。更新時は実機で`proxy-scenarios.sh`を再実行すること。
-- `explicitProxy`の追加により、`GET /status`のレスポンス形状が変わった。api・proxyは同時にデプロイすること（旧proxyが`explicitProxy`を含まない応答を返すと、APIは形状不一致として502相当になる）。
-- `excludedDomains`（Phase 6）は3proxy側の除外設定も対象になる。`config-builder.ts`にドメイン除外の生成を追加する形で実装できる（設定ファイルは`allow`/`deny`のACL方式のため、宛先ドメインのACLで表現できるかはPhase 6で確認すること）。ただし3proxy自身はルーティングを制御しないため、VPN迂回の実現にはOS側のポリシールーティングが必要になる。
-- `e2e/phase5/webgui-dashboard.mjs`のうち`flow`・`error-422`・`error-502`はPhase 8の「接続国」セレクト廃止により失敗している（既存の陳腐化。`phase7.md`に記載）。
+- 本フェーズはPhase 6より前に実施するため、明示的プロキシの稼働状況は「未対応」の暫定表示となる。Phase 6完了時に暫定表示を実状態へ置き換えること（`phase6.md`に対応タスクを追加済み）。
+- `GET /v1/connection/gateway`のレスポンスには、Phase 6で`explicitProxy`側の状態を追加できるよう拡張余地を残す（`specs/apiserver/design.md`参照）。
+- 【2026-09-21実施】proxy `GET /status`・api `GET /v1/connection/gateway`の`state`は、仕様の3値（`active`/`stopped`/`unconfigured`）に加えて`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）を追加した。`explicitProxy`はPhase 6で同レスポンスへ追加する（`transparentGateway`と並列のキーとして拡張可能な形にしてある）。
+- 【2026-09-21 Phase 6で置換済み】下記の暫定表示のうち明示的プロキシ分は、Phase 6で実状態表示へ置換した（`wbs/phase6.md`参照）。
+- Phase 6完了時に置換すべき暫定表示は2か所: `GatewayStatusCard.tsx`の「明示的プロキシ」欄と、`SettingsDialog.tsx`の`.unsupported`表示（Phase 6対象は明示的プロキシ、Phase 14対象は`excludedDomains`）。`web/src/App.test.tsx`・`GatewayStatusCard.test.tsx`にも暫定表示の文言を検証するテストがあるため同時に更新すること。
+- 【E2Eで判明した既存不具合】実VPN CLIはエラーメッセージを**stdout**へ出力するため、422応答の`stderr`が空になり、トーストの詳細に何も出ない不具合があった（Phase 2実装由来。例: 接続中でない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）。`api/src/lib/failure-output.ts`（stderrが空ならstdoutを返す）を追加して修正した。
+- 【設計上の判断】ポーリングは接続状態と稼働状況で成否を分離した。当初は「接続状態の取得失敗＝全体の失敗」とし古い値を保持していたため、proxy停止中も稼働状況が「稼働中」のまま残る問題をE2Eで発見し、部分ごとに成否を持つ形へ改めた（`specs/webserver/design.md`「状態管理の実装方針」）。
+- 接続ログ画面は、プロキシへ到達せずCLIを実行しなかった操作（502/504）を記録しない（apiserverの監査ログ仕様）。Web UI側のトーストでのみ確認できる。必要になれば監査ログへの失敗記録追加を検討する。
+- 【不具合と修正（2026-09-21）】接続国を「接続操作時にクライアントのメモリへ保持」する暫定対応にしていたため、ブラウザの再読み込み・別端末・別ブラウザで「（接続国: XX）」が表示されなかった（プロトタイプ段階の許容としていたが、通常操作で頻繁に遭遇するため不具合と判断）。原因は、国コードの唯一の保持先がクライアントの状態で、APIが国を返せなかったこと（実CLIの`status`は都市名しか出力しない）。修正として、APIが接続成功時に要求した国と接続先の都市名を`api-data`ボリュームへ永続化し、`GET /v1/connection`で返す（`specs/apiserver/design.md`「接続先国の永続化」）。都市名が保存時と異なる場合（API外での再接続）は古い国を返さない。クライアント側の保持は撤去した。
+- 最初のE2E（24項目PASS）は再読み込みを検証していなかったため、この不具合を検出できなかった。E2E `flow`に再読み込み後の表示確認を追加した。
+- 設定ダイアログ・接続ログダイアログ内のエラーはトーストではなくダイアログ内のインライン表示（モーダルではダイアログ外のトーストを操作できないため）。
+
+## 検証手法（2026-09-21）
+
+Phase 3の実機検証環境（`GW_MODE=ssh`。Ubuntu 24.04・単一NIC・実LAN・実VPN（AdGuard VPN CLI、ログイン済み））で、Web UIをPlaywrightで操作して確認した。手順は`e2e/phase4/`に残してある。
+
+```sh
+GW_MODE=ssh bash e2e/lxc/sync.sh                       # 転送・ビルド・起動
+GW_MODE=ssh bash e2e/phase4/dashboard-scenarios.sh jp  # 全シナリオ（引数は接続国）
+```
+
+単体・コンポーネントテスト: proxy 49件（うち`getStatus`7件）、api 48件、web 35件（vitest＋jsdom＋Testing Library）がすべて成功。
+
+## 検証結果（2026-09-21）
+
+`dashboard-scenarios.sh`が**25項目すべてPASS**（再読み込み確認の追加後。追加前は24項目）（FAIL 0件）。
+
+| シナリオ | 確認内容 |
+|---|---|
+| initial | 明示的プロキシ欄・設定ダイアログの「未対応」暫定表示 |
+| flow | ログイン→国選択→接続→成功トースト→選択国の表示→**再読み込み後も接続国が表示**→透過GW「稼働中」（VPN IF名併記）→設定で透過GW OFF→「停止」→ON→「稼働中」→切断→接続国表示の消去→「Kill Switchにより遮断中」。稼働状況は次回ポーリング（5秒）以内に追従 |
+| log | 接続ログが新しい順に表示され、接続操作の行に接続国が出る |
+| ks-off | Kill Switch OFF＋VPN未接続＝遮断中にならず「稼働中」、ONへ戻すと「遮断中」 |
+| error-422 | 実CLIの異常終了（`disconnect`が「Process is not running」で exit 14）で、トースト要約に「exit code」、詳細は折りたたみ内にstderr、要約にはstderrを含めない |
+| error-502 | proxyコンテナ停止中の接続操作で「プロキシサーバに接続できません」トースト、稼働状況欄は取得失敗表示 |
+
+- E2E実行で上記「E2Eで判明した既存不具合」（422のstderr空）と「proxy障害時に稼働状況が古い値のまま」の2件を発見し、修正後に再実行して全PASSを確認した。
+- 未検証: 実際にブラウザ認証を伴う初回ログイン（検証環境は既にログイン済みのため「ログインボタン」はログイン済みメッセージの確認のみ。認証URL表示自体はPhase 2・3で確認済み）、複数ブラウザ・スマートフォン幅での表示。

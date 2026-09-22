@@ -1,12 +1,12 @@
 # Phase 2: 実VPNベンダーCLI統合・ログイン代行
 
-> 全体整合性の再評価により、当初計画（実VPNベンダーCLI統合は旧phase4）を前倒しした版である。詳細はwbs/README.md「フェーズ分割の考え方」参照。
+> 全体整合性の再評価により、当初計画（実VPNベンダーCLI統合は旧phase6）を前倒しした版である。詳細はwbs/README.md「フェーズ分割の考え方」参照。
 
 ## 目的
 
 Phase1で構築したコマンド実行パイプライン（プレースホルダー検証→UDS送信→execFile実行）を、モックCLIから実際のVPNベンダーCLI（例: AdguardVPN CLI）に置き換え、実CLIの接続・切断・状態取得・ログイン代行を動作確認できる状態にする。
 
-`network_mode: host`への移行、透過ゲートウェイ、Kill Switch、明示的プロキシは本フェーズでは扱わず、プロキシコンテナ自身がVPNトンネルを確立・利用できることの確認に留める。これにより、「モックの決定的な状態遷移でロジックを先に検証してから実CLIに対応する」のではなく、実運用に近い実CLIの非決定的な挙動（ログイン、接続試行、レート制限等）に早期から向き合い、後続のネットワーク制御ロジック（phase3.md／phase4.md）の検証も、モックではなく実際のVPN接続状態を用いて行えるようにする。
+`network_mode: host`への移行、透過ゲートウェイ、Kill Switch、明示的プロキシは本フェーズでは扱わず、プロキシコンテナ自身がVPNトンネルを確立・利用できることの確認に留める。これにより、「モックの決定的な状態遷移でロジックを先に検証してから実CLIに対応する」のではなく、実運用に近い実CLIの非決定的な挙動（ログイン、接続試行、レート制限等）に早期から向き合い、後続のネットワーク制御ロジック（phase3.md／phase6.md）の検証も、モックではなく実際のVPN接続状態を用いて行えるようにする。
 
 ## 前提
 
@@ -19,13 +19,13 @@ Phase1で構築したコマンド実行パイプライン（プレースホル�
 |---|---|
 | `network_mode: host` | LAN機器へのゲートウェイ提供に必要だが、実CLI自体（コンテナ自身の通信）の動作確認には不要。→ phase3.md |
 | 透過ゲートウェイ・Kill Switch実処理 | ホストのネットワーク名前空間共有が前提。→ phase3.md |
-| 明示的プロキシモード（3proxy） | ホストのLAN側インターフェースへの直接bindが前提（`network_mode: host`必須）。→ phase4.md |
+| 明示的プロキシモード（3proxy） | ホストのLAN側インターフェースへの直接bindが前提（`network_mode: host`必須）。→ phase6.md |
 | インストールスクリプト | ホストの永続変更はphase3.mdのネットワーク基盤移行と合わせて実施。 |
 
 ## 主要タスク
 
 ### Step 0: specs更新
-- [x] `specs/apiserver/design.md`「Phase 1における具体プロファイル」節の「Phase 4で実CLI統合時に」等の記述を「Phase 2で」に更新する。
+- [x] `specs/apiserver/design.md`「Phase 1における具体プロファイル」節の「Phase 6で実CLI統合時に」等の記述を「Phase 2で」に更新する。
 - [x] `specs/proxyserver/design.md`「Phase 1における縮小構成」表にPhase 2の列（実CLI・NET_ADMIN/tun付与・ネットワークはブリッジのまま）を追加する。
 - [x] `specs/proxyserver/tasks.md`に「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」節を追加する。
 - [x] `specs/apiserver/tasks.md`の`POST /v1/session`項目の参照先を`wbs/phase2.md`に更新する。
@@ -43,7 +43,7 @@ Phase1で構築したコマンド実行パイプライン（プレースホル�
 
 ### Step 3: web — 簡易ログインUIの前倒し実装
 
-`POST /v1/session`実装により、Web UIからログイン未実施状態を解消する手段が無いまま`GET /v1/connection`が422を返し続ける状態が判明した（本来Phase 5でWeb UIをまとめて実装する計画だったが、それまで接続状態の確認自体ができない）。影響範囲を検討した上で、ログイン代行UIのみをPhase 2に前倒しすることとした（設定ダイアログ・接続ログ・トースト表示等、他のWeb UI要素はPhase 5のまま）。判断根拠・影響は`specs/webserver/requirements.md`「画面構成」・`wbs/phase5.md`「次フェーズへの申し送り」参照。
+`POST /v1/session`実装により、Web UIからログイン未実施状態を解消する手段が無いまま`GET /v1/connection`が422を返し続ける状態が判明した（本来Phase 4でWeb UIをまとめて実装する計画だったが、それまで接続状態の確認自体ができない）。影響範囲を検討した上で、ログイン代行UIのみをPhase 2に前倒しすることとした（設定ダイアログ・接続ログ・トースト表示等、他のWeb UI要素はPhase 4のまま）。判断根拠・影響は`specs/webserver/requirements.md`「画面構成」・`wbs/phase4.md`「次フェーズへの申し送り」参照。
 
 - [x] ダッシュボードに「VPNベンダーへログイン」ボタンを追加（`web/src/components/dashboard/VpnLoginButton.tsx`）。`POST /v1/session`を呼び出し、返却された`loginUrl`（あれば）・`message`を表示する。ログイン完了後の状態反映は既存の接続状態ポーリング（5秒間隔）に委ね、待機処理は実装しない。
 - [x] 実機（ログイン済みの実CLI）に対する動作確認: proxy/api/webをnodeプロセスとして起動し、ヘッドレスChromiumで実際にボタンをクリックし、`POST /v1/session`のレスポンス（「You are already logged in...」メッセージ）が画面に表示されることを確認した。
@@ -88,9 +88,9 @@ curl -s -X PUT http://localhost:8080/api/v1/connection -H 'Content-Type: applica
   - トンネル（`tun0`）経由でコンテナのルーティングが実際に切り替わること。
   - 【2026-09-14 追加検証で解消】完了基準記載の外部IP確認による実通信確認: `adguardvpn-cli connect -l jp -y`実行前後で外部IPを比較したところ、接続前は自ホストのIPだったのに対し、接続後は`156.146.34.246`（Tokyo, AS60068 Datacamp Limited＝AdGuard VPNのIP）に変化しており、実際にVPNトンネル経由で通信していることを確認した。`disconnect`後は接続前のIPに復帰することも確認済み。
   - なお、この検証環境では`adguardvpn-cli`本体プロセス（非rootユーザー実行）が内部的に対話端末経由の`sudo`パスワード入力を要求する構成だったため、`expect`を用いてパスワード入力を自動化して実行した。本番proxyイメージでは上記の`NOPASSWD:ALL`設定により本来この手当ては不要なはずであり、これは検証専用環境固有の制約であることに留意。
-- **接続先国(country)をレスポンスに含められていない。** 実CLIのテキスト出力から接続先国を確実に抽出できる固定書式を実機で確認できなかったため、`ConnectionStatus.country`は常に`undefined`を返す（`ConnectionStatus.country`は元々optionalであるため型上は問題ない）。UIで接続先国を表示する場合は、PUT時にリクエストした`country`をクライアント側で保持するなどの回避策が必要になる可能性がある。Phase 5（Web UI完成）着手時に要検討。**→ 2026-09-21解決: クライアント保持は再読み込みで消えるため、APIサーバ側で永続化する方式とした（`specs/apiserver/design.md`「接続先国の永続化」、`wbs/phase5.md`「申し送り」）。**
+- **接続先国(country)をレスポンスに含められていない。** 実CLIのテキスト出力から接続先国を確実に抽出できる固定書式を実機で確認できなかったため、`ConnectionStatus.country`は常に`undefined`を返す（`ConnectionStatus.country`は元々optionalであるため型上は問題ない）。UIで接続先国を表示する場合は、PUT時にリクエストした`country`をクライアント側で保持するなどの回避策が必要になる可能性がある。Phase 4（Web UI完成）着手時に要検討。**→ 2026-09-21解決: クライアント保持は再読み込みで消えるため、APIサーバ側で永続化する方式とした（`specs/apiserver/design.md`「接続先国の永続化」、`wbs/phase4.md`「申し送り」）。**
 - **`countries`一覧は経年劣化する。** `api/config/vpn-profile.json`の`countries`はある時点の`list-locations`のスナップショットであり、AdGuard側のサーバ増減で古くなる。管理者向けの定期更新手順（またはAPIサーバ起動時に`list-locations`を都度実行して動的に取得する設計への変更）を将来検討する。
-- **`login`の同時多重実行は考慮していない。** `POST /v1/session`を短時間に複数回呼ぶと、実CLI側の多重ログイン試行の挙動（拒否されるか、新しいデバイスコードが発行されるか）は未検証。認証機構がない現状（apiserver/tasks.md「将来課題」参照）と合わせて、Phase 5以降で認証・レート制限を追加する際に併せて検討する。
+- **`login`の同時多重実行は考慮していない。** `POST /v1/session`を短時間に複数回呼ぶと、実CLI側の多重ログイン試行の挙動（拒否されるか、新しいデバイスコードが発行されるか）は未検証。認証機構がない現状（apiserver/tasks.md「将来課題」参照）と合わせて、Phase 4以降で認証・レート制限を追加する際に併せて検討する。
 - **自動リトライ方針は導入していない。** 実CLIの一時的なネットワーク遅延・レート制限に対する自動リトライの必要性は、実機での接続検証（上記）を経てから判断する方が確度が高いと判断し、今回は見送った。
 - **【解消済み】ログインUIの主経路（未ログイン→URL表示→ブラウザで認証完了→状態反映）のweb/api/proxy経由E2E。** 2026-09-14、`docker compose`で構築した実機（web/api/proxyを全てコンテナとして起動）に対し、ヘッドレスChromium（Playwright）でWeb UIの「VPNベンダーへログイン」ボタンを実際にクリックし、`POST /v1/session`→proxy経由でデバイス認証URL（`https://auth.adguard.io/device_code?user_code=...`）が画面に正しく表示されることを確認した。表示されたURLでユーザーが実際にブラウザ認証を完了した後、`GET /v1/connection`が422エラーから`{"status":"disconnected"}`へ切り替わることを確認し、ポーリングによる状態反映の経路が機能することを確認した。あわせてWeb UIから国選択（jp）→接続→（ポーリングで「接続中」表示に切替）→切断→（「切断」表示に復帰）の一連の操作をPlaywrightで実施し、いずれも5秒ポーリング内に画面へ反映されることを確認した。タイムアウト（504）についても、`proxy`コンテナを`docker compose pause`で意図的に無応答にし、`GET /v1/connection`が`504 {"error":"proxy_timeout",...}`を返すことを実機で確認した（`specs/apiserver/tasks.md`の該当タスクもあわせて更新）。
 - **【発見・修正済み】ログイン代行のバックグラウンドプロセスが認証完了後に停止しない不具合。** 上記検証中に発覚。`runDetachableCommand`（`proxy/src/exec/command-runner.ts`）で起動する`login`プロセスは、認証完了（デバイス認証URLのブラウザ承認）をサーバー側が受理した後も、`stdio: ["ignore", ...]`でstdinを閉じているため、CLI内部の確認入力待ち処理（`ConsoleIOImpl get_char: Failed to read from console`）が失敗し続け、プロセスが終了せずCPUを消費し続ける不具合を確認した（実機で2分半以上ビジーループを確認、`kill -9`で強制終了した）。幸い認証情報自体はサーバー側で先に確定しており、別途`login`や`status`等を実行すればログイン済み状態を検知できるため実害はログイン検知の遅延とCPU浪費に留まっていたが、放置すると`login`ボタンを押すたびにゾンビ化したビジーループプロセスが積み重なる問題があった。対応として、`runDetachableCommand`のstdinを`"ignore"`（即時EOF）から`"pipe"`（読み取りブロック、CPU消費なし）に変更し、あわせて`completionPattern`一致後もプロセスが自然終了しない場合に備えたバックグラウンド安全装置（`backgroundTimeoutMs`、デフォルト30分で強制`SIGKILL`、`onBackgroundExit`コールバックで監査ログに記録）を追加した。実機で再現・修正確認済み（修正後は`login`プロセスがCPUを消費せず、認証完了検知後に自然終了し`background_exec_completed`イベントが記録されることを確認）。回帰テストを`command-runner.test.ts`に追加済み。

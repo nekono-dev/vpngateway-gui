@@ -30,9 +30,9 @@
 
 # 接続国の表示方針
 
-- 接続国はクライアントで保持せず、常に`GET /v1/connection`の`country`（と`location`）を表示する（apiserver/design.md「接続先国の永続化」）。クライアント側のメモリに保持すると、再読み込み・別端末・別ブラウザで表示が失われるため（Phase 5初期実装の不具合）。
+- 接続国はクライアントで保持せず、常に`GET /v1/connection`の`country`（と`location`）を表示する（apiserver/design.md「接続先国の永続化」）。クライアント側のメモリに保持すると、再読み込み・別端末・別ブラウザで表示が失われるため（Phase 4初期実装の不具合）。
 
-# 接続先リストの実装方針（Phase 8）
+# 接続先リストの実装方針（Phase 5）
 
 要件は`requirements.md`「接続先リスト」。API（`specs/apiserver/design.md`「接続先（ロケーション）」）が並び順（ping昇順）・お気に入り・前回接続の別を決めて返し、Webはそれを表示・操作するだけとする（並べ替えロジック・お気に入りの保持をWebに置かない）。
 
@@ -66,7 +66,7 @@
 
 `defaultCountry`ドロップダウンと、それに使っていた`countries`の受け渡しを削除する（`CountrySelect.tsx`も削除）。
 
-# ベンダーの選択の実装方針（Phase 11）
+# ベンダーの選択の実装方針（Phase 8）
 
 要件は`requirements.md`「ベンダーの選択」。ベンダーの保持・切替・切断の手順はAPI（`specs/apiserver/design.md`「ベンダーの選択」）が行い、Webは一覧の表示と切替の要求だけを行う。
 
@@ -75,7 +75,7 @@
 - **ベンダー切替時の状態の入れ替え**: `App`は、選択中のベンダーID（`providers`のうち`active`のもの）を`key`として、接続操作カード（`SessionCard`・`LocationList`・`ConnectionActions`）へ与える。IDが変わるとこれらが再マウントされ、ローカルの状態（絞り込み・タブ・URL提示型ログインの結果・入力中のフォーム）が捨てられる。`useLocations`も同じIDで取得し直す（`enabled`に加え、IDが変わったら一覧・エラー・「前回」を空へ戻して再取得する）。`selectedId`（明示的に選んだ接続先ID）もIDが変わったら消す。
 - **接続状態の表示**: `ConnectionStatusCard`に選択中のベンダー名を渡し、「接続中（<ベンダー名>）」の形で表示する。ベンダーが1つだけのときは従来の表示のまま。
 
-# プロバイダ機能差・プラン制限への対応の実装方針（Phase 9）
+# プロバイダ機能差・プラン制限への対応の実装方針（Phase 7）
 
 要件は`requirements.md`「操作の制限表示」。制限の判定はAPI（`specs/apiserver/design.md`「オペレーションと実行可否（capability）」）が行い、Webは受け取った`capabilities`を部品へ配るだけとする。
 
@@ -101,12 +101,12 @@
 - `POST /v1/session`の生成クライアント呼び出しの`finally`で、成否にかかわらず`password`・`twoFactorCode`の状態を空にする。エラー応答（422）の`stderr`は詳細（折りたたみ）にのみ入る既存方針のまま（APIが伏字化済み）。
 - 送信中はフォーム全体を無効化し、二重送信を防ぐ。
 
-# 暫定表示の実装方針（Phase 5）
+# 暫定表示の実装方針（Phase 4）
 
-- `excludedDomains`（Phase 6）は設定の保存のみ可能で通信へ反映されないため、設定ダイアログに「未対応」を表示する。Phase 6の実装時に除去する。明示的プロキシはPhase 4で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
+- `excludedDomains`（Phase 14）は設定の保存のみ可能で通信へ反映されないため、設定ダイアログに「未対応」を表示する。Phase 14の実装時に除去する。明示的プロキシはPhase 6で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
 - 稼働状況カードの各行（透過ゲートウェイ・明示的プロキシ）は、テスト（単体・E2E）が行を特定できるよう`dd`に`data-testid`を付ける（`dd`はARIA上アクセシブルネームを付けられず、`aria-labelledby`が実ブラウザで機能しないことがE2Eで判明したため）。取得失敗の理由（`role="alert"`）は1行目にだけ全文を出し、2行目は「取得失敗」のみとする（同一文言の重複読み上げを避ける）。
 
-## プランで接続できる接続先の参考表示の実装方針（Phase 14）
+## プランで接続できる接続先の参考表示の実装方針（Phase 12）
 
 要件は`requirements.md`「プランで接続できる接続先の参考表示」。
 
@@ -114,7 +114,7 @@
 - **表示**: `AvailableLocations`（`components/dashboard/AvailableLocations.tsx`）が、国名と都市の一覧を、操作できない要素（`ul`）として描く。`LocationList`は、`unavailableReason`の理由文（`RestrictionNote`）の直後に、渡された一覧があればこれを描く。
 - 一覧が変わるのはプラン変更（再ログイン）時のため、ログイン状態（`GET /v1/session`のプラン）が変わったときにも再取得する。
 
-## プランの補足情報の参考表示の実装方針（Phase 15）
+## プランの補足情報の参考表示の実装方針（Phase 13）
 
 要件は`requirements.md`「ログイン導線」（プラン名への補足併記）。追加の取得は行わず、`SessionCard.tsx`が既に持つ`GET /v1/session`の応答（`plan.usageNote`）をそのまま使う。
 

@@ -1,87 +1,96 @@
-# Phase 11: Web UIからのベンダー選択（ネットワーク制御とCLI実行の分離）
+# Phase 11: インストーラと頒布（クリーンなベアメタルへの1コマンド導入）
 
-**【2026-09-21追加】実施順は Phase 9 の直後・Phase 10 の前（`1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 6 → 7`）。** Phase 10（Proton VPN対応）の設計中に、利用者から「Web UI上から使うベンダーを選択できるようにしたい」という要望があり、Phase 10の前提（ベンダーごとに別のproxyコンテナを起動する構成）を見直す必要が生じたため、Proton VPN実CLIの導入（Phase 10）より先に、複数ベンダーを扱える構成へ改める。フェーズ番号は識別子であり実施順ではない（`README.md`参照）。
+（2026-09-21追加: Phase 10のベンダーバンドル（`vendors/<ID>/`）を前提にする。）
 
 ## 目的
 
-管理者が有効化した複数のVPNベンダーから、Web UI利用者が使うベンダーを選べるようにする。そのために、従来1つのコンテナに同居していた「ネットワーク制御」と「ベンダーCLIの実行」を分離し、ベンダーごとの実行環境（ランナー）を並存させる。
+クリーンなDebian系ベアメタルで、`curl`1コマンドでプラットフォームを導入・起動し、有効にするベンダーを1つの引数で指定できるようにする。「何をインストーラが行い、どう操作すればプラットフォームの導入・ベンダーの有効化ができるか」を1つの入口に集約する。
 
-設計は`specs/requirements.md`「VPNベンダーの選択（Web UI）」、`specs/design.md`「ベンダーの選択と実行基盤」、`specs/apiserver/design.md`「ベンダーの選択」、`specs/proxyserver/design.md`「コンテナ構成（Phase 11）」と`specs/runner/`、`specs/webserver/design.md`「ベンダーの選択の実装方針」。
+要件は`specs/requirements.md`「インストール」、設計は`specs/design.md`「インストーラと頒布（Phase 11）」。
 
 ## 前提
 
-- Phase 9完了（プロバイダ抽象化基盤・モックプロバイダCLI）。
-- 実VPN（AdGuard VPN CLI、ログイン済み・PREMIUM）を持つ実機検証環境（`GW_MODE=ssh`）が使えること。**Proton VPN実CLIはこのフェーズでは使わない**（Phase 10）。2つ目のベンダーには、Phase 9のモックプロバイダCLI（Proton VPN公式CLIの挙動を模擬）を、専用のモックランナーで使う。
+- Phase 10完了（ベンダーバンドル、`COMPOSE_FILE`合成、`VPN_PROVIDERS`必須）。
+- クリーンなUbuntu 24.04・Debian 12の検証環境（LXC。`security.nesting=true`。`e2e/lxc/`）。
 
 ## スコープ外
 
-- Proton VPN実CLIのランナー（イメージ・PoC・実機検証）（Phase 10）。
-- 複数ベンダーの同時接続（接続は常に1ベンダー。要求されれば別課題）。
-- ベンダーごとに異なるユーザ向け設定（Kill Switch等は全ベンダー共通の1つ）。
-- 認証・利用者別の選択（現状LAN限定・認証なしのため、選択は利用者全員で共有される）。
+- アンインストール、IPv6、ホストのファイアウォール（ufw等）との調整。
+- Raspberry Pi OSの32bit（armhf・`ID=raspbian`）と、実際のRaspberry Pi機での検証（Debian 12・Ubuntu 24.04のLXC、Raspberry Pi OS arm64のエミュレーションでの導入は検証済み。Kill Switchの実通信は、利用者が用意した実機arm64ホスト（Debian 13）で追加検証済み。「追加の検証結果」参照）。
+- 無効にしたベンダーの`install-host.sh`の取り消し（`uninstall-host.sh`）。ベンダーのCLIがホスト導入を要するようになった時点で設計する。
+- インストーラの署名（`install.sh.sha256`の添付までとする）。
 
 ## 決定事項（利用者への確認結果、2026-09-21）
 
 | 項目 | 決定 |
 |---|---|
-| 同時接続 | 接続は常に1ベンダーのみ（切替式） |
-| コンテナ構成 | ネットワーク制御（`proxy`）とCLI実行（`runner-<ベンダー>`）を分離 |
-| 接続中の切替 | 確認のうえ、現在のVPNを自動で切断してから切り替える |
-| 選択肢の範囲 | 管理者が用意・有効化したプロファイルのみ |
+| 配布・実行形態 | `curl`一発のブートストラップ。CIがブランチ・タグに紐付けて生成し、GitHub Releaseなどで頒布する。`git clone`まで含めて全て実行する |
+| Dockerの導入 | Docker公式リポジトリ |
+| ベンダー固有のホスト側の前提 | 共通インストーラから分割（`vendors/<ID>/install-host.sh`） |
+| インストーラの構成 | シンプルにする（従来の`install/`の4本を1本へ統合） |
 
-## 設計上の判断（本文書の作成時、利用者への確認なしに決めた点。誤りがあれば指摘を受けて改訂する）
+## 設計上の判断（本文書の作成時、確認なしに決めた点。誤りがあれば指摘を受けて改訂する）
 
-- 選択は**サーバ側に永続化**し全ブラウザで共通にする（認証がなくLAN限定のため）。
-- ランナーが停止しているベンダーは選択肢に出すが選択不可とし、選択中のベンダーのランナーが後から止まっても**自動で他のベンダーへ切り替えない**（意図しないベンダーへの接続を避ける）。
-- 切替時に現在のランナーが応答しない場合は、切断できないが切替は許可する（止まったランナーに縛られない）。切断コマンドが失敗した場合は切り替えない。
-- ベンダー別の状態（ログイン状態・プラン・お気に入り・最後の接続先・接続先）は独立に保持し、切替で失わない。ユーザ向け設定（Kill Switch等）はベンダー共通。
-- 有効化は`.env`の`VPN_PROVIDERS`（`install/select-providers.sh`で書く）。既定は`adguardvpn`のみ（Phase 10までの構成と同じ動作）。
+- インストーラは2層: 頒布される薄いブートストラップ（取得先のコミットを固定し、SHAを照合して、本体を実行）と、リポジトリ内の本体`install/install.sh`。本体はソースと同じ版で動くため、手動でcloneした場合にも使える。
+- 取得先の既定は`/opt/vpngwgui`（E2Eの検証環境と同じ）。運用ディレクトリ＝取得先で、`.env`もここに置く。
+- ベンダーの決定の優先順: `--providers` ＞ `.env`の既存値（引数なしの再実行は更新のみ）＞ 端末での対話（`/dev/tty`。`curl | sh`では標準入力がパイプのため）＞ 失敗。
+- Dockerが既に動く（`docker compose version`が通る）場合は導入しない（別の方法で入れた環境を壊さない）。
+- CIはブランチ・タグの両方でブートストラップを生成する。ブランチはartifact、タグはRelease（`install.sh`と`.sha256`）。
 
 ## 主要タスク
 
 ### 設計・仕様（実装前）
-- [x] 要件定義・設計・タスク一覧の作成（`specs/`各ファイル、本ファイル）。`wbs/phase10.md`をランナー構成へ改訂。
+- [x] 要件・設計・タスクの反映（本ファイルを含む）。
 
-### proxy・runner（ネットワークコンテナ: `specs/proxyserver/tasks.md`「ネットワークコンテナとランナーの分離」、ランナー: `specs/runner/tasks.md`「ランナーの分離」。**ランナーは別アプリケーションとして`specs/runner/`に要件・設計・タスクを切り出した**）
-- [x] ランナー（`runner.ts`）とネットワークコンテナ（`server.ts`）の分離、`POST /connection-checks`、`RUNNER_ALLOWED_BINARY`（`EXTRA_ALLOWED_BINARIES`の廃止）。
-- [x] イメージ: `proxy/Dockerfile`（ネットワーク）・`Dockerfile.runner-adguardvpn`・`Dockerfile.runner-mock`（E2E専用）。
-- [x] `docker-compose.yml`の再構成、`install/select-providers.sh`、`docker-compose.e2e-mock.yml`の改修。`docker-compose.protonvpn.yml`・`VPN_PROVIDER`・`proxy/Dockerfile.protonvpn`（Phase 10の作業中ファイル）の扱いの整理。
-
-### api（`specs/apiserver/tasks.md`「ベンダーの選択」）
-- [x] 複数プロファイルの読み込み、選択の永続化、ベンダー別の状態（旧形式からの移行）。
-- [x] `proxy-client`のランナー宛・ネットワークコンテナ宛の分離と`GET /health`。
-- [x] `GET /v1/providers`・`PUT /v1/providers/active`（切替の手順・直列化）。
-- [x] `POST /connection-checks`の通知、監査ログの`provider`。
-- [x] 既存ルートの選択中ベンダー対象への改修、単体・統合テスト。
-
-### web（`specs/webserver/tasks.md`「ベンダーの選択」）
-- [x] orval再生成、`ProviderSelector`、切替時の状態の入れ替え、ベンダー名の表示、コンポーネントテスト。
+### インストーラ
+- [x] `install/install.sh`（本体）: 事前検査・依存とDocker公式リポジトリ・sysctl・起動ガード・`.env`・ベンダーの決定・`install-host.sh`のフック・起動と待機・完了表示。従来の`install/`の4本を削除し、参照（compose・仕様書・E2Eのコメント）を更新。
+- [x] `install/bootstrap.sh`（頒布物の雛形）と`install/build-bootstrap.sh`（置換・置換漏れの検査）。
+- [x] `.github/workflows/installer.yml`（`sh -n`・shellcheck・`npm test`・ブートストラップの生成・ブランチのartifact・タグのRelease）。
+- [x] `README.md`にインストール手順（1コマンド・`--providers`・更新・ベンダーの変更）を記載。
 
 ### 検証
-- [x] モックE2E（`e2e/phase11/`）: AdGuard（実VPN）＋モックプロバイダの2ベンダーで、選択部品の表示・切替・接続中の確認と自動切断・状態の入れ替え・利用不可ランナーの無効化・別ブラウザでの共有・ベンダー別状態の独立を確認。
-- [x] 実VPN（AdGuard VPN）でのリグレッション（ネットワーク分離後の`e2e/phase3`・`phase4`・`phase8`。透過ゲートウェイ・Kill Switch・明示的プロキシ・接続先リスト）。
+- [x] クリーンなUbuntu 24.04（LXC）で、ブートストラップ（ローカルのリポジトリをREPO_URLにしたもの）から導入・起動し、Web UIが応答する。
+- [x] `--providers`の指定・変更（追加・削除。無効にしたランナーの停止）、引数なしの再実行（既存値の保持・更新）、対話選択、`.env`の保持（`LAN_IFACE`）。
+- [x] `install-host.sh`のフック（テスト用バンドルで、実行される・失敗で中止する）。
+- [x] 導入後のE2E（`e2e/phase3`の一部: sysctl・起動ガード・透過ゲートウェイ）と、実VPN（AdGuard）での接続。
 
 ## 完了基準
 
-- 有効なベンダーが2つ（AdGuard VPN実CLI＋モックプロバイダ）のとき、Web UIにベンダー選択部品が表示され、選択したベンダーの接続先・ログイン状態・プラン・操作の実行可否に画面が入れ替わること。有効なベンダーが1つのときは選択部品が出ず、従来の画面・操作と同じであること。
-- AdGuard VPNに接続中にモックプロバイダへ切り替えると確認ダイアログが出て、承諾すると実VPNが切断され（トンネルが消え、Kill Switch ONならLAN端末の通信が遮断される）、新ベンダーが選択中になること。拒否すると何も変わらないこと。切断に失敗した場合は元のベンダーのままで、原因が通知されること。
-- ベンダーを切り替えて戻しても、各ベンダーのログイン状態・お気に入り・「前回」の接続先が保持されていること。
-- 選択が再読み込み・別ブラウザでも共通であること。
-- ランナーを停止したベンダーが「利用不可」と理由付きで無効になり、選択できないこと。
-- 実VPNで、ネットワーク分離後も、透過ゲートウェイ・Kill Switch（切断・瞬断・ホスト再起動）・明示的プロキシ・接続先リスト・ログインが従来どおり動作すること（Phase 3・4・8のE2Eがリグレッションなく通る）。
-- ネットワークコンテナ（`proxy`）にベンダーCLIのバイナリが含まれないこと、各ランナーが自ベンダーのバイナリ以外を`403`で拒否すること。
+- クリーンなUbuntu 24.04で、`sudo sh install.sh --providers <ID>`（ブートストラップ）の1コマンドだけで、Docker・依存・ホストの設定・ソースの取得・web/api/proxy/ランナーの起動まで完了し、Web UIにベンダーが現れる。
+- 同じ操作の再実行が冪等（`.env`の`LAN_IFACE`・ボリュームのログイン情報を保持）で、`--providers`の変更が反映される。
+- `--providers`も対話もできない状況で、理由を示して失敗する。
+- CIが、ブランチ・タグのブートストラップを生成し、置換漏れの無いこと・取得後のSHA照合を検査する。
 
 ## 検証手法
 
-- **単体・統合テスト**: `npm test`（proxy 101件・api 214件・web 92件）。APIの統合テストは2ベンダー（AdGuard VPN・モックProton）で、切替（接続中の自動切断・切断失敗の中止・ランナー利用不可の`502`・切替中の`409`・ベンダー別状態の独立）を検証する。
-- **モックE2E（開発ホストのdocker compose。実VPN不要）**: `bash e2e/phase11/provider-scenarios.sh`（27項目）。AdGuard VPN（ランナー同梱・未ログイン）とモックProton VPNの2ベンダーで、選択部品・切替・確認ダイアログ・別ブラウザでの共有・ベンダー別ログイン状態・ランナーの許可バイナリ（`403`）・ネットワークコンテナへのCLI非同梱・利用不可を確認。Phase 9の`bash e2e/phase9/mock-scenarios.sh`（36項目）も新構成（ランナー`runner-mock`）で通る。
-- **実VPN（AdGuard VPN・実LAN）**（検証環境`GW_MODE=ssh`。`e2e/lxc/sync.sh`で展開）:
-  - `bash e2e/phase11/real-switch-scenarios.sh`（10項目）: 実VPN接続中にモックへ切り替え → 実VPN切断・トンネル消滅・Kill Switch ONでLAN端末遮断 → 切り戻して再接続でVPN経由。
-  - リグレッション: `e2e/phase8/locations-scenarios.sh`（46項目）、`e2e/phase3/gateway-scenarios.sh A B C D E F`（C・D・Eは修正後の再実行で47項目PASS。A・B・Fは初回で通過）、`e2e/phase4/proxy-scenarios.sh`（A〜H・G。D修正後の再実行含む。全項目PASS）。
+- LXCのクリーンなコンテナで、ブートストラップを`file://`のリポジトリ（REPO_URL）から実行する。GitHub Releaseへの公開・実際の`curl | sh`の経路は、リポジトリへのpushとタグが必要なため、利用者の許可を得て確認する（`git push`は許可があるときのみ）。
+
+## 検証結果（2026-09-21）
+
+- インストーラ関連の検査: `sh install/tests/run.sh`（`npm test`に含む）25項目。構文・頒布物の生成（値の埋め込み・置換漏れ・不正な引数の拒否）・雛形のまま実行した場合の中止・引数の解釈・対話選択（`script`で擬似端末を与える）。shellcheck（`koalaman/shellcheck`のコンテナ）で指摘なし。
+- クリーンなコンテナでの導入（`e2e/phase11/install-scenarios.sh`。ブートストラップを標準入力のパイプで実行）: **Ubuntu 24.04・Debian 12（bookworm）とも26項目 FAIL 0**。1コマンドでDocker（公式リポジトリ）導入・sysctl・起動ガード・`.env`・起動・Web UI応答まで完了、引数なしの再実行が冪等（`.env`不変）、`--providers`でベンダーの追加・削除（ランナーの停止・削除）、`install-host.sh`の契約と失敗時の中止、存在しない・不正なベンダーIDの拒否、指定も既存値も端末も無ければ失敗、存在しないコミットの頒布物は何も実行しない、未コミットの変更で更新を中止。
+- 検証中に見つけた不具合を修正: `sysctl --system`が、無関係な他のファイルの権限エラー（Debian LXC）で導入を中断した → 自分の設定ファイルだけを`sysctl -p`で反映する。
+
+## 追加の検証結果（2026-09-22。利用者の許可を得てpush・タグを実施）
+
+- **GitHub Actions**: 初回のpush（main）は、シェルの検査で失敗した（ubuntu-latestのshellcheck 0.9.0が、ローカルの最新版とは別のコードSC2317で指摘）。両方をdisableし、CIは警告以上（`-S warning`）だけを対象にして修正。2回目のmainは成功（artifact `installer-main`）。タグ`v0.1.0`のpushで、build・releaseとも成功し、GitHub Releaseへ`install.sh`・`install.sh.sha256`が添付された。`releases/latest/download/install.sh`は認証なしで取得でき、チェックサムが一致し、埋め込まれたCOMMITはタグのコミットと一致した。
+- **実際の`curl | sh`**: 上記のReleaseから、クリーンなUbuntu 24.04のコンテナで`curl -fsSL …/install.sh | sh -s -- --providers <ID>`が成功（取得したコミットはタグと一致、Web UI応答）。
+- **Raspberry Pi OS（実物のイメージ）**: `2026-09-15-raspios-trixie-arm64-lite`（`ID=debian`・NetworkManager稼働・`nftables.service`が**既定で有効**）を、QEMUのarm64エミュレーション（TCG、4vCPU・6GB。`e2e/phase11/rpi-vm.sh`）で起動。Piのカーネルはvirtio・PCIホストを組み込んでおらずvirtマシンでは起動できないため、**rootfs・ユーザーランドは実物、カーネルだけDebianの汎用arm64カーネル**（6.12.107+deb13-arm64）。上記のReleaseから`curl | sh`の1コマンドでDocker CE（arm64・Debianの公式リポジトリ）・sysctl・起動ガード・`.env`・ビルド・起動まで完了し、Web UIが応答、イメージはarm64。再起動後も起動ガードのテーブルが存在（順序は偶然`nftables.service`の後だった）。
+- **修正**: `nftables.service`が有効な環境（Raspberry Pi OS）で起動ガードが消される可能性に備え、ユニットへ`After=nftables.service`を追加（v0.1.1）。
+
+## 追加の検証結果（2026-09-22。実機arm64ハードウェア・Kill Switch実通信）
+
+- **環境**: 利用者が用意した実機arm64ホスト（`192.168.3.242`。Debian 13 "trixie"、2vCPU・単一NIC・実LAN。エミュレーションではない実ハードウェア）。LAN端末役は開発ホスト上のmacvlanコンテナ（実LANのIPv4アドレスを持つ。`e2e/lxc/setup.sh`と同じ方式）。
+- **`curl | sh`によるRelease経由の導入**: `releases/latest/download/install.sh`を実機で取得しSHA照合の上、`sudo sh install.sh --providers adguardvpn`の1コマンドで導入。
+- **不具合を発見・修正（重大。全プラットフォーム影響）**: Docker Engine 29.8.1（本フェーズ最初の検証時点の最新版）は、IPフォワーディングを自ら有効化した際にiptables/nftablesのFORWARDチェーンの既定ポリシーを`DROP`へ変更する（Docker Engine 28以降の既定動作）。本製品は独自のnftablesテーブル（`inet vpngwgui`）でLAN機器の転送を制御する設計のため、この既定ポリシー変更によりTransparent Gateway・Kill Switchのフェイルオープン（KS OFF時の直接インターネット転送）が機能しなくなる不具合を実機で発見した（`inet vpngwgui`テーブルのacceptルールは存在するが、Dockerが追加した`ip filter`テーブルのFORWARD既定ポリシー`DROP`により、同じフックの別テーブルで最終的にパケットが破棄される。旧バージョンのDocker（`192.168.3.240`のDocker 29.1.3など、FORWARD既定ポリシーが`ACCEPT`のまま）では顕在化せず、実機・最新Dockerでのみ発覚した）。**修正**: `install/install.sh`の`install_docker()`で、Docker導入前（`docker-ce`パッケージの`apt-get install`前）に`/etc/docker/daemon.json`が無ければ`{"ip-forward-no-drop": true}`を書き込み、Docker自身にFORWARD既定ポリシーを変更させないようにした（既存の`daemon.json`があれば上書きしない）。ホストの完全な再インストール（Docker・`/etc/docker`・iptablesルールの初期化）から本修正版`install.sh`で再導入し、再起動を挟んでもFORWARD既定ポリシーが`ACCEPT`のまま保たれることを確認した。
+- **Kill Switchの実通信（LAN端末。VPN不要のシナリオA・B）**: `e2e/phase3/gateway-scenarios.sh`をこの実機に対して`GW_MODE=ssh`で実行し、静的前提（起動ガード・sysctl・`.env`・proxyのnft実行権限）とKill Switchのフェイルクローズ（KS ON・VPN未接続でLAN端末の通信が遮断される）・フェイルオープン（KS OFF・VPN未接続で、修正後は実際にLAN端末からインターネットへ抜けられる）を実LAN端末からの通信で確認（19項目 FAIL 0）。
+- **実VPN（AdGuard VPN）を伴うシナリオC**: 利用者がブラウザで認証を完了した上で、接続後のトンネル経由通信・LAN端末の外部IPがVPN経由になること・切断/瞬断によるKill Switchの遮断・国変更後の新しい経路への切替をこの実機で確認（24項目 FAIL 0）。検証後、AdGuard VPNからログアウトして環境を後始末した。
+- 単体テストの回帰確認: `sh install/tests/run.sh`（25項目 FAIL 0）、`npm run check:neutrality`（OK）、shellcheck（`koalaman/shellcheck`、`-S warning`）で指摘なし。
 
 ## 次フェーズへの申し送り
 
-- （検証結果の要約）2026-09-21、上記の全ての完了基準を、モックE2E（27項目）・実VPN切替E2E（10項目）・実VPNリグレッション（phase8 46項目、phase3 C/D/E 47項目＋A/B/F、phase4 全項目）で確認した。**未実施: phase3のG（上流断）・H（ホスト再起動）**（ネットワークコンテナ・ランナーの`restart: always`は変更していないが、ランナー分離後の再実測はしていない）。
-- （実装中に判明した点）(1)旧形式の状態ファイルの移行は実機で確認済み（ログイン・お気に入り・「前回」が保持された）。(2)ランナーがVPNデーモンを持つため、Phase 3のシナリオD1（VPNデーモン消滅＋proxy再起動）は`proxy`と`runner-adguardvpn`の両方の再起動で再現する形へ改めた。(3)読み取り専用のバインドマウントの中へ単一ファイルを重ねられないため、モックランナーを使うE2Eはプロファイルを集めたディレクトリを`E2E_PROFILES_DIR`で渡す（`e2e/lib/e2e-profiles.sh`）。(4)`docker compose logs`が大きくなり、ログ全体をコマンドライン引数へ渡すE2Eが`Argument list too long`で失敗した（ファイル経由に修正）。(5)検証環境ではAdGuard VPNのjp（Tokyo）の出口IPが、LANの直接の出口IP（156.146.34.246）と一致する（tcpdumpでトンネル経由を確認）ため、「出口IPが直接と異なる」ことを見るE2E（phase3・phase4）は既定でus-las-vegasを使うよう改めた（`VPN_COUNTRY`）。(6)`e2e/phase3/webgui-connection.mjs`がPhase 8で廃止された「接続国」セレクトを前提にしたまま壊れていたため、接続先リストから選ぶ形へ改めた（phase3のC・D・Eの失敗の一因）。(7)コンテナ再作成直後の初回の実接続が原因不明で1回失敗した（`connect -l Shanghai`が終了コード13。再現せず。phase8にも同様の「原因不明のFAIL」の記録がある）。
-- （既知の限界）選択中でないベンダーの実VPN接続がAPIの管理外で残っている場合（例: API外でCLIを直接操作した）は、切替時に検出・切断しない（選択中のベンダーの`status`だけを見る）。
-- Phase 10（Proton VPN）は、本フェーズのランナー構成の上に`runner-protonvpn`を追加する形で行う（`wbs/phase10.md`。`proxy/docker-entrypoint.protonvpn.sh`・`networkmanager-vpngwgui.conf`・`api/config/profiles/protonvpn.json`は下書き）。
+- 既存環境（検証環境`192.168.3.240`等、旧形式の`.env`）は、`install.sh --providers <ID>,...`を一度実行すれば`COMPOSE_PROFILES`から`COMPOSE_FILE`へ移る（`--no-start`で`.env`だけ更新もできる）。
+- Raspberry Pi OSの32bit（armhf）・実際のRaspberry Pi機での検証は未検証のまま（今回検証した実機arm64ホストはDebian 13でRaspberry Pi OSではない）。Kill Switchの実通信（LAN端末）は実機arm64ハードウェアで検証済み（上記）。エミュレーション上のビルドは遅い（`web`のviteビルド等で、全イメージのビルドに約1時間）。**2026-09-22、利用者の判断によりRaspberry Pi実機・armhfの検証は最終フェーズ（`wbs/phase15.md`）へ申し送ることとした。**
+- Docker Engineの既定動作変化（FORWARD既定ポリシー）のように、ホスト側ミドルウェアのアップデートで本製品のネットワーク制御が無効化される類の不具合は、今後もDockerやnftables/iptablesのバージョン更新で再発しうる。新規導入時のE2E（`e2e/phase11/install-scenarios.sh`）に、フェイルオープン時の実際のインターネット到達性を確認する項目を追加できると、次に同種の問題が起きてもCIで検出できる（未実施）。
+- ベンダー固有のホスト側の追加手順（`install-host.sh`）は、現在のバンドルに存在しない。フックの契約は、検査用のバンドルで確認した。ホスト導入を要するベンダーを追加するときは、無効にしたときの取り消し（`uninstall-host.sh`等）を設計する。
+- アンインストール（`docker compose down`・sysctl設定・起動ガードの撤去）は未提供。

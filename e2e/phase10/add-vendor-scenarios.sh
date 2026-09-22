@@ -1,8 +1,8 @@
 #!/bin/bash
-# 責務: Phase 12完了基準「ベンダー追加の実証」を検証する。共通部（API・Web・ネットワークコンテナ・composeの本体）を一切変更せず、
+# 責務: Phase 10完了基準「ベンダー追加の実証」を検証する。共通部（API・Web・ネットワークコンテナ・composeの本体）を一切変更せず、
 #       モックのベンダーバンドルを別名で1ディレクトリ複製して追加するだけで、新しいベンダーがWeb UIの選択肢（`GET /v1/providers`）に現れ、
 #       ランナーが起動して利用可能になり、選択できること。バンドルを外せば消えること。
-# 実行: bash e2e/phase12/add-vendor-scenarios.sh
+# 実行: bash e2e/phase10/add-vendor-scenarios.sh
 # 前提: 開発ホストにdocker compose。実VPN・実ネットワークは使わない。専用のcompose project（vpngwgui-e2e-add）で起動し、終了時に後始末する。
 # 出力: 各検証をPASS/FAILで表示し、FAIL件数を終了コードにする。
 

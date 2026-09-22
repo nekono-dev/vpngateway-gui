@@ -1,6 +1,6 @@
 # Phase 1: 骨格検証（モックCLI・最小Web・docker-compose初回疎通）
 
-> 本ファイルはPhase2〜7（同ディレクトリの他ファイル）を踏まえて全体整合性を再評価した版である。再評価により追加・修正した箇所には「※全体整合性レビューによる追加」を付記する。
+> 本ファイルはPhase2・3・4・6・14・15（同ディレクトリの他ファイル）を踏まえて全体整合性を再評価した版である。再評価により追加・修正した箇所には「※全体整合性レビューによる追加」を付記する。
 
 ## 目的
 
@@ -19,21 +19,21 @@
 | `network_mode: host` | ホストネットワーク操作はリスクが高く、パイプライン検証に必須ではない。→ phase3.md |
 | nftablesによる透過ゲートウェイ・Kill Switch実処理 | 同上。→ phase3.md |
 | インストールスクリプト | ホストの永続変更はPhase3のネットワーク基盤移行と合わせて実施。→ phase3.md |
-| 3proxyによる明示的プロキシ | ホストネットワーク操作はリスクが高く、パイプライン検証に必須ではない。→ phase4.md |
-| 設定ダイアログ・接続ログ画面 | ダッシュボード最小限に絞り、対応するAPI実処理が揃うPhase5でまとめて実装。→ phase5.md |
-| excludedDomains実処理 | → phase6.md |
-| 認証・認可、レート制限 | → phase7.md |
+| 3proxyによる明示的プロキシ | ホストネットワーク操作はリスクが高く、パイプライン検証に必須ではない。→ phase6.md |
+| 設定ダイアログ・接続ログ画面 | ダッシュボード最小限に絞り、対応するAPI実処理が揃うPhase4でまとめて実装。→ phase4.md |
+| excludedDomains実処理 | → phase14.md |
+| 認証・認可、レート制限 | → phase15.md |
 
 ## 全体整合性レビューでの指摘・対応
 
-Phase2〜7の内容を踏まえてPhase1の設計を見直した結果、以下3点を当初案から修正する。
+Phase2・3・4・6・14・15の内容を踏まえてPhase1の設計を見直した結果、以下3点を当初案から修正する。
 
 1. **UDS内部プロトコルのエンドポイントパスを明示する（`POST /exec`固定パス）。**
    当初案は「UDS上でコマンド実行リクエストを受けるHTTPサーバ」とだけ決めていたが、Phase2で設定反映用の`POST /settings`エンドポイントを同じUDSサーバに追加する計画がある（phase2.md「内部プロトコル拡張」）。Phase1の時点で`/exec`という具体的なパスに決めておくことで、Phase2での追加が既存エンドポイントの仕様変更ではなく単純な追加で済むようにする。
 2. **APIサーバのproxy-clientモジュールを、実行系（`executeVendorCommand`）と将来の通知系（`notifySettings`、Phase2で追加）を別関数として最初から分離した構成にする。**
    1ファイル内に両方を実装するのではなく、Phase1では`executeVendorCommand`のみを実装し、Phase2で`notifySettings`を追加する前提の関数分離にしておく（同一ファイル内の別関数で可、モジュール分割は不要）。
 3. **コマンド実行結果（stdout）のパース処理を、モック専用の決め打きコードではなく「vendor非依存のレスポンス整形層」と「モックCLI用パーサー」に分離する。**
-   Phase1のモックCLIはstdoutをJSON固定にする割り切りをしているが、Phase4で実CLI（テキスト出力）に置き換える際にパーサーだけを差し替えられるよう、`api/src/profile/`配下にパーサーを関数として独立させ、プロファイルJSON側で将来パーサー種別を指定できる余地を残す（Phase1では`"outputFormat": "json"`をプロファイルに追加し、Phase4で`"text"`等を追加する程度の最小限の拡張性に留め、過剰な抽象化はしない）。
+   Phase1のモックCLIはstdoutをJSON固定にする割り切りをしているが、Phase6で実CLI（テキスト出力）に置き換える際にパーサーだけを差し替えられるよう、`api/src/profile/`配下にパーサーを関数として独立させ、プロファイルJSON側で将来パーサー種別を指定できる余地を残す（Phase1では`"outputFormat": "json"`をプロファイルに追加し、Phase6で`"text"`等を追加する程度の最小限の拡張性に留め、過剰な抽象化はしない）。
 
 上記以外（モノレポ構成、UID/GID統一、ボリューム所有権の落とし穴、docker-compose設計）は当初案のまま妥当と判断した。なお、Phase1では`proxy`をDockerブリッジネットワーク（`app-net`）上で動かすが、Phase2で`network_mode: host`へ切り替える際は`networks:`定義を丸ごと除去する変更になる。これはvolume共有（UDS経路）には影響しないため、Phase1の設計を変更する必要はない旨をここに明記しておく。
 
@@ -70,7 +70,7 @@ Phase2〜7の内容を踏まえてPhase1の設計を見直した結果、以下3
 ### Step 3: api — プロファイル読込＋UDSクライアント＋主要エンドポイント
 - [x] `api/config/vpn-profile.json`（Phase1用モックプロファイル、下記内容）。
 - [x] `api/src/proxy-client/proxy-client.ts`: undici `Agent({socketPath})`で`POST /exec`へ送信する`executeVendorCommand()`を実装（`notifySettings()`はPhase2で追加、関数は分離しておく＝※全体整合性レビューによる追加）。
-- [x] `api/src/profile/`: プロファイルローダー、プレースホルダー検証（`api/src/lib/regex-match.ts`はプリミティブのみのポータビリティテスト適合ヘルパーとして分離）、**レスポンス整形（stdout）をプロファイルの`outputFormat`（Phase1は`"json"`固定）で分岐するパーサー関数として分離**（※全体整合性レビューによる追加、Phase4で`"text"`パーサーを追加する前提）。
+- [x] `api/src/profile/`: プロファイルローダー、プレースホルダー検証（`api/src/lib/regex-match.ts`はプリミティブのみのポータビリティテスト適合ヘルパーとして分離）、**レスポンス整形（stdout）をプロファイルの`outputFormat`（Phase1は`"json"`固定）で分岐するパーサー関数として分離**（※全体整合性レビューによる追加、Phase6で`"text"`パーサーを追加する前提）。
 - [x] `api/src/settings/settings-store.ts`: ユーザ向け設定の単一JSONファイルread-modify-write永続化。design.md記載の全項目（`killSwitch`等）をスキーマに持たせるが、Phase1では永続化のみでproxyへの実反映は行わない。
 - [x] `api/src/audit-log/audit-log-store.ts`: JSONL追記による監査ログ。
 - [x] エンドポイント実装順: `/v1/connection/countries` → proxy-client → `GET /v1/connection` → `PUT /v1/connection` → `GET/PUT /v1/connection/config` → `GET /v1/connection/log` →（余力があれば）`POST /v1/session`。
@@ -101,7 +101,7 @@ Phase1用プロファイル（`api/config/vpn-profile.json`、`outputFormat`追�
 - [x] `api/scripts/export-openapi.ts`でOpenAPI JSONを書き出し、`web/orval.config.ts`（`client:'fetch'`, `baseUrl:'/api'`）で`web/src/generated/api/`へクライアント生成。
 - [x] `@fastify/http-proxy`で`/api/*` → `http://api:3000`へリバースプロキシ。
 - [x] `ConnectionStatusCard` / `CountrySelect`（選択肢のみ、自由入力不可） / `ConnectDisconnectButton`（`isSubmitting`で二重送信防止）。
-- [x] `useConnectionPolling`フック（5秒間隔、非表示タブでは停止）。（Phase 5で汎用`usePolling`＋`useDashboardPolling`へ再構成）
+- [x] `useConnectionPolling`フック（5秒間隔、非表示タブでは停止）。（Phase 4で汎用`usePolling`＋`useDashboardPolling`へ再構成）
 
 ### Step 5: docker-compose全体構成
 ```yaml
@@ -202,7 +202,7 @@ curl -s http://localhost:8080/api/v1/connection/log
 
 ## 次フェーズへの申し送り
 
-> 2026-09-06、フェーズ計画を全体的に見直し、実VPNベンダーCLI統合（当初Phase4）をPhase2に前倒しし、ネットワーク基盤移行（当初Phase2）をPhase3に、明示的プロキシ（当初Phase3）をPhase4に、それぞれ繰り下げた（詳細は`wbs/README.md`「フェーズ分割の考え方」参照）。以下は改訂後の番号で記載する。
+> 2026-09-06、フェーズ計画を全体的に見直し、実VPNベンダーCLI統合（当初Phase4）をPhase2に前倒しし、ネットワーク基盤移行（当初Phase2）をPhase3に、明示的プロキシ（当初Phase3）をPhase6に、それぞれ繰り下げた（詳細は`wbs/README.md`「フェーズ分割の考え方」参照）。以下は改訂後の番号で記載する。
 
 - Phase2開始時、実VPNベンダーCLIバイナリをproxyイメージに同梱し、モックCLIパスの代わりに実CLIパスを許可リストに登録する。`docker-compose.yml`のproxyサービスには`cap_add: [NET_ADMIN]`・`devices: [/dev/net/tun]`を追加するが、`network_mode: host`への切り替え・`networks: [app-net]`の除去はPhase3で行う。
 - `POST /exec`に加えて`POST /settings`をPhase3で追加する（`proxy-client.ts`の`notifySettings()`もこのタイミングで実装）。

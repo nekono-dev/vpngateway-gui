@@ -1,5 +1,5 @@
-// 責務: Phase 4（明示的プロキシ）のWeb UI操作を、実proxy（3proxy）に接続したWeb UIでPlaywright検証する。
-// 実行: node e2e/phase4/webgui-explicit-proxy.mjs <baseUrl> <step> [引数...]
+// 責務: Phase 6（明示的プロキシ）のWeb UI操作を、実proxy（3proxy）に接続したWeb UIでPlaywright検証する。
+// 実行: node e2e/phase6/webgui-explicit-proxy.mjs <baseUrl> <step> [引数...]
 //   enable <cidr>   : 設定ダイアログで明示的プロキシを有効化し許可CIDRを保存 → 稼働状況が「稼働中」＋ポート表示になる
 //   reopen <cidr>   : 再読み込み後の設定ダイアログに保存値（有効・CIDR）が保持されている
 //   invalid         : 不正なCIDRを保存しようとするとダイアログ内にエラーが出て、保存されない

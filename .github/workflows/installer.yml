@@ -4,7 +4,7 @@
 #   - タグ（v*）: GitHub Releaseへ install.sh・install.sh.sha256 を添付する
 #       最新:   https://github.com/<owner>/<repo>/releases/latest/download/install.sh
 #       版固定: https://github.com/<owner>/<repo>/releases/download/<タグ>/install.sh
-# 設計: specs/design.md「インストーラと頒布（Phase 13）」。
+# 設計: specs/design.md「インストーラと頒布（Phase 11）」。
 name: installer
 
 on:

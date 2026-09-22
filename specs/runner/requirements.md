@@ -1,6 +1,6 @@
 # SPEC-RUNNER: ランナーコンテナ要件定義
 
-サービス全体設計（../design.md）で定義されたランナーコンテナ（`runner-<ベンダー>`）の要件を示す。Web UIから使うVPNベンダーを選べるようにするため（../requirements.md「VPNベンダーの選択（Web UI）」）、従来の「ベンダーごとに別のproxyコンテナ」から、**ベンダーCLIの実行だけを担うランナー**を切り出した（Phase 11）。ネットワーク制御（透過ゲートウェイ・Kill Switch・明示的プロキシ・接続監視）はネットワークコンテナ（`proxy`。../proxyserver/requirements.md）の責務であり、ランナーは関与しない。
+サービス全体設計（../design.md）で定義されたランナーコンテナ（`runner-<ベンダー>`）の要件を示す。Web UIから使うVPNベンダーを選べるようにするため（../requirements.md「VPNベンダーの選択（Web UI）」）、従来の「ベンダーごとに別のproxyコンテナ」から、**ベンダーCLIの実行だけを担うランナー**を切り出した（Phase 8）。ネットワーク制御（透過ゲートウェイ・Kill Switch・明示的プロキシ・接続監視）はネットワークコンテナ（`proxy`。../proxyserver/requirements.md）の責務であり、ランナーは関与しない。
 
 # 責務の範囲
 
@@ -26,8 +26,8 @@
 # ベンダーCLIとの関係
 
 - **ベンダーCLI独自のKill Switch・経路制御**（Proton VPN CLIの`kill-switch`等）は使わず、本システムのnftablesによるKill Switch・透過ゲートウェイに一本化する（二重の遮断規則による競合・切断後の通信不能を避ける）。
-- ベンダーの追加は、**ベンダーバンドル（`vendors/<ベンダーID>/`。ランナーのイメージ・composeのfragment・永続化ボリューム・プロファイル・必要ならホスト側の追加手順。`../design.md`「ベンダー非依存の設計原則」）の追加だけ**で対応でき、APIサーバ・Webサーバ・ネットワークコンテナ・composeの本体・共通インストーラの改修を要求しない（Phase 12）。
-- ランナーの実行部（`proxy/src`の`runner.ts`等）は、ベンダーの名前・CLIの書式を持たない。ベンダーを知るのは`RUNNER_ALLOWED_BINARY`（許可するバイナリ1つ）だけである（Phase 12）。
+- ベンダーの追加は、**ベンダーバンドル（`vendors/<ベンダーID>/`。ランナーのイメージ・composeのfragment・永続化ボリューム・プロファイル・必要ならホスト側の追加手順。`../design.md`「ベンダー非依存の設計原則」）の追加だけ**で対応でき、APIサーバ・Webサーバ・ネットワークコンテナ・composeの本体・共通インストーラの改修を要求しない（Phase 10）。
+- ランナーの実行部（`proxy/src`の`runner.ts`等）は、ベンダーの名前・CLIの書式を持たない。ベンダーを知るのは`RUNNER_ALLOWED_BINARY`（許可するバイナリ1つ）だけである（Phase 10）。
 
 # 対象外
 

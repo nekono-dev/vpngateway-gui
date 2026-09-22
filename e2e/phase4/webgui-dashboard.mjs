@@ -1,7 +1,7 @@
-// 責務: Phase 5（Web UI完成）の完了基準を、実VPN・実proxyに接続したWeb UIをPlaywrightで操作して検証する。
-// 実行: node e2e/phase5/webgui-dashboard.mjs <baseUrl> <step> [引数...]
+// 責務: Phase 4（Web UI完成）の完了基準を、実VPN・実proxyに接続したWeb UIをPlaywrightで操作して検証する。
+// 実行: node e2e/phase4/webgui-dashboard.mjs <baseUrl> <step> [引数...]
 //   initial            : 稼働状況の初期表示（透過ゲートウェイ・明示的プロキシの実状態）と設定ダイアログの暫定表示
-//                        （明示的プロキシの暫定表示はPhase 4で実状態表示へ置換済み。除外ドメインはPhase 6まで暫定）
+//                        （明示的プロキシの暫定表示はPhase 6で実状態表示へ置換済み。除外ドメインはPhase 14まで暫定）
 //   flow <country>     : ログイン→国選択→接続→再読み込み後も接続国表示→透過ゲートウェイOFF/ON→状態確認→切断 の通し操作
 //   log                : 接続ログダイアログに直前までの操作が新しい順で表示される
 //   ks-off             : Kill Switch OFF+VPN未接続=稼働中（遮断なし）、ONに戻すと遮断中（切断状態で実施）
@@ -48,7 +48,7 @@ try {
     const explicitProxyRow = page.getByTestId("status-explicit-proxy");
     await explicitProxyRow.locator(".badge").first().waitFor({ timeout: POLL_WAIT_MS });
     assert(
-      (await page.getByText("未対応（Phase 4で対応予定）").count()) === 0,
+      (await page.getByText("未対応（Phase 6で対応予定）").count()) === 0,
       "明示的プロキシ欄に「未対応」の暫定表示が出ない（実状態の表示に置換済み）",
     );
     assert(
@@ -57,10 +57,10 @@ try {
     );
     await page.getByRole("button", { name: "設定", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "設定" });
-    await dialog.getByText("Phase 6で対応予定").waitFor();
+    await dialog.getByText("Phase 14で対応予定").waitFor();
     assert(
-      (await dialog.getByText("Phase 4で対応予定").count()) === 0,
-      "設定ダイアログの明示的プロキシ欄に未対応の暫定表示が出ない（除外ドメイン欄のみPhase 6まで暫定表示）",
+      (await dialog.getByText("Phase 6で対応予定").count()) === 0,
+      "設定ダイアログの明示的プロキシ欄に未対応の暫定表示が出ない（除外ドメイン欄のみPhase 14まで暫定表示）",
     );
     await page.getByRole("button", { name: "キャンセル" }).click();
   } else if (step === "flow") {

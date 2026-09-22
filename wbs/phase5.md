@@ -1,91 +1,109 @@
-# Phase 5: Web UI完成（簡易機能版プロトタイプ向け・Phase 4より前に前倒し）
+# Phase 5: 接続先選択UIの刷新（ping順リスト・お気に入り・接続先変更）
 
-**【2026-09-21改訂】本フェーズは実施順序を前倒しし、Phase 3の次（Phase 4より前）に実施する。** 簡易機能版のプロトタイプとして早期に利用できる状態にするため、当初「Phase 3/4完了後に着手」としていたWeb UI整備を、Phase 3（実装完了）の直後へ移した。フェーズ番号は据え置き（他ファイル・コミット履歴からの参照を壊さないため）で、実施順は `1 → 2 → 3 → 5 → 8 → 4 → 6 → 7` となる。判断根拠は`README.md`「フェーズ分割の考え方」参照。
+（2026-09-21追加: Phase 4（Web UI完成）は検証完了済みのため、そこへ追記して検証状態を曖昧にすることを避け、新フェーズとして切り出した。）
 
 ## 目的
 
-webserver/requirements.mdで定義された画面のうち、未実装の「接続ログ」「トースト表示」「透過ゲートウェイ稼働状況表示」を実装し、最小限のスタイルを与えて、Phase 4（明示的プロキシ）未実装の段階でも「VPN接続操作＋透過ゲートウェイ運用」を通しで操作できるプロトタイプ状態に到達させる。
+接続先の選択を、静的な国コードのドロップダウンから、VPNベンダーCLIが返す実際の接続先（都市単位）とping値に基づくグラフィカルなリストへ刷新する。あわせて、接続中に接続先を切り替える「接続先を変更」ボタン、お気に入り接続先、最後に接続した接続先の記憶を追加する。
 
 ## 前提
 
-- Phase2完了（ログイン代行APIが利用可能）。ログイン代行の簡易UI（`web/src/components/dashboard/VpnLoginButton.tsx`）と設定ダイアログ（`SettingsDialog.tsx`）は前倒し実装済み（`wbs/phase2.md`「Step 3」参照）。
-- Phase3の**実装**が完了していること（`killSwitch`・`transparentGatewayEnabled`がAPI経由でproxyへ反映される。`POST /settings`）。実機検証（`phase3.md`「次フェーズへの申し送り」）は本フェーズと並行して進めてよいが、透過ゲートウェイ稼働状況表示の実機確認は検証環境が必要。
-- **Phase4は未実施のまま着手する。** `explicitProxyEnabled`・`explicitProxyAllowedCidrs`は設定ダイアログで編集・永続化できるが、proxyへは反映されない（3proxy未実装）。この点をUI上で利用者に誤解させない配慮を本フェーズのタスクに含める。
+- Phase 4完了（ダッシュボード・設定ダイアログ・トースト・接続国のAPI側永続化が存在する）。
+- 実CLI（AdGuard VPN CLI）の`list-locations`が、ISOコード・国名・都市名・ping推定値の表を出力する。実機（Phase 3/4の検証環境）で、接続中・切断中のどちらでも実行でき、約1秒で全接続先のpingを返すことを確認済み（2026-09-21）。
+- 実CLIの`connect -l`は都市名・国名・ISOコードのいずれでも指定できる。**ただし`list-locations`表示の`(Virtual)`付き都市名（例: `Shanghai (Virtual)`）はそのままでは指定できず、`(Virtual)`を除いた`Shanghai`で接続できる**（実機で確認。`Mumbai (Virtual)`は「There is no location」で失敗、`Mumbai`は成功）。接続時の指定名は表示名から`(Virtual)`を除いて導出する（`specs/apiserver/design.md`「接続先の識別と接続時の指定名」）。
 
 ## スコープ外
 
-- 明示的プロキシの稼働状況表示（Phase 4で3proxy実装と合わせて実施。下記「暫定表示」参照）。
-- `excludedDomains`の実処理（Phase 6）。設定編集UI自体は実装済みだが、反映されない旨は暫定表示で示す。
-- 認証UI（ログイン画面等）、多言語対応、WebSocket通知（いずれもphase7.mdの将来課題。LAN限定・認証なしのプロトタイプ運用のため本フェーズでは扱わない）。
+- ping値の自動更新・定期ポーリング（並び順が勝手に変わるのを避けるため。再計測は利用者の操作時のみ）。
+- 国旗の表示、ping値の速度バー（利用者の要望に含まれない）。
+- 認証・利用者別のお気に入り（現状認証なしのため、お気に入りは利用者全員で共有される）。
+- 明示的プロキシ（Phase 6）・`excludedDomains`（Phase 14）。
+
+## 決定事項（利用者への確認結果、2026-09-21）
+
+| 項目 | 決定 |
+|---|---|
+| リストの粒度 | 都市単位（`list-locations`の1行=1項目。米国は12件）。接続は都市名で行う |
+| ping値の取得 | APIが`list-locations`をその都度実行して返す（キャッシュなし）。「再計測」ボタンで再取得 |
+| 接続先変更 | 接続中に現在と異なる項目を選択した時のみ、切断ボタンとは別に「接続先を変更」ボタンを表示（確認ダイアログなし） |
+| UI形態 | ダッシュボード内のインラインリスト。プルダウンは廃止 |
+| defaultCountry | 廃止（設定ダイアログ・設定スキーマから削除）。最後に接続した接続先をAPIが記憶し、未選択で接続ボタンを押した場合の接続先とする |
+| 取得失敗時 | プロファイルの静的`countries`を廃止し`list-locations`に一本化。失敗時はエラー表示（切断は可能、接続は不可） |
+| 補助機能 | 国名・都市名の絞り込み検索、お気に入り（★。APIサーバに永続化）。国旗・速度バーは実装しない |
+| お気に入り表示 | タブUI。「すべて」（★マーク付き）と「お気に入り」を切替。どちらもping昇順 |
 
 ## 主要タスク
 
-### 実装済み（前倒し済み）
-- [x] 設定ダイアログ（モーダル）実装: `killSwitch`トグル、`excludedDomains`リスト編集、`defaultCountry`ドロップダウン、`transparentGatewayEnabled`トグル、`explicitProxyEnabled`トグル、`explicitProxyAllowedCidrs`リスト編集（`explicitProxyEnabled=false`時disabled連動）。**2026-09-14、phase2の未完了項目解消の一環として前倒し実装済み**（`web/src/components/dashboard/SettingsDialog.tsx`）。ヘッドレスChromiumで開閉・トグル連動・保存後の永続化を確認済み。
-- [x] ダイアログ内保存ボタンによる一括`PUT /v1/connection/config`実装。（上記と同時に実装済み）
+### 設計・仕様（実装前）
+- [x] 要件定義の更新（`specs/webserver/requirements.md`「接続先リスト」、`specs/apiserver/requirements.md`、`specs/requirements.md`）。
+- [x] 設計の作成（`specs/apiserver/design.md`「接続先（ロケーション）」、`specs/webserver/design.md`「接続先リスト」）。
+- [x] タスク一覧の作成（`specs/apiserver/tasks.md`、`specs/webserver/tasks.md`、本ファイル）。
 
-### 透過ゲートウェイ稼働状況の取得経路（proxy → api → web）
-現状、APIは透過ゲートウェイ／Kill Switchの実際の適用状態を返すエンドポイントを持たない（`POST /settings`の応答`applied`は設定変更時の一回限りの結果）。ダッシュボードに稼働状況を表示するため、状態取得経路を新設する。
-- [x] proxy: 内部エンドポイント`GET /status`（UDS上、`/exec`・`/settings`と同様OpenAPI非公開）を追加し、`GatewayController`の現在状態（適用中の設定・検出中のVPN IF名・nftables適用有無・Kill Switchによる遮断中か）を返す。詳細は`specs/proxyserver/design.md`「`GET /status`」参照。
-- [x] api: `proxy-client.ts`に`fetchProxyStatus()`を追加し、`GET /v1/connection/gateway`（新規、TypeBoxスキーマ定義・OpenAPI公開）として中継する。proxy未応答は既存方針どおり502/504。詳細は`specs/apiserver/design.md`。
-- [x] web: orval再生成（`web/src/generated/api/`）。
-- [x] 上記の単体/統合テスト（`proxy-client.test.ts`、`routes/`配下のテスト）。
+### api
+- [x] プロファイルに`listLocations`アクションを追加し、静的`countries`と`enumFrom`方式を廃止（`%LOCATION%`を`list-locations`結果に対する動的な許可値検証へ変更）。`api/config/vpn-profile.json`を更新。
+- [x] `list-locations`出力パーサー（表の桁位置ベース、`(Virtual)`除去による接続時指定名の導出、接続先ID生成）。
+- [x] 最後の接続先・お気に入りの永続化ストア。
+- [x] `GET /v1/connection/locations`（ping昇順、`favorite`・`lastConnected`付き）。`GET /v1/connection/countries`は廃止。
+- [x] `PUT/DELETE /v1/connection/locations/{locationId}/favorite`。
+- [x] `PUT /v1/connection`を`locationId`指定へ変更（`country`廃止）。接続成功時に最後の接続先を保存し、接続状態（`GET /v1/connection`）に`locationId`を含める。
+- [x] 設定スキーマから`defaultCountry`を除去（既存の設定ファイルに残っていても読み込みで壊れない）。
+- [x] バリデーションエラーを400で返すエラーハンドラ対応。
+- [x] 単体・統合テスト。
 
-### Web UI
-- [x] ダッシュボードに透過ゲートウェイ稼働状況表示を追加（稼働中/停止/Kill Switchにより遮断中/未構成（`LAN_IFACE`未設定））。既存の5秒ポーリング（`useConnectionPolling`）に合流させる。
-- [x] 暫定表示: 明示的プロキシ・`excludedDomains`は「未対応（Phase 4/6で対応予定）」である旨を設定ダイアログの該当項目と、ダッシュボードの明示的プロキシ稼働状況欄に表示する（設定値が保存されても反映されないことの明示）。Phase 4で3proxyが実装された時点で、この暫定表示を実稼働状況表示へ置き換える（`phase4.md`のタスク）。
-- [x] 接続ログ画面実装（`GET /v1/connection/log`の履歴を時系列表示。ダッシュボードからのモーダルまたは折りたたみセクション）。
-- [x] APIエラーレスポンスのトースト表示実装（詳細は折りたたみ表示、stderr等の生ログは要約のみを通常表示）。現状の`role="alert"`によるインライン表示（`App.tsx`の`actionError`、`VpnLoginButton`等）をトーストへ集約する。
-- [x] 接続先国の表示補完: 実CLIは国コードを出力せず`ConnectionStatus.country`が常に`undefined`（`phase2.md`「次フェーズへの申し送り」）だった。当初はクライアントのメモリで保持する暫定対応としたが、**再読み込みで消える不具合**（下記「申し送り」）のため、APIサーバ側で接続時に要求した国を永続化して`GET /v1/connection`が返す方式へ改めた（2026-09-21）。
-- [x] 最小限のスタイル適用（現状は無スタイル）。レイアウト・状態の色分け（接続中/切断/エラー）・操作ボタンの視認性のみ。デザインシステム導入等は行わない。
-- [x] 画面単位のコンポーネントテスト追加（vitest。`web/package.json`にvitestは導入済みだがテストファイルは未作成）。
+### web
+- [x] orval再生成。
+- [x] 接続先リスト（タブ・絞り込み・★・ping表示・選択・バッジ・再計測・取得失敗表示）。
+- [x] 接続/切断/「接続先を変更」ボタン。
+- [x] 設定ダイアログから`defaultCountry`を削除。接続ログの接続先表示を`locationId`対応にする。
+- [x] コンポーネントテスト。
+
+### 検証
+- [x] 実機（Phase 3/4の検証環境・実VPN）でのE2E（`e2e/phase5/`）。
 
 ## 完了基準
 
-- 設定ダイアログから全項目を変更し保存すると、`GET /v1/connection/config`が更新後の値を返すことを確認する。（実施済み）
-- `explicitProxyEnabled`をOFFにすると、`explicitProxyAllowedCidrs`入力欄が視覚的にdisabledになることを確認する。（実施済み）
-- 接続ログ画面に過去の接続/切断/エラー操作が時系列で表示されることを確認する。（実施済み）
-- 意図的にプロキシ未応答（502）・実行失敗（422）を発生させ、トーストにエラー要約が表示され、詳細（stderr）は折りたたみ内に表示されることを確認する。（実施済み）
-- `transparentGatewayEnabled`のON/OFF、VPN接続/切断、`killSwitch`切替に応じて、ダッシュボードの透過ゲートウェイ稼働状況表示が、次回ポーリング（5秒以内）で実際の状態に追従することを確認する。（実機で実施済み）
-- Web UIのみで「ログイン→国選択→接続→透過ゲートウェイON→状態確認→切断」まで操作でき、プロトタイプとして通し利用できることを確認する。（実施済み）
+- ダッシュボードの接続先リストに、実CLIの接続先が都市単位でping昇順に並び、国・都市・ping値が表示されること。「再計測」でping値が更新されること。
+- 絞り込みで国名・都市名の一部一致に絞れること。★で登録したお気に入りが「お気に入り」タブにping昇順で出て、再読み込み後・別ブラウザでも保持されること。
+- 切断中にリストで選択して接続でき、選択なしで接続ボタンを押すと最後に接続した接続先へ接続すること（`(Virtual)`付きの接続先を含む）。
+- 接続中に別の接続先を選択すると「接続先を変更」ボタンが現れ、押下で接続先が切り替わり、接続中バッジ・接続状態カードが追従すること。同じ接続先を選択している間は表示されないこと。
+- `list-locations`が取得できない状態（例: proxy停止）でリスト領域にエラーと再取得ボタンが出て、接続はできず切断はできること。
+- 設定ダイアログに`defaultCountry`が存在しないこと。既存の`settings.json`に`defaultCountry`が残っていても動作すること。
 
-## 次フェーズへの申し送り
+## 検証手法
 
-- 本フェーズはPhase 4より前に実施するため、明示的プロキシの稼働状況は「未対応」の暫定表示となる。Phase 4完了時に暫定表示を実状態へ置き換えること（`phase4.md`に対応タスクを追加済み）。
-- `GET /v1/connection/gateway`のレスポンスには、Phase 4で`explicitProxy`側の状態を追加できるよう拡張余地を残す（`specs/apiserver/design.md`参照）。
-- 【2026-09-21実施】proxy `GET /status`・api `GET /v1/connection/gateway`の`state`は、仕様の3値（`active`/`stopped`/`unconfigured`）に加えて`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）を追加した。`explicitProxy`はPhase 4で同レスポンスへ追加する（`transparentGateway`と並列のキーとして拡張可能な形にしてある）。
-- 【2026-09-21 Phase 4で置換済み】下記の暫定表示のうち明示的プロキシ分は、Phase 4で実状態表示へ置換した（`wbs/phase4.md`参照）。
-- Phase 4完了時に置換すべき暫定表示は2か所: `GatewayStatusCard.tsx`の「明示的プロキシ」欄と、`SettingsDialog.tsx`の`.unsupported`表示（Phase 4対象は明示的プロキシ、Phase 6対象は`excludedDomains`）。`web/src/App.test.tsx`・`GatewayStatusCard.test.tsx`にも暫定表示の文言を検証するテストがあるため同時に更新すること。
-- 【E2Eで判明した既存不具合】実VPN CLIはエラーメッセージを**stdout**へ出力するため、422応答の`stderr`が空になり、トーストの詳細に何も出ない不具合があった（Phase 2実装由来。例: 接続中でない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）。`api/src/lib/failure-output.ts`（stderrが空ならstdoutを返す）を追加して修正した。
-- 【設計上の判断】ポーリングは接続状態と稼働状況で成否を分離した。当初は「接続状態の取得失敗＝全体の失敗」とし古い値を保持していたため、proxy停止中も稼働状況が「稼働中」のまま残る問題をE2Eで発見し、部分ごとに成否を持つ形へ改めた（`specs/webserver/design.md`「状態管理の実装方針」）。
-- 接続ログ画面は、プロキシへ到達せずCLIを実行しなかった操作（502/504）を記録しない（apiserverの監査ログ仕様）。Web UI側のトーストでのみ確認できる。必要になれば監査ログへの失敗記録追加を検討する。
-- 【不具合と修正（2026-09-21）】接続国を「接続操作時にクライアントのメモリへ保持」する暫定対応にしていたため、ブラウザの再読み込み・別端末・別ブラウザで「（接続国: XX）」が表示されなかった（プロトタイプ段階の許容としていたが、通常操作で頻繁に遭遇するため不具合と判断）。原因は、国コードの唯一の保持先がクライアントの状態で、APIが国を返せなかったこと（実CLIの`status`は都市名しか出力しない）。修正として、APIが接続成功時に要求した国と接続先の都市名を`api-data`ボリュームへ永続化し、`GET /v1/connection`で返す（`specs/apiserver/design.md`「接続先国の永続化」）。都市名が保存時と異なる場合（API外での再接続）は古い国を返さない。クライアント側の保持は撤去した。
-- 最初のE2E（24項目PASS）は再読み込みを検証していなかったため、この不具合を検出できなかった。E2E `flow`に再読み込み後の表示確認を追加した。
-- 設定ダイアログ・接続ログダイアログ内のエラーはトーストではなくダイアログ内のインライン表示（モーダルではダイアログ外のトーストを操作できないため）。
-
-## 検証手法（2026-09-21）
-
-Phase 3の実機検証環境（`GW_MODE=ssh`。Ubuntu 24.04・単一NIC・実LAN・実VPN（AdGuard VPN CLI、ログイン済み））で、Web UIをPlaywrightで操作して確認した。手順は`e2e/phase5/`に残してある。
+Phase 3/4の実機検証環境（`GW_MODE=ssh`。Ubuntu 24.04・単一NIC・実LAN・実VPN（AdGuard VPN CLI、ログイン済み））で、Web UIをPlaywrightで操作して確認した。手順は`e2e/phase5/`に残してある。
 
 ```sh
-GW_MODE=ssh bash e2e/lxc/sync.sh                       # 転送・ビルド・起動
-GW_MODE=ssh bash e2e/phase5/dashboard-scenarios.sh jp  # 全シナリオ（引数は接続国）
+GW_MODE=ssh bash e2e/lxc/sync.sh                          # 転送・ビルド・起動
+GW_MODE=ssh bash e2e/phase5/locations-scenarios.sh        # 全シナリオ
 ```
 
-単体・コンポーネントテスト: proxy 49件（うち`getStatus`7件）、api 48件、web 35件（vitest＋jsdom＋Testing Library）がすべて成功。
+単体・コンポーネントテスト: api 86件・web 60件がすべて成功（`npx vitest run`）。
 
 ## 検証結果（2026-09-21）
 
-`dashboard-scenarios.sh`が**25項目すべてPASS**（再読み込み確認の追加後。追加前は24項目）（FAIL 0件）。
+`locations-scenarios.sh`が**46項目すべてPASS**（連続7回実行のうち6回が全PASS、下記の1回を除く）。
 
 | シナリオ | 確認内容 |
 |---|---|
-| initial | 明示的プロキシ欄・設定ダイアログの「未対応」暫定表示 |
-| flow | ログイン→国選択→接続→成功トースト→選択国の表示→**再読み込み後も接続国が表示**→透過GW「稼働中」（VPN IF名併記）→設定で透過GW OFF→「停止」→ON→「稼働中」→切断→接続国表示の消去→「Kill Switchにより遮断中」。稼働状況は次回ポーリング（5秒）以内に追従 |
-| log | 接続ログが新しい順に表示され、接続操作の行に接続国が出る |
-| ks-off | Kill Switch OFF＋VPN未接続＝遮断中にならず「稼働中」、ONへ戻すと「遮断中」 |
-| error-422 | 実CLIの異常終了（`disconnect`が「Process is not running」で exit 14）で、トースト要約に「exit code」、詳細は折りたたみ内にstderr、要約にはstderrを含めない |
-| error-502 | proxyコンテナ停止中の接続操作で「プロキシサーバに接続できません」トースト、稼働状況欄は取得失敗表示 |
+| list | 実CLIの接続先81件が都市単位で表示され、ping値が昇順（先頭4ms〜末尾350ms）。(Virtual)付き接続先の表示。再計測でping値が更新される（例: 先頭3件 4,28,55 → 5,23,59）。設定ダイアログにデフォルト接続国が無い |
+| filter | 国名（japan）・都市名（大文字小文字無視）・国コード（us）・複数語（us vegas）で絞り込み、該当なし案内、解除で全件復帰 |
+| favorite | ★登録→「お気に入り」タブにping順で表示→再読み込み後・別ブラウザコンテキストでも保持→解除で0件案内 |
+| connect | リストで`Shanghai (Virtual)`を選択して接続（接続時指定名は`Shanghai`）。接続中・前回バッジ、接続国表示、再読み込み後も保持。APIが`locationId`を返す |
+| change | 接続中の既定では［接続先を変更］なし→別の接続先を選ぶと出現（［切断］も残る）→現在の接続先を選び直すと消える→押下で切替→接続中バッジが移り1件のみ→ボタン消失 |
+| disconnect / last | 切断後も最後の接続先（Las Vegas）を記憶。再読み込み後にそれが選択済み・「前回」表示。リストを選択せず［接続］だけで接続 |
+| error-list | proxy停止中の再計測でリスト領域にエラーと再取得ボタン、接続中なら［切断］は可。復旧後の再取得で回復 |
+| 旧形式ファイル互換 | 実機に残っていた`defaultCountry`入りの`settings.json`を読み込んでも動作し、`GET /v1/connection/config`が返さず、更新後に保存ファイルからも消える |
 
-- E2E実行で上記「E2Eで判明した既存不具合」（422のstderr空）と「proxy障害時に稼働状況が古い値のまま」の2件を発見し、修正後に再実行して全PASSを確認した。
-- 未検証: 実際にブラウザ認証を伴う初回ログイン（検証環境は既にログイン済みのため「ログインボタン」はログイン済みメッセージの確認のみ。認証URL表示自体はPhase 2・3で確認済み）、複数ブラウザ・スマートフォン幅での表示。
+- 検証中に発見・修正した不具合: (1)隠したラジオ入力が`position:absolute`の基準を持たず、ページ全体の高さがリスト内の位置ぶん伸びていた（スクリーンショットで発見。`.location-row`を`position: relative`に）。(2)狭い幅でバッジが国名に重なっていた（バッジを都市名の行へ移動）。(3)`e2e/lxc/sync.sh`が手元で削除したファイルを転送先に残し、旧`connection-countries.ts`等でビルドが失敗した（`.env`以外を展開前に削除するよう変更）。
+- **原因不明の1回のFAIL**: 上記の連続実行のうち、手動でAPI操作（Seoulへ接続・お気に入り操作）した直後の1回で1項目がFAILした。出力を保存しておらず項目を特定できなかった。その後、同じ前提を再現した2回を含む6回連続で再現せず、原因は不明。ping計測・VPN確立のタイミング依存の可能性があるが未確認。再発した場合は出力を保存して調査すること。
+- 未検証: 実CLIの`connect -l`が同名都市を複数国に持つ場合（現在の一覧には存在しない）、ブラウザ認証を伴う初回ログイン後の初回一覧取得、複数ブラウザ・実スマートフォンでの表示（幅390pxのヘッドレスChromiumでの表示のみ確認）。検証ホストにCJKフォントが無くスクリーンショットの日本語は豆腐になるが、DOM上のテキストはE2Eで検証済み。
+
+## 次フェーズへの申し送り
+
+- `GET /v1/connection/countries`・`defaultCountry`・プロファイルの`countries`は廃止した（破壊的変更。Web UIと同時にデプロイすること）。`countries`を手で編集する運用（`phase2.md`申し送り「経年劣化」）は不要になった。
+- 接続操作（`PUT /v1/connection`）は接続先IDの解決のため`list-locations`を再実行する（約1秒。接続自体に加算される。所要時間の増加は本フェーズでは計測していない）。問題になる場合はIDと接続時指定名の対応を短時間キャッシュする案がある（キャッシュすると一覧の鮮度と引き換えになるため、現時点では見送り）。
+- `(Virtual)`の除去は実CLI 1.7.12での実測に基づく。CLIのバージョンアップで表示名・指定名の規則が変わりうる（変わったときは`api/src/locations/location-id.ts`の`toConnectName`を見直す）。
+- お気に入りは認証がないため利用者全員で共有される。Phase 15で認証を導入する際は、利用者ごとの保存への変更を検討する。
+- ping値はCLIの推定値で、接続中に取得した値がトンネル経由か否かは未確認（値は接続中・切断中とも近い値だった）。
+- 接続ログ（`GET /v1/connection/log`）の接続先は`locationId`のslugから表示するため、都市名は小文字・ハイフン→空白の簡易表示になる（例: `US / las vegas`）。

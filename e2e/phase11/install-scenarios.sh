@@ -1,7 +1,7 @@
 #!/bin/bash
-# 責務: Phase 13完了基準（wbs/phase13.md）のうち、インストーラ（ブートストラップ→本体）の、クリーンなOSでの導入・再実行・ベンダーの変更・
+# 責務: Phase 11完了基準（wbs/phase11.md）のうち、インストーラ（ブートストラップ→本体）の、クリーンなOSでの導入・再実行・ベンダーの変更・
 #       ホスト側フック・失敗系を、LXCのクリーンなコンテナで検証する。実VPN・実LANは使わない（導入と起動までが対象）。
-# 実行: bash e2e/phase13/install-scenarios.sh [イメージ（既定 ubuntu:24.04。例 images:debian/12 やローカルのイメージのフィンガープリント）]
+# 実行: bash e2e/phase11/install-scenarios.sh [イメージ（既定 ubuntu:24.04。例 images:debian/12 やローカルのイメージのフィンガープリント）]
 # 前提: 開発ホストにLXD（lxc）・git。検証対象のコミットは**コミット済み**であること（ブートストラップはコミットを固定して取得するため）。
 #       コンテナ名は E2E_CONTAINER（既定 vpngw-inst）。既にあれば削除して作り直す。終了時に削除する（E2E_KEEP=1で残す）。
 #       取得元（REPO_URL）は、開発ホストのリポジトリから作った裸リポジトリをコンテナ内 /srv/vpngw.git に置き、file://で指す

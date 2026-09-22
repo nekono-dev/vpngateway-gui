@@ -16,7 +16,7 @@ Phase2で実VPNベンダーCLIへの置換が完了しているため、本フ�
 
 ## スコープ外
 
-- 明示的プロキシモード（3proxy）は次フェーズ（phase4.md）。
+- 明示的プロキシモード（3proxy）は次フェーズ（phase6.md）。
 
 ## 主要タスク
 
@@ -110,4 +110,4 @@ Phase2で実VPNベンダーCLIへの置換が完了しているため、本フ�
 - **単一NICのフェイルオープンでは、ゲートウェイがLAN機器の通信を同一NICからルータへ再送する（ヘアピン）。** ルータがその再送を許容し、ICMPリダイレクトで機器が直接ルータへ向かうことが無い前提で成立する。実機（本検証のルータ）では成立した。ルータ次第では成立しない可能性がある。
 - **物理的なネットワーク瞬断（ケーブル抜き等）は実施していない。** 上流断は「GWの物理NICからの送信を遮断」で模擬した。
 - **`e2e/`配下の検証スクリプトは再実行可能**（`e2e/README.md`）。proxy/api/nft/install関連の変更時は、単体テストに加えて本シナリオの再実行を推奨する。
-- `excludedDomains`（split-tunnel除外）はPhase3のスコープ外のまま（`specs/proxyserver/tasks.md`「将来課題」・`wbs/README.md`のフェーズ一覧よりPhase6予定）。
+- `excludedDomains`（split-tunnel除外）はPhase3のスコープ外のまま（`specs/proxyserver/tasks.md`「将来課題」・`wbs/README.md`のフェーズ一覧よりPhase14予定）。

@@ -33,7 +33,7 @@ VPN_COUNTRY=${VPN_COUNTRY:-us}
 
 client()  { lxc exec "$CLIENT_NAME" -- "$@"; }
 proxy_sh(){ gw docker compose exec -T proxy sh -c "$1"; }
-# ベンダーCLI（VPNデーモン）はPhase 11以降、ネットワークコンテナ（proxy）ではなくランナー（runner-adguardvpn）内で動く。
+# ベンダーCLI（VPNデーモン）はPhase 8以降、ネットワークコンテナ（proxy）ではなくランナー（runner-adguardvpn）内で動く。
 runner_sh(){ gw docker compose exec -T runner-adguardvpn sh -c "$1"; }
 ok()      { echo "PASS: $1"; }
 ng()      { echo "FAIL: $1"; FAILS=$((FAILS+1)); }
@@ -134,7 +134,7 @@ scenario_D() {
   check "前提: VPN接続中・KS ONでLAN端末がVPN経由で通信できる" '[ -n "$(client_ip)" ] && [ "$(client_ip)" != "$BASE_IP" ]'
 
   # D1: proxyコンテナ（ネットワーク）とランナーのみ再起動（APIは動き続ける）。VPNデーモンはランナー内のため落ちる
-  # （Phase 10まではproxyコンテナ1つの再起動で同じ状況になった。Phase 11以降はネットワークコンテナとランナーの両方を再起動して再現する）。
+  # （Phase 9まではproxyコンテナ1つの再起動で同じ状況になった。Phase 8以降はネットワークコンテナとランナーの両方を再起動して再現する）。
   # 再起動中・直後にKS ONのままリークしない（実IPが見えない）ことを、複数回サンプリングして確認する。
   gw docker compose restart proxy runner-adguardvpn >/dev/null 2>&1
   LEAK=0

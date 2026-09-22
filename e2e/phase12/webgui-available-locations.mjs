@@ -1,5 +1,5 @@
-// 責務: Phase 14（プランで接続できる接続先の参考表示）を、実機のWeb UIでPlaywrightにより確認する。
-// 実行: node e2e/phase14/webgui-available-locations.mjs <baseUrl>
+// 責務: Phase 12（プランで接続できる接続先の参考表示）を、実機のWeb UIでPlaywrightにより確認する。
+// 実行: node e2e/phase12/webgui-available-locations.mjs <baseUrl>
 // 前提: 接続先を選べないプラン（無料プラン等）でログイン済みのベンダーが選択中であること（人手のログインが要る。実機Proton VPN無料アカウント）。
 // 確認: 接続先リストが制限されている理由文の下に、「接続できる国（参考）」の一覧が出る。操作できる要素（ボタン・入力）を含まない。
 //       出力の国・都市は、APIの`GET /v1/connection/available-locations`の値と一致する。

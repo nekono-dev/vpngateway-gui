@@ -1,8 +1,8 @@
 #!/bin/bash
-# 責務: Phase 11完了基準のうち、実VPN（AdGuard VPN）に接続中にモックProton VPNへ切り替えたときの、実ネットワークでの挙動を検証する
+# 責務: Phase 8完了基準のうち、実VPN（AdGuard VPN）に接続中にモックProton VPNへ切り替えたときの、実ネットワークでの挙動を検証する
 #       （現在のVPNが切断されトンネルが消える・Kill Switch ONでLAN端末の通信が遮断される・切り戻して再接続すると再びVPN経由になる）。
 #       実VPNログイン済みのゲートウェイ役（GW_MODE=ssh）に、モックランナー付きの構成（docker-compose.e2e-mock.yml＋モックのバンドル）を一時的に重ねて行う。
-# 実行: GW_MODE=ssh bash e2e/phase11/real-switch-scenarios.sh
+# 実行: GW_MODE=ssh bash e2e/phase8/real-switch-scenarios.sh
 # 前提: e2e/lxc/sync.sh済み・AdGuard VPNログイン済み・LAN端末役（e2e/lxc/setup.sh）。終了時に通常の構成（モックランナー無し・Web 8080）へ戻す。
 #       検証専用環境で実行すること（設定・接続状態を書き換える）。
 # 出力: 各検証をPASS/FAILで表示し、FAIL件数を終了コードにする。

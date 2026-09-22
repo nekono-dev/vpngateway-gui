@@ -26,7 +26,7 @@ services:
       # サーバー一覧のキャッシュ（毎回の取得を避ける）
       - proton-cache:/home/vpngwgui/.cache/Proton
 
-  # APIへ、CLIのサーバ一覧のキャッシュを読み取り専用で見せる（プランで接続できる接続先の参考一覧。specs/apiserver/design.md「Phase 14」）。
+  # APIへ、CLIのサーバ一覧のキャッシュを読み取り専用で見せる（プランで接続できる接続先の参考一覧。specs/apiserver/design.md「Phase 12」）。
   # composeの合成で、docker-compose.ymlのapiのvolumesへ加わる。
   api:
     volumes:

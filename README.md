@@ -55,7 +55,7 @@ sudo sh /opt/vpngwgui/install/install.sh --providers <ベンダーID>
 
 ### 既知の制約
 
-- 検証済みは、Ubuntu 24.04・Debian 12（bookworm）（LXCのクリーンなコンテナ）と、Raspberry Pi OS Lite arm64（trixie。QEMUのarm64エミュレーション上の実物のイメージ。カーネルのみDebianのもの。`e2e/phase13/rpi-vm.sh`）。Raspberry Pi OSの32bit（armhf）と実機は未検証。Raspberry Pi OSでは`nftables.service`が既定で有効なため、起動時のKill Switchガードをその後に適用するよう順序付けている。
+- 検証済みは、Ubuntu 24.04・Debian 12（bookworm）（LXCのクリーンなコンテナ）と、Raspberry Pi OS Lite arm64（trixie。QEMUのarm64エミュレーション上の実物のイメージ。カーネルのみDebianのもの。`e2e/phase11/rpi-vm.sh`）。Raspberry Pi OSの32bit（armhf）と実機は未検証。Raspberry Pi OSでは`nftables.service`が既定で有効なため、起動時のKill Switchガードをその後に適用するよう順序付けている。
 - `curl`が無い最小構成のホストでは、先に`sudo apt-get install -y curl`が要る。
 - アンインストール・IPv6は対象外。
 - `curl | sh`はGitHub ReleaseのHTTPSを信頼する方式。頒布物は取得するコミットを固定し、取得後に照合する。ダウンロードして`install.sh.sha256`で検証してから実行してもよい。

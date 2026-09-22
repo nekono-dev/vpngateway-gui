@@ -1,6 +1,6 @@
 // 責務: ユーザ向け設定（Web UIから変更可能な運用設定）の永続化。
 // Phase 1では単一JSONファイルへのread-modify-writeで十分（低頻度更新・単一ユーザーLAN内運用のため）。
-// 同時書き込み競合の考慮は行わない（wbs/phase7.mdで見直し候補として申し送り済み）。
+// 同時書き込み競合の考慮は行わない（wbs/phase15.mdで見直し候補として申し送り済み）。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";

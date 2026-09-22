@@ -44,7 +44,7 @@ services:
       AUDIT_LOG_FILE: /var/lib/vpngwgui/audit.log
 
   # ネットワークコンテナ: 透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出・接続監視。
-  # ベンダーCLIは実行しない（Phase 11でランナーへ分離。specs/proxyserver/design.md「コンテナ構成（Phase 11）」）。
+  # ベンダーCLIは実行しない（Phase 8でランナーへ分離。specs/proxyserver/design.md「コンテナ構成（Phase 8）」）。
   proxy:
     restart: always
     build:

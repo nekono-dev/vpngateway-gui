@@ -1,6 +1,6 @@
-// 責務: Phase 11（Web UIからのVPNベンダー選択）の完了基準を、2ベンダー（AdGuard VPN・モックProton VPN）を有効にした
+// 責務: Phase 8（Web UIからのVPNベンダー選択）の完了基準を、2ベンダー（AdGuard VPN・モックProton VPN）を有効にした
 // Web UIをPlaywrightで操作して検証する。
-// 実行: node e2e/phase11/webgui-providers.mjs <baseUrl> <step>
+// 実行: node e2e/phase8/webgui-providers.mjs <baseUrl> <step>
 //   initial            : 選択部品が表示され、先頭のAdGuard VPNが選択中。両方とも利用可能
 //   switch-idle        : 切断中にモックへ切り替え（確認なし）。画面がモックのものへ入れ替わり、再読み込み・別ブラウザでも共通
 //   mock-login-connect : モックへログイン（入力型）し、自動接続する
@@ -8,7 +8,7 @@
 //   switch-accept      : 接続中の切替で確認を承諾 → 切断され、AdGuard VPNへ切り替わる
 //   switch-back        : モックへ戻すと、ログイン状態が保持されている（ベンダー別の状態が独立）
 //   unavailable        : モックのランナー停止中、モックが「利用不可」で選択できない（シェル側で停止・再開する）
-// 前提: e2e/phase11/provider-scenarios.shが起動した構成。
+// 前提: e2e/phase8/provider-scenarios.shが起動した構成。
 
 import { launch, assert, chromium } from "../lib/playwright.mjs";
 

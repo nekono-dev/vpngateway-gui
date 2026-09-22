@@ -1,109 +1,87 @@
-# Phase 8: 接続先選択UIの刷新（ping順リスト・お気に入り・接続先変更）
+# Phase 8: Web UIからのベンダー選択（ネットワーク制御とCLI実行の分離）
 
-**【2026-09-21追加】実施順は Phase 5 の直後・Phase 4 より前（`1 → 2 → 3 → 5 → 8 → 4 → 6 → 7`）。** Phase 5（Web UI完成）は検証完了済みのため、そこへ追記して検証状態を曖昧にすることを避け、新フェーズとして切り出した。フェーズ番号は識別子であり実施順ではない（`README.md`参照）。
+（2026-09-21追加: Phase 9（Proton VPN対応）の設計中に、利用者から「Web UI上から使うベンダーを選択できるようにしたい」という要望があり、Phase 9の前提（ベンダーごとに別のproxyコンテナを起動する構成）を見直す必要が生じたため、Proton VPN実CLIの導入より先に、複数ベンダーを扱える構成へ改める。）
 
 ## 目的
 
-接続先の選択を、静的な国コードのドロップダウンから、VPNベンダーCLIが返す実際の接続先（都市単位）とping値に基づくグラフィカルなリストへ刷新する。あわせて、接続中に接続先を切り替える「接続先を変更」ボタン、お気に入り接続先、最後に接続した接続先の記憶を追加する。
+管理者が有効化した複数のVPNベンダーから、Web UI利用者が使うベンダーを選べるようにする。そのために、従来1つのコンテナに同居していた「ネットワーク制御」と「ベンダーCLIの実行」を分離し、ベンダーごとの実行環境（ランナー）を並存させる。
+
+設計は`specs/requirements.md`「VPNベンダーの選択（Web UI）」、`specs/design.md`「ベンダーの選択と実行基盤」、`specs/apiserver/design.md`「ベンダーの選択」、`specs/proxyserver/design.md`「コンテナ構成（Phase 8）」と`specs/runner/`、`specs/webserver/design.md`「ベンダーの選択の実装方針」。
 
 ## 前提
 
-- Phase 5完了（ダッシュボード・設定ダイアログ・トースト・接続国のAPI側永続化が存在する）。
-- 実CLI（AdGuard VPN CLI）の`list-locations`が、ISOコード・国名・都市名・ping推定値の表を出力する。実機（Phase 3/5の検証環境）で、接続中・切断中のどちらでも実行でき、約1秒で全接続先のpingを返すことを確認済み（2026-09-21）。
-- 実CLIの`connect -l`は都市名・国名・ISOコードのいずれでも指定できる。**ただし`list-locations`表示の`(Virtual)`付き都市名（例: `Shanghai (Virtual)`）はそのままでは指定できず、`(Virtual)`を除いた`Shanghai`で接続できる**（実機で確認。`Mumbai (Virtual)`は「There is no location」で失敗、`Mumbai`は成功）。接続時の指定名は表示名から`(Virtual)`を除いて導出する（`specs/apiserver/design.md`「接続先の識別と接続時の指定名」）。
+- Phase 7完了（プロバイダ抽象化基盤・モックプロバイダCLI）。
+- 実VPN（AdGuard VPN CLI、ログイン済み・PREMIUM）を持つ実機検証環境（`GW_MODE=ssh`）が使えること。**Proton VPN実CLIはこのフェーズでは使わない**（Phase 9）。2つ目のベンダーには、Phase 7のモックプロバイダCLI（Proton VPN公式CLIの挙動を模擬）を、専用のモックランナーで使う。
 
 ## スコープ外
 
-- ping値の自動更新・定期ポーリング（並び順が勝手に変わるのを避けるため。再計測は利用者の操作時のみ）。
-- 国旗の表示、ping値の速度バー（利用者の要望に含まれない）。
-- 認証・利用者別のお気に入り（現状認証なしのため、お気に入りは利用者全員で共有される）。
-- 明示的プロキシ（Phase 4）・`excludedDomains`（Phase 6）。
+- Proton VPN実CLIのランナー（イメージ・PoC・実機検証）（Phase 9）。
+- 複数ベンダーの同時接続（接続は常に1ベンダー。要求されれば別課題）。
+- ベンダーごとに異なるユーザ向け設定（Kill Switch等は全ベンダー共通の1つ）。
+- 認証・利用者別の選択（現状LAN限定・認証なしのため、選択は利用者全員で共有される）。
 
 ## 決定事項（利用者への確認結果、2026-09-21）
 
 | 項目 | 決定 |
 |---|---|
-| リストの粒度 | 都市単位（`list-locations`の1行=1項目。米国は12件）。接続は都市名で行う |
-| ping値の取得 | APIが`list-locations`をその都度実行して返す（キャッシュなし）。「再計測」ボタンで再取得 |
-| 接続先変更 | 接続中に現在と異なる項目を選択した時のみ、切断ボタンとは別に「接続先を変更」ボタンを表示（確認ダイアログなし） |
-| UI形態 | ダッシュボード内のインラインリスト。プルダウンは廃止 |
-| defaultCountry | 廃止（設定ダイアログ・設定スキーマから削除）。最後に接続した接続先をAPIが記憶し、未選択で接続ボタンを押した場合の接続先とする |
-| 取得失敗時 | プロファイルの静的`countries`を廃止し`list-locations`に一本化。失敗時はエラー表示（切断は可能、接続は不可） |
-| 補助機能 | 国名・都市名の絞り込み検索、お気に入り（★。APIサーバに永続化）。国旗・速度バーは実装しない |
-| お気に入り表示 | タブUI。「すべて」（★マーク付き）と「お気に入り」を切替。どちらもping昇順 |
+| 同時接続 | 接続は常に1ベンダーのみ（切替式） |
+| コンテナ構成 | ネットワーク制御（`proxy`）とCLI実行（`runner-<ベンダー>`）を分離 |
+| 接続中の切替 | 確認のうえ、現在のVPNを自動で切断してから切り替える |
+| 選択肢の範囲 | 管理者が用意・有効化したプロファイルのみ |
+
+## 設計上の判断（本文書の作成時、利用者への確認なしに決めた点。誤りがあれば指摘を受けて改訂する）
+
+- 選択は**サーバ側に永続化**し全ブラウザで共通にする（認証がなくLAN限定のため）。
+- ランナーが停止しているベンダーは選択肢に出すが選択不可とし、選択中のベンダーのランナーが後から止まっても**自動で他のベンダーへ切り替えない**（意図しないベンダーへの接続を避ける）。
+- 切替時に現在のランナーが応答しない場合は、切断できないが切替は許可する（止まったランナーに縛られない）。切断コマンドが失敗した場合は切り替えない。
+- ベンダー別の状態（ログイン状態・プラン・お気に入り・最後の接続先・接続先）は独立に保持し、切替で失わない。ユーザ向け設定（Kill Switch等）はベンダー共通。
+- 有効化は`.env`の`VPN_PROVIDERS`（`install/select-providers.sh`で書く）。既定は`adguardvpn`のみ（Phase 9までの構成と同じ動作）。
 
 ## 主要タスク
 
 ### 設計・仕様（実装前）
-- [x] 要件定義の更新（`specs/webserver/requirements.md`「接続先リスト」、`specs/apiserver/requirements.md`、`specs/requirements.md`）。
-- [x] 設計の作成（`specs/apiserver/design.md`「接続先（ロケーション）」、`specs/webserver/design.md`「接続先リスト」）。
-- [x] タスク一覧の作成（`specs/apiserver/tasks.md`、`specs/webserver/tasks.md`、本ファイル）。
+- [x] 要件定義・設計・タスク一覧の作成（`specs/`各ファイル、本ファイル）。`wbs/phase9.md`をランナー構成へ改訂。
 
-### api
-- [x] プロファイルに`listLocations`アクションを追加し、静的`countries`と`enumFrom`方式を廃止（`%LOCATION%`を`list-locations`結果に対する動的な許可値検証へ変更）。`api/config/vpn-profile.json`を更新。
-- [x] `list-locations`出力パーサー（表の桁位置ベース、`(Virtual)`除去による接続時指定名の導出、接続先ID生成）。
-- [x] 最後の接続先・お気に入りの永続化ストア。
-- [x] `GET /v1/connection/locations`（ping昇順、`favorite`・`lastConnected`付き）。`GET /v1/connection/countries`は廃止。
-- [x] `PUT/DELETE /v1/connection/locations/{locationId}/favorite`。
-- [x] `PUT /v1/connection`を`locationId`指定へ変更（`country`廃止）。接続成功時に最後の接続先を保存し、接続状態（`GET /v1/connection`）に`locationId`を含める。
-- [x] 設定スキーマから`defaultCountry`を除去（既存の設定ファイルに残っていても読み込みで壊れない）。
-- [x] バリデーションエラーを400で返すエラーハンドラ対応。
-- [x] 単体・統合テスト。
+### proxy・runner（ネットワークコンテナ: `specs/proxyserver/tasks.md`「ネットワークコンテナとランナーの分離」、ランナー: `specs/runner/tasks.md`「ランナーの分離」。**ランナーは別アプリケーションとして`specs/runner/`に要件・設計・タスクを切り出した**）
+- [x] ランナー（`runner.ts`）とネットワークコンテナ（`server.ts`）の分離、`POST /connection-checks`、`RUNNER_ALLOWED_BINARY`（`EXTRA_ALLOWED_BINARIES`の廃止）。
+- [x] イメージ: `proxy/Dockerfile`（ネットワーク）・`Dockerfile.runner-adguardvpn`・`Dockerfile.runner-mock`（E2E専用）。
+- [x] `docker-compose.yml`の再構成、`install/select-providers.sh`、`docker-compose.e2e-mock.yml`の改修。`docker-compose.protonvpn.yml`・`VPN_PROVIDER`・`proxy/Dockerfile.protonvpn`（Phase 9の作業中ファイル）の扱いの整理。
 
-### web
-- [x] orval再生成。
-- [x] 接続先リスト（タブ・絞り込み・★・ping表示・選択・バッジ・再計測・取得失敗表示）。
-- [x] 接続/切断/「接続先を変更」ボタン。
-- [x] 設定ダイアログから`defaultCountry`を削除。接続ログの接続先表示を`locationId`対応にする。
-- [x] コンポーネントテスト。
+### api（`specs/apiserver/tasks.md`「ベンダーの選択」）
+- [x] 複数プロファイルの読み込み、選択の永続化、ベンダー別の状態（旧形式からの移行）。
+- [x] `proxy-client`のランナー宛・ネットワークコンテナ宛の分離と`GET /health`。
+- [x] `GET /v1/providers`・`PUT /v1/providers/active`（切替の手順・直列化）。
+- [x] `POST /connection-checks`の通知、監査ログの`provider`。
+- [x] 既存ルートの選択中ベンダー対象への改修、単体・統合テスト。
+
+### web（`specs/webserver/tasks.md`「ベンダーの選択」）
+- [x] orval再生成、`ProviderSelector`、切替時の状態の入れ替え、ベンダー名の表示、コンポーネントテスト。
 
 ### 検証
-- [x] 実機（Phase 3/5の検証環境・実VPN）でのE2E（`e2e/phase8/`）。
+- [x] モックE2E（`e2e/phase8/`）: AdGuard（実VPN）＋モックプロバイダの2ベンダーで、選択部品の表示・切替・接続中の確認と自動切断・状態の入れ替え・利用不可ランナーの無効化・別ブラウザでの共有・ベンダー別状態の独立を確認。
+- [x] 実VPN（AdGuard VPN）でのリグレッション（ネットワーク分離後の`e2e/phase3`・`phase6`・`phase5`。透過ゲートウェイ・Kill Switch・明示的プロキシ・接続先リスト）。
 
 ## 完了基準
 
-- ダッシュボードの接続先リストに、実CLIの接続先が都市単位でping昇順に並び、国・都市・ping値が表示されること。「再計測」でping値が更新されること。
-- 絞り込みで国名・都市名の一部一致に絞れること。★で登録したお気に入りが「お気に入り」タブにping昇順で出て、再読み込み後・別ブラウザでも保持されること。
-- 切断中にリストで選択して接続でき、選択なしで接続ボタンを押すと最後に接続した接続先へ接続すること（`(Virtual)`付きの接続先を含む）。
-- 接続中に別の接続先を選択すると「接続先を変更」ボタンが現れ、押下で接続先が切り替わり、接続中バッジ・接続状態カードが追従すること。同じ接続先を選択している間は表示されないこと。
-- `list-locations`が取得できない状態（例: proxy停止）でリスト領域にエラーと再取得ボタンが出て、接続はできず切断はできること。
-- 設定ダイアログに`defaultCountry`が存在しないこと。既存の`settings.json`に`defaultCountry`が残っていても動作すること。
+- 有効なベンダーが2つ（AdGuard VPN実CLI＋モックプロバイダ）のとき、Web UIにベンダー選択部品が表示され、選択したベンダーの接続先・ログイン状態・プラン・操作の実行可否に画面が入れ替わること。有効なベンダーが1つのときは選択部品が出ず、従来の画面・操作と同じであること。
+- AdGuard VPNに接続中にモックプロバイダへ切り替えると確認ダイアログが出て、承諾すると実VPNが切断され（トンネルが消え、Kill Switch ONならLAN端末の通信が遮断される）、新ベンダーが選択中になること。拒否すると何も変わらないこと。切断に失敗した場合は元のベンダーのままで、原因が通知されること。
+- ベンダーを切り替えて戻しても、各ベンダーのログイン状態・お気に入り・「前回」の接続先が保持されていること。
+- 選択が再読み込み・別ブラウザでも共通であること。
+- ランナーを停止したベンダーが「利用不可」と理由付きで無効になり、選択できないこと。
+- 実VPNで、ネットワーク分離後も、透過ゲートウェイ・Kill Switch（切断・瞬断・ホスト再起動）・明示的プロキシ・接続先リスト・ログインが従来どおり動作すること（Phase 3・5・6のE2Eがリグレッションなく通る）。
+- ネットワークコンテナ（`proxy`）にベンダーCLIのバイナリが含まれないこと、各ランナーが自ベンダーのバイナリ以外を`403`で拒否すること。
 
 ## 検証手法
 
-Phase 3/5の実機検証環境（`GW_MODE=ssh`。Ubuntu 24.04・単一NIC・実LAN・実VPN（AdGuard VPN CLI、ログイン済み））で、Web UIをPlaywrightで操作して確認した。手順は`e2e/phase8/`に残してある。
-
-```sh
-GW_MODE=ssh bash e2e/lxc/sync.sh                          # 転送・ビルド・起動
-GW_MODE=ssh bash e2e/phase8/locations-scenarios.sh        # 全シナリオ
-```
-
-単体・コンポーネントテスト: api 86件・web 60件がすべて成功（`npx vitest run`）。
-
-## 検証結果（2026-09-21）
-
-`locations-scenarios.sh`が**46項目すべてPASS**（連続7回実行のうち6回が全PASS、下記の1回を除く）。
-
-| シナリオ | 確認内容 |
-|---|---|
-| list | 実CLIの接続先81件が都市単位で表示され、ping値が昇順（先頭4ms〜末尾350ms）。(Virtual)付き接続先の表示。再計測でping値が更新される（例: 先頭3件 4,28,55 → 5,23,59）。設定ダイアログにデフォルト接続国が無い |
-| filter | 国名（japan）・都市名（大文字小文字無視）・国コード（us）・複数語（us vegas）で絞り込み、該当なし案内、解除で全件復帰 |
-| favorite | ★登録→「お気に入り」タブにping順で表示→再読み込み後・別ブラウザコンテキストでも保持→解除で0件案内 |
-| connect | リストで`Shanghai (Virtual)`を選択して接続（接続時指定名は`Shanghai`）。接続中・前回バッジ、接続国表示、再読み込み後も保持。APIが`locationId`を返す |
-| change | 接続中の既定では［接続先を変更］なし→別の接続先を選ぶと出現（［切断］も残る）→現在の接続先を選び直すと消える→押下で切替→接続中バッジが移り1件のみ→ボタン消失 |
-| disconnect / last | 切断後も最後の接続先（Las Vegas）を記憶。再読み込み後にそれが選択済み・「前回」表示。リストを選択せず［接続］だけで接続 |
-| error-list | proxy停止中の再計測でリスト領域にエラーと再取得ボタン、接続中なら［切断］は可。復旧後の再取得で回復 |
-| 旧形式ファイル互換 | 実機に残っていた`defaultCountry`入りの`settings.json`を読み込んでも動作し、`GET /v1/connection/config`が返さず、更新後に保存ファイルからも消える |
-
-- 検証中に発見・修正した不具合: (1)隠したラジオ入力が`position:absolute`の基準を持たず、ページ全体の高さがリスト内の位置ぶん伸びていた（スクリーンショットで発見。`.location-row`を`position: relative`に）。(2)狭い幅でバッジが国名に重なっていた（バッジを都市名の行へ移動）。(3)`e2e/lxc/sync.sh`が手元で削除したファイルを転送先に残し、旧`connection-countries.ts`等でビルドが失敗した（`.env`以外を展開前に削除するよう変更）。
-- **原因不明の1回のFAIL**: 上記の連続実行のうち、手動でAPI操作（Seoulへ接続・お気に入り操作）した直後の1回で1項目がFAILした。出力を保存しておらず項目を特定できなかった。その後、同じ前提を再現した2回を含む6回連続で再現せず、原因は不明。ping計測・VPN確立のタイミング依存の可能性があるが未確認。再発した場合は出力を保存して調査すること。
-- 未検証: 実CLIの`connect -l`が同名都市を複数国に持つ場合（現在の一覧には存在しない）、ブラウザ認証を伴う初回ログイン後の初回一覧取得、複数ブラウザ・実スマートフォンでの表示（幅390pxのヘッドレスChromiumでの表示のみ確認）。検証ホストにCJKフォントが無くスクリーンショットの日本語は豆腐になるが、DOM上のテキストはE2Eで検証済み。
+- **単体・統合テスト**: `npm test`（proxy 101件・api 214件・web 92件）。APIの統合テストは2ベンダー（AdGuard VPN・モックProton）で、切替（接続中の自動切断・切断失敗の中止・ランナー利用不可の`502`・切替中の`409`・ベンダー別状態の独立）を検証する。
+- **モックE2E（開発ホストのdocker compose。実VPN不要）**: `bash e2e/phase8/provider-scenarios.sh`（27項目）。AdGuard VPN（ランナー同梱・未ログイン）とモックProton VPNの2ベンダーで、選択部品・切替・確認ダイアログ・別ブラウザでの共有・ベンダー別ログイン状態・ランナーの許可バイナリ（`403`）・ネットワークコンテナへのCLI非同梱・利用不可を確認。Phase 7の`bash e2e/phase7/mock-scenarios.sh`（36項目）も新構成（ランナー`runner-mock`）で通る。
+- **実VPN（AdGuard VPN・実LAN）**（検証環境`GW_MODE=ssh`。`e2e/lxc/sync.sh`で展開）:
+  - `bash e2e/phase8/real-switch-scenarios.sh`（10項目）: 実VPN接続中にモックへ切り替え → 実VPN切断・トンネル消滅・Kill Switch ONでLAN端末遮断 → 切り戻して再接続でVPN経由。
+  - リグレッション: `e2e/phase5/locations-scenarios.sh`（46項目）、`e2e/phase3/gateway-scenarios.sh A B C D E F`（C・D・Eは修正後の再実行で47項目PASS。A・B・Fは初回で通過）、`e2e/phase6/proxy-scenarios.sh`（A〜H・G。D修正後の再実行含む。全項目PASS）。
 
 ## 次フェーズへの申し送り
 
-- `GET /v1/connection/countries`・`defaultCountry`・プロファイルの`countries`は廃止した（破壊的変更。Web UIと同時にデプロイすること）。`countries`を手で編集する運用（`phase2.md`申し送り「経年劣化」）は不要になった。
-- 接続操作（`PUT /v1/connection`）は接続先IDの解決のため`list-locations`を再実行する（約1秒。接続自体に加算される。所要時間の増加は本フェーズでは計測していない）。問題になる場合はIDと接続時指定名の対応を短時間キャッシュする案がある（キャッシュすると一覧の鮮度と引き換えになるため、現時点では見送り）。
-- `(Virtual)`の除去は実CLI 1.7.12での実測に基づく。CLIのバージョンアップで表示名・指定名の規則が変わりうる（変わったときは`api/src/locations/location-id.ts`の`toConnectName`を見直す）。
-- お気に入りは認証がないため利用者全員で共有される。Phase 7で認証を導入する際は、利用者ごとの保存への変更を検討する。
-- ping値はCLIの推定値で、接続中に取得した値がトンネル経由か否かは未確認（値は接続中・切断中とも近い値だった）。
-- 接続ログ（`GET /v1/connection/log`）の接続先は`locationId`のslugから表示するため、都市名は小文字・ハイフン→空白の簡易表示になる（例: `US / las vegas`）。
+- （検証結果の要約）2026-09-21、上記の全ての完了基準を、モックE2E（27項目）・実VPN切替E2E（10項目）・実VPNリグレッション（phase5 46項目、phase3 C/D/E 47項目＋A/B/F、phase6 全項目）で確認した。**未実施: phase3のG（上流断）・H（ホスト再起動）**（ネットワークコンテナ・ランナーの`restart: always`は変更していないが、ランナー分離後の再実測はしていない）。
+- （実装中に判明した点）(1)旧形式の状態ファイルの移行は実機で確認済み（ログイン・お気に入り・「前回」が保持された）。(2)ランナーがVPNデーモンを持つため、Phase 3のシナリオD1（VPNデーモン消滅＋proxy再起動）は`proxy`と`runner-adguardvpn`の両方の再起動で再現する形へ改めた。(3)読み取り専用のバインドマウントの中へ単一ファイルを重ねられないため、モックランナーを使うE2Eはプロファイルを集めたディレクトリを`E2E_PROFILES_DIR`で渡す（`e2e/lib/e2e-profiles.sh`）。(4)`docker compose logs`が大きくなり、ログ全体をコマンドライン引数へ渡すE2Eが`Argument list too long`で失敗した（ファイル経由に修正）。(5)検証環境ではAdGuard VPNのjp（Tokyo）の出口IPが、LANの直接の出口IP（156.146.34.246）と一致する（tcpdumpでトンネル経由を確認）ため、「出口IPが直接と異なる」ことを見るE2E（phase3・phase6）は既定でus-las-vegasを使うよう改めた（`VPN_COUNTRY`）。(6)`e2e/phase3/webgui-connection.mjs`がPhase 5で廃止された「接続国」セレクトを前提にしたまま壊れていたため、接続先リストから選ぶ形へ改めた（phase3のC・D・Eの失敗の一因）。(7)コンテナ再作成直後の初回の実接続が原因不明で1回失敗した（`connect -l Shanghai`が終了コード13。再現せず。phase5にも同様の「原因不明のFAIL」の記録がある）。
+- （既知の限界）選択中でないベンダーの実VPN接続がAPIの管理外で残っている場合（例: API外でCLIを直接操作した）は、切替時に検出・切断しない（選択中のベンダーの`status`だけを見る）。
+- Phase 9（Proton VPN）は、本フェーズのランナー構成の上に`runner-protonvpn`を追加する形で行う（`wbs/phase9.md`。`proxy/docker-entrypoint.protonvpn.sh`・`networkmanager-vpngwgui.conf`・`api/config/profiles/protonvpn.json`は下書き）。

@@ -1,13 +1,13 @@
 #!/bin/bash
 # 責務: Raspberry Pi相当の検証機（実物のRaspberry Pi OS Lite arm64のrootfs・ユーザーランドを、QEMUのarm64システムエミュレーションで起動）を、
-#       Dockerだけで（root権限・KVM・qemuのホストへの導入なしで）作って操作する。インストーラ（Phase 13）のarm64・Raspberry Pi OSでの検証用。
-# 使い方: bash e2e/phase13/rpi-vm.sh <prepare|start|wait|ssh|stop|destroy> [ssh時はコマンド...]
+#       Dockerだけで（root権限・KVM・qemuのホストへの導入なしで）作って操作する。インストーラ（Phase 11）のarm64・Raspberry Pi OSでの検証用。
+# 使い方: bash e2e/phase11/rpi-vm.sh <prepare|start|wait|ssh|stop|destroy> [ssh時はコマンド...]
 #   prepare  イメージの取得（SHA256検証）・展開・ディスクの拡張・検証用ユーザーとSSH鍵の書き込み・qemuイメージのビルド・
 #            段階1のカーネルの取り出し
 #   start    VM起動（バックグラウンド。SSH: 127.0.0.1:$RPI_SSH_PORT、Web UI: 127.0.0.1:$RPI_WEB_PORT）。段階2のカーネルがあればそれを使う
 #   kernel   段階1で起動したVMの中にDebianの汎用カーネルを導入し、カーネル・initrdを取り出して、VMを段階2（そのカーネル）で再起動する
 #   wait     SSHでログインできるまで待つ（最大約20分。エミュレーションのため起動は遅い）
-#   ssh      VMへSSH（例: bash e2e/phase13/rpi-vm.sh ssh sudo sh -c 'uname -a'）
+#   ssh      VMへSSH（例: bash e2e/phase11/rpi-vm.sh ssh sudo sh -c 'uname -a'）
 #   stop     VMを停止（ディスクは残る）  destroy: VMとディスクを削除
 # 環境変数: RPI_VM_DIR（作業ディレクトリ。既定 ~/.cache/vpngwgui-rpi-vm）、RPI_VM_MEM（既定6G）、RPI_VM_CPUS（既定4）、
 #           RPI_VM_DISK（既定32G）、RPI_SSH_PORT（既定2222）、RPI_WEB_PORT（既定18081）、RPI_IMAGE_URL（Pi OSのimg.xzのURL）

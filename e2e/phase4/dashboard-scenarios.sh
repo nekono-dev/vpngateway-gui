@@ -1,7 +1,7 @@
 #!/bin/bash
-# 責務: Phase 5完了基準（wbs/phase5.md）を、Phase 3で構築した検証環境（実VPNログイン済みの
+# 責務: Phase 4完了基準（wbs/phase4.md）を、Phase 3で構築した検証環境（実VPNログイン済みの
 # ゲートウェイ役。e2e/lxc/sync.sh構築済み）上でWeb UI（Playwright）から検証する。
-# 実行: [GW_MODE=ssh] bash e2e/phase5/dashboard-scenarios.sh [国コード例: jp]
+# 実行: [GW_MODE=ssh] bash e2e/phase4/dashboard-scenarios.sh [国コード例: jp]
 # 前提: 実VPNベンダーへのログイン済み、透過ゲートウェイ・Kill Switchの設定は本スクリプトが初期化する。
 # 出力: 各検証をPASS/FAILで表示し、FAIL件数を終了コードにする。
 

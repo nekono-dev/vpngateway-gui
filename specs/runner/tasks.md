@@ -1,6 +1,6 @@
 # 実装タスク
 
-ランナーコンテナ（`runner-<ベンダー>`）のタスク。Phase 11より前は、ネットワークコンテナ（`proxy`。../proxyserver/tasks.md）と同居していたため、当時のタスク（モックCLI・内部コマンド受信サーバ・実VPNベンダーCLI統合）もここへ移した。以降の「proxy」は当時のコンテナ名で、現在のランナー実装は`proxy/`パッケージ内の`src/runner.ts`・`src/exec/`・`src/allowlist.ts`にある。
+ランナーコンテナ（`runner-<ベンダー>`）のタスク。Phase 8より前は、ネットワークコンテナ（`proxy`。../proxyserver/tasks.md）と同居していたため、当時のタスク（モックCLI・内部コマンド受信サーバ・実VPNベンダーCLI統合）もここへ移した。以降の「proxy」は当時のコンテナ名で、現在のランナー実装は`proxy/`パッケージ内の`src/runner.ts`・`src/exec/`・`src/allowlist.ts`にある。
 
 ## モックVPN CLI (Phase 1)
 
@@ -31,28 +31,28 @@
 - [x] ログイン代行バックグラウンドプロセスが認証完了後もCPUを消費し続ける不具合の修正（stdinを`"pipe"`化、`backgroundTimeoutMs`による安全装置追加。`command-runner.ts`・`command-runner.test.ts`参照）
 - [x] ログイン情報永続化がコンテナ再作成で失われる不具合の修正（原因はDockerブリッジネットワークのIPv6非透過。`network_mode: host`への移行をPhase3から前倒し。`docker-compose.yml`・`docker-entrypoint.sh`参照）
 
-## プロバイダ抽象化・複数プロバイダ対応（Phase 9・10）
+## プロバイダ抽象化・複数プロバイダ対応（Phase 7・9）
 
-（Phase 9の`EXTRA_ALLOWED_BINARIES`・`Dockerfile.adguardvpn`・`VPN_PROVIDER`によるproxyイメージの切替は、Phase 11で下記のランナー構成へ置き換えた。）
+（Phase 7の`EXTRA_ALLOWED_BINARIES`・`Dockerfile.adguardvpn`・`VPN_PROVIDER`によるproxyイメージの切替は、Phase 8で下記のランナー構成へ置き換えた。）
 
-- [x] （Phase 9）`POST /exec`の`stdin`対応（`runCommand`・入力検証・4096バイト上限・ログへ内容を出さない）と単体テスト
-- [x] （Phase 9）`EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）と単体テスト
-- [x] （Phase 9）モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）と`docker-compose.e2e-mock.yml`
-- [x] （Phase 9）`proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`VPN_PROVIDER`で切り替え可能にする
-- [x] （Phase 10）Proton VPN用ランナーのPoC（合否基準はdesign.md「Proton VPN用ランナー」）。基準1・4と2の一部まで合格（実ログインが必要な基準2の残り・3・5は検証待ち。2026-09-21）
-- [x] （Phase 10）`proxy/Dockerfile.runner-protonvpn`・エントリポイント・NM設定・`docker-compose.yml`の`runner-protonvpn`サービス・`RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn`
-- [x] （Phase 10）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持。有料版は未検証。`wbs/phase10.md`）
+- [x] （Phase 7）`POST /exec`の`stdin`対応（`runCommand`・入力検証・4096バイト上限・ログへ内容を出さない）と単体テスト
+- [x] （Phase 7）`EXTRA_ALLOWED_BINARIES`（E2E専用の追加許可バイナリ）と単体テスト
+- [x] （Phase 7）モックプロバイダCLI（`proxy/mock-cli/protonvpn-mock.mjs`。公式CLI 1.0.3のソースに基づく出力・終了コードで、無料/有料・ログイン状態を模擬）と`docker-compose.e2e-mock.yml`
+- [x] （Phase 7）`proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`VPN_PROVIDER`で切り替え可能にする
+- [x] （Phase 9）Proton VPN用ランナーのPoC（合否基準はdesign.md「Proton VPN用ランナー」）。基準1・4と2の一部まで合格（実ログインが必要な基準2の残り・3・5は検証待ち。2026-09-21）
+- [x] （Phase 9）`proxy/Dockerfile.runner-protonvpn`・エントリポイント・NM設定・`docker-compose.yml`の`runner-protonvpn`サービス・`RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn`
+- [x] （Phase 9）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持。有料版は未検証。`wbs/phase9.md`）
 
-## ランナーの分離（Phase 11）
+## ランナーの分離（Phase 8）
 
 - [x] `proxy/src/runner.ts`（ランナー: `POST /exec`・`GET /health`。許可バイナリは`RUNNER_ALLOWED_BINARY`の1つのみ）と、`exec/exec-handler.ts`・UDS待受・JSON入出力・監査ログの共有モジュール化（`lib/`）。単体テスト（`allowlist.test.ts`・`exec/exec-handler.test.ts`）
 - [x] `EXTRA_ALLOWED_BINARIES`の廃止と`RUNNER_ALLOWED_BINARY`への置換
 - [x] `proxy/Dockerfile.runner-adguardvpn`（従来のAdGuard用から分離。`RUNNER_ALLOWED_BINARY`を焼き込み）・`Dockerfile.runner-mock`（E2E専用）のビルド確認
 - [x] `docker-compose.yml`の`runner-adguardvpn`サービス、`docker-compose.e2e-mock.yml`の`runner-mock`サービス（`profiles`・ボリューム・ソケット名）
-- [x] 実VPN（AdGuard）で、ランナー分離後も接続・切断・ログイン・接続先一覧が従来どおり動くことの確認（`e2e/phase8`のリグレッション）
-- [x] 各ランナーが自ベンダーのバイナリ以外を`403`で拒否することの、実コンテナでの確認（`e2e/phase11/provider-scenarios.sh`。2026-09-21）
+- [x] 実VPN（AdGuard）で、ランナー分離後も接続・切断・ログイン・接続先一覧が従来どおり動くことの確認（`e2e/phase5`のリグレッション）
+- [x] 各ランナーが自ベンダーのバイナリ以外を`403`で拒否することの、実コンテナでの確認（`e2e/phase8/provider-scenarios.sh`。2026-09-21）
 
-## ベンダーバンドル化（Phase 12）
+## ベンダーバンドル化（Phase 10）
 
 - [x] `vendors/<ID>/`へ移動: `Dockerfile`・`entrypoint.sh`・付属の設定（NM設定）・`compose.yml`（`runner-<ID>`・ボリューム。`profiles`廃止）・`profile.json`
 - [x] E2E用モックベンダーをバンドル化（`e2e/vendors/mockproton/`。Dockerfile・compose・モックCLI・プロファイル）

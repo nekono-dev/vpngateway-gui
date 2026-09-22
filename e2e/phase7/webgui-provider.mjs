@@ -1,12 +1,12 @@
-// 責務: Phase 9（プロバイダ抽象化基盤・操作の実行可否によるUI制限）の完了基準を、モックプロバイダCLI
+// 責務: Phase 7（プロバイダ抽象化基盤・操作の実行可否によるUI制限）の完了基準を、モックプロバイダCLI
 // （Proton VPN公式CLIの挙動を模擬）に接続したWeb UIをPlaywrightで操作して検証する。
-// 実行: node e2e/phase9/webgui-provider.mjs <baseUrl> <step>
+// 実行: node e2e/phase7/webgui-provider.mjs <baseUrl> <step>
 //   unauth   : 未ログイン。接続が「ログインしてください」の理由付きで無効、ログインフォームが出る
 //   free     : 失敗するログイン→無料アカウントでログイン。プラン表示・接続先リストが理由の枠・自動接続・切断
 //   paid     : ログアウト→有料アカウントでログイン。国単位の一覧・ping無し・再計測は理由付きで無効・接続・接続先変更
 //   twofa    : 2FAが必要なアカウント（コード無しは失敗、有りは成功）
 //   learned  : 判定では有料に見えるが実行すると無料版の制限に当たる状況。403をトーストで通知し、以後の一覧が理由の枠になる
-// 前提: e2e/phase9/mock-scenarios.shが起動したモック構成（各ステップは順番に実行する前提の状態を引き継ぐ）。
+// 前提: e2e/phase7/mock-scenarios.shが起動したモック構成（各ステップは順番に実行する前提の状態を引き継ぐ）。
 
 import { launch, assert } from "../lib/playwright.mjs";
 

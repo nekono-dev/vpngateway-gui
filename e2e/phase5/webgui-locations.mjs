@@ -1,5 +1,5 @@
-// 責務: Phase 8（接続先選択UIの刷新）の完了基準を、実VPN・実proxyに接続したWeb UIをPlaywrightで操作して検証する。
-// 実行: node e2e/phase8/webgui-locations.mjs <baseUrl> <step> [引数...]
+// 責務: Phase 5（接続先選択UIの刷新）の完了基準を、実VPN・実proxyに接続したWeb UIをPlaywrightで操作して検証する。
+// 実行: node e2e/phase5/webgui-locations.mjs <baseUrl> <step> [引数...]
 //   list                    : 接続先が都市単位・ping昇順で表示される／再計測／設定ダイアログにデフォルト接続国が無い
 //   filter                  : 国名・都市名の絞り込み
 //   favorite <都市A> <都市B>: ★登録→「お気に入り」タブ（ping順）→再読み込み・別ブラウザでも保持→解除

@@ -1,45 +1,32 @@
-# Phase 14: プランで接続できる接続先の参考表示
-
-**【2026-09-21追加】** Phase 10（Proton VPN）の実機検証で、無料版は接続先を選べず自動接続のみだと分かった。利用者から「無料版で接続できる国の情報を取得して、Web UIに表示したい」という要望があり、追加する。実施順は他のPhaseと独立（Phase 12・13の実施状況に依らず実施できる。ただしPhase 12でベンダーバンドル化する際、本フェーズの`docker-compose.yml`の記述（キャッシュのマウント）とプロファイルの宣言は、そのバンドルへ移す対象）。
+# Phase 14: excludedDomains split-tunnel実処理
 
 ## 目的
 
-接続先を選べないプランで、自動接続でどの国・都市のサーバに繋がりうるかを、Web UIに参考として表示する。要件は`specs/requirements.md`「プランで接続できる接続先の参考表示」、設計は`specs/apiserver/design.md`「プランで接続できる接続先の参考一覧」・`specs/webserver/design.md`「プランで接続できる接続先の参考表示の実装方針」。
+ドメイン単位でVPNトンネルを迂回させる`excludedDomains`設定を、透過ゲートウェイモード・明示的プロキシモードの双方で実際に機能させる。proxyserver/design.mdで「実装時に別途詳細設計を行う」と留保された部分の詳細設計・実装を行う。
 
 ## 前提
 
-- Phase 9（プラン制限の判定）・Phase 10（Proton VPNのランナー・ログイン）完了。
-- 取得元: Proton VPN CLIがキャッシュするサーバ一覧（`serverlist.json`。CLIの`countries list`・`servers`には無料の別が無い）。実機で、`Tier`が`0`のサーバが無料、`Status`が`1`がオンラインと確認した（2026-09-21。無料版のログイン済みアカウントで10か国・都市付き）。
+- Phase3完了（nftables `inet vpngwgui`テーブルが稼働中）。
+- Phase6完了（3proxyが稼働中）。
+- 設定ダイアログの`excludedDomains`編集UIはPhase4までに実装済み。Phase4で追加する「未対応」暫定表示は、本フェーズ完了時に除去する（タスクに含める）。
 
 ## スコープ外
 
-- 接続先の指定（無料版では不可のまま）。
-- サーバの負荷・ドメイン・IPの表示（APIの応答にも含めない）。
-- 有料プランの一覧（有料は接続先リストが使える）。
-- キャッシュの更新の制御（CLIが更新する）。
+- IPv6対応は対象外（phase15.mdの将来課題）。
 
 ## 主要タスク
 
-### 設計・仕様（実装前）
-- [x] 要件・設計・タスクの記述（`specs/requirements.md`・`specs/apiserver/`・`specs/webserver/`）。**実装は、先に実装へ着手してしまい、指摘を受けて文書を先に書いた。設計は`Phase 12`（ベンダー非依存）の方針に合わせ、ベンダー固有の形式をコードに持たず、プロファイルの宣言で表す形にした。**
-
-### api（`specs/apiserver/tasks.md`）
-- [x] プロファイルスキーマ・`plan-locations.ts`（宣言に従う抽出・置き場の外の拒否・空へのフォールバック）・`GET /v1/connection/available-locations`・単体/統合テスト（api 230件）
-- [x] `docker-compose.yml`へキャッシュの読み取り専用マウントと`PROVIDER_CACHE_DIR`、Proton VPNプロファイルの宣言
-
-### web（`specs/webserver/tasks.md`）
-- [x] orval再生成・`useAvailableLocations`・`AvailableLocations`・`LocationList`への組み込み・コンポーネントテスト（web 94件）
-
-### 検証
-- [x] 実機（検証環境・Proton VPN無料アカウント）で、`GET /v1/connection/available-locations`が10か国（都市付き。日本語の国名、五十音順）を返す（2026-09-21）。
-- [x] 実機のWeb UI（ブラウザ）での表示確認（2026-09-22。検証環境`192.168.3.240`でベンダーをProton VPN（無料アカウント・ログイン済み）へ切替え、Playwright（`e2e/phase14/webgui-available-locations.mjs`）で「接続できる国（参考）」の一覧表示・件数の一致・先頭の国と都市の表示・操作可能要素が無いこと・自動接続の説明文をすべて確認（7項目PASS）。確認後、ベンダーをAdGuard VPNへ戻した）。
+- [ ] ドメイン単位除外のDNS解決・ルーティング反映方式の詳細設計（DNS TTLに追従した名前解決結果IPの動的反映方式を確定する）。
+- [ ] 3proxy側の除外設定実装（該当ドメイン宛の接続をVPN迂回で直接ルーティングする設定生成）。
+- [ ] 透過ゲートウェイ側の除外実装（名前解決結果IPをポリシールーティングでVPN迂回させる仕組み）。
+- [ ] DNS TTL満了に伴うルール更新の仕組み（定期的な再解決＋ルール再適用）。
+- [ ] 設定ダイアログの`excludedDomains`項目に表示している「未対応」暫定表示（Phase4で追加）の除去。
 
 ## 完了基準
 
-- 無料プランのProton VPNで、接続先リストの枠に理由文と、接続できる国・都市の参考一覧が出る（選択・操作はできない）。
-- 接続先リストが使えるプロバイダ・プランでは、取得も表示もしない。取得に失敗・空でも通知・エラーにせず、他の操作に影響しない。
-- 応答にサーバのドメイン・IP等を含まない。宣言の`file`が置き場の外を指せない。
+- `excludedDomains`に登録したドメインへの通信が、VPNトンネルを経由せず直接ルートで疎通することを確認する（透過ゲートウェイ・明示的プロキシ双方）。
+- 対象ドメインのDNS TTL満了後、IPアドレスが変わっても除外設定が追従することを確認する。
 
 ## 次フェーズへの申し送り
 
-- （実装中に判明した点）(1)検証環境で、利用者が別途Proton VPNへ再ログインしていた（一覧はログイン中のプランでのみ返る。未ログイン・有料は空）。(2)国名の並びは`Intl.DisplayNames`（ja）・五十音順（アメリカ合衆国が日本より前）。(3)Phase 12のバンドル化で、`docker-compose.yml`の`api`のマウント（`proton-cache`→`<PROVIDER_CACHE_DIR>/protonvpn`）はバンドルのcompose fragmentへ移す。
+- （Phase3/6完了後に実装しながら追記する）

@@ -1,12 +1,12 @@
 # システムの構成
 
-システムは、Webサーバ用のコンテナ、Webサーバの信号を受けてVPNクライアントのCLI命令へ変換するAPIコンテナ、ホストに対するプロキシサーバ（透過ゲートウェイ・Kill Switch・明示的プロキシ）として動作する**ネットワークコンテナ（`proxy`）**、およびVPNベンダーごとに用意しCLIを実行する**ランナーコンテナ（`runner-<ベンダー>`）**で構成する（Phase 11で、従来の「ベンダーごとに別のproxyコンテナ」から、ネットワーク制御とCLI実行の責務を分離した）。システムはdocker-composeによりサービス化する。
+システムは、Webサーバ用のコンテナ、Webサーバの信号を受けてVPNクライアントのCLI命令へ変換するAPIコンテナ、ホストに対するプロキシサーバ（透過ゲートウェイ・Kill Switch・明示的プロキシ）として動作する**ネットワークコンテナ（`proxy`）**、およびVPNベンダーごとに用意しCLIを実行する**ランナーコンテナ（`runner-<ベンダー>`）**で構成する（Phase 8で、従来の「ベンダーごとに別のproxyコンテナ」から、ネットワーク制御とCLI実行の責務を分離した）。システムはdocker-composeによりサービス化する。
 
 APIサーバから、ネットワークコンテナ・各ランナーコンテナへの制御は、SSHではなく、**各コンテナ内でのみlistenする内部専用HTTPサーバ**（ランナーは受け取ったテキスト＝解決済みコマンドをそのまま実行するのみ。OpenAPI等の仕様を持つ正式なAPIではない）を介して行う。この内部HTTPサーバは、コンテナ外部（LAN含む）から一切到達不能でなければならない。この制約を満たすため、TCP通信ではなく、APIコンテナと各コンテナ間で共有するDockerボリューム上に、コンテナごとに1つ配置したUnixドメインソケット（UDS）を通信経路とする（ネットワークコンテナ: `net.sock`、ランナー: `runner-<ベンダー>.sock`）。
 
 ネットワークコンテナは、透過ゲートウェイモードを実現するためホストのネットワーク名前空間を共有する必要があり（詳細はSPEC-PROXY.md）、`network_mode: host` を用いる。**ランナーコンテナも、ベンダーCLIが確立するトンネルインターフェースをホスト（ゲートウェイ）のネットワーク名前空間に作らせるため、`network_mode: host`・`NET_ADMIN`・`/dev/net/tun`を用いる**。docker-composeの仕様上 `network_mode: host` と `networks:`（ユーザー定義ブリッジ）は併用できないため、これらのコンテナは他コンテナと同一のDockerブリッジネットワークには参加できない。API⇄各コンテナ間の通信を前述のUDS方式に限定しているのはこの制約への対応でもある。
 
-インストーラ（`curl`1コマンドで、クリーンなDebian系ベアメタルへ導入・起動する。下記「インストーラと頒布（Phase 13）」）が、ホスト（VPNゲートウェイ）に届く通信を、内部のプロキシコンテナを通して外部通信するように設定を行う。設定はコマンドではなく設定値ベースで行う。
+インストーラ（`curl`1コマンドで、クリーンなDebian系ベアメタルへ導入・起動する。下記「インストーラと頒布（Phase 11）」）が、ホスト（VPNゲートウェイ）に届く通信を、内部のプロキシコンテナを通して外部通信するように設定を行う。設定はコマンドではなく設定値ベースで行う。
 
 プロキシコンテナは `restart: always` 等により永続稼働するデーモンとなるため、永続化が必要な設定（例: IPフォワーディングの有効化）はインストールスクリプトが一度だけ行い、ホスト上のファイルとして最小限の数に絞って残す。一方、VPN接続のたびに変わるトンネルインターフェース名に依存するNAT/FORWARDルールのように、静的ファイルとして表現できず実行時に変化する値は、プロキシコンテナ起動中のプロセスが動的に適用・撤去する。
 
@@ -35,7 +35,7 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 
 ランナーコンテナ（`runner-<ベンダー>`。要件・設計・タスクは`runner/`）は、そのベンダーのCLIを実行する環境と、実行要求の受け口（許可リストで自ベンダーのバイナリのみ許可する内部HTTPサーバ）だけを持つ。CLIが確立するトンネルをホストのネットワーク名前空間に作るため`network_mode: host`で動くが、透過ゲートウェイ・Kill Switch・明示的プロキシには関与しない。
 
-# プロバイダ抽象化アーキテクチャ（Phase 9・10）
+# プロバイダ抽象化アーキテクチャ（Phase 7・9）
 
 プロバイダ（AdGuard VPN・Proton VPN等）ごとの機能差・プラン制限を、コードの分岐ではなく**管理者向け設定（プロファイル）のデータ**として表現する。APIサーバは「操作（オペレーション）」単位の実行可否（capability）を計算してWebサーバへ返し、Webサーバはそれに従ってUIを制限する。
 
@@ -54,7 +54,7 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 - 判定に失敗・不能な場合は制限しない（fail-open）。実行時にCLIが失敗した場合の出力が`restrictedPattern`に一致すれば、以後その操作を制限として学習する（`403 operation_restricted`）。
 - ログイン方式は`loginMethod`（`deviceUrl`: URL提示型 / `credentials`: ユーザー名・パスワード入力型）で宣言する。
 
-## ベンダーの選択と実行基盤（Phase 11）
+## ベンダーの選択と実行基盤（Phase 8）
 
 Web UI利用者が、管理者の有効化したベンダーの中から使うベンダーを選ぶ（`specs/requirements.md`「VPNベンダーの選択（Web UI）」）。接続は常に1ベンダーのみ（切替式）。
 
@@ -78,24 +78,24 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 | ランナーイメージ | `vendors/adguardvpn/Dockerfile`（Alpine。単体バイナリ同梱） | `vendors/protonvpn/Dockerfile`（Ubuntu。CLI・NetworkManager・D-Bus・keyringを同梱） |
 | composeのサービス | `runner-adguardvpn`（`vendors/adguardvpn/compose.yml`） | `runner-protonvpn`（`vendors/protonvpn/compose.yml`） |
 
-Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 10の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細は`runner/design.md`「Proton VPN用ランナー」、`wbs/phase10.md`）。
+Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 9の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細は`runner/design.md`「Proton VPN用ランナー」、`wbs/phase9.md`）。
 
-# ベンダー非依存の設計原則（Phase 12）
+# ベンダー非依存の設計原則（Phase 10）
 
 要件は`requirements.md`「ベンダー非依存性」。本番のソースコード（`api/src`・`proxy/src`・`web/src`・`web/server`・`install/`・composeの本体・共通のDockerfile）は、ベンダーのID・名称・CLIの書式を持たず、ベンダーに対する分岐をしない。差はプロファイルとベンダーバンドルだけに置く。
 
-## 抽象化の対応表（Phase 11までのベンダー固有の埋め込みの置き場所）
+## 抽象化の対応表（Phase 8までのベンダー固有の埋め込みの置き場所）
 
 | 従来のベンダー固有の埋め込み | 抽象化後 |
 |---|---|
 | 有効なベンダーの既定値（API・composeとも`adguardvpn`） | 既定を持たない。`VPN_PROVIDERS`が無ければ失敗する |
-| 旧形式の状態ファイルの移行先（`adguardvpn`固定） | 移行処理を廃止する（未リリースで、実機はPhase 11で移行済み） |
+| 旧形式の状態ファイルの移行先（`adguardvpn`固定） | 移行処理を廃止する（未リリースで、実機はPhase 8で移行済み） |
 | 接続先の表の列名の既定（`ISO/COUNTRY/CITY/PING`） | `listLocations.table`を必須にする |
 | 接続時の指定名の加工（`(Virtual)`の除去） | `listLocations.connectName`（`{ from: "city"\|"iso", stripPattern? }`）。加工はプロファイルの`stripPattern`で表す |
 | 接続状態の判定語（`connected`）と接続先の既定の書式 | `output.connectedPattern`・`output.locationPattern`を、text形式で必須にする |
 | ログイン方式の既定（`deviceUrl`） | `loginMethod`を必須にする |
 | ログインの標準入力の書式（パスワード→2FAの順、2FAの形式） | `login.stdin`（行のテンプレート。空の行は出さない）と、プレースホルダーの`source: "secret"` |
-| 静的な列挙値（`enumFrom`。`<ベンダー名>.<項目>`形式） | 廃止（Phase 8以降、どのプロファイルも使わない） |
+| 静的な列挙値（`enumFrom`。`<ベンダー名>.<項目>`形式） | 廃止（Phase 5以降、どのプロファイルも使わない） |
 | composeへのランナー・ボリュームの直書き、`profiles`・AdGuardだけの特例 | ベンダーバンドルのcompose fragment。全ベンダーを同じに扱う |
 | `proxy/`直下のベンダー別ファイル（Dockerfile・エントリポイント・NM設定） | ベンダーバンドルへ移す |
 
@@ -124,7 +124,7 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 - **中立性の検査**（`scripts/check-vendor-neutrality.mjs`。ルートの`npm test`から実行する）: 対象は、`api/src`・`proxy/src`・`web/src`・`web/server`・`api/scripts`・`install/`・`docker-compose.yml`・共通のDockerfile・共通のエントリポイントのうち、テストファイル（`*.test.*`）・生成物・依存物を除いたファイル。**コメントも検査する。** 禁止語は、`vendors/*/profile.json`の`vendor`・`displayName`・`binary`のファイル名から動的に作り、加えて`scripts/vendor-neutrality.words`（まだバンドルが無い既知のベンダー名。要件書に登場するもの）を足す。大文字小文字は区別しない。1件でも見つかれば失敗する。
 - **バンドルの適合テスト**（`api/src/profile/vendor-samples.test.ts`）: `vendors/*/profile.json`をすべて読み込み検証し、`samples.json`の各ケースを、共通のパーサー・判定処理へ流して期待値と照合する。ベンダーごとの出力の知識がバンドルに閉じる。
 
-# インストーラと頒布（Phase 13）
+# インストーラと頒布（Phase 11）
 
 要件は`requirements.md`「インストール」。クリーンなDebian系ベアメタルへ、1コマンドで導入・起動する。**インストーラは2層**で、利用者が実行するのは頒布される1本のブートストラップだけである。
 
@@ -195,7 +195,7 @@ APIサーバは Fastify + TypeBox + `@fastify/swagger` を用い、TypeBoxで定
 
 # 実装フェーズ
 
-実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase13.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 12 → 13 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 5をPhase 4より前に前倒し。`wbs/README.md`参照）。
+実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase11.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 12 → 13 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 4をPhase 6より前に前倒し。`wbs/README.md`参照）。
 
 | 項目 | 最終形（本ファイル） | Phase 1（wbs/phase1.md） |
 |---|---|---|
