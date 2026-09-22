@@ -77,6 +77,20 @@ printf 'VPN_PROVIDERS=vendora\n' > "$FAKE/.env"
 check "--providers省略時: 既存の.envのVPN_PROVIDERSが一部でも、全ベンダー（all）になる" test "$(setup_providers_with '')" = "vendora,vendorb"
 rm -f "$FAKE/.env"
 
+# --- Web UIのポート（--web-port）
+# 目的: setup_web_port を実行し、決定されたWEB_PORTを返す。 入力: WEB_PORT_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。
+setup_web_port_with() {
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; WEB_PORT_ARG='$1'; setup_web_port >/dev/null; printf '%s' \"\$WEB_PORT\""
+}
+check "--web-port省略時・.env未設定: 既定（80）になる" test "$(setup_web_port_with '')" = "80"
+check "--web-port指定時: 指定した値になる" test "$(setup_web_port_with '8080')" = "8080"
+printf 'WEB_PORT=8443\n' > "$FAKE/.env"
+check "--web-port省略時: .envの既存値を使う" test "$(setup_web_port_with '')" = "8443"
+rm -f "$FAKE/.env"
+check "--web-port: 範囲外（0）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; WEB_PORT_ARG=0; setup_web_port' >/dev/null 2>&1"
+check "--web-port: 範囲外（65536）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; WEB_PORT_ARG=65536; setup_web_port' >/dev/null 2>&1"
+check "--web-port: 数字以外は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; WEB_PORT_ARG=abc; setup_web_port' >/dev/null 2>&1"
+
 # --- アンインストール（root・Docker・systemdが要らない範囲。ホスト設定の実際の削除はE2Eで検証する）
 check "uninstall_stack: docker-compose.ymlが無ければ何もしない（root不要）" sh -c "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; uninstall_stack' | grep -q '対象なし'"
 

@@ -15,6 +15,7 @@ curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download
 | 引数 | 意味 |
 |---|---|
 | `--providers <ID>[,<ID>...]` | 有効にするベンダー（`vendors/<ID>/`のディレクトリ名）。省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする |
+| `--web-port <番号>` | Web UIを配信するホスト側のポート番号（1〜65535）。既定は80 |
 | `--lan-iface <名前>` | LAN側インターフェース名を指定する。自動検出できない場合、または複数NICがある場合に指定する |
 | `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を破棄し、再検出する。VPN未接続の状態で実行する |
 | `--no-start` | インストール後にコンテナを起動しない |
@@ -33,6 +34,7 @@ sudo sh /opt/vpngwgui/install/install.sh --providers adguardvpn
 |---|---|
 | アップデート | インストールコマンドを再実行する。 |
 | 有効なベンダーを絞る・増やす | `--providers`に有効にしたいベンダーだけを指定して再実行する |
+| Web UIのポートを変更する | `--web-port`に変更後のポート番号を指定して再実行する。省略した場合は現在の設定を維持する |
 
 ## 注意事項
 

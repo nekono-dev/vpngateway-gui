@@ -10,9 +10,10 @@
 #   5. ベンダー固有のホスト側手順（vendors/<ID>/install-host.sh。あるベンダーだけ）  6. 起動と待機  7. 完了の表示
 # --uninstall指定時は上記を行わず、代わりにこのインストーラが導入・作成したものを後始末する（下記「--uninstall」参照）。
 #
-# 使い方（root権限で）: sh install/install.sh --providers <ID>[,<ID>...] [--lan-iface <名前>] [--redetect-lan-iface] [--no-start]
+# 使い方（root権限で）: sh install/install.sh --providers <ID>[,<ID>...] [--web-port <番号>] [--lan-iface <名前>] [--redetect-lan-iface] [--no-start]
 #   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
 #                           （新しい版で追加されたベンダーも、再実行のたびに自動的に有効化される）。
+#   --web-port             Web UIを配信するホスト側のポート番号（1〜65535）。省略時は、.envの既存値（無ければ80）を使う。
 #   --lan-iface            LAN側インターフェース名を指定する（自動検出できない・複数NICの場合）。
 #   --redetect-lan-iface   保存済みのLAN側インターフェース名を捨てて再検出する。
 #   --no-start             起動（docker compose up）をしない。
@@ -34,9 +35,10 @@ ENV_FILE="$REPO_ROOT/.env"
 VENDORS_DIR="$REPO_ROOT/vendors"
 SYSCTL_FILE="/etc/sysctl.d/99-vpngwgui.conf"
 GUARD_UNIT="/etc/systemd/system/vpngwgui-boot-guard.service"
-WEB_PORT=8080
+WEB_PORT_DEFAULT=80
 
 PROVIDERS_ARG=""
+WEB_PORT_ARG=""
 LAN_IFACE_ARG=""
 REDETECT_LAN=0
 NO_START=0
@@ -60,6 +62,8 @@ parse_args() {
     case "$1" in
       --providers) [ "$#" -ge 2 ] || die "--providers には値が必要です"; PROVIDERS_ARG=$2; shift 2 ;;
       --providers=*) PROVIDERS_ARG=${1#*=}; shift ;;
+      --web-port) [ "$#" -ge 2 ] || die "--web-port には値が必要です"; WEB_PORT_ARG=$2; shift 2 ;;
+      --web-port=*) WEB_PORT_ARG=${1#*=}; shift ;;
       --lan-iface) [ "$#" -ge 2 ] || die "--lan-iface には値が必要です"; LAN_IFACE_ARG=$2; shift 2 ;;
       --lan-iface=*) LAN_IFACE_ARG=${1#*=}; shift ;;
       --redetect-lan-iface) REDETECT_LAN=1; shift ;;
@@ -211,6 +215,26 @@ setup_lan_iface() {
   esac
   env_set LAN_IFACE "$LAN_IFACE"
   log "LAN側インターフェース: $LAN_IFACE"
+}
+
+# 目的: Web UIを配信するホスト側のポート番号を決めて.envへ書く。
+# 入力: グローバル変数 WEB_PORT_ARG。
+# 出力: グローバル変数 WEB_PORT（docker composeの.envとしても読まれる。ports: "${WEB_PORT:-80}:8080"）。
+# 優先順: --web-port ＞ .envの既存値 ＞ 既定（80）。
+# 失敗時: 1〜65535の整数でなければ終了する。
+setup_web_port() {
+  if [ -n "$WEB_PORT_ARG" ]; then
+    WEB_PORT=$WEB_PORT_ARG
+  else
+    WEB_PORT=$(env_get WEB_PORT)
+    [ -n "$WEB_PORT" ] || WEB_PORT=$WEB_PORT_DEFAULT
+  fi
+  case "$WEB_PORT" in
+    ''|*[!0-9]*) die "不正なポート番号です: $WEB_PORT" ;;
+  esac
+  [ "$WEB_PORT" -ge 1 ] && [ "$WEB_PORT" -le 65535 ] || die "不正なポート番号です: $WEB_PORT（1〜65535で指定してください）"
+  env_set WEB_PORT "$WEB_PORT"
+  log "Web UIのポート: $WEB_PORT"
 }
 
 # 目的: 起動時のKill Switchガード（systemd oneshot）を作成・有効化する。
@@ -423,6 +447,7 @@ main() {
   install_docker
   setup_sysctl
   setup_lan_iface
+  setup_web_port
   setup_boot_guard
   setup_providers
   run_host_hooks

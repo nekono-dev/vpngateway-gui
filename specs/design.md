@@ -162,11 +162,11 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 1. **事前検査**: root、Debian系（`/etc/os-release`の`ID`・`ID_LIKE`）、systemd、CPU（Dockerの公式リポジトリが対応するamd64・arm64・armhfのうち、Debian系の対応するもの）。満たさなければ理由を示して失敗する。
 2. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
 3. **ホストの設定**: `/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
-4. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`VPN_PROVIDERS`、`COMPOSE_FILE`。
+4. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`WEB_PORT`（Web UIを配信するホスト側のポート。優先順は`--web-port` ＞ `.env`の既存値 ＞ 既定80。`docker-compose.yml`の`services.web.ports`が`"${WEB_PORT:-80}:8080"`で参照する。コンテナ内は常に8080固定）、`VPN_PROVIDERS`、`COMPOSE_FILE`。
 5. **ベンダーの決定（Phase 17改訂）**: `--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
 6. **ベンダーのホスト側手順**: 有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
 7. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。Web UIが応答するまで待つ（最大約3分）。
-8. **完了の表示**: Web UIのURL（`http://<LAN側アドレス>:8080`）、有効なベンダー、次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）。
+8. **完了の表示**: Web UIのURL（`http://<LAN側アドレス>:<WEB_PORT>`）、有効なベンダー、次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）。
 
 **`install-host.sh`の契約**（ベンダーバンドルの任意ファイル）: rootで`sh`により実行される。冪等で、非対話であること。実行時の環境変数`VPNGW_ROOT`（取得先）・`VPNGW_VENDOR_ID`が与えられ、カレントディレクトリはバンドルのディレクトリ。ホスト（ベアメタル）へ導入・設定するのはこのファイルだけで、共通インストーラはその内容を知らない。非ゼロ終了はインストールの中止を意味する。現在のバンドル（AdGuard VPN・Proton VPN）は、ホストの追加導入が不要なため、このファイルを持たない（実行環境は全てランナーのコンテナに閉じている）。
 
