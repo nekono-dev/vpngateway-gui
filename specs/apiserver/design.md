@@ -618,3 +618,33 @@ CN    China                Shanghai (Virtual)             59
 ### ファイル配置（AGENTS.mdの規約）
 
 - `api/src/locations/plan-locations.ts`（抽出。純粋関数＋ファイル読み取り）、`api/src/routes/connection-available-locations.ts`（ルート）、`api/src/profile/profile.schema.ts`（スキーマ）。
+
+## プランの補足情報の参考表示（Phase 15）
+
+要件は`requirements.md`「プランの補足情報の参考表示」。契約プランには、実行可否とは別に、利用者向けの補足情報（例: 今月分の残りデータ通信量）が付随する場合がある（`specs/requirements.md`「プラン制限のバリエーション」）。`account`の出力から抽出し、追加のコマンド実行を要求しない。
+
+### プロファイルの拡張（`account.plans[].usageNote`、省略可）
+
+```json
+"usageNote": {
+  "pattern": "(You have .+ left for this month)"
+}
+```
+
+| 項目 | 内容 |
+|---|---|
+| `pattern` | `account`の出力（標準出力・標準エラーの連結、ANSI除去済み）に対する正規表現（フラグ`im`）。**第1キャプチャグループ**の文字列を、そのまま利用者向けの表示文として使う。単位・文言はベンダーの出力そのものであり、APIサーバは意味を解釈しない（数値への変換・比較・警告の判定はしない）。 |
+
+- マッチしない場合は補足情報なし（省略）。プラン判定自体（`pattern`によるプランの特定）には影響しない。
+
+### `evaluateAccountOutput`の拡張
+
+- プランが確定した後、そのプランの`usageNote.pattern`を同じ出力に対して評価し、一致すればキャプチャを`SessionInfo.plan.usageNote`に設定する。`usageNote`が省略されている、または一致しなければ`SessionInfo.plan.usageNote`は省略する。
+
+### `GET /v1/session`の応答拡張
+
+- `plan`に`usageNote`（省略可の文字列）を追加する: `{ "loginMethod", "loggedIn"?, "plan"?: { "id", "label", "usageNote"? } }`。
+
+### 検討し、採用しなかった案
+
+- **`connect`・`listLocations`の`restrictedPattern`で「無料プランの接続先制限」を検出する案**: AdGuard VPNの実機検証（2026-09-22）で、無料プランで一覧に無い接続先を指定した`connect`の失敗は`Failed to start the VPN service in the background: Disconnected`（exit 13）であり、Proton VPNの`not available on the free plan`のような、プラン制限に固有の文言を持たない。他の失敗理由（一時的なサーバ障害等）と区別できないため、`restrictedPattern`として宣言しない。接続先の選択はWeb UIが`listLocations`の結果（無料プランでは既に絞り込まれた一覧）からのみ行わせる設計のため、一覧に無い接続先を指定する操作自体が通常のUI操作では発生しない。

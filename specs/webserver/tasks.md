@@ -98,6 +98,13 @@
 - [x] `AvailableLocations`と`LocationList`への組み込み、コンポーネントテスト
 - [ ] Web⇄API（Proton VPN相当のモック）でのE2E（コンポーネントテストで代替。実機のブラウザ表示は利用者の目視待ち）
 
+## プランの補足情報の参考表示（Phase 15、未着手）
+
+- [ ] orval再生成（`GET /v1/session`の`plan.usageNote`）
+- [ ] `SessionCard.tsx`へ、プラン名への`usageNote`の併記を実装（無ければ何も追加しない）
+- [ ] コンポーネントテスト（`usageNote`あり/なし）
+- [ ] 実機（検証環境・AdGuard VPN無料アカウント）でのブラウザ表示確認
+
 # 将来課題
 
 - 認証UI（ログイン画面等）の追加。現時点では認証なし・LAN限定運用のため未実装。

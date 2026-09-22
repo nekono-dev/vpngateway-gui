@@ -113,3 +113,10 @@
 - **取得**: `useAvailableLocations(enabled, providerId)`（`hooks/useAvailableLocations.ts`）が`GET /v1/connection/available-locations`を取得する。`enabled`は「接続先リストが制限されている（`locationList`が使えない）」のとき。ベンダー切替・`enabled`がtrueになったときに取得する（ポーリングしない）。ベンダー切替で前のベンダーの結果を捨てる（世代管理は`useLocations`と同じ）。失敗・空は「表示なし」として扱い、通知しない。
 - **表示**: `AvailableLocations`（`components/dashboard/AvailableLocations.tsx`）が、国名と都市の一覧を、操作できない要素（`ul`）として描く。`LocationList`は、`unavailableReason`の理由文（`RestrictionNote`）の直後に、渡された一覧があればこれを描く。
 - 一覧が変わるのはプラン変更（再ログイン）時のため、ログイン状態（`GET /v1/session`のプラン）が変わったときにも再取得する。
+
+## プランの補足情報の参考表示の実装方針（Phase 15）
+
+要件は`requirements.md`「ログイン導線」（プラン名への補足併記）。追加の取得は行わず、`SessionCard.tsx`が既に持つ`GET /v1/session`の応答（`plan.usageNote`）をそのまま使う。
+
+- `SessionCard.tsx`が、プラン名の表示に`plan.usageNote`があれば括弧書きで併記する（例: 「Free（残り3.00 GBです ...）」のように、CLIの文言をそのまま出す。Webサーバは意味を解釈・翻訳しない）。無ければ何も追加しない。
+- 単なるテキスト表示のため、独立したフックやコンポーネントは設けない（`AvailableLocations`のような専用取得・専用部品は不要）。

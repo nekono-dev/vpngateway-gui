@@ -119,6 +119,15 @@
 - [x] `docker-compose.yml`の`api`へキャッシュボリュームの読み取り専用マウントと`PROVIDER_CACHE_DIR`
 - [x] Proton VPNプロファイルへの宣言の追加
 
+## プランの補足情報の参考表示（Phase 15、未着手）
+
+- [ ] `profile.schema.ts`の`PlanDefSchema`へ`usageNote`（`{ pattern: string }`、省略可）を追加
+- [ ] `session-probe.ts`の`evaluateAccountOutput`で、確定したプランの`usageNote.pattern`を出力に対して評価し、一致すれば`SessionInfo.plan.usageNote`へキャプチャを設定
+- [ ] `schemas/session.ts`（`SessionStateSchema`）・`routes/session.ts`（`GET /v1/session`）へ`plan.usageNote`を反映
+- [ ] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加（実機確認済みの出力形式に基づく。`wbs/phase15.md`「次フェーズへの申し送り」参照）
+- [ ] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプル（`license`のFREE版出力、`list-locations`の10件、`connect`失敗（一覧外指定）を追加。`connect`失敗は`restrictedPattern`として宣言しない（設計は`specs/apiserver/design.md`「検討し、採用しなかった案」参照）
+- [ ] 単体テスト: `session-probe.test.ts`（`usageNote`の抽出）、`profile-loader.test.ts`（不正な`usageNote.pattern`の拒否）、`vendor-samples.test.ts`（AdGuard VPNの無料版サンプル）
+
 ## ベンダー非依存化（Phase 12）
 
 - [x] プロファイルスキーマの明示化: `loginMethod`必須、text形式で`output.connectedPattern`・`output.locationPattern`必須、`listLocations.table`・`connectName`必須、`login.stdin`と`source: "secret"`（`optional`）。`enum`・`enumFrom`の削除。ロード時の検証（正規表現の妥当性、`secret`をargvに置かない、`secret`の`pattern`が制御文字を許さない）
