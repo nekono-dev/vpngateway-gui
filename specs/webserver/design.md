@@ -232,3 +232,18 @@
 - `web/public/manifest.webmanifest`（Webアプリマニフエスト）を追加し、アプリ名・アイコン（`/icons/icon-192.png`・`icon-512.png`・`icon-maskable-512.png`・`apple-touch-icon.png`。外部の画像編集ツールに依存せず、Node標準の`zlib`のみでPNGを生成するビルド前のワンショットスクリプトで作成し、リポジトリには生成済みのPNGを配置する）・`display: standalone`・`theme_color`等を定義する。`index.html`に`<link rel="manifest">`・`<meta name="theme-color">`・`<link rel="apple-touch-icon">`等を追加する。
 - `web/public/sw.js`（Service Worker）を追加し、`/api/*`は常に最新の状態を扱う必要があるためキャッシュ対象から除外し、アプリの静的シェル（`index.html`・`manifest.webmanifest`等）のみをキャッシュ優先（取得後に裏で更新）で扱う。`main.tsx`が`window`の`load`イベントで`navigator.serviceWorker.register("/sw.js")`を呼ぶ（`"serviceWorker" in navigator`で対応環境のみ）。
 - **制約**: Service Workerの登録（`navigator.serviceWorker`自体の存在）は、ブラウザのセキュアコンテキスト要件により、配信がHTTPSまたは`localhost`でなければ有効化されない。検証環境（`http://192.168.3.240:8080`、LAN IPへの素のHTTP配信）で確認したところ、`window.isSecureContext`が`false`となり`navigator.serviceWorker`自体が存在しない（実機確認、2026-09-22）。本フェーズはこの制約を認識のうえ、資材（manifest・アイコン・Service Worker本体・登録コード）を用意することまでをスコープとし、配信のHTTPS化は別途の判断（利用者へ確認のうえ、スコープ外とした）とする。
+
+# ログインボタンもプルダウンの隣へ・入力欄の枠線色をボタン同等の薄さへの実装方針（Phase 24）
+
+要件は`requirements.md`「ログインボタンもプルダウンの隣へ・入力欄の枠線色をボタン同等の薄さへ」。
+
+## 資格情報入力型ログインのボタン化
+
+- `SessionCard.tsx`に、資格情報入力型ログインでフォームを開いたかを保持するローカル状態`showCredentialsForm`（既定`false`）を追加する。ベンダーが替わったときは`App.tsx`側の`key={`provider-${activeProviderId}`}`による再マウントで自動的に初期化される（Phase 21以来の既存の仕組みをそのまま使う。専用のリセット処理は追加しない）。
+- `session-action`（プルダウンと同じ行）に表示する「ログイン」ボタンの押下時の挙動を、`loginMethod`で分岐する: URL提示型（`deviceUrl`）は従来どおり`handleLogin()`を直接呼ぶ。資格情報入力型（`credentials`）は`setShowCredentialsForm(true)`のみを行い、実際のログイン要求（`POST /v1/session`）は呼ばない（フォーム自身の送信で行う。既存の`LoginForm.tsx`・`handleLogin(credentials)`は変更しない）。
+- ボタンの表示文言は、資格情報入力型は「ログイン」（フォームの送信ボタンと同じ表示だが、フォームを開いた後はこのボタン自体を消すため、画面上で表示名が重複することはない）、URL提示型は従来どおり「VPNベンダーへログイン」のまま維持する（過去のE2Eスクリプト・仕様書内の参照文言との互換のため、あえて統一しない）。
+- `session-extra`側の`LoginForm`の表示条件に`showCredentialsForm`を追加し、ボタンを押すまでフォーム（ユーザー名・パスワード等の入力欄）を表示しないようにする。
+
+## 入力欄の枠線色をボタン同等の薄さへ
+
+- `styles.css`の`:root`の`--input-border`を、Phase 23で定めたグレー（`#6e7781`）から、ボタンの枠線色である`--border`（`#d0d7de`）と同じ値へ変更する。他の箇所（入力欄全般、プルダウン）への変更は不要（CSS変数を参照しているため自動的に追従する）。
