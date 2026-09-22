@@ -69,7 +69,8 @@ export function LocationList({
   if (unavailableReason !== undefined) {
     return (
       <>
-        <RestrictionNote message={unavailableReason} />
+        {/* ConnectButtonが同じ理由文のときaria-describedbyで参照する固定id（webserver/design.md「制限理由の重複表示の解消」）。 */}
+        <RestrictionNote id="location-list-restriction" message={unavailableReason} />
         <AvailableLocations
           locations={availableLocations ?? []}
           current={currentAvailableLocation}

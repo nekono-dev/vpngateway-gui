@@ -232,6 +232,13 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       expect(api.getV1ConnectionLocations).not.toHaveBeenCalled();
     });
 
+    it("「ログインしてください」は画面上に重複表示しない（Phase 21: 接続先リスト側にのみ表示）", async () => {
+      renderApp();
+      const connect = await screen.findByRole("button", { name: "接続" });
+      await waitFor(() => expect(connect).toBeDisabled());
+      expect(screen.getAllByText("ログインしてください")).toHaveLength(1);
+    });
+
     it("ログインフォームの送信: 資格情報をボディで送り、成功後は状態を再取得し、パスワード欄は空になる", async () => {
       api.postV1Session.mockResolvedValueOnce({ status: 200, data: { message: "ログインしました。" } });
       renderApp();

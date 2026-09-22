@@ -1,6 +1,9 @@
 // 責務: 透過ゲートウェイ／明示的プロキシの「実際の稼働状況」（`GET /v1/connection/gateway`）の表示のみを行う。
 // 設定値（`GET /v1/connection/config`）とは別物で、設定ONでも未構成・適用エラーになりうることを示す。
 // 明示的プロキシ（3proxy、Phase 4）も同じ稼働状況エンドポイントから取得した実状態を表示する。
+// 【Phase 21】外枠（.card）は持たず、内容のみを返す。接続状態・接続/切断ボタンと同じカードに
+// まとめるため、外枠はApp側で持つ（webserver/design.md「接続状態・稼働状況・接続/切断ボタンを
+// 1枚のカードにまとめる」）。
 
 import type { ReactNode } from "react";
 import type { GatewayStatus } from "../../hooks/useDashboardPolling";
@@ -103,7 +106,7 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
   }, false);
 
   return (
-    <section className="card" aria-label="稼働状況">
+    <div aria-label="稼働状況">
       <h2>稼働状況</h2>
       <dl className="status-list">
         <dt>透過ゲートウェイ</dt>
@@ -112,6 +115,6 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
         <dt>明示的プロキシ</dt>
         <dd data-testid="status-explicit-proxy">{explicitProxyView}</dd>
       </dl>
-    </section>
+    </div>
   );
 }

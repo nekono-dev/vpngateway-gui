@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useDashboardPolling, type ConnectionState } from "./hooks/useDashboardPolling";
-import { ConnectionStatusCard } from "./components/dashboard/ConnectionStatusCard";
+import { ConnectionStatusCard, connectionCardClassName } from "./components/dashboard/ConnectionStatusCard";
 import { GatewayStatusCard } from "./components/dashboard/GatewayStatusCard";
 import { LocationList } from "./components/dashboard/LocationList";
 import { ConnectionActions, type SubmittingAction } from "./components/dashboard/ConnectionActions";
@@ -125,8 +125,9 @@ export function App() {
           </button>
         </div>
       </header>
-      {providers ? (
-        <section className="card" aria-label="VPNベンダー">
+      {/* ベンダーが替わったら、ログイン導線のローカルな状態（入力中のフォーム・URL提示の結果）を捨てるため、IDをkeyにして再マウントする。 */}
+      <section key={`provider-${activeProviderId}`} className="card" aria-label="VPNベンダー">
+        {providers ? (
           <ProviderSelector
             providers={providers}
             connected={connection?.status === "connected"}
@@ -134,38 +135,34 @@ export function App() {
             onSwitchingChange={setIsSwitchingProvider}
             disabled={submitting !== undefined || isSwitchingProvider}
           />
-        </section>
-      ) : null}
-      <ConnectionStatusCard connection={connection} isLoading={isLoading} error={error} providerName={activeProviderName} />
-      <GatewayStatusCard gateway={data?.gateway} gatewayError={data?.gatewayError} isLoading={isLoading} />
-      {/* ベンダーが替わったら、接続操作カード内のローカルな状態（絞り込み・タブ・ログインの入力・URL）を捨てるため、IDをkeyにして再マウントする。 */}
+        ) : null}
+        <SessionCard session={data?.session} capabilities={capabilities} onChanged={refresh} />
+      </section>
+      <section className={connectionCardClassName(connection, isLoading, error)} aria-label="接続状態">
+        <div className="status-top-row">
+          {connection?.status === "connected" ? (
+            <DisconnectButton
+              submitting={submitting === "disconnect"}
+              capabilities={capabilities}
+              disabled={isSwitchingProvider || (submitting !== undefined && submitting !== "disconnect")}
+              onDisconnect={() => void handleSubmit("disconnect")}
+            />
+          ) : null}
+          {connection && connection.status !== "connected" ? (
+            <ConnectButton
+              submitting={submitting === "connect"}
+              hasTarget={autoConnect || target !== undefined}
+              capabilities={capabilities}
+              disabled={isSwitchingProvider || (submitting !== undefined && submitting !== "connect")}
+              onConnect={() => void handleSubmit("connect")}
+            />
+          ) : null}
+          <ConnectionStatusCard connection={connection} isLoading={isLoading} error={error} providerName={activeProviderName} />
+        </div>
+        <GatewayStatusCard gateway={data?.gateway} gatewayError={data?.gatewayError} isLoading={isLoading} />
+      </section>
+      {/* ベンダーが替わったら、接続操作カード内のローカルな状態（絞り込み・タブ）を捨てるため、IDをkeyにして再マウントする。 */}
       <section key={activeProviderId} className="card controls" aria-label="接続操作">
-        <SessionCard
-          session={data?.session}
-          capabilities={capabilities}
-          onChanged={refresh}
-          disconnectAction={
-            connection?.status === "connected" ? (
-              <DisconnectButton
-                submitting={submitting === "disconnect"}
-                capabilities={capabilities}
-                disabled={isSwitchingProvider || (submitting !== undefined && submitting !== "disconnect")}
-                onDisconnect={() => void handleSubmit("disconnect")}
-              />
-            ) : undefined
-          }
-          connectAction={
-            connection && connection.status !== "connected" ? (
-              <ConnectButton
-                submitting={submitting === "connect"}
-                hasTarget={autoConnect || target !== undefined}
-                capabilities={capabilities}
-                disabled={isSwitchingProvider || (submitting !== undefined && submitting !== "connect")}
-                onConnect={() => void handleSubmit("connect")}
-              />
-            ) : undefined
-          }
-        />
         <LocationList
           locations={locations.locations}
           isLoading={locations.isLoading}

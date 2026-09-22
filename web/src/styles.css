@@ -14,18 +14,30 @@
   color: #1f2328;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: #f6f8fa;
 }
 
+/* 画面の縦幅をビューポートに収める（Phase 21）。接続先リストの内部スクロール
+   （.location-scroll）以外はページ全体をスクロールしない
+   （webserver/design.md「画面の縦幅をビューポートに収める」）。 */
 main {
+  height: 100dvh;
   max-width: 640px;
   margin: 0 auto;
   padding: 16px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow: hidden;
 }
 
 h1 {
@@ -126,6 +138,9 @@ input[type="search"] {
   flex-direction: column;
   gap: 12px;
   border-left-width: 1px;
+  /* 接続先リストの内部スクロールへ残り高さを吸収させるため、このカード自体も縮んでよいようにする（Phase 21）。 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .connect-row {
@@ -139,6 +154,9 @@ input[type="search"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* 画面の縦幅をビューポートに収めるため、残り高さを.location-scrollの内部スクロールへ渡す（Phase 21）。 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .location-toolbar {
@@ -166,7 +184,10 @@ input[type="search"] {
 }
 
 .location-scroll {
-  max-height: 22rem;
+  /* 固定の上限は持たず、残り高さいっぱいまで伸ばして内部だけをスクロールさせる（Phase 21。狭い画面では
+     flexの最小サイズにより縮む。webserver/design.md「画面の縦幅をビューポートに収める」）。 */
+  flex: 1 1 auto;
+  min-height: 6rem;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -491,11 +512,16 @@ dialog [role="alert"] {
   margin: 0;
 }
 
-/* 切断ボタンの配置（Phase 16）: アカウント状態表示の左に置き、ログイン/ログアウト導線の近くで押せるようにする */
-.session-top-row {
+/* 接続/切断ボタンの配置（Phase 16・Phase 21で接続状態のカードへ移設）:
+   接続状態の表示の左に置き、スクロールなしで押せるようにする */
+.status-top-row {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.status-top-row .connection-summary {
+  margin: 0;
 }
 
 .session-actions {

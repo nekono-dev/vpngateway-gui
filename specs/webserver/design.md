@@ -139,3 +139,31 @@
 - **ping列の出し分け**: `capabilities/capability-state.ts`の`supportsLocationPing(capabilities)`が、`pingMeasurement`capabilityの`reason`が`"unsupported"`のときだけ非対応と判定する。`pingMeasurement`は`locationList`に従属するcapabilityのため（`apiserver/design.md`「オペレーションと実行可否（capability）」）、参考一覧が表示される状況（`locationList`がプラン制限で使えない）では、素の`isAvailable(capabilities, "pingMeasurement")`は常にfalseになってしまい判定に使えない。`reason`で「非対応（`unsupported`）」と「プラン制限の継承（`planRestricted`）」を区別することで、CLIそのものの対応可否のみを見る。
 - 参考一覧は生存確認を伴わない静的なサーバ一覧が出典のため、対応していても実際のping値は持たず、列は「-」のまま表示される。
 - 単なるテキスト表示のため、独立したフックやコンポーネントは設けない（`AvailableLocations`のような専用取得・専用部品は不要）。
+
+# ダッシュボードのカード構成・レイアウトの整理の実装方針（Phase 21）
+
+要件は`requirements.md`「ダッシュボードのカード構成・レイアウトの整理」。
+
+## ログイン導線をVPNベンダーのカードへ移す
+
+- `SessionCard.tsx`から接続/切断ボタンの受け渡し（`disconnectAction`・`connectAction`props）を削除する。責務をログイン状態の表示・ログイン導線・ログアウトのみに戻す（Phase 16以前の責務）。
+- `App.tsx`が、VPNベンダーのカード（`aria-label="VPNベンダー"`）の中で`ProviderSelector`の直後に`SessionCard`を描く（従来は接続操作カードの中にあった）。
+
+## 接続状態・稼働状況・接続/切断ボタンを1枚のカードにまとめる
+
+- `ConnectionStatusCard.tsx`と`GatewayStatusCard.tsx`は、それぞれが持っていた外枠（`<div className="card...">`・`<section className="card" aria-label="稼働状況">`）を取り除き、カード内側の表示（接続状態の文言／稼働状況の`dl`）だけを返すようにする。外枠は`App.tsx`側で1つにまとめて持つ（1つの`<section className="card">`に両方の内容と接続/切断ボタンを並べる）。
+- 接続状態に応じた枠色（`card-connected`・`card-disconnected`・`card-danger`）の判定は、`ConnectionStatusCard.tsx`から`connectionCardClassName(connection, isLoading, error)`として切り出し、`App.tsx`がこれを外枠の`className`に使う（従来`ConnectionStatusCard`内部で完結していた枠色の決定を、外枠を持つ側へ移すだけで判定ロジック自体は変えない）。
+- `App.tsx`は、接続状態の直後に`ConnectButton`／`DisconnectButton`（Phase 16で切り出し済み。押しやすい位置に置く目的は維持しつつ、置き場所をSessionCardからこのカードへ変更）を置き、その下に稼働状況の内容を続ける。
+
+## 「ログインしてください」等の制限理由の重複表示の解消
+
+- 未ログイン等で［接続］が無効化される理由（`connectBlockedReason`）は、`connectToLocation`と`locationList`が常に同じ理由へ同期される（`apiserver/capability-evaluator.ts`の仕様。一方が実行不可なら他方も同じ原因を継承する）ため、［接続］ボタンが無効化される場面では接続先リスト側の制限表示（`LocationList.tsx`の`unavailableReason`）にも常に同じ理由文が表示される。
+- `LocationList.tsx`は、`unavailableReason`を表示する`RestrictionNote`に固定id（`location-list-restriction`）を付ける。
+- `ConnectButton.tsx`は、`connectBlockedReason(capabilities)`が`reasonOf(capabilities, "locationList")`と一致するとき（＝接続先リスト側に同じ理由文が既に表示される、または表示されうるとき）は、自身の`RestrictionNote`を描かず、`aria-describedby`だけを`location-list-restriction`へ向ける。一致しない場合（稀なケース。プロバイダの対応可否がオペレーションごとに異なる等）は、従来どおり自身の`RestrictionNote`（`connect-restriction`）を描く。
+- これにより、画面上に同じ理由文が視覚的に重複することはなく、支援技術からは常にいずれかの理由文を`aria-describedby`で辿れる。
+
+## 画面の縦幅をビューポートに収める
+
+- `styles.css`で、`html`・`body`・`#root`の高さを100%とし、`main`の高さを`100dvh`（動的ビューポート高さ）に固定して`overflow: hidden`にする。
+- `main`はflexの縦積みのまま、接続操作カード（`.controls`）と接続先リスト（`.location-list`・`.location-scroll`）に`flex: 1; min-height: 0;`を連鎖させ、他のカード（VPNベンダー・接続状態）の実高さぶんを差し引いた残りの高さを接続先リストの内部スクロール領域が吸収する（`.location-scroll`の`max-height`固定値は廃止する）。
+- ページ全体としてはスクロールせず、接続先リストが多い場合のみ`.location-scroll`の内部だけがスクロールする（Phase 16での「接続/切断ボタンをスクロールなしで押せる位置に置く」という意図を、カード構成が変わった後も引き続き満たす）。
