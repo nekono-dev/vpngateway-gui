@@ -27,6 +27,7 @@
 | `phase11/install-scenarios.sh` | Phase11完了基準（インストーラ）を、LXCのクリーンなコンテナ（既定ubuntu:24.04。引数でイメージを指定）で自動検証（1コマンドの導入・再実行・ベンダーの追加/削除・ホスト側フック・失敗系。開発ホストのリポジトリから作った裸リポジトリをfile://で取得する。実VPN不要） |
 | `phase11/rpi-vm.sh` | Raspberry Pi相当の検証機を、Dockerだけで作って操作する（実物のRaspberry Pi OS Lite arm64のイメージ＋QEMUのarm64エミュレーション。カーネルだけDebian製。`prepare`→`start`→`wait`→`kernel`→`ssh`）。インストーラのarm64・Raspberry Pi OSでの検証用。TCGのため遅い（Dockerイメージのビルドに約1時間） |
 | `phase16/webgui-phase16.mjs` | Phase16（起動時の接続復元・接続/切断ボタンの配置改善・参考一覧での現在の接続先表示）のうちWeb UI側のPlaywright検証（接続/切断ボタンの配置・配色、接続⇄切断での表示の切替、参考一覧での現在の接続先バッジ・ping列の出し分け・選択無効化）。開始時の接続状態（接続中/切断中）に応じて検証内容を選ぶため、実VPNの状態を問わず実行できる。起動時の接続復元そのもの（APIコンテナ再起動を伴う）は手順化されたスクリプトが無く、`wbs/phase16.md`「検証手法」に沿って手動で確認した |
+| `phase20/uninstall-scenarios.sh` | Phase20完了基準（アンインストールの頒布URL対応・取得先ディレクトリの削除）を、LXCのクリーンなコンテナで自動検証（`--uninstall`をブートストラップの標準入力パイプで実行し、取得先ディレクトリ・docker composeスタック・sysctl設定・起動時ガードの後始末、再導入できることを確認。`phase11/install-scenarios.sh`と同じくfile://で取得する。実VPN不要） |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |

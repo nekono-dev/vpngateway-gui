@@ -40,10 +40,10 @@ sudo sh /opt/vpngwgui/install/install.sh --providers adguardvpn
 
 ### アンインストール
 
-対象ホスト上で以下を実行する。docker composeスタック（ベンダーのログイン情報を含む）、IPフォワーディングの設定、起動時のKill Switchガードを後始末する。
+対象ホスト上で以下を実行する。インストールと同じ頒布URLで実行でき、`/opt/vpngwgui`を事前に取得しておく必要はない。docker composeスタック（ベンダーのログイン情報を含む）、IPフォワーディングの設定、起動時のKill Switchガード、ソース一式の取得先ディレクトリ（`/opt/vpngwgui`自体）を削除する。
 
 ```sh
-sudo sh /opt/vpngwgui/install/install.sh --uninstall
+curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- --uninstall
 ```
 
 | 引数 | 意味 |
@@ -54,7 +54,6 @@ sudo sh /opt/vpngwgui/install/install.sh --uninstall
 
 | 変更対象 | 内容 |
 |---|---|
-| `/opt/vpngwgui` | ソース一式の取得先 |
 | `/etc/apt/keyrings/docker.asc`・`/etc/apt/sources.list.d/docker.list` | Docker公式リポジトリの設定 |
 | Docker本体・依存パッケージ | `apt`で導入したもの（他の用途と共有されうるため対象外） |
 

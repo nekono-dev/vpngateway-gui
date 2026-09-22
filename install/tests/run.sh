@@ -109,5 +109,17 @@ VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE UNINSTALL_LOG=$UNINSTALL_LOG sh -c ". 
 check "uninstall_host_hooks: uninstall-host.shを持つベンダーだけ呼ばれ、VPNGW_ROOT・VPNGW_VENDOR_IDが渡る" test "$(cat "$UNINSTALL_LOG")" = "called:vendora:$FAKE"
 rm -f "$FAKE/vendors/vendora/uninstall-host.sh"
 
+# 目的: remove_repo_rootが、REPO_ROOT（install/install.shを含む取得先ディレクトリ）を削除することを検査する。
+# FAKEを直接使うと後続の（存在しない）テストで壊れるため、専用のコピーに対して実行する。危険なパス（空・/・install.shが無い）は
+# 中止すること（誤って無関係なディレクトリを消さない安全対策）も検査する。
+REMOVE_TARGET="$TMP/remove-target"
+cp -r "$FAKE" "$REMOVE_TARGET"
+VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$REMOVE_TARGET sh -c ". $REMOVE_TARGET/install/install.sh; remove_repo_root" >/dev/null 2>&1
+check "remove_repo_root: REPO_ROOT自体を削除する" sh -c "[ ! -e '$REMOVE_TARGET' ]"
+NOT_A_REPO="$TMP/not-a-repo"
+mkdir -p "$NOT_A_REPO"
+check "remove_repo_root: install/install.shが無いディレクトリは削除を拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$NOT_A_REPO sh -c '. $FAKE/install/install.sh; remove_repo_root' >/dev/null 2>&1"
+check "remove_repo_root: 拒否時にディレクトリが残る" test -d "$NOT_A_REPO"
+
 echo "== 結果: FAIL $FAILS 件"
 exit "$FAILS"

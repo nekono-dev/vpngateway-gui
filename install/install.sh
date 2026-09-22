@@ -21,10 +21,11 @@
 #
 # 使い方（アンインストール、root権限で）: sh install/install.sh --uninstall [--keep-data]
 #   --uninstall            docker composeスタックの停止・削除（既定でボリューム＝ベンダーのログイン情報も削除）、IPフォワーディング設定、
-#                           起動時のKill Switchガード、有効なベンダーのホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）を行う。
-#                           ソースの取得先ディレクトリ・Docker本体・apt依存パッケージは対象外（手動で削除すること。README.md参照）。
+#                           起動時のKill Switchガード、有効なベンダーのホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）、
+#                           ソース一式の取得先ディレクトリ（自分自身）の削除を行う。Docker本体・apt依存パッケージは対象外（手動で削除すること。README.md参照）。
 #   --keep-data             --uninstall と併用。ベンダーのログイン情報（Dockerボリューム）を削除せず残す（再導入時にログイン状態を維持したい場合）。
-# 例: sudo sh install/install.sh --uninstall
+# 例（頒布されたブートストラップ経由。ソースの取得先が無くても実行できる）: curl -fsSL <頒布URL>/install.sh | sudo sh -s -- --uninstall
+# 例（取得済みのソースから直接実行）: sudo sh install/install.sh --uninstall
 
 set -eu
 
@@ -418,6 +419,17 @@ uninstall_host_hooks() {
   done
 }
 
+# 目的: ソース一式の取得先（REPO_ROOT）を削除する。アンインストールの最後に呼ばれる。
+# 安全対策: REPO_ROOTが空・ルート（/）・install/install.sh自身を含まない場合は、取得先ではない別のディレクトリを誤って
+#           削除しないよう中止する。削除前にカレントディレクトリをREPO_ROOTの外（/tmp）へ移す（削除後もシェルが継続できるように。
+#           Linuxでは実行中のスクリプト自身を含むディレクトリを削除しても、開いたファイル記述子は無効にならないため安全に完走する）。
+remove_repo_root() {
+  [ -n "$REPO_ROOT" ] && [ "$REPO_ROOT" != "/" ] && [ -f "$REPO_ROOT/install/install.sh" ] || die "取得先（$REPO_ROOT）が想定と異なるため、削除を中止します"
+  cd /tmp
+  rm -rf "$REPO_ROOT"
+  log "ソース一式を削除しました（$REPO_ROOT）"
+}
+
 # 目的: アンインストールの全体（上の各段階を順に実行する）。mainから--uninstall指定時に呼ばれる。
 uninstall_main() {
   [ "$(id -u)" -eq 0 ] || die "root権限で実行してください（例: sudo sh $0 --uninstall）"
@@ -429,9 +441,9 @@ uninstall_main() {
   echo
   log "アンインストール完了"
   echo "  残っているもの（対象外。手動で削除する場合はREADME.md「アンインストール」参照）:"
-  echo "    - $REPO_ROOT（ソース一式の取得先）"
   echo "    - Docker本体・依存パッケージ、Dockerの公式リポジトリ設定"
   [ "$KEEP_DATA" -eq 0 ] || echo "    - ベンダーのログイン情報（Dockerボリューム。--keep-data により保持）"
+  remove_repo_root
 }
 
 # 目的: インストールの全体（上の各段階を順に実行する）。
