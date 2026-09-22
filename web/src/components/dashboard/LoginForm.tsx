@@ -50,12 +50,13 @@ export function LoginForm({ isSubmitting, onSubmit }: Props) {
         />
       </label>
       <label>
-        2段階認証コード（有効な場合のみ）
+        2段階認証
         <input
           type="text"
           name="twoFactorCode"
           inputMode="numeric"
           autoComplete="off"
+          placeholder="2段階認証を設定している場合のみ入力"
           value={twoFactorCode}
           disabled={isSubmitting}
           onChange={(event) => setTwoFactorCode(event.target.value)}

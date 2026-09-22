@@ -379,7 +379,7 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 6px 16px;
-  margin: 0;
+  margin-top: 0.5rem;
 }
 
 .status-list dt {
@@ -587,6 +587,11 @@ dialog [role="alert"] {
   flex-direction: column;
   gap: 2px;
   font-size: 0.875rem;
+}
+
+.login-form input {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .restriction {

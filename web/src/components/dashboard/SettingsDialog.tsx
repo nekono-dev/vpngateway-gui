@@ -109,7 +109,8 @@ export function SettingsDialog({ open, onClose }: Props) {
           </label>
 
           <LineListEditor
-            label="明示的プロキシの許可CIDR（1行1CIDR。例: 192.168.3.0/24。空のままでは起動しません）"
+            label="明示的プロキシの許可CIDR"
+            placeholder={"接続元IPがこの範囲内のみプロキシ利用を許可（他は拒否）\n192.168.3.0/24 ← 192.168.3.1〜254のLAN全体を許可\n10.0.0.5/32 ← 10.0.0.5の1台のみ許可"}
             value={settings.explicitProxyAllowedCidrs}
             onChange={(explicitProxyAllowedCidrs) => setSettings({ ...settings, explicitProxyAllowedCidrs })}
             disabled={!settings.explicitProxyEnabled}
