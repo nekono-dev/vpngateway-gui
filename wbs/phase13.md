@@ -90,7 +90,7 @@
 ## 次フェーズへの申し送り
 
 - 既存環境（検証環境`192.168.3.240`等、旧形式の`.env`）は、`install.sh --providers <ID>,...`を一度実行すれば`COMPOSE_PROFILES`から`COMPOSE_FILE`へ移る（`--no-start`で`.env`だけ更新もできる）。
-- Raspberry Pi OSの32bit（armhf）・実際のRaspberry Pi機での検証は未検証のまま（今回検証した実機arm64ホストはDebian 13でRaspberry Pi OSではない）。Kill Switchの実通信（LAN端末）は実機arm64ハードウェアで検証済み（上記）。エミュレーション上のビルドは遅い（`web`のviteビルド等で、全イメージのビルドに約1時間）。
+- Raspberry Pi OSの32bit（armhf）・実際のRaspberry Pi機での検証は未検証のまま（今回検証した実機arm64ホストはDebian 13でRaspberry Pi OSではない）。Kill Switchの実通信（LAN端末）は実機arm64ハードウェアで検証済み（上記）。エミュレーション上のビルドは遅い（`web`のviteビルド等で、全イメージのビルドに約1時間）。**2026-09-22、利用者の判断によりRaspberry Pi実機・armhfの検証は最終フェーズ（`wbs/phase7.md`）へ申し送ることとした。**
 - Docker Engineの既定動作変化（FORWARD既定ポリシー）のように、ホスト側ミドルウェアのアップデートで本製品のネットワーク制御が無効化される類の不具合は、今後もDockerやnftables/iptablesのバージョン更新で再発しうる。新規導入時のE2E（`e2e/phase13/install-scenarios.sh`）に、フェイルオープン時の実際のインターネット到達性を確認する項目を追加できると、次に同種の問題が起きてもCIで検出できる（未実施）。
 - ベンダー固有のホスト側の追加手順（`install-host.sh`）は、現在のバンドルに存在しない。フックの契約は、検査用のバンドルで確認した。ホスト導入を要するベンダーを追加するときは、無効にしたときの取り消し（`uninstall-host.sh`等）を設計する。
 - アンインストール（`docker compose down`・sysctl設定・起動ガードの撤去）は未提供。

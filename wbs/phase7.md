@@ -30,6 +30,9 @@ specs各ファイルの「将来課題」節に列挙された、初回リリー
 - [ ] 多言語対応。
 - [ ] WebSocket等によるリアルタイム状態通知への切替（ポーリング間隔・サーバ負荷が問題になった場合に再検討）。
 
+### インストーラ・実機検証（Phase 13からの申し送り）
+- [ ] Raspberry Pi OSの32bit（armhf・`ID=raspbian`）と、実際のRaspberry Pi機（QEMUエミュレーションではない実機）でのインストーラ検証。arm64については実機ハードウェア（Debian 13）でKill Switchの実通信を含め検証済み（`wbs/phase13.md`「追加の検証結果」）だが、Raspberry Pi実機・armhfは2026-09-22時点で未検証のまま最終フェーズへ申し送る。
+
 ### テスト・品質
 - [ ] E2Eテストの拡充（Phase1〜6で個別に確認した手順の自動化）。Phase 8で「接続国」セレクトが廃止された結果、`e2e/phase5/webgui-dashboard.mjs`のうち`flow`・`error-422`・`error-502`が旧UIを前提に失敗している（Phase 4の検証中に判明）。Phase 8の接続先リストに合わせて更新すること。
 - [ ] Phase1で許容した設定ストアの単純read-modify-write方式（同時書き込み競合を考慮しない）の見直し要否の判断。
