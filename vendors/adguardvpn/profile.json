@@ -36,7 +36,8 @@
         "status"
       ],
       "placeholders": {},
-      "timeoutMs": 8000
+      "timeoutMs": 8000,
+      "successPattern": "You are not logged in|not logged in"
     },
     "login": {
       "argv": [

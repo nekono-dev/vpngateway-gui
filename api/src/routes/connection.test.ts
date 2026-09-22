@@ -139,6 +139,17 @@ describe("/v1/connection の接続先", () => {
     expect(locations.json().some((l: { lastConnected: boolean }) => l.lastConnected)).toBe(false);
   });
 
+  it("未ログイン時のstatus（非ゼロexit）は422にならず、切断中として返る（AdGuard VPN CLIはexit 11で終了する）", async () => {
+    executeVendorCommandMock.mockImplementation(({ resolvedArgv }: { resolvedArgv: string[] }) =>
+      resolvedArgv[0] === "status"
+        ? Promise.resolve({ exitCode: 11, stdout: "You are not logged in\nYou can log in by running `adguardvpn-cli login`", stderr: "" })
+        : fakeCli({ resolvedArgv }),
+    );
+    const get = await app.inject({ method: "GET", url: "/v1/connection" });
+    expect(get.statusCode).toBe(200);
+    expect(get.json()).toEqual({ status: "disconnected" });
+  });
+
   it("list-locationsが失敗した場合、接続操作は422で、connectコマンドは実行しない", async () => {
     executeVendorCommandMock.mockResolvedValue({ exitCode: 11, stdout: "You are not logged in", stderr: "" });
     const put = await putConnection(app, { connect: true, locationId: "jp-tokyo" });

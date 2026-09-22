@@ -11,6 +11,7 @@ import { getActiveProvider } from "../providers/active-provider-store.js";
 import { assertNotSwitching } from "../providers/provider-switcher.js";
 import { resolveArgv } from "../profile/placeholder-resolver.js";
 import { parseConnectionOutput } from "../profile/response-parser.js";
+import { isCommandSuccess } from "../profile/command-success.js";
 import { executeVendorCommand } from "../proxy-client/proxy-client.js";
 import { CommandExecutionError } from "../errors.js";
 import { pickFailureOutput } from "../lib/failure-output.js";
@@ -42,7 +43,10 @@ export const registerConnectionRoute: FastifyPluginAsyncTypebox = async (fastify
       // status/connect/disconnectはcompletionPatternを指定しないため、exitCodeがnull
       // （プロセス実行継続中）になることはない。念のため-1（既存のタイムアウト表現）へ正規化する。
       const exitCode = result.exitCode ?? -1;
-      if (exitCode !== 0) {
+      // 未ログイン時のstatusが非ゼロで終了するCLI向けに、successPatternが定義されていれば
+      // 非ゼロexitでも成功とみなす（PUT /v1/connectionのapply-connection.tsと同じ判定。
+      // 一致時の出力は「未接続」を示す文言のためparseConnectionOutputが自然にdisconnectedと判定する）。
+      if (!isCommandSuccess(profile.actions.status, result)) {
         throw new CommandExecutionError(
           "status command failed",
           exitCode,

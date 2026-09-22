@@ -572,6 +572,7 @@ CN    China                Shanghai (Virtual)             59
 - プレースホルダー検証失敗、未知のベンダー指定等の入力エラー: `400 Bad Request`。
 - プロキシサーバへの接続失敗（UDS未応答等）: `502 Bad Gateway`。
 - プロキシサーバ側でのコマンド実行失敗（非ゼロexit）: `422 Unprocessable Entity` とし、bodyに `exitCode`・`stderr` 要約を含める。実CLIはエラーメッセージをstderrではなくstdoutへ出力するため（例: 接続していない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）、`stderr`が空の場合はstdoutを同フィールドへ格納する（`lib/failure-output.ts`。ANSIエスケープ除去・前後空白除去）。
+  - **`GET /v1/connection`（`status`アクション）の非ゼロexitも、`successPattern`が定義されていれば`isCommandSuccess`（`profile/command-success.ts`）により成功とみなす**（`PUT /v1/connection`・接続復元と同じ判定関数を使う。バグ修正、2026-09-22）。AdGuard VPN CLIは未ログイン時`status`がexit code 11で終了する（本ファイル「実機検証で判明した点」参照）のに対し、ProtonVPN CLIは未ログインでもexit 0で「切断中」を返すため、修正前はAdGuardVPNだけ未ログイン時に422（Web UIへ「接続状態の取得に失敗しました」エラーが表面化）していた。AdGuardVPNの`vendors/adguardvpn/profile.json`の`status`に`"successPattern": "You are not logged in|not logged in"`を追加し、この出力を成功として扱う（`parseConnectionOutput`は`connectedPattern`に一致しないため自然に`disconnected`と判定する）。
 - タイムアウト: `504 Gateway Timeout`。
 - **【Phase 8】** ベンダー切替中の競合: `409 Conflict`（`error: "provider_switching"`）。
 - **【Phase 7】** プラン制限によるコマンド失敗（`restrictedPattern`一致）: `403 Forbidden`（`error: "operation_restricted"`。`exitCode`・`stderr`要約を含む）。プロファイルがその操作に対応していない（アクション未定義）: `501 Not Implemented`（`error: "operation_unsupported"`）。
