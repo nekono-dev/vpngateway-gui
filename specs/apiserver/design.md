@@ -394,18 +394,34 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 
 ベンダーの管理は`api/src/providers/`にまとめる（`provider-registry.ts`＝有効なプロファイルの読み込み・検証、`active-provider-store.ts`＝選択の永続化、`provider-switcher.ts`＝切替の手順、`provider-state-paths.ts`＝ベンダー別の状態ファイルのパス・旧形式からの移行）。従来のモジュール（`profile-loader`・`connection-state-store`・`last-location-store`・`favorite-locations-store`・`session-probe`・`restriction-learner`・`proxy-client`）は、ベンダーIDを受け取る（または選択中のベンダーを`provider-registry`から取得する）形へ改める。
 
-## Web UI利用者の認証（`/v1/operator`・`/v1/operator-session`。Phase 25で追加）
+## Web UI利用者の認証（`/v1/operator`・`/v1/operator/session`。Phase 25で追加）
 
-設計方針は`specs/design.md`「認証・認可の設計方針」、要件は`requirements.md`「Web UI利用者の認証」。単一の管理者アカウント（ユーザー名・パスワード）を表す`/v1/operator`と、ブラウザのログイン状態を表す`/v1/operator-session`に分ける。アカウントはインストーラではなくWeb UIの初回アクセス時に利用者自身が作成し、以後は設定画面から変更する（2026-09-22改訂: 当初案の「インストーラの引数でパスワードを指定」から変更）。
+設計方針は`specs/design.md`「認証・認可の設計方針」、要件は`requirements.md`「Web UI利用者の認証」。単一の管理者アカウント（ユーザー名・パスワード）を表す`/v1/operator`と、ブラウザのログイン状態を表すそのサブリソース`/v1/operator/session`に分ける。アカウントはインストーラではなくWeb UIの初回アクセス時に利用者自身が作成し、以後は設定画面から変更する（2026-09-22改訂: 当初案の「インストーラの引数でパスワードを指定」から変更）。
 
-- `GET /v1/operator`: 認証不要。`{ "configured": boolean }`を返す（有効なセッションCookieがある場合のみ`username`も含める）。Web UIはこれで初期設定画面／ログイン画面を出し分ける。
-- `POST /v1/operator`: 認証不要。ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`に既にアカウントがあれば`409 { "error": "already_configured" }`。無ければ作成し、`POST /v1/operator-session`と同様にセッションを発行して`200`（初回設定後にそのままログイン状態にする）。`username`は空文字不可、`password`は最小文字数（実装時に決定、既定8文字以上）を満たさなければ`400`。
-- `PUT /v1/operator`: 要セッションCookie。ボディ`{ "currentPassword": string, "username"?: string, "newPassword"?: string }`。`currentPassword`が現在の保存内容と一致しなければ`401`。`username`・`newPassword`のいずれも指定しなければ`400`。成功時は`operator-account-store.ts`を更新し`200`。現在のセッションは維持する（強制的な再ログインは要求しない）。
-- `POST /v1/operator-session`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`（`scrypt`によるハッシュの読み込み・検証）で照合する。一致すれば`api/src/auth/session-store.ts`（プロセスメモリのMap。`sessionId → { createdAt }`）にセッションを作成し、`Set-Cookie: vpngwgui_session=<sessionId>; HttpOnly; Secure; SameSite=Lax; Path=/`を返す。不一致・アカウント未作成のいずれも`401`（未作成であること自体は`GET /v1/operator`の`configured`で判別させ、ログイン失敗の応答からは区別できないようにする）。
-- `GET /v1/operator-session`: Cookieのセッションが有効なら`200 { "authenticated": true }`、無効・無ければ`401`。
-- `DELETE /v1/operator-session`: セッションストアから削除し、Cookieを`Max-Age=0`で失効させ`200`を返す。
-- **`preHandler`フック（`api/src/auth/require-operator-session.ts`）**: `GET /v1/operator`・`POST /v1/operator`（未作成時のみ）・`POST /v1/operator-session`を除く全ての`/v1/*`ルートへ適用する（`PUT /v1/operator`も対象）。Cookie欠如・不正・期限切れは`401 { "error": "unauthenticated" }`。
-- **レート制限**: `POST /v1/operator-session`・`PUT /v1/operator`は、送信元IPごとに直近1分間の失敗回数を数え、一定回数（既定5回）を超えると一時的に`429`を返す（`api/src/auth/login-rate-limiter.ts`。プロセスメモリ保持、APIコンテナ再起動でリセットされる）。
+### エンドポイント
+
+| メソッド | パス | 認証 | 説明 |
+|---|---|---|---|
+| `GET` | `/v1/operator` | 不要 | アカウントの作成状態を取得する（有効なセッションCookieがあれば`username`も含める） |
+| `POST` | `/v1/operator` | 不要（未作成時のみ許可） | アカウントを初回作成する |
+| `PUT` | `/v1/operator` | 必要 | ユーザー名・パスワードを変更する |
+| `POST` | `/v1/operator/session` | 不要 | ログインする |
+| `GET` | `/v1/operator/session` | 必要 | ログイン状態を取得する |
+| `DELETE` | `/v1/operator/session` | 必要 | ログアウトする |
+
+### 各エンドポイントの詳細
+
+- `GET /v1/operator`: `{ "configured": boolean }`を返す（有効なセッションCookieがある場合のみ`username`も含める）。Web UIはこれで初期設定画面／ログイン画面を出し分ける。
+- `POST /v1/operator`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`に既にアカウントがあれば`409 { "error": "already_configured" }`。無ければ作成し、`POST /v1/operator/session`と同様にセッションを発行して`200`（初回設定後にそのままログイン状態にする）。`username`は空文字不可、`password`は最小文字数（実装時に決定、既定8文字以上）を満たさなければ`400`。
+- `PUT /v1/operator`: ボディ`{ "currentPassword": string, "username"?: string, "newPassword"?: string }`。`currentPassword`が現在の保存内容と一致しなければ`401`。`username`・`newPassword`のいずれも指定しなければ`400`。成功時は`operator-account-store.ts`を更新し`200`。現在のセッションは維持する（強制的な再ログインは要求しない）。
+- `POST /v1/operator/session`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`（`scrypt`によるハッシュの読み込み・検証）で照合する。一致すれば`api/src/auth/session-store.ts`（プロセスメモリのMap。`sessionId → { createdAt }`）にセッションを作成し、`Set-Cookie: vpngwgui_session=<sessionId>; HttpOnly; Secure; SameSite=Lax; Path=/`を返す。不一致・アカウント未作成のいずれも`401`（未作成であること自体は`GET /v1/operator`の`configured`で判別させ、ログイン失敗の応答からは区別できないようにする）。
+- `GET /v1/operator/session`: Cookieのセッションが有効なら`200 { "authenticated": true }`、無効・無ければ`401`。
+- `DELETE /v1/operator/session`: セッションストアから削除し、Cookieを`Max-Age=0`で失効させ`200`を返す。
+
+### 認可・レート制限・保存
+
+- **`preHandler`フック（`api/src/auth/require-operator-session.ts`）**: `GET /v1/operator`・`POST /v1/operator`（未作成時のみ）・`POST /v1/operator/session`を除く全ての`/v1/*`ルートへ適用する（`PUT /v1/operator`も対象）。Cookie欠如・不正・期限切れは`401 { "error": "unauthenticated" }`。
+- **レート制限**: `POST /v1/operator/session`・`PUT /v1/operator`は、送信元IPごとに直近1分間の失敗回数を数え、一定回数（既定5回）を超えると一時的に`429`を返す（`api/src/auth/login-rate-limiter.ts`。プロセスメモリ保持、APIコンテナ再起動でリセットされる）。
 - **アカウントの保存**: `$STATE_DIR/operator-account.json`（`{ "username": string, "algorithm": "scrypt", "salt": "...", "hash": "..." }`）。`operator-account-store.ts`が読み込み・作成・更新（`crypto.scrypt`によるハッシュ化）を担う。ファイルが無ければ`configured: false`として扱う。
 - **ファイル配置（AGENTS.mdの規約）**: `api/src/auth/`にまとめる（`operator-account-store.ts`・`session-store.ts`・`require-operator-session.ts`・`login-rate-limiter.ts`、ルートは`api/src/routes/operator.ts`・`api/src/routes/operator-session.ts`）。
 
@@ -444,12 +460,8 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 | `GET` | `/v1/session` | ログイン方式・ログイン状態・プランを取得する（Phase 7） |
 | `DELETE` | `/v1/session` | VPNクライアントからログアウトする（Phase 7） |
 | `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否（プロバイダ非対応・未ログイン・プラン制限）を取得する（Phase 7） |
-| `GET` | `/v1/operator` | 管理者アカウントの作成状態（・認証済みならユーザー名）を取得する。認証不要（Phase 25） |
-| `POST` | `/v1/operator` | 管理者アカウントを初回作成する（未作成時のみ）。認証不要（Phase 25） |
-| `PUT` | `/v1/operator` | 管理者アカウントのユーザー名・パスワードを変更する（現在のパスワードの確認が必要。Phase 25） |
-| `POST` | `/v1/operator-session` | Web UI利用者のログイン（ユーザー名・パスワード照合、セッションCookie発行。Phase 25） |
-| `GET` | `/v1/operator-session` | Web UI利用者のログイン状態を取得する（Phase 25） |
-| `DELETE` | `/v1/operator-session` | Web UI利用者をログアウトする（Phase 25） |
+
+ベンダーの一覧・切替（`/v1/providers`、Phase 8）、Web UI利用者の認証（`/v1/operator`・`/v1/operator/session`、Phase 25）は、それぞれ専用の節（「ベンダーの選択」「Web UI利用者の認証」）のエンドポイント表を参照。
 
 # OpenAPI仕様の生成・公開方針
 
@@ -594,7 +606,7 @@ CN    China                Shanghai (Virtual)             59
 - **【Phase 5】** Fastifyのスキーマ検証エラー（不正なbody・パスパラメータ）も`400`（`invalid_input`）で返す。従来は500になっていた。
 - プレースホルダー検証失敗、未知のベンダー指定等の入力エラー: `400 Bad Request`。
 - ゲートウェイへの接続失敗（mTLS TCP未応答・証明書検証エラー等）: `502 Bad Gateway`。
-- **【Phase 25】** 未認証（セッションCookie欠如・不正・期限切れ）: `401 Unauthorized`（`GET /v1/operator`・`POST /v1/operator`（未作成時）・`POST /v1/operator-session`を除く）。アカウント作成済みなのに`POST /v1/operator`を呼んだ場合: `409 Conflict`。ログイン試行・パスワード変更のレート制限超過: `429 Too Many Requests`。
+- **【Phase 25】** 未認証（セッションCookie欠如・不正・期限切れ）: `401 Unauthorized`（`GET /v1/operator`・`POST /v1/operator`（未作成時）・`POST /v1/operator/session`を除く）。アカウント作成済みなのに`POST /v1/operator`を呼んだ場合: `409 Conflict`。ログイン試行・パスワード変更のレート制限超過: `429 Too Many Requests`。
 - プロキシサーバ側でのコマンド実行失敗（非ゼロexit）: `422 Unprocessable Entity` とし、bodyに `exitCode`・`stderr` 要約を含める。実CLIはエラーメッセージをstderrではなくstdoutへ出力するため（例: 接続していない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）、`stderr`が空の場合はstdoutを同フィールドへ格納する（`lib/failure-output.ts`。ANSIエスケープ除去・前後空白除去）。
   - **`GET /v1/connection`（`status`アクション）の非ゼロexitも、`successPattern`が定義されていれば`isCommandSuccess`（`profile/command-success.ts`）により成功とみなす**（`PUT /v1/connection`・接続復元と同じ判定関数を使う。バグ修正、2026-09-22）。AdGuard VPN CLIは未ログイン時`status`がexit code 11で終了する（本ファイル「実機検証で判明した点」参照）のに対し、ProtonVPN CLIは未ログインでもexit 0で「切断中」を返すため、修正前はAdGuardVPNだけ未ログイン時に422（Web UIへ「接続状態の取得に失敗しました」エラーが表面化）していた。AdGuardVPNの`vendors/adguardvpn/profile.json`の`status`に`"successPattern": "You are not logged in|not logged in"`を追加し、この出力を成功として扱う（`parseConnectionOutput`は`connectedPattern`に一致しないため自然に`disconnected`と判定する）。
 - タイムアウト: `504 Gateway Timeout`。

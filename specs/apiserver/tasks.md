@@ -149,7 +149,7 @@
 
 ## デプロイメント構成の分離（Phase 25）
 
-- [ ] Web UI利用者の認証: パスワードのハッシュ保存（`api/src/auth/password-store.ts`）、`POST/GET/DELETE /v1/operator-session`（`api/src/routes/operator-session.ts`）、`preHandler`フックによる認可（`require-operator-session.ts`）、レート制限（`login-rate-limiter.ts`）
+- [ ] Web UI利用者の認証: アカウントのハッシュ保存（`api/src/auth/operator-account-store.ts`）、`GET/POST/PUT /v1/operator`（`api/src/routes/operator.ts`）、`POST/GET/DELETE /v1/operator/session`（`api/src/routes/operator-session.ts`）、`preHandler`フックによる認可（`require-operator-session.ts`）、レート制限（`login-rate-limiter.ts`）
 - [ ] ゲートウェイとの内部通信をUDSからmTLS TCPへ変更（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`等を`undici`のmTLSクライアントへ置き換え）
 - [ ] APIサーバ自身のHTTPS化（Fastifyの`https`オプション）
 - [ ] インストーラ（オーケストレーター）が配置した証明書の読み込み
