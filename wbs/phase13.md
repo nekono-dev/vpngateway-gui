@@ -16,7 +16,7 @@
 ## スコープ外
 
 - アンインストール、IPv6、ホストのファイアウォール（ufw等）との調整。
-- Raspberry Pi OSの32bit（armhf・`ID=raspbian`）と、実際のRaspberry Pi機での検証、Kill Switchの実通信（LAN端末）での確認（Debian 12・Ubuntu 24.04のLXC、Raspberry Pi OS arm64のエミュレーションでの導入は検証済み）。
+- Raspberry Pi OSの32bit（armhf・`ID=raspbian`）と、実際のRaspberry Pi機での検証（Debian 12・Ubuntu 24.04のLXC、Raspberry Pi OS arm64のエミュレーションでの導入は検証済み。Kill Switchの実通信は、利用者が用意した実機arm64ホスト（Debian 13）で追加検証済み。「追加の検証結果」参照）。
 - 無効にしたベンダーの`install-host.sh`の取り消し（`uninstall-host.sh`）。ベンダーのCLIがホスト導入を要するようになった時点で設計する。
 - インストーラの署名（`install.sh.sha256`の添付までとする）。
 
@@ -78,9 +78,19 @@
 - **Raspberry Pi OS（実物のイメージ）**: `2026-09-15-raspios-trixie-arm64-lite`（`ID=debian`・NetworkManager稼働・`nftables.service`が**既定で有効**）を、QEMUのarm64エミュレーション（TCG、4vCPU・6GB。`e2e/phase13/rpi-vm.sh`）で起動。Piのカーネルはvirtio・PCIホストを組み込んでおらずvirtマシンでは起動できないため、**rootfs・ユーザーランドは実物、カーネルだけDebianの汎用arm64カーネル**（6.12.107+deb13-arm64）。上記のReleaseから`curl | sh`の1コマンドでDocker CE（arm64・Debianの公式リポジトリ）・sysctl・起動ガード・`.env`・ビルド・起動まで完了し、Web UIが応答、イメージはarm64。再起動後も起動ガードのテーブルが存在（順序は偶然`nftables.service`の後だった）。
 - **修正**: `nftables.service`が有効な環境（Raspberry Pi OS）で起動ガードが消される可能性に備え、ユニットへ`After=nftables.service`を追加（v0.1.1）。
 
+## 追加の検証結果（2026-09-22。実機arm64ハードウェア・Kill Switch実通信）
+
+- **環境**: 利用者が用意した実機arm64ホスト（`192.168.3.242`。Debian 13 "trixie"、2vCPU・単一NIC・実LAN。エミュレーションではない実ハードウェア）。LAN端末役は開発ホスト上のmacvlanコンテナ（実LANのIPv4アドレスを持つ。`e2e/lxc/setup.sh`と同じ方式）。
+- **`curl | sh`によるRelease経由の導入**: `releases/latest/download/install.sh`を実機で取得しSHA照合の上、`sudo sh install.sh --providers adguardvpn`の1コマンドで導入。
+- **不具合を発見・修正（重大。全プラットフォーム影響）**: Docker Engine 29.8.1（本フェーズ最初の検証時点の最新版）は、IPフォワーディングを自ら有効化した際にiptables/nftablesのFORWARDチェーンの既定ポリシーを`DROP`へ変更する（Docker Engine 28以降の既定動作）。本製品は独自のnftablesテーブル（`inet vpngwgui`）でLAN機器の転送を制御する設計のため、この既定ポリシー変更によりTransparent Gateway・Kill Switchのフェイルオープン（KS OFF時の直接インターネット転送）が機能しなくなる不具合を実機で発見した（`inet vpngwgui`テーブルのacceptルールは存在するが、Dockerが追加した`ip filter`テーブルのFORWARD既定ポリシー`DROP`により、同じフックの別テーブルで最終的にパケットが破棄される。旧バージョンのDocker（`192.168.3.240`のDocker 29.1.3など、FORWARD既定ポリシーが`ACCEPT`のまま）では顕在化せず、実機・最新Dockerでのみ発覚した）。**修正**: `install/install.sh`の`install_docker()`で、Docker導入前（`docker-ce`パッケージの`apt-get install`前）に`/etc/docker/daemon.json`が無ければ`{"ip-forward-no-drop": true}`を書き込み、Docker自身にFORWARD既定ポリシーを変更させないようにした（既存の`daemon.json`があれば上書きしない）。ホストの完全な再インストール（Docker・`/etc/docker`・iptablesルールの初期化）から本修正版`install.sh`で再導入し、再起動を挟んでもFORWARD既定ポリシーが`ACCEPT`のまま保たれることを確認した。
+- **Kill Switchの実通信（LAN端末。VPN不要のシナリオA・B）**: `e2e/phase3/gateway-scenarios.sh`をこの実機に対して`GW_MODE=ssh`で実行し、静的前提（起動ガード・sysctl・`.env`・proxyのnft実行権限）とKill Switchのフェイルクローズ（KS ON・VPN未接続でLAN端末の通信が遮断される）・フェイルオープン（KS OFF・VPN未接続で、修正後は実際にLAN端末からインターネットへ抜けられる）を実LAN端末からの通信で確認（19項目 FAIL 0）。
+- **実VPN（AdGuard VPN）を伴うシナリオC**: 利用者がブラウザで認証を完了した上で、接続後のトンネル経由通信・LAN端末の外部IPがVPN経由になること・切断/瞬断によるKill Switchの遮断・国変更後の新しい経路への切替をこの実機で確認（24項目 FAIL 0）。検証後、AdGuard VPNからログアウトして環境を後始末した。
+- 単体テストの回帰確認: `sh install/tests/run.sh`（25項目 FAIL 0）、`npm run check:neutrality`（OK）、shellcheck（`koalaman/shellcheck`、`-S warning`）で指摘なし。
+
 ## 次フェーズへの申し送り
 
 - 既存環境（検証環境`192.168.3.240`等、旧形式の`.env`）は、`install.sh --providers <ID>,...`を一度実行すれば`COMPOSE_PROFILES`から`COMPOSE_FILE`へ移る（`--no-start`で`.env`だけ更新もできる）。
-- Raspberry Pi OSの32bit（armhf）・実機、Kill Switchの実通信（LAN端末）での確認は未検証。エミュレーション上のビルドは遅い（`web`のviteビルド等で、全イメージのビルドに約1時間）。
+- Raspberry Pi OSの32bit（armhf）・実際のRaspberry Pi機での検証は未検証のまま（今回検証した実機arm64ホストはDebian 13でRaspberry Pi OSではない）。Kill Switchの実通信（LAN端末）は実機arm64ハードウェアで検証済み（上記）。エミュレーション上のビルドは遅い（`web`のviteビルド等で、全イメージのビルドに約1時間）。
+- Docker Engineの既定動作変化（FORWARD既定ポリシー）のように、ホスト側ミドルウェアのアップデートで本製品のネットワーク制御が無効化される類の不具合は、今後もDockerやnftables/iptablesのバージョン更新で再発しうる。新規導入時のE2E（`e2e/phase13/install-scenarios.sh`）に、フェイルオープン時の実際のインターネット到達性を確認する項目を追加できると、次に同種の問題が起きてもCIで検出できる（未実施）。
 - ベンダー固有のホスト側の追加手順（`install-host.sh`）は、現在のバンドルに存在しない。フックの契約は、検査用のバンドルで確認した。ホスト導入を要するベンダーを追加するときは、無効にしたときの取り消し（`uninstall-host.sh`等）を設計する。
 - アンインストール（`docker compose down`・sysctl設定・起動ガードの撤去）は未提供。

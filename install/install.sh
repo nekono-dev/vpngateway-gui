@@ -149,6 +149,15 @@ install_docker() {
   echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$docker_repo $OS_CODENAME stable" > /etc/apt/sources.list.d/docker.list
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
+  # Docker Engine 28以降は、IPフォワーディングを自ら有効化した際にiptables/nftablesのFORWARDチェーンの
+  # 既定ポリシーをDROPへ変更する（ホストをルータ用途で使うと、Docker管理外の転送が遮断される。実機の
+  # arm64クリーンホストで発覚。amd64でも同条件で再現しうる）。本製品はnftables専用テーブル(vpngwgui)で
+  # LAN機器の転送を自前で制御するため、Dockerにこの変更をさせない（daemon.jsonが無い場合のみ作成し、
+  # 既存の設定は上書きしない）。
+  if [ ! -e /etc/docker/daemon.json ]; then
+    install -m 0755 -d /etc/docker
+    printf '{\n  "ip-forward-no-drop": true\n}\n' > /etc/docker/daemon.json
+  fi
   apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
   systemctl enable --now docker
   docker compose version >/dev/null 2>&1 || die "Dockerの導入後も docker compose が使えません"
