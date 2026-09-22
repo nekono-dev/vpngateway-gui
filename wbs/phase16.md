@@ -1,11 +1,11 @@
-# Phase 16: 起動時の接続復元・切断ボタンの配置改善・参考一覧での現在の接続先表示
+# Phase 16: 起動時の接続復元・接続/切断ボタンの配置改善・参考一覧での現在の接続先表示
 
 ## 目的
 
 利用者からの3つの要望に対応する。
 
 1. VPN接続中にホスト・APIコンテナが意図せず再起動された場合、再起動後に元の接続状態（同じ接続先への接続）へ自動的に戻す。
-2. ［切断］ボタンを、誤操作を避けつつ押しやすい位置（画面上部・ログイン/ログアウト導線の隣）へ移動し、強調色（赤系）にする。
+2. ［接続］［切断］ボタンを、誤操作を避けつつ押しやすい位置（画面上部・ログイン/ログアウト導線の隣）へ移動する。［切断］は強調色（赤系）にする。
 3. Proton VPN無料プラン等、接続先を選べないプランで表示している「接続できる国の参考一覧」を、現在接続中の国が分かるときは示すようにし、見た目を接続先リスト（AdGuard VPN等で使っているping順リスト）と揃える（選択・お気に入りは無効化したまま）。
 
 ## 前提
@@ -20,22 +20,22 @@ Phase1〜13完了（Phase14「excludedDomains split-tunnel実処理」・Phase15
 
 ## 主要タスク
 
-詳細は`specs/apiserver/tasks.md`「起動時の接続状態の復元（Phase 16）」・`specs/webserver/tasks.md`「切断ボタンの配置・強調（Phase 16）」「参考一覧での現在の接続先の表示（Phase 16）」参照。
+詳細は`specs/apiserver/tasks.md`「起動時の接続状態の復元（Phase 16）」・`specs/webserver/tasks.md`「接続・切断ボタンの配置・強調（Phase 16）」「参考一覧での現在の接続先の表示（Phase 16）」参照。
 
 - [x] API: 接続の実行を`applyConnectionChange`へ切り出し、起動時の復元処理（`restoreConnectionOnStartup`）と共有する
 - [x] API: 自動接続でも「接続中であったこと」を永続化するよう`connection-state-store.ts`を拡張する
 - [x] API: `server.ts`から起動時に復元処理を呼ぶ（起動をブロックしない）
 - [x] API: 単体テスト
-- [x] Web: 切断ボタンを`DisconnectButton`として切り出し、`SessionCard`のアカウント状態表示の隣（赤系の強調色）へ配置する
+- [x] Web: 接続・切断ボタンをそれぞれ`ConnectButton`・`DisconnectButton`として切り出し、`SessionCard`のアカウント状態表示の隣（切断は赤系の強調色）へ配置する
 - [x] Web: 参考一覧（`AvailableLocations`）を接続先リストと同じ行形式にし、現在の接続先の特定・ping列の出し分けを実装する
 - [x] Web: 既存コンポーネントテストの更新・新規テストの追加
 - [x] 実機検証（`e2e/phase16/webgui-phase16.mjs`をリポジトリへ追加。下記「検証手法」「検証結果」参照）
 
 ## 完了基準
 
-- API・Web双方の単体・コンポーネントテストがFAIL 0であること（api 255件、web 98件）。
+- API・Web双方の単体・コンポーネントテストがFAIL 0であること（api 255件、web 102件）。
 - ベンダー中立性の検査（`npm test`の`check:neutrality`）がFAIL 0であること。
-- 検証環境（実機。AGENTS.md「実機検証のタイミング」）で、①起動時の接続復元が実際に機能すること、②切断ボタンの配置・配色、③参考一覧での現在の接続先表示、をブラウザ・API応答で確認すること。
+- 検証環境（実機。AGENTS.md「実機検証のタイミング」）で、①起動時の接続復元が実際に機能すること、②接続・切断ボタンの配置・配色、③参考一覧での現在の接続先表示、をブラウザ・API応答で確認すること。
 
 ## 検証手法
 
@@ -48,8 +48,9 @@ Phase1〜13完了（Phase14「excludedDomains split-tunnel実処理」・Phase15
 
 - 起動時の接続復元: 上記①〜③をすべて確認。③の再接続後、`GET /v1/connection`は同じ接続先系列（Proton VPN無料プランの自動接続）で`connected`を返した。
 - `e2e/phase16/webgui-phase16.mjs`（9項目PASS）: 切断ボタンがアカウント状態表示と同じ行（`session-top-row`）にあり接続操作の並び（`.connect-row`）には無いこと、背景色が`rgb(207, 34, 46)`（`--danger`）であること、参考一覧に現在接続中の都市名と「接続中」バッジが表示されること、Proton VPN（ping非対応）ではping列が出ないこと、参考一覧の選択用input/aが無くお気に入りボタンがすべて無効化されていることを確認。
-- **検証中に発見・修正した不具合**: 参考一覧での現在の接続先の特定（`findCurrentAvailableLocation`）が、都市名の完全一致でのみ判定していたため、Proton VPNが自動接続時に報告する複合表記（例: `US-FREE#5 in Seattle, United States`。都市名だけでなくサーバ名・国名を含む）と一致せず、「接続中」バッジが表示されなかった。都市名の部分一致（複合表記の中に一覧の都市名が含まれるか）に修正し、単体テスト（`current-available-location.test.ts`）を追加した上で再確認し、解消を確認した。
-- 検証終了時: VPN切断、透過ゲートウェイ=ON・Kill Switch=ONのまま放置（選択中ベンダー: Proton VPN）。詳細な操作ログは検証環境の`~/claude-installed.md`「2026-09-22 vpngateway-gui Phase16 実機検証セッション」参照。
+- **検証中に発見・修正した不具合（1）**: 参考一覧での現在の接続先の特定（`findCurrentAvailableLocation`）が、都市名の完全一致でのみ判定していたため、Proton VPNが自動接続時に報告する複合表記（例: `US-FREE#5 in Seattle, United States`。都市名だけでなくサーバ名・国名を含む）と一致せず、「接続中」バッジが表示されなかった。都市名の部分一致（複合表記の中に一覧の都市名が含まれるか）に修正し、単体テスト（`current-available-location.test.ts`）を追加した上で再確認し、解消を確認した。
+- **検証中に発見・修正した不具合（2）**: 利用者から「切断ボタンは正しい位置だが、接続ボタンの配置が違う」との指摘を受け確認したところ、［切断］ボタンのみを`SessionCard`側へ移設し、［接続］ボタンは`ConnectionActions.tsx`（接続先リストの下）に残ったままだった。AdGuard VPN（接続先81件）の実機で、接続先リストの下までスクロールしないと［接続］ボタンへ到達できないことを確認し、`ConnectButton.tsx`として同様に切り出して`SessionCard`のアカウント状態表示の隣へ配置した。`e2e/phase16/webgui-phase16.mjs`を、開始時の接続状態（接続中/切断中）に応じて検証内容を選ぶ形に書き直し、AdGuard VPN（切断中→接続→切断）・Proton VPN（接続中→切断→接続）の両方で、接続・切断のたびに正しい一方だけがアカウント状態表示の隣に表示されることを確認した。
+- 検証終了時: VPN切断、透過ゲートウェイ=ON・Kill Switch=ONのまま放置（選択中ベンダー: AdGuard VPN）。詳細な操作ログは検証環境の`~/claude-installed.md`「2026-09-22 vpngateway-gui Phase16 実機検証セッション」参照。
 
 ## 次フェーズへの申し送り
 

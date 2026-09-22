@@ -120,14 +120,15 @@
 
 - `SessionCard.tsx`が、プラン名の表示に`plan.usageNote`があれば括弧書きで併記する（例: 「Free（残り3.00 GBです ...）」のように、CLIの文言をそのまま出す。Webサーバは意味を解釈・翻訳しない）。無ければ何も追加しない。
 
-## 切断ボタンの配置・強調の実装方針（Phase 16）
+## 接続・切断ボタンの配置・強調の実装方針（Phase 16）
 
-要件は`requirements.md`「切断ボタンの配置・強調」。
+要件は`requirements.md`「接続・切断ボタンの配置・強調」。
 
-- `ConnectionActions.tsx`が持っていた［切断］ボタンを、独立した部品`DisconnectButton.tsx`（`components/dashboard/DisconnectButton.tsx`）へ切り出した。`ConnectionActions.tsx`は［接続］［接続先を変更］のみを扱う。
-- `App.tsx`が、接続中（`connection?.status === "connected"`）のときだけ`DisconnectButton`を組み立て、`SessionCard`へ`disconnectAction`（`ReactNode`）として渡す。`SessionCard.tsx`は、渡された部品をアカウント状態表示（`session-top-row`）の左に描くだけで、切断の実行自体には関与しない（責務は従来どおりログイン状態の表示のみ）。
+- `ConnectionActions.tsx`が持っていた［接続］［切断］ボタンを、それぞれ独立した部品`ConnectButton.tsx`・`DisconnectButton.tsx`（`components/dashboard/`）へ切り出した。`ConnectionActions.tsx`に残るのは［接続先を変更］のみ（接続中に別の接続先が選ばれているときだけ表示）。
+- `App.tsx`が、接続状態（`connection?.status`）に応じてどちらか一方（未接続時は`ConnectButton`、接続中は`DisconnectButton`）を組み立て、`SessionCard`へ`connectAction`・`disconnectAction`（どちらも`ReactNode`）として渡す。`SessionCard.tsx`は、渡された部品をアカウント状態表示（`session-top-row`）の左に描くだけで、接続・切断の実行自体には関与しない（責務は従来どおりログイン状態の表示のみ）。
 - ログイン状態（`loggedIn`）の判定結果に表示を左右させない（`loggedIn`が未確定・falseでも、接続中なら`disconnectAction`は表示され続ける）。Kill Switch運用中に、ログイン状態の一時的な取得失敗・未確定によって切断操作自体が失われないようにするため。
-- 配色は`button.danger`（`--danger`を背景色に使う。`styles.css`）とする。
+- 配色は、切断のみ`button.danger`（`--danger`を背景色に使う。`styles.css`）とする。接続は従来どおり`button.primary`。
+- **【2026-09-22追記・実機検証で判明】** ［切断］ボタンのみを移設した最初の実装では、［接続］ボタンが`ConnectionActions.tsx`の`connect-row`（接続先リストの下）に残ったままだった。接続先リストが多数（数十件）になる構成の実機で、接続先リストの下までスクロールしないと［接続］ボタンへ到達できない問題が判明し、`ConnectButton.tsx`として同様に切り出した。
 
 ## 参考一覧での現在の接続先の表示の実装方針（Phase 16）
 

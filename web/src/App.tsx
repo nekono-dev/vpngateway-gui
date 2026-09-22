@@ -9,6 +9,7 @@ import { LocationList } from "./components/dashboard/LocationList";
 import { ConnectionActions, type SubmittingAction } from "./components/dashboard/ConnectionActions";
 import { SessionCard } from "./components/dashboard/SessionCard";
 import { DisconnectButton } from "./components/dashboard/DisconnectButton";
+import { ConnectButton } from "./components/dashboard/ConnectButton";
 import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
@@ -153,6 +154,17 @@ export function App() {
               />
             ) : undefined
           }
+          connectAction={
+            connection && connection.status !== "connected" ? (
+              <ConnectButton
+                submitting={submitting === "connect"}
+                hasTarget={autoConnect || target !== undefined}
+                capabilities={capabilities}
+                disabled={isSwitchingProvider || (submitting !== undefined && submitting !== "connect")}
+                onConnect={() => void handleSubmit("connect")}
+              />
+            ) : undefined
+          }
         />
         <LocationList
           locations={locations.locations}
@@ -180,11 +192,9 @@ export function App() {
         <ConnectionActions
           connection={connection}
           submitting={submitting}
-          hasTarget={autoConnect || target !== undefined}
           canChange={canChange}
           capabilities={capabilities}
           disabled={isSwitchingProvider}
-          onConnect={() => void handleSubmit("connect")}
           onChange={() => void handleSubmit("change")}
         />
       </section>

@@ -105,14 +105,15 @@
 - [x] コンポーネントテスト（`usageNote`あり/なし）
 - [x] 実機（検証環境・AdGuard VPN無料アカウント）でのブラウザ表示確認
 
-## 切断ボタンの配置・強調（Phase 16、検証完了）
+## 接続・切断ボタンの配置・強調（Phase 16、検証完了）
 
-- [x] `DisconnectButton.tsx`を切り出し、`ConnectionActions.tsx`からは切断ボタンを除去（接続／接続先を変更のみ）
+- [x] `DisconnectButton.tsx`を切り出し、`ConnectionActions.tsx`からは切断ボタンを除去（当初は接続／接続先を変更のみ残した）
 - [x] `SessionCard.tsx`が`disconnectAction`（`ReactNode`）を受け取り、アカウント状態表示の左（`session-top-row`）に描く。ログイン状態の判定に表示を左右させない
 - [x] `App.tsx`から接続中のみ`DisconnectButton`を渡すよう配線
 - [x] `styles.css`に`button.danger`（`--danger`を背景色に使う強調色）を追加
 - [x] 既存コンポーネントテスト（`App.test.tsx`等）の回帰確認
 - [x] 検証環境（実機）のブラウザ（Playwright）での配置・配色の確認（`e2e/phase16/webgui-phase16.mjs`）
+- [x] **【2026-09-22追記】** 実機確認で、接続先リストが多数のとき［接続］ボタンが依然リストの下に取り残される不具合を発見。`ConnectButton.tsx`を同様に切り出し、`SessionCard.tsx`の`connectAction`として同じ位置へ配置。`ConnectionActions.tsx`は［接続先を変更］のみを扱うよう更新し、単体テスト（`current-available-location.test.ts`は影響なし、既存コンポーネントテストの回帰確認）と実機（Playwright）で接続⇄切断のたびに正しい一方だけが表示されることを確認
 
 ## 参考一覧での現在の接続先の表示（Phase 16、検証完了）
 

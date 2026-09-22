@@ -44,7 +44,7 @@
 | [phase13.md](./phase13.md) | AdGuard VPN無料版への対応（無料版の実機調査に基づき、プラン制限の新しいバリエーション（候補の絞り込み・補足情報）を既存の抽象化の枠組みへ位置づける） | 検証完了（2026-09-22。設計した「プランの補足情報（`usageNote`）」をapi・webとも実装し、単体・コンポーネントテストがFAIL 0（api 253件、web 96件）。実機（検証環境・AdGuard VPN無料アカウント）で、Web UI（Playwright）のアカウント表示への残りデータ通信量の併記、接続先の絞り込み一覧（10件）・接続・切断・`site-exclusions`が制限なく動作することを確認。詳細は`phase13.md`「検証結果」） |
 | [phase14.md](./phase14.md) | excludedDomains split-tunnel実処理 | 未着手 |
 | [phase15.md](./phase15.md) | 運用強化・将来課題 | 未着手 |
-| [phase16.md](./phase16.md) | 起動時の接続復元・切断ボタンの配置改善・参考一覧での現在の接続先表示 | 検証完了（2026-09-22。検証環境（ubuntu@192.168.3.240、Proton VPN無料アカウント）で、意図しない切断→APIコンテナ再起動による自動再接続（ログ`restored VPN connection at startup`・`GET /v1/connection`で確認）、Web UI（Playwright、`e2e/phase16/webgui-phase16.mjs`、9項目PASS）で切断ボタンの配置・配色、参考一覧での現在の接続先バッジ・ping列の出し分け・選択無効化を確認。api 255件・web 98件の単体/コンポーネントテストとベンダー中立性の検査もFAIL 0。検証中に発見した不具合1件（参考一覧の現在の接続先特定がCLIの複合表記に一致しない）を修正・再確認済み。詳細は`phase16.md`「検証結果」） |
+| [phase16.md](./phase16.md) | 起動時の接続復元・接続/切断ボタンの配置改善・参考一覧での現在の接続先表示 | 検証完了（2026-09-22。検証環境（ubuntu@192.168.3.240、AdGuard VPN・Proton VPN無料アカウント）で、意図しない切断→APIコンテナ再起動による自動再接続（ログ`restored VPN connection at startup`・`GET /v1/connection`で確認）、Web UI（Playwright、`e2e/phase16/webgui-phase16.mjs`）で接続・切断ボタンの配置・配色・接続状態に応じた切替、参考一覧での現在の接続先バッジ・ping列の出し分け・選択無効化を確認。api 255件・web 102件の単体/コンポーネントテストとベンダー中立性の検査もFAIL 0。検証中に発見した不具合2件（参考一覧の現在の接続先特定がCLIの複合表記に一致しない、切断ボタンのみ移設し接続ボタンが接続先リストの下に残っていた）を修正・再確認済み。詳細は`phase16.md`「検証結果」） |
 
 ## フェーズ分割の考え方
 
