@@ -2,7 +2,9 @@
 // （`loginMethod`で切替: URL提示型のボタン／ユーザー名・パスワード入力型のフォーム）、ログアウトの組み立てのみを行う。
 // ログイン完了後の状態反映は、ダッシュボードの状態ポーリング（useDashboardPolling）を即時再取得させて行う
 // （従来の`VpnLoginButton`を置換。webserver/design.md「コンポーネントと責務」）。
-import { useState } from "react";
+// 【Phase 16】切断ボタンは押しやすい位置に置くため、親（App）から渡された部品をログアウトボタンの隣に表示する
+// だけで、切断そのものの組み立てはここでは行わない（webserver/requirements.md「切断ボタンの配置・強調」）。
+import { type ReactNode, useState } from "react";
 import type { CapabilitiesState, SessionState } from "../../hooks/useDashboardPolling";
 import { deleteV1Session, postV1Session } from "../../generated/api/default/default";
 import { isAvailable, reasonOf } from "../../capabilities/capability-state";
@@ -17,9 +19,11 @@ interface Props {
   capabilities: CapabilitiesState | undefined;
   // ログイン・ログアウトの成功後に状態を再取得する。
   onChanged: () => void;
+  // 接続中のみ親から渡される切断ボタン（DisconnectButton）。ログアウトボタンの隣に表示する。
+  disconnectAction?: ReactNode;
 }
 
-export function SessionCard({ session, capabilities, onChanged }: Props) {
+export function SessionCard({ session, capabilities, onChanged, disconnectAction }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // URL提示型のログインで返されたURL・メッセージ。
   const [result, setResult] = useState<{ loginUrl?: string; message: string }>();
@@ -89,10 +93,15 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
 
   return (
     <div className="session-card">
-      {statusText ? (
-        <p className="session-status">
-          アカウント: <strong>{statusText}</strong>
-        </p>
+      {disconnectAction || statusText ? (
+        <div className="session-top-row">
+          {disconnectAction}
+          {statusText ? (
+            <p className="session-status">
+              アカウント: <strong>{statusText}</strong>
+            </p>
+          ) : null}
+        </div>
       ) : null}
       {loggedIn !== true && canLogin ? (
         loginMethod === "credentials" ? (

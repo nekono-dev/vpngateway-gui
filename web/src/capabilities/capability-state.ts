@@ -32,6 +32,19 @@ export function reasonOf(capabilities: Capabilities | undefined, key: OperationK
 }
 
 /**
+ * 目的: このベンダーのCLIがping計測に対応しているかを返す（プラン制限で計測できない状態とは区別する）。
+ *      `pingMeasurement`は接続先一覧（`locationList`）に従属するcapabilityで、一覧自体がプラン制限で
+ *      使えないときはプラン制限の理由を継承するため、`reason === "unsupported"`のときだけ非対応と判定する
+ *      （継承した`planRestricted`はプロバイダの非対応を意味しないため）。
+ * 入力: capabilities(未取得ならundefined)。
+ * 出力: 非対応と判定できるときだけfalse。それ以外（対応・不明）はtrue。
+ * 例: supportsLocationPing({ pingMeasurement: { available: false, reason: "unsupported" }, ... }) // => false
+ */
+export function supportsLocationPing(capabilities: Capabilities | undefined): boolean {
+  return capabilities?.pingMeasurement?.reason !== "unsupported";
+}
+
+/**
  * 目的: ［接続］を「接続先を指定しない接続（connectAuto）」として使うかを決める。
  *      接続先を選んで接続できるとき（connectToLocation）はそちらを優先し、使えず自動接続が使えるときだけ自動接続にする
  *      （webserver/requirements.md「操作の制限表示」）。

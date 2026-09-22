@@ -9,6 +9,7 @@ import { LocationRow } from "./LocationRow";
 import { AvailableLocations } from "./AvailableLocations";
 import { RestrictionNote } from "./RestrictionNote";
 import type { AvailableLocation } from "../../hooks/useAvailableLocations";
+import type { CurrentAvailableLocation } from "../../locations/current-available-location";
 
 interface Props {
   locations: LocationItem[];
@@ -27,6 +28,10 @@ interface Props {
   unavailableReason?: string;
   // 一覧が使えないプランで接続できる国の参考一覧（理由文の下に表示する。空・未指定なら何も出さない）。
   availableLocations?: AvailableLocation[];
+  // 参考一覧の中で現在接続中の国（Phase 16）。特定できないときはundefined。
+  currentAvailableLocation?: CurrentAvailableLocation;
+  // 参考一覧にping列を出すか（CLIがping計測に対応しているか）。
+  availableLocationsShowPing?: boolean;
   // ★（お気に入り）・「再計測」を操作できない理由。指定されていれば該当ボタンを無効化して理由を表示する。
   favoritesDisabledReason?: string;
   refreshDisabledReason?: string;
@@ -47,6 +52,8 @@ export function LocationList({
   onToggleFavorite,
   unavailableReason,
   availableLocations,
+  currentAvailableLocation,
+  availableLocationsShowPing = true,
   favoritesDisabledReason,
   refreshDisabledReason,
 }: Props) {
@@ -63,7 +70,11 @@ export function LocationList({
     return (
       <>
         <RestrictionNote message={unavailableReason} />
-        <AvailableLocations locations={availableLocations ?? []} />
+        <AvailableLocations
+          locations={availableLocations ?? []}
+          current={currentAvailableLocation}
+          showPing={availableLocationsShowPing}
+        />
       </>
     );
   }

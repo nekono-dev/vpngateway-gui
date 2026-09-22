@@ -111,7 +111,7 @@
 要件は`requirements.md`「プランで接続できる接続先の参考表示」。
 
 - **取得**: `useAvailableLocations(enabled, providerId)`（`hooks/useAvailableLocations.ts`）が`GET /v1/connection/available-locations`を取得する。`enabled`は「接続先リストが制限されている（`locationList`が使えない）」のとき。ベンダー切替・`enabled`がtrueになったときに取得する（ポーリングしない）。ベンダー切替で前のベンダーの結果を捨てる（世代管理は`useLocations`と同じ）。失敗・空は「表示なし」として扱い、通知しない。
-- **表示**: `AvailableLocations`（`components/dashboard/AvailableLocations.tsx`）が、国名と都市の一覧を、操作できない要素（`ul`）として描く。`LocationList`は、`unavailableReason`の理由文（`RestrictionNote`）の直後に、渡された一覧があればこれを描く。
+- **表示**: `AvailableLocations`（`components/dashboard/AvailableLocations.tsx`）が、国名と都市の一覧を、選択・お気に入りを無効化した行（接続先リストと同じ見た目。下記「参考一覧での現在の接続先の表示の実装方針（Phase 16）」参照）として描く。`LocationList`は、`unavailableReason`の理由文（`RestrictionNote`）の直後に、渡された一覧があればこれを描く。
 - 一覧が変わるのはプラン変更（再ログイン）時のため、ログイン状態（`GET /v1/session`のプラン）が変わったときにも再取得する。
 
 ## プランの補足情報の参考表示の実装方針（Phase 13）
@@ -119,4 +119,22 @@
 要件は`requirements.md`「ログイン導線」（プラン名への補足併記）。追加の取得は行わず、`SessionCard.tsx`が既に持つ`GET /v1/session`の応答（`plan.usageNote`）をそのまま使う。
 
 - `SessionCard.tsx`が、プラン名の表示に`plan.usageNote`があれば括弧書きで併記する（例: 「Free（残り3.00 GBです ...）」のように、CLIの文言をそのまま出す。Webサーバは意味を解釈・翻訳しない）。無ければ何も追加しない。
+
+## 切断ボタンの配置・強調の実装方針（Phase 16）
+
+要件は`requirements.md`「切断ボタンの配置・強調」。
+
+- `ConnectionActions.tsx`が持っていた［切断］ボタンを、独立した部品`DisconnectButton.tsx`（`components/dashboard/DisconnectButton.tsx`）へ切り出した。`ConnectionActions.tsx`は［接続］［接続先を変更］のみを扱う。
+- `App.tsx`が、接続中（`connection?.status === "connected"`）のときだけ`DisconnectButton`を組み立て、`SessionCard`へ`disconnectAction`（`ReactNode`）として渡す。`SessionCard.tsx`は、渡された部品をアカウント状態表示（`session-top-row`）の左に描くだけで、切断の実行自体には関与しない（責務は従来どおりログイン状態の表示のみ）。
+- ログイン状態（`loggedIn`）の判定結果に表示を左右させない（`loggedIn`が未確定・falseでも、接続中なら`disconnectAction`は表示され続ける）。Kill Switch運用中に、ログイン状態の一時的な取得失敗・未確定によって切断操作自体が失われないようにするため。
+- 配色は`button.danger`（`--danger`を背景色に使う。`styles.css`）とする。
+
+## 参考一覧での現在の接続先の表示の実装方針（Phase 16）
+
+要件は`requirements.md`「参考一覧での現在の接続先の表示」。
+
+- **現在の接続先の特定**: `locations/current-available-location.ts`の`findCurrentAvailableLocation(connection, availableLocations)`が、`connection.location`（CLIが報告した都市名）を、参考一覧の各国の`cities`と大文字小文字を区別せず突き合わせる純粋関数。`locations/current-location.ts`の`findCurrentLocationId`（接続先リスト向け）と同じ考え方を、接続先IDを持たない参考一覧向けに行う。
+- **表示**: `AvailableLocations.tsx`は、接続先リストの行（`LocationRow.tsx`が使う`location-item`・`location-row`・`location-iso`・`location-name`・`badge`等のクラス）と同じマークアップ・CSSクラスを再利用して行を描く。ただし選択（ラジオ入力）は置かず、非活性のクリックできない行として描く。★（お気に入り）も常に無効化した`<button disabled>`のみを置き、実際の登録操作は行わない（`LocationRow.tsx`本体は再利用せず、見た目のクラスのみ共有する。参考一覧はIDを持たず、`LocationItem`型に合わせる意味が無いため）。
+- **ping列の出し分け**: `capabilities/capability-state.ts`の`supportsLocationPing(capabilities)`が、`pingMeasurement`capabilityの`reason`が`"unsupported"`のときだけ非対応と判定する。`pingMeasurement`は`locationList`に従属するcapabilityのため（`apiserver/design.md`「オペレーションと実行可否（capability）」）、参考一覧が表示される状況（`locationList`がプラン制限で使えない）では、素の`isAvailable(capabilities, "pingMeasurement")`は常にfalseになってしまい判定に使えない。`reason`で「非対応（`unsupported`）」と「プラン制限の継承（`planRestricted`）」を区別することで、CLIそのものの対応可否のみを見る。
+- 参考一覧は生存確認を伴わない静的なサーバ一覧が出典のため、対応していても実際のping値は持たず、列は「-」のまま表示される。
 - 単なるテキスト表示のため、独立したフックやコンポーネントは設けない（`AvailableLocations`のような専用取得・専用部品は不要）。

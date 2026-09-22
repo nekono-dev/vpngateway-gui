@@ -4,6 +4,7 @@ import { buildApp } from "./app.js";
 import { getSettings } from "./settings/settings-store.js";
 import { notifySettings } from "./proxy-client/proxy-client.js";
 import { getProviders } from "./providers/provider-registry.js";
+import { restoreConnectionOnStartup } from "./connection-state/restore-connection.js";
 
 // 有効なベンダーのプロファイルを起動時に読み込み、不正なら起動を失敗させる（実行時に初めて壊れるのを避ける）。
 const providers = getProviders();
@@ -42,6 +43,10 @@ async function pushCurrentSettingsToProxy(): Promise<void> {
 }
 
 void pushCurrentSettingsToProxy();
+
+// 起動時の接続状態の復元（Phase 16）: 意図せぬプロセス終了（ホスト再起動等）からの復帰時、直前に接続中だった
+// 接続先へ自動的に再接続する。ランナーの起動待ちを内部で行うため、上記の設定通知と同様に起動をブロックしない。
+void restoreConnectionOnStartup(app.log);
 
 // proxyコンテナ単体の再起動・再作成（APIは動き続ける）や、proxy側でのVPNデーモン消滅に追従するため、
 // 現在の設定を定期的に再通知する。通知は冪等（proxy側は受信のたびに全撤去→再適用）であり、

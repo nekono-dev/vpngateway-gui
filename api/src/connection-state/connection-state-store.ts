@@ -4,6 +4,9 @@
 // Web UIのリロード・別端末からの閲覧でも接続先を表示できるよう、クライアントではなくAPI側（データボリューム）に保存する。
 // 切断で消える「現在の接続先」であり、切断後も残る「最後に接続した接続先」は locations/last-location-store.ts が担う。
 // 単一JSONファイルへのread-modify-write（低頻度更新のため。settings-store.tsと同方針で競合は考慮しない）。
+// 【Phase 16】接続先を指定しない接続（自動接続。接続先を選べないプラン等）でも、国・接続先IDを持たない空の内容
+// （`{}`）で保存する。「接続中であったこと自体」が、起動時の接続復元（restore-connection.ts）が
+// 再接続すべきかを判定する唯一の手がかりになるため。
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -15,9 +18,10 @@ function stateFile(providerId: string): string {
   return providerStatePath(providerId, "connection-state.json");
 }
 
-interface StoredConnection {
-  country: string;
-  // 接続先ID（locations/location-id.ts）。Phase 8より前に保存されたファイルには無い。
+export interface StoredConnection {
+  // 接続時に要求した国コード。自動接続（接続先を指定しない）で保存した場合はundefined。
+  country?: string;
+  // 接続先ID（locations/location-id.ts）。Phase 8より前に保存されたファイル・自動接続には無い。
   locationId?: string;
   // 接続成功時にCLIが報告した接続先の都市名。読み取れなかった場合はundefined。
   location?: string;
@@ -27,17 +31,18 @@ interface StoredConnection {
  * 目的: 保存済みの接続情報を読み出す。
  * 入力: providerId(対象のベンダーID)。
  * 出力: 保存内容。未保存・破損（JSON不正・形状不正）の場合はundefined（国を表示しないだけで動作は継続する）。
+ * 用途: `reconcileLocation`（このファイル内）に加え、起動時の接続復元（restore-connection.ts、Phase 16）が
+ *      「直前のプロセス終了時点で接続中だった接続先」を読み出すために使う。
  */
-function readStored(providerId: string): StoredConnection | undefined {
+export function getStoredConnection(providerId: string): StoredConnection | undefined {
   const file = stateFile(providerId);
   if (!existsSync(file)) return undefined;
   try {
     const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const { country, location, locationId } = parsed as Record<string, unknown>;
-    if (typeof country !== "string" || country.length === 0) return undefined;
     return {
-      country,
+      country: typeof country === "string" && country.length > 0 ? country : undefined,
       location: typeof location === "string" ? location : undefined,
       locationId: typeof locationId === "string" ? locationId : undefined,
     };
@@ -47,14 +52,16 @@ function readStored(providerId: string): StoredConnection | undefined {
 }
 
 /**
- * 目的: 接続成功時に、要求した接続先（ID・国コード）と、CLIが報告した都市名を保存する。
- * 入力: providerId(対象のベンダーID), requested(接続時に要求した接続先の`{ locationId, country }`), location(CLIが報告した都市名。不明ならundefined)。
+ * 目的: 接続成功時に、要求した接続先（ID・国コード。自動接続なら空）と、CLIが報告した都市名を保存する。
+ * 入力: providerId(対象のベンダーID), requested(接続時に要求した接続先の`{ locationId, country }`。
+ *       自動接続で接続先を指定していない場合は空オブジェクト), location(CLIが報告した都市名。不明ならundefined)。
  * 副作用: ベンダー別の保存ファイルへ書き込む（ディレクトリが無ければ作成）。
  * 例: saveConnectedLocation("vendora", { locationId: "jp-tokyo", country: "jp" }, "TOKYO")
+ *     saveConnectedLocation("vendorb", {}, undefined) // 自動接続（接続先の指定なし）
  */
 export function saveConnectedLocation(
   providerId: string,
-  requested: { locationId: string; country: string },
+  requested: { locationId?: string; country?: string },
   location: string | undefined,
 ): void {
   const file = stateFile(providerId);
@@ -87,11 +94,15 @@ export function reconcileLocation(providerId: string, observed: ConnectionStatus
     clearConnectedLocation(providerId);
     return observed;
   }
-  const stored = readStored(providerId);
+  const stored = getStoredConnection(providerId);
   if (!stored) return observed;
   if (stored.location && observed.location && stored.location !== observed.location) {
     clearConnectedLocation(providerId);
     return observed;
   }
-  return { ...observed, country: stored.country, ...(stored.locationId ? { locationId: stored.locationId } : {}) };
+  return {
+    ...observed,
+    ...(stored.country ? { country: stored.country } : {}),
+    ...(stored.locationId ? { locationId: stored.locationId } : {}),
+  };
 }

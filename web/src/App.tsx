@@ -8,6 +8,7 @@ import { GatewayStatusCard } from "./components/dashboard/GatewayStatusCard";
 import { LocationList } from "./components/dashboard/LocationList";
 import { ConnectionActions, type SubmittingAction } from "./components/dashboard/ConnectionActions";
 import { SessionCard } from "./components/dashboard/SessionCard";
+import { DisconnectButton } from "./components/dashboard/DisconnectButton";
 import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
@@ -17,8 +18,9 @@ import { putV1Connection } from "./generated/api/default/default";
 import { useAvailableLocations } from "./hooks/useAvailableLocations";
 import { useLocations } from "./hooks/useLocations";
 import { findCurrentLocationId, resolveEffectiveId } from "./locations/current-location";
+import { findCurrentAvailableLocation } from "./locations/current-available-location";
 import { locationLabel } from "./locations/location-filter";
-import { isAvailable, reasonOf, usesAutoConnect } from "./capabilities/capability-state";
+import { isAvailable, reasonOf, supportsLocationPing, usesAutoConnect } from "./capabilities/capability-state";
 
 export function App() {
   // 利用者が接続先リストで明示的に選んだ接続先ID。未選択の間は、接続中なら現在の接続先、
@@ -137,7 +139,21 @@ export function App() {
       <GatewayStatusCard gateway={data?.gateway} gatewayError={data?.gatewayError} isLoading={isLoading} />
       {/* ベンダーが替わったら、接続操作カード内のローカルな状態（絞り込み・タブ・ログインの入力・URL）を捨てるため、IDをkeyにして再マウントする。 */}
       <section key={activeProviderId} className="card controls" aria-label="接続操作">
-        <SessionCard session={data?.session} capabilities={capabilities} onChanged={refresh} />
+        <SessionCard
+          session={data?.session}
+          capabilities={capabilities}
+          onChanged={refresh}
+          disconnectAction={
+            connection?.status === "connected" ? (
+              <DisconnectButton
+                submitting={submitting === "disconnect"}
+                capabilities={capabilities}
+                disabled={isSwitchingProvider || (submitting !== undefined && submitting !== "disconnect")}
+                onDisconnect={() => void handleSubmit("disconnect")}
+              />
+            ) : undefined
+          }
+        />
         <LocationList
           locations={locations.locations}
           isLoading={locations.isLoading}
@@ -151,6 +167,8 @@ export function App() {
           onToggleFavorite={(locationId, favorite) => void locations.setFavorite(locationId, favorite)}
           unavailableReason={reasonOf(capabilities, "locationList")}
           availableLocations={availableLocations}
+          currentAvailableLocation={findCurrentAvailableLocation(connection, availableLocations)}
+          availableLocationsShowPing={supportsLocationPing(capabilities)}
           favoritesDisabledReason={reasonOf(capabilities, "locationFavorites")}
           refreshDisabledReason={reasonOf(capabilities, "pingMeasurement")}
         />
@@ -168,7 +186,6 @@ export function App() {
           disabled={isSwitchingProvider}
           onConnect={() => void handleSubmit("connect")}
           onChange={() => void handleSubmit("change")}
-          onDisconnect={() => void handleSubmit("disconnect")}
         />
       </section>
       <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />

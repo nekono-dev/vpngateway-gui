@@ -1,6 +1,7 @@
-// 責務: 接続／切断／「接続先を変更」ボタンの出し分けと二重送信防止（送信中は全ボタンを無効化）、および
+// 責務: 「接続」「接続先を変更」ボタンの出し分けと二重送信防止（送信中は無効化）、および
 // 操作の実行可否（capability）による無効化・理由表示のみを行う（webserver/requirements.md「接続先リスト」「操作の制限表示」、
 // design.md「選択・ボタンの状態遷移」）。何を接続先とするか、自動接続として使うかの決定は親が行う。
+// 切断ボタンはSessionCard側（ログイン/ログアウト導線の隣）に置くため、ここでは扱わない（Phase 16「切断ボタンの配置」）。
 import type { CapabilitiesState, ConnectionState } from "../../hooks/useDashboardPolling";
 import { connectBlockedReason, isAvailable, reasonOf } from "../../capabilities/capability-state";
 import { RestrictionNote } from "./RestrictionNote";
@@ -21,7 +22,6 @@ interface Props {
   disabled?: boolean;
   onConnect: () => void;
   onChange: () => void;
-  onDisconnect: () => void;
 }
 
 export function ConnectionActions({
@@ -33,37 +33,24 @@ export function ConnectionActions({
   disabled = false,
   onConnect,
   onChange,
-  onDisconnect,
 }: Props) {
   const isBusy = submitting !== undefined || disabled;
-  const disconnectReason = reasonOf(capabilities, "disconnect");
 
   if (connection?.status === "connected") {
     const changeReason = reasonOf(capabilities, "changeLocation");
+    if (!canChange) return null;
     return (
       <div className="connect-row">
-        {canChange ? (
-          <button
-            type="button"
-            className="primary"
-            disabled={isBusy || changeReason !== undefined}
-            aria-describedby={changeReason === undefined ? undefined : "change-restriction"}
-            onClick={onChange}
-          >
-            {submitting === "change" ? "処理中..." : "接続先を変更"}
-          </button>
-        ) : null}
         <button
           type="button"
-          className={canChange ? undefined : "primary"}
-          disabled={isBusy || disconnectReason !== undefined}
-          aria-describedby={disconnectReason === undefined ? undefined : "disconnect-restriction"}
-          onClick={onDisconnect}
+          className="primary"
+          disabled={isBusy || changeReason !== undefined}
+          aria-describedby={changeReason === undefined ? undefined : "change-restriction"}
+          onClick={onChange}
         >
-          {submitting === "disconnect" ? "処理中..." : "切断"}
+          {submitting === "change" ? "処理中..." : "接続先を変更"}
         </button>
-        {canChange ? <RestrictionNote id="change-restriction" message={changeReason} /> : null}
-        <RestrictionNote id="disconnect-restriction" message={disconnectReason} />
+        <RestrictionNote id="change-restriction" message={changeReason} />
       </div>
     );
   }

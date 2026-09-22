@@ -114,9 +114,37 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       renderApp();
       const group = await screen.findByRole("group", { name: "接続できる国（参考）" });
       expect(group).toHaveTextContent("選択はできません");
-      expect(group).toHaveTextContent("アメリカ合衆国（Ashburn、Chicago）");
+      expect(group).toHaveTextContent("アメリカ合衆国");
+      expect(group).toHaveTextContent("Ashburn、Chicago");
       expect(group).toHaveTextContent("日本");
-      expect(group.querySelector("button, a, input")).toBeNull();
+      // 接続先リストと見た目を揃えた行形式だが、選択（ラジオ・リンク）はできず、★も非活性のまま
+      // （webserver/requirements.md「Proton VPN無料プラン等の現在の接続先表示」）。
+      expect(group.querySelector("input, a")).toBeNull();
+      for (const button of group.querySelectorAll("button")) {
+        expect(button).toBeDisabled();
+      }
+    });
+
+    it("接続中は、CLIが報告した都市名から現在の接続先を特定して「接続中」バッジを表示する（ping非対応なので列は出さない）", async () => {
+      api.getV1Connection.mockResolvedValue({ status: 200, data: { status: "connected", location: "Ashburn" } });
+      api.getV1ConnectionAvailableLocations.mockResolvedValue({
+        status: 200,
+        data: {
+          locations: [
+            { code: "US", name: "アメリカ合衆国", cities: ["Ashburn", "Chicago"] },
+            { code: "JP", name: "日本", cities: [] },
+          ],
+        },
+      });
+      renderApp();
+      const group = await screen.findByRole("group", { name: "接続できる国（参考）" });
+      // 現在の接続先の行は、報告された都市名を主表示にし、国名を補足として下に出す。
+      const currentItem = group.querySelector(".badge-ok")?.closest("li");
+      expect(currentItem).toHaveTextContent("Ashburn");
+      expect(currentItem).toHaveTextContent("アメリカ合衆国");
+      expect(currentItem).toHaveTextContent("接続中");
+      // 無料プランのpingMeasurementは"unsupported"（このプロバイダはping非対応）のため、列自体を出さない。
+      expect(group.querySelector(".location-ping")).toBeNull();
     });
 
     it("参考一覧が空、または取得に失敗しても、何も表示せず通知もしない", async () => {

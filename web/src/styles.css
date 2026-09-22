@@ -75,6 +75,14 @@ button.primary {
   font-weight: 600;
 }
 
+/* 切断ボタン（Phase 16）: 押しやすい位置（ログイン/ログアウト導線の隣）に置き、誤操作を避けるため目立つ配色にする */
+button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+
 select,
 textarea,
 input[type="search"] {
@@ -483,6 +491,13 @@ dialog [role="alert"] {
   margin: 0;
 }
 
+/* 切断ボタンの配置（Phase 16）: アカウント状態表示の左に置き、ログイン/ログアウト導線の近くで押せるようにする */
+.session-top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .session-actions {
   display: flex;
   flex-wrap: wrap;
@@ -513,11 +528,13 @@ dialog [role="alert"] {
   font-size: 0.875rem;
 }
 
-/* プランで接続できる国の参考表示（Phase 14） */
-.available-locations ul {
-  margin: 4px 0 0;
-  padding-left: 1.25rem;
-  font-size: 0.875rem;
+/* プランで接続できる国の参考表示（Phase 12・Phase 16で接続先リストと見た目を統一） */
+.available-locations .location-scroll {
+  margin-top: 4px;
+}
+
+.location-row-static {
+  cursor: default;
 }
 
 /* VPNベンダーの選択（Phase 11） */

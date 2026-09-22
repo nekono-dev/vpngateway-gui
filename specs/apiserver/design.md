@@ -648,3 +648,24 @@ CN    China                Shanghai (Virtual)             59
 ### 検討し、採用しなかった案
 
 - **`connect`・`listLocations`の`restrictedPattern`で「無料プランの接続先制限」を検出する案**: AdGuard VPNの実機検証（2026-09-22）で、無料プランで一覧に無い接続先を指定した`connect`の失敗は`Failed to start the VPN service in the background: Disconnected`（exit 13）であり、Proton VPNの`not available on the free plan`のような、プラン制限に固有の文言を持たない。他の失敗理由（一時的なサーバ障害等）と区別できないため、`restrictedPattern`として宣言しない。接続先の選択はWeb UIが`listLocations`の結果（無料プランでは既に絞り込まれた一覧）からのみ行わせる設計のため、一覧に無い接続先を指定する操作自体が通常のUI操作では発生しない。
+
+## 起動時の接続状態の復元（Phase 16）
+
+要件は`requirements.md`「起動時の接続状態の復元」。VPN接続中にホスト・apiコンテナが意図せず再起動された場合、再起動後に元の接続状態へ自動的に戻す。
+
+### 接続の実行の切り出し（`connection-state/apply-connection.ts`）
+
+- `PUT /v1/connection`ルートハンドラに書かれていた「接続先の解決・コマンド実行・成否判定・永続化」を`applyConnectionChange(provider, body)`として切り出した。ルートハンドラと、起動時の復元処理（下記）の両方から呼ぶ（重複を避けるため）。
+- 例外・監査ログ・永続化の方針はPhase 15までと変わらない。`assertNotSwitching()`（ベンダー切替中の排他）は呼び出し側の責務のまま据え置く（起動時は切替が発生し得ないため確認不要）。
+
+### 接続状態の永続化の拡張（`connection-state/connection-state-store.ts`）
+
+- 従来、`saveConnectedLocation`は接続先を指定した接続（`locationId`あり）のときのみ呼ばれ、自動接続（接続先を選べないプラン等）では呼ばれなかった。Phase 16で、自動接続の成功時にも`country`・`locationId`を持たない空の内容（`{}`）で保存するようにした。「接続中であったこと自体」が、起動時に再接続すべきかを判定する唯一の手がかりになるため。
+- `StoredConnection.country`を必須から省略可へ変更した。空の内容で保存されたファイルは、`GET /v1/connection`の表示（`reconcileLocation`）には影響しない（`country`が無ければ何も付与しない、従来どおり）。
+
+### 復元処理（`connection-state/restore-connection.ts`）
+
+- apiサーバ起動時（`server.ts`）に、他の起動時処理（プロキシへの設定通知）と同じ方針（非同期・失敗してもサーバ起動を妨げない・数回リトライ）で実行する。
+- 手順: ①選択中のベンダーの保存済み接続情報を読む。無ければ何もしない（直前が切断中だった、または一度も接続していない）。②ランナーの起動を待つ（`checkRunnerHealth`を数回リトライ。ランナーは`api`の`depends_on`に含まれないため起動直後は間に合わないことがある）。起動しなければ警告を記録して終える。③現在の`status`を確認し、既に接続中なら何もしない（apiコンテナ単体の再起動等でトンネル自体は生きていた場合）。④保存済みの`locationId`があれば`applyConnectionChange`へ`{ connect: true, locationId }`を、無ければ（自動接続だった）`{ connect: true }`を渡して再接続する。
+- 失敗（ランナー起動待ちの超過、未ログイン、CLIの一時的な失敗等）はすべて警告としてログに記録し、例外を投げない。利用者は手動で接続し直せる。
+- 対象は選択中のベンダーのみ（複数ベンダー同時稼働は対象外。`specs/requirements.md`「システム要件」）。
