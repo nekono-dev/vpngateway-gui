@@ -107,7 +107,6 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
 
   return (
     <div aria-label="稼働状況">
-      <h2>稼働状況</h2>
       <dl className="status-list">
         <dt>透過ゲートウェイ</dt>
         {/* dd要素はARIA上アクセシブルネームを付けられないため、テスト（単体・E2E）が機能ごとの行を特定する目的でdata-testidを付ける。 */}
