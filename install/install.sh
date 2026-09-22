@@ -8,6 +8,7 @@
 #   1. 事前検査（root・Debian系・systemd・CPU）  2. 共通の依存パッケージとDocker（公式リポジトリ）
 #   3. ホストの設定（IPフォワーディング・起動時のKill Switchガード）  4. .envの作成・更新（LAN側IF・有効なベンダー・composeの合成）
 #   5. ベンダー固有のホスト側手順（vendors/<ID>/install-host.sh。あるベンダーだけ）  6. 起動と待機  7. 完了の表示
+# --uninstall指定時は上記を行わず、代わりにこのインストーラが導入・作成したものを後始末する（下記「--uninstall」参照）。
 #
 # 使い方（root権限で）: sh install/install.sh --providers <ID>[,<ID>...] [--lan-iface <名前>] [--redetect-lan-iface] [--no-start]
 #   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
@@ -16,6 +17,13 @@
 #   --redetect-lan-iface   保存済みのLAN側インターフェース名を捨てて再検出する。
 #   --no-start             起動（docker compose up）をしない。
 # 例: sudo sh install/install.sh --providers vendora,vendorb
+#
+# 使い方（アンインストール、root権限で）: sh install/install.sh --uninstall [--keep-data]
+#   --uninstall            docker composeスタックの停止・削除（既定でボリューム＝ベンダーのログイン情報も削除）、IPフォワーディング設定、
+#                           起動時のKill Switchガード、有効なベンダーのホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）を行う。
+#                           ソースの取得先ディレクトリ・Docker本体・apt依存パッケージは対象外（手動で削除すること。README.md参照）。
+#   --keep-data             --uninstall と併用。ベンダーのログイン情報（Dockerボリューム）を削除せず残す（再導入時にログイン状態を維持したい場合）。
+# 例: sudo sh install/install.sh --uninstall
 
 set -eu
 
@@ -32,6 +40,8 @@ PROVIDERS_ARG=""
 LAN_IFACE_ARG=""
 REDETECT_LAN=0
 NO_START=0
+UNINSTALL=0
+KEEP_DATA=0
 
 # 目的: 進行状況・エラーを標準出力・標準エラーへ出す。
 # 入力: 表示する文字列。
@@ -40,7 +50,7 @@ die() { printf 'エラー: %s\n' "$*" 1>&2; exit 1; }
 
 # 目的: 使い方を表示する。
 usage() {
-  sed -n '/^# 使い方/,/^# 例:/p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '/^# 使い方/,/^set -eu/p' "$0" | sed '/^set -eu/d;s/^# \{0,1\}//'
 }
 
 # 目的: コマンドライン引数を解釈して、上のグローバル変数へ入れる。
@@ -54,10 +64,13 @@ parse_args() {
       --lan-iface=*) LAN_IFACE_ARG=${1#*=}; shift ;;
       --redetect-lan-iface) REDETECT_LAN=1; shift ;;
       --no-start) NO_START=1; shift ;;
+      --uninstall) UNINSTALL=1; shift ;;
+      --keep-data) KEEP_DATA=1; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "不明な引数です: $1（--help で使い方を表示）" ;;
     esac
   done
+  [ "$KEEP_DATA" -eq 0 ] || [ "$UNINSTALL" -eq 1 ] || die "--keep-data は --uninstall と併用してください"
 }
 
 # 目的: .envから1つの値を取り出す。
@@ -326,10 +339,85 @@ finish() {
   echo "  設定の変更:    sudo sh $REPO_ROOT/install/install.sh --providers <ID>,...（同じ操作の再実行で、有効なベンダーを変更できる）"
 }
 
+# 目的: docker composeスタック（コンテナ・ネットワーク、既定ではボリュームも）を停止・削除する。
+# 挙動: .envまたはdocker-compose.ymlが無ければ、導入されていないとみなして何もしない（アンインストールの再実行・未導入ホストでも安全）。
+uninstall_stack() {
+  if [ ! -f "$REPO_ROOT/docker-compose.yml" ] || ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
+    log "docker composeスタック: 対象なし（未導入、またはDockerが使えません）"
+    return 0
+  fi
+  cd "$REPO_ROOT"
+  if [ "$KEEP_DATA" -eq 1 ]; then
+    log "docker composeスタックを削除（ボリューム＝ベンダーのログイン情報は保持）"
+    docker compose down --remove-orphans || log "docker compose down に失敗しました（続行します）"
+  else
+    log "docker composeスタックを削除（ボリューム＝ベンダーのログイン情報も含む）"
+    docker compose down --volumes --remove-orphans || log "docker compose down に失敗しました（続行します）"
+  fi
+}
+
+# 目的: 起動時のKill Switchガード（setup_boot_guardが作成したもの）を無効化・削除する。
+uninstall_boot_guard() {
+  if [ -f "$GUARD_UNIT" ]; then
+    systemctl disable --now vpngwgui-boot-guard.service >/dev/null 2>&1 || true
+    rm -f "$GUARD_UNIT"
+    systemctl daemon-reload
+    log "起動時のKill Switchガード: 削除しました（$GUARD_UNIT）"
+  else
+    log "起動時のKill Switchガード: 対象なし"
+  fi
+}
+
+# 目的: IPフォワーディングの永続設定（setup_sysctlが作成したもの）を削除し、稼働中の値も戻す。
+uninstall_sysctl() {
+  if [ -f "$SYSCTL_FILE" ]; then
+    rm -f "$SYSCTL_FILE"
+    sysctl -w net.ipv4.ip_forward=0 >/dev/null 2>&1 || true
+    log "IPフォワーディングの設定: 削除しました（$SYSCTL_FILE）"
+  else
+    log "IPフォワーディングの設定: 対象なし"
+  fi
+}
+
+# 目的: vendors/ 配下の全バンドル（有効・無効を問わない。アンインストール時点で.envが無い・古い場合があるため）の
+#       ホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）を実行する。
+# 契約: run_host_hooksのuninstall版。同じ環境変数（VPNGW_ROOT・VPNGW_VENDOR_ID）を渡す。
+# 失敗時: install時と異なり、1つの失敗で後始末全体を止めない（可能な範囲で後始末を続ける）。
+uninstall_host_hooks() {
+  [ -d "$VENDORS_DIR" ] || return 0
+  for dir in "$VENDORS_DIR"/*/; do
+    id=$(basename "$dir")
+    hook="${dir}uninstall-host.sh"
+    [ -f "$hook" ] || continue
+    log "ベンダー $id のホスト側の後始末を実行"
+    ( cd "$dir" && VPNGW_ROOT="$REPO_ROOT" VPNGW_VENDOR_ID="$id" sh ./uninstall-host.sh ) || log "ベンダー $id のホスト側の後始末（uninstall-host.sh）が失敗しました（続行します）"
+  done
+}
+
+# 目的: アンインストールの全体（上の各段階を順に実行する）。mainから--uninstall指定時に呼ばれる。
+uninstall_main() {
+  [ "$(id -u)" -eq 0 ] || die "root権限で実行してください（例: sudo sh $0 --uninstall）"
+  log "アンインストールを開始します"
+  uninstall_stack
+  uninstall_boot_guard
+  uninstall_sysctl
+  uninstall_host_hooks
+  echo
+  log "アンインストール完了"
+  echo "  残っているもの（対象外。手動で削除する場合はREADME.md「アンインストール」参照）:"
+  echo "    - $REPO_ROOT（ソース一式の取得先）"
+  echo "    - Docker本体・依存パッケージ、Dockerの公式リポジトリ設定"
+  [ "$KEEP_DATA" -eq 0 ] || echo "    - ベンダーのログイン情報（Dockerボリューム。--keep-data により保持）"
+}
+
 # 目的: インストールの全体（上の各段階を順に実行する）。
 # 入力: スクリプトの引数。
 main() {
   parse_args "$@"
+  if [ "$UNINSTALL" -eq 1 ]; then
+    uninstall_main
+    return 0
+  fi
   preflight
   install_packages
   install_docker

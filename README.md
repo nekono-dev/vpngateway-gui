@@ -38,16 +38,23 @@ sudo sh /opt/vpngwgui/install/install.sh --providers adguardvpn
 
 ### アンインストール
 
-`/opt/vpngwgui`を削除し、以下を手動で削除・無効化する。
+対象ホスト上で以下を実行する。docker composeスタック（ベンダーのログイン情報を含む）、IPフォワーディングの設定、起動時のKill Switchガードを後始末する。
+
+```sh
+sudo sh /opt/vpngwgui/install/install.sh --uninstall
+```
+
+| 引数 | 意味 |
+|---|---|
+| `--keep-data` | ベンダーのログイン情報（Dockerボリューム）を削除せず残す。省略時は削除する |
+
+以下は対象外であり、手動で削除・無効化する。
 
 | 変更対象 | 内容 |
 |---|---|
 | `/opt/vpngwgui` | ソース一式の取得先 |
-| `/etc/sysctl.d/99-vpngwgui.conf` | IPフォワーディングの有効化 |
-| `/etc/systemd/system/vpngwgui-boot-guard.service` | 起動時のKill Switchガード（VPN未接続の間、LAN機器の通信を遮断するsystemdサービス） |
 | `/etc/apt/keyrings/docker.asc`・`/etc/apt/sources.list.d/docker.list` | Docker公式リポジトリの設定 |
-| Docker本体・依存パッケージ | `apt`で導入したもの |
-| （ベンダーごと）`vendors/<ID>/install-host.sh`が行うもの | 有効にしたベンダーのCLIがホストへの追加導入を要する場合のみ |
+| Docker本体・依存パッケージ | `apt`で導入したもの（他の用途と共有されうるため対象外） |
 
 ### 既知の制約
 

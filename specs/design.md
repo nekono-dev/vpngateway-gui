@@ -170,9 +170,11 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 **`install-host.sh`の契約**（ベンダーバンドルの任意ファイル）: rootで`sh`により実行される。冪等で、非対話であること。実行時の環境変数`VPNGW_ROOT`（取得先）・`VPNGW_VENDOR_ID`が与えられ、カレントディレクトリはバンドルのディレクトリ。ホスト（ベアメタル）へ導入・設定するのはこのファイルだけで、共通インストーラはその内容を知らない。非ゼロ終了はインストールの中止を意味する。現在のバンドル（AdGuard VPN・Proton VPN）は、ホストの追加導入が不要なため、このファイルを持たない（実行環境は全てランナーのコンテナに閉じている）。
 
+**アンインストール（`install/install.sh --uninstall [--keep-data]`。Phase 18）**: 通常のインストール処理は行わず、代わりにこのインストーラ自身が作成したホスト設定を後始末する。処理の順序: (1) `docker compose down --remove-orphans`（コンテナ・ネットワークの削除。既定では`--volumes`も付け、ベンダーのログイン情報も削除する。再導入時にログインを維持したい場合は`--keep-data`を指定し、ボリュームを保持する）。`docker-compose.yml`が無い、またはDockerが使えないホストでは何もしない（未導入・再実行でも安全）。 (2) 起動時のKill Switchガード（`vpngwgui-boot-guard.service`）を`disable --now`してユニットファイルを削除する。 (3) `/etc/sysctl.d/99-vpngwgui.conf`を削除し、稼働中の`net.ipv4.ip_forward`も0へ戻す。 (4) `vendors/`配下の全バンドル（有効・無効を問わない。アンインストール時点で`.env`が古い・無い場合があるため）の`uninstall-host.sh`（あるベンダーだけ）を実行する。**`uninstall-host.sh`の契約**は`install-host.sh`と同じ（環境変数・カレントディレクトリ）だが、非ゼロ終了で全体を中止せず、後始末を最後まで続ける（可能な範囲で後始末する方を優先する）。**対象外（意図的に自動化しない。手動で削除する。理由: 他の用途と共有されうる／このスクリプトの実行元を消すため）**: ソースの取得先ディレクトリ（既定`/opt/vpngwgui`）、Docker本体・依存パッケージ、Dockerの公式リポジトリ設定（`/etc/apt/keyrings/docker.asc`・`/etc/apt/sources.list.d/docker.list`）。
+
 **ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
 
-**nftables.serviceとの順序**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）は、Debian 12では`nftables`パッケージを導入しても既定で無効だが、**Raspberry Pi OS（trixie）では既定で有効**である。有効な環境では起動時のルールが消去されうるため、起動ガードのユニットに`After=nftables.service`を付けて、その後に適用する（順序だけで、`nftables.service`が無い・無効な環境でも害はない）。利用者の設定は書き換えない。**既知の制約**: ホストの再起動後にガードが実際にproxyの適用まで維持されるかのKill Switchの実通信での確認、Raspberry Pi OSの32bit（armhf・`ID=raspbian`）、実際のRaspberry Pi機（GPIO・Pi用カーネル等）は未検証。アンインストール・IPv6は対象外。
+**nftables.serviceとの順序**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）は、Debian 12では`nftables`パッケージを導入しても既定で無効だが、**Raspberry Pi OS（trixie）では既定で有効**である。有効な環境では起動時のルールが消去されうるため、起動ガードのユニットに`After=nftables.service`を付けて、その後に適用する（順序だけで、`nftables.service`が無い・無効な環境でも害はない）。利用者の設定は書き換えない。**既知の制約**: ホストの再起動後にガードが実際にproxyの適用まで維持されるかのKill Switchの実通信での確認、Raspberry Pi OSの32bit（armhf・`ID=raspbian`）、実際のRaspberry Pi機（GPIO・Pi用カーネル等）は未検証。IPv6は対象外。
 
 ## 頒布（CI）
 

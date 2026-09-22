@@ -53,6 +53,8 @@ check "雛形のまま実行すると、雛形である旨を示して中止す�
 check "install.sh --help は使い方を表示して成功する" sh -c "sh '$INSTALL_DIR/install.sh' --help | grep -q -- '--providers'"
 check "install.sh: 不明な引数は理由を示して失敗する" sh -c "out=\$(sh '$INSTALL_DIR/install.sh' --bogus 2>&1); [ \$? -ne 0 ] && printf '%s' \"\$out\" | grep -q '不明な引数'"
 check "install.sh: --providers の値が無ければ失敗する" sh -c "! sh '$INSTALL_DIR/install.sh' --providers >/dev/null 2>&1"
+check "install.sh --help は --uninstall の使い方も表示する" sh -c "sh '$INSTALL_DIR/install.sh' --help | grep -q -- '--uninstall'"
+check "install.sh: --keep-data は --uninstall と併用しなければ失敗する" sh -c "out=\$(sh '$INSTALL_DIR/install.sh' --keep-data 2>&1); [ \$? -ne 0 ] && printf '%s' \"\$out\" | grep -q -- '--keep-data'"
 
 # --- --providers省略時の挙動（Phase 17: all化）。一時ディレクトリに、2つのバンドル（profile.jsonとcompose.ymlを持つ）を持つ
 # 偽のリポジトリを作って、関数だけを読み込む（VPNGW_INSTALL_LIBを立てるとmainを実行しない）。
@@ -74,6 +76,24 @@ check "--providers指定時: 指定した集合のみが選ばれる（.envの�
 printf 'VPN_PROVIDERS=vendora\n' > "$FAKE/.env"
 check "--providers省略時: 既存の.envのVPN_PROVIDERSが一部でも、全ベンダー（all）になる" test "$(setup_providers_with '')" = "vendora,vendorb"
 rm -f "$FAKE/.env"
+
+# --- アンインストール（root・Docker・systemdが要らない範囲。ホスト設定の実際の削除はE2Eで検証する）
+check "uninstall_stack: docker-compose.ymlが無ければ何もしない（root不要）" sh -c "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; uninstall_stack' | grep -q '対象なし'"
+
+# 目的: uninstall_host_hooksが、uninstall-host.shを持つベンダーだけを呼び、実行時の環境変数（VPNGW_ROOT・VPNGW_VENDOR_ID）が
+#       install側（VPNGW_ROOT・VPNGW_VENDOR_ID）と同じ契約であること、1つの失敗で後始末全体を止めないことを検査する。
+mkdir -p "$FAKE/vendors/vendora"
+cat > "$FAKE/vendors/vendora/uninstall-host.sh" <<'EOSCRIPT'
+#!/bin/sh
+printf 'called:%s:%s\n' "$VPNGW_VENDOR_ID" "$VPNGW_ROOT" >> "$UNINSTALL_LOG"
+exit 1
+EOSCRIPT
+chmod +x "$FAKE/vendors/vendora/uninstall-host.sh"
+UNINSTALL_LOG="$TMP/uninstall-hooks.log"
+: > "$UNINSTALL_LOG"
+VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE UNINSTALL_LOG=$UNINSTALL_LOG sh -c ". $FAKE/install/install.sh; uninstall_host_hooks" >/dev/null 2>&1
+check "uninstall_host_hooks: uninstall-host.shを持つベンダーだけ呼ばれ、VPNGW_ROOT・VPNGW_VENDOR_IDが渡る" test "$(cat "$UNINSTALL_LOG")" = "called:vendora:$FAKE"
+rm -f "$FAKE/vendors/vendora/uninstall-host.sh"
 
 echo "== 結果: FAIL $FAILS 件"
 exit "$FAILS"
