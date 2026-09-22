@@ -69,6 +69,7 @@ export function validateProfile(profile: VendorProfile): void {
     assertValidRegExp("account.notLoggedInPattern", account.notLoggedInPattern);
     for (const plan of account.plans) {
       assertValidRegExp(`account.plans[${plan.id}].pattern`, plan.pattern);
+      assertValidRegExp(`account.plans[${plan.id}].usageNote.pattern`, plan.usageNote?.pattern, "im");
     }
   }
 }

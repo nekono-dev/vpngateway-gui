@@ -63,6 +63,17 @@
       }
     },
     {
+      "name": "account: 無料版（残りデータ通信量の補足情報）",
+      "kind": "account",
+      "exitCode": 0,
+      "output": "Logged in as na7c@proton.me\nYou are using the FREE version\nUp to 2 devices simultaneously\nYou have 3.00 GB left for this month\nUpgrade at https://agrd.io/vpn_cli to get more locations and higher speeds\n",
+      "expect": {
+        "loggedIn": true,
+        "planId": "free",
+        "usageNote": "You have 3.00 GB left for this month"
+      }
+    },
+    {
       "name": "account: 未ログイン",
       "kind": "account",
       "exitCode": 11,

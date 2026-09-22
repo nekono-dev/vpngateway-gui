@@ -46,7 +46,15 @@ export const registerSessionRoute: FastifyPluginAsyncTypebox = async (fastify) =
       return {
         loginMethod: provider.profile.loginMethod,
         ...(info.loggedIn === undefined ? {} : { loggedIn: info.loggedIn }),
-        ...(info.plan === undefined ? {} : { plan: { id: info.plan.id, label: info.plan.label } }),
+        ...(info.plan === undefined
+          ? {}
+          : {
+              plan: {
+                id: info.plan.id,
+                label: info.plan.label,
+                ...(info.plan.usageNote === undefined ? {} : { usageNote: info.plan.usageNote }),
+              },
+            }),
       };
     },
   );

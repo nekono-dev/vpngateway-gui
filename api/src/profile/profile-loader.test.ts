@@ -53,6 +53,20 @@ describe("プロファイルのスキーマ・検証", () => {
     expect(() => validateProfile({ ...protonLike, output: { connectedPattern: "(", locationPattern: "x" } })).toThrow("invalid regular expression");
   });
 
+  it("不正なusageNote.patternはロード時に拒否する（Phase 13）", () => {
+    const badUsageNote: VendorProfile = {
+      ...protonLike,
+      actions: {
+        ...protonLike.actions,
+        account: {
+          ...protonLike.actions.account!,
+          plans: [{ ...protonLike.actions.account!.plans[0], usageNote: { pattern: "(unclosed" } }],
+        },
+      },
+    };
+    expect(() => validateProfile(badUsageNote)).toThrow("invalid regular expression");
+  });
+
   it("planのrestrictsに未知のオペレーション名があるとスキーマ検証に失敗する", () => {
     const unknownOp = JSON.parse(JSON.stringify(protonLike)) as VendorProfile;
     (unknownOp.actions.account!.plans[0].restricts as string[]).push("teleport");

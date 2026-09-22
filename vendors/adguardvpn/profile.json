@@ -88,7 +88,10 @@
           "id": "free",
           "label": "Free",
           "pattern": "using the FREE version",
-          "restricts": []
+          "restricts": [],
+          "usageNote": {
+            "pattern": "(You have .+ left for this month)"
+          }
         }
       ],
       "defaultPlan": {

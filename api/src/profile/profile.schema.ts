@@ -86,6 +86,14 @@ export const PlanDefSchema = Type.Object({
       countryAliases: Type.Optional(Type.Record(Type.String(), Type.String())),
     }),
   ),
+  // このプランの利用者向け補足情報（例: 今月分の残りデータ通信量）の出典（Phase 13）。`account`の出力に対して
+  // `pattern`を評価し、一致すれば第1キャプチャをそのまま`SessionInfo.plan.usageNote`として表示する
+  // （意味の解釈・数値変換はしない。apiserver/design.md「プランの補足情報の参考表示」）。
+  usageNote: Type.Optional(
+    Type.Object({
+      pattern: Type.String({ minLength: 1 }),
+    }),
+  ),
 });
 export type PlanDef = Static<typeof PlanDefSchema>;
 

@@ -42,6 +42,24 @@ describe("evaluateAccountOutput", () => {
     expect(evaluateAccountOutput(account, 1, "An unexpected error occurred")).toEqual({});
     expect(evaluateAccountOutput(account, -1, "")).toEqual({});
   });
+
+  it("プランにusageNoteが定義されていれば、一致したキャプチャをplan.usageNoteに設定する（Phase 13）", () => {
+    const accountWithUsageNote = {
+      ...account,
+      plans: [{ ...account.plans[0], usageNote: { pattern: "(Upgrade to enable)" } }],
+    };
+    const info = evaluateAccountOutput(accountWithUsageNote, 0, FREE_OUTPUT);
+    expect(info.plan?.usageNote).toBe("Upgrade to enable");
+  });
+
+  it("usageNote.patternが一致しなければplan.usageNoteは省略される", () => {
+    const accountWithUsageNote = {
+      ...account,
+      plans: [{ ...account.plans[0], usageNote: { pattern: "(no such text)" } }],
+    };
+    const info = evaluateAccountOutput(accountWithUsageNote, 0, FREE_OUTPUT);
+    expect(info.plan?.usageNote).toBeUndefined();
+  });
 });
 
 describe("getSessionInfo", () => {

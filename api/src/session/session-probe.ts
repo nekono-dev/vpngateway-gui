@@ -35,6 +35,7 @@ export function evaluateAccountOutput(account: AccountActionDef, exitCode: numbe
   }
   const matched = account.plans.find((plan) => matchesPattern(output, plan.pattern, "i"));
   if (matched) {
+    const usageNote = matched.usageNote === undefined ? undefined : new RegExp(matched.usageNote.pattern, "im").exec(output)?.[1];
     return {
       loggedIn: true,
       plan: {
@@ -42,6 +43,7 @@ export function evaluateAccountOutput(account: AccountActionDef, exitCode: numbe
         label: matched.label,
         restricts: matched.restricts,
         ...(matched.restrictionMessage === undefined ? {} : { restrictionMessage: matched.restrictionMessage }),
+        ...(usageNote === undefined ? {} : { usageNote }),
       },
     };
   }

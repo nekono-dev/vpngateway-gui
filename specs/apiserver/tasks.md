@@ -119,14 +119,14 @@
 - [x] `docker-compose.yml`の`api`へキャッシュボリュームの読み取り専用マウントと`PROVIDER_CACHE_DIR`
 - [x] Proton VPNプロファイルへの宣言の追加
 
-## プランの補足情報の参考表示（Phase 13、未着手）
+## プランの補足情報の参考表示（Phase 13、検証完了）
 
-- [ ] `profile.schema.ts`の`PlanDefSchema`へ`usageNote`（`{ pattern: string }`、省略可）を追加
-- [ ] `session-probe.ts`の`evaluateAccountOutput`で、確定したプランの`usageNote.pattern`を出力に対して評価し、一致すれば`SessionInfo.plan.usageNote`へキャプチャを設定
-- [ ] `schemas/session.ts`（`SessionStateSchema`）・`routes/session.ts`（`GET /v1/session`）へ`plan.usageNote`を反映
-- [ ] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加（実機確認済みの出力形式に基づく。`wbs/phase13.md`「次フェーズへの申し送り」参照）
-- [ ] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプル（`license`のFREE版出力、`list-locations`の10件、`connect`失敗（一覧外指定）を追加。`connect`失敗は`restrictedPattern`として宣言しない（設計は`specs/apiserver/design.md`「検討し、採用しなかった案」参照）
-- [ ] 単体テスト: `session-probe.test.ts`（`usageNote`の抽出）、`profile-loader.test.ts`（不正な`usageNote.pattern`の拒否）、`vendor-samples.test.ts`（AdGuard VPNの無料版サンプル）
+- [x] `profile.schema.ts`の`PlanDefSchema`へ`usageNote`（`{ pattern: string }`、省略可）を追加
+- [x] `session-probe.ts`の`evaluateAccountOutput`で、確定したプランの`usageNote.pattern`を出力に対して評価し、一致すれば`SessionInfo.plan.usageNote`へキャプチャを設定
+- [x] `schemas/session.ts`（`SessionStateSchema`）・`routes/session.ts`（`GET /v1/session`）へ`plan.usageNote`を反映
+- [x] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加（実機確認済みの出力形式に基づく。`wbs/phase13.md`「次フェーズへの申し送り」参照）
+- [x] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプル（`license`のFREE版出力）を追加。`list-locations`の10件・`connect`失敗（一覧外指定）のサンプルは、`vendor-samples.test.ts`が扱う`kind`（`status`/`listLocations`/`account`）に対応する検証手段が無く、`connect`失敗は`restrictedPattern`として宣言しない方針（`specs/apiserver/design.md`「検討し、採用しなかった案」）のためコードからも参照されないので追加しなかった。
+- [x] 単体テスト: `session-probe.test.ts`（`usageNote`の抽出・不一致時の省略）、`profile-loader.test.ts`（不正な`usageNote.pattern`の拒否）、`vendor-samples.test.ts`（AdGuard VPNの無料版サンプル）
 
 ## ベンダー非依存化（Phase 10）
 

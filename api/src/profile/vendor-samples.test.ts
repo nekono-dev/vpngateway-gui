@@ -5,7 +5,7 @@
 //
 // samples.jsonの形式: { description, cases: [ { name, kind: "status"|"listLocations"|"account", exitCode, stdout|output, expect } ] }
 //   status: expect=ConnectionStatus / listLocations: expect=接続先の配列（各要素は期待するフィールドの部分一致）/
-//   account: expect={ loggedIn, planId? }（planIdはプランの`id`）。
+//   account: expect={ loggedIn, planId?, usageNote? }（planIdはプランの`id`、usageNoteは補足情報の抽出結果）。
 
 import { describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -57,9 +57,10 @@ describe("ベンダーバンドルの適合テスト", () => {
         expected.forEach((item, index) => expect(parsed[index]).toMatchObject(item));
       } else {
         const info = evaluateAccountOutput(requireAction(profile, "account"), sample.exitCode, sample.output ?? "");
-        const expected = sample.expect as { loggedIn: boolean; planId?: string };
+        const expected = sample.expect as { loggedIn: boolean; planId?: string; usageNote?: string };
         expect(info.loggedIn).toBe(expected.loggedIn);
         if (expected.planId !== undefined) expect(info.plan?.id).toBe(expected.planId);
+        if (expected.usageNote !== undefined) expect(info.plan?.usageNote).toBe(expected.usageNote);
       }
     });
   });

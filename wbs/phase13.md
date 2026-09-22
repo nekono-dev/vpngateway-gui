@@ -25,24 +25,39 @@ AdGuard VPN無料版の実際のCLI挙動を確認し、既存のプロバイダ
 - [x] 要件・設計の記述（`specs/requirements.md`・`specs/apiserver/`・`specs/webserver/`）。既存のプラン制限（`restricts`）の枠組みを流用せず、新しい種類の情報（`usageNote`）として設計した（下記「調査結果のまとめ」参照）。
 
 ### api（`specs/apiserver/tasks.md`「プランの補足情報の参考表示（Phase 13）」）
-- [ ] `PlanDefSchema`へ`usageNote`（省略可）を追加
-- [ ] `session-probe.ts`（`evaluateAccountOutput`）の拡張
-- [ ] `GET /v1/session`の応答拡張
-- [ ] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加
-- [ ] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプルを追加
-- [ ] 単体テスト
+- [x] `PlanDefSchema`へ`usageNote`（省略可）を追加
+- [x] `session-probe.ts`（`evaluateAccountOutput`）の拡張
+- [x] `GET /v1/session`の応答拡張
+- [x] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加
+- [x] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプルを追加
+- [x] 単体テスト
 
 ### web（`specs/webserver/tasks.md`「プランの補足情報の参考表示（Phase 13）」）
-- [ ] orval再生成・`SessionCard.tsx`への併記・コンポーネントテスト
+- [x] orval再生成・`SessionCard.tsx`への併記・コンポーネントテスト
 
 ### 検証
-- [ ] 実機（検証環境・AdGuard VPN無料アカウント）で、Web UIのアカウント状態に補足情報（残りデータ通信量）が表示されることを確認。
-- [ ] 実機で、無料版でも接続先の選択・接続・切断・分割トンネル（`site-exclusions`）が制限なく動作すること（既存機構のままで対応できていることの回帰確認。コード変更をしないため新規テストは不要だが、実装後の一括確認に含める）。
+- [x] 実機（検証環境・AdGuard VPN無料アカウント）で、Web UIのアカウント状態に補足情報（残りデータ通信量）が表示されることを確認。
+- [x] 実機で、無料版でも接続先の選択・接続・切断・分割トンネル（`site-exclusions`）が制限なく動作すること（既存機構のままで対応できていることの回帰確認。コード変更をしないため新規テストは不要だが、実装後の一括確認に含める）。
 
 ## 完了基準
 
 - AdGuard VPN無料アカウントでログインしたとき、Web UIのアカウント状態表示に「Free」に加え、残りデータ通信量の参考情報が表示される。
 - 有料版、または補足情報が得られないプロバイダ・プランでは、追加表示が何も出ない（エラーにもしない）。
+
+## 検証結果（2026-09-22、検証環境・実機）
+
+検証環境（`192.168.3.240`）のAdGuard VPNログインを、既存のPREMIUM（`na7c@icloud.com`）から無料アカウント（`na7c@proton.me`）へ一時的に切り替え（利用者がブラウザでdeviceUrl認証を完了）、実装済みのapi・webを配置（`api/src`・`vendors/adguardvpn/{profile,samples}.json`・`web/src/components/dashboard/SessionCard.tsx`をrsync転送、`api`・`web`コンテナを再ビルド・再起動。`profile.json`はbind mountのため再ビルド不要）して確認した。
+
+| 確認項目 | 結果 |
+|---|---|
+| `GET /v1/session` | `{"loginMethod":"deviceUrl","loggedIn":true,"plan":{"id":"free","label":"Free","usageNote":"You have 4.00 GB left for this month"}}` |
+| Web UI（Playwright、`http://192.168.3.240:8080/`） | アカウント表示が「アカウント: ログイン済み（プラン: Free・You have 4.00 GB left for this month）」（スクリーンショットで確認） |
+| `GET /v1/connection/locations` | 10件（無料版の絞り込み一覧。既存実装のまま） |
+| `PUT /v1/connection`（`locationId: "us-dallas"`で接続） | `{"status":"connected","country":"us","location":"DALLAS","locationId":"us-dallas"}`（成功） |
+| `adguardvpn-cli site-exclusions add/show/clear`（ランナーコンテナで直接実行） | 制限なく成功 |
+| 切断 | `{"status":"disconnected"}` |
+
+検証後、無料アカウントをログアウトし、PREMIUMアカウント（`na7c@icloud.com`）へ復帰（利用者がブラウザで再度deviceUrl認証を完了）。VPN未接続・透過GW/Kill Switch有効の状態で環境を元に戻した。単体・コンポーネントテストは開発ホストでFAIL 0（api 253件、web 96件）。
 - 無料版でも、接続先を指定した接続・一覧取得・分割トンネルが、既存の実装のまま（コード変更なしで）制限されずに動作する。
 
 ## 調査結果のまとめ（2026-09-22、検証環境・実機）

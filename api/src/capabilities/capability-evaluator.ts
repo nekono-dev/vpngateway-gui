@@ -12,6 +12,8 @@ export interface SessionInfo {
     label: string;
     restricts: OperationKey[];
     restrictionMessage?: string;
+    // プラン単位の利用者向け補足情報（例: 今月分の残りデータ通信量）。CLIの出力文言をそのまま持つ（Phase 13）。
+    usageNote?: string;
   };
 }
 

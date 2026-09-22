@@ -23,6 +23,13 @@ export type SessionLoginBody = Static<typeof SessionLoginBodySchema>;
 export const SessionStateSchema = Type.Object({
   loginMethod: Type.Union([Type.Literal("deviceUrl"), Type.Literal("credentials")]),
   loggedIn: Type.Optional(Type.Boolean()),
-  plan: Type.Optional(Type.Object({ id: Type.String(), label: Type.String() })),
+  plan: Type.Optional(
+    Type.Object({
+      id: Type.String(),
+      label: Type.String(),
+      // プラン単位の利用者向け補足情報（例: 今月分の残りデータ通信量）。取得できたときのみ含む（Phase 13）。
+      usageNote: Type.Optional(Type.String()),
+    }),
+  ),
 });
 export type SessionState = Static<typeof SessionStateSchema>;

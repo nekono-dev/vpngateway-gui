@@ -77,9 +77,12 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
     }
   }
 
+  // プラン名の直後に補足情報（例: 今月分の残りデータ通信量）があれば括弧書きで併記する（Phase 13）。
+  // CLIの文言をそのまま出し、意味の解釈・翻訳はしない。
+  const planText = session?.plan ? `${session.plan.label}${session.plan.usageNote ? `・${session.plan.usageNote}` : ""}` : undefined;
   const statusText =
     loggedIn === true
-      ? `ログイン済み${session?.plan ? `（プラン: ${session.plan.label}）` : ""}`
+      ? `ログイン済み${planText ? `（プラン: ${planText}）` : ""}`
       : loggedIn === false
         ? "未ログイン"
         : undefined;
