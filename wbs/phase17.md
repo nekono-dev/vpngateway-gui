@@ -28,8 +28,17 @@
 
 ## 検証手法
 
-（検証待ち。実機検証時に追記）
+検証環境（`ubuntu@192.168.3.240`。Ubuntu 24.04、AdGuard VPN・Proton VPNの2ベンダー構成）の`/opt/vpngwgui/install/install.sh`のみをPhase17版へ差し替え（`scp`。docker-compose本体・vendorsは変更が無いため再ビルドせず、`--no-start`で`docker compose up`を伴わない範囲のみ検証）。検証前に既存の`install.sh`と`.env`をバックアップし、検証後に元へ復元した。
+
+- **既存インストールへの適用（アップデート想定）**: `.env`の`VPN_PROVIDERS`を意図的に`adguardvpn`のみへ書き換えた上で、`sudo sh install/install.sh --no-start`（`--providers`省略）を実行し、`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`が`adguardvpn,protonvpn`（vendors/にある全ベンダー）へ戻ることを確認。
+- **明示指定時の従来動作**: `sudo sh install/install.sh --providers adguardvpn --no-start`を実行し、`.env`が`adguardvpn`のみに絞られることを確認（allへの変更が明示指定を上書きしないこと）。
+- 検証後、`install.sh`・`.env`を元のPhase16検証終了時点の内容へ復元し、`docker compose ps`で全コンテナ（api・proxy・runner-adguardvpn・runner-protonvpn・web）が検証前と変わらず稼働継続していることを確認した（`--no-start`のため、検証中もdocker composeの起動・再起動は発生していない）。
+
+## 検証結果（2026-09-22、検証環境で確認）
+
+- 上記2シナリオともFAIL 0（`.env`の内容が期待通り）。`npm test`のうち`check:neutrality`・`test:install`（開発機、`install/tests/run.sh`）もFAIL 0。
+- 検証終了時: 実行前の状態（VPN切断、透過ゲートウェイ=ON・Kill Switch=ON、選択中ベンダー: AdGuard VPN、`.env`のVPN_PROVIDERS=adguardvpn,protonvpn）から変化なし。
 
 ## 次フェーズへの申し送り
 
-- 実装は完了（`npm test`のうち`check:neutrality`・`test:install`がFAIL 0）。実機（検証環境）での動作確認は未実施。
+- 本フェーズは`--no-start`の範囲（`.env`の決定ロジック）のみを実機検証した。`docker compose up`を伴う実際のランナー起動・停止（例: 新規ベンダー追加時に対応するランナーコンテナが実際に立ち上がること）は、通常のアップデート運用（Phase11以降の既存フローと同じ`docker compose up -d --build --remove-orphans`）の範囲であり、本フェーズで新たに変更した部分ではないため、個別の実機検証は行っていない。
