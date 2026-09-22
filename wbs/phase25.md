@@ -12,7 +12,7 @@ Phase1〜24完了。既存の単一ホスト構成（`docker-compose.yml`）が�
 
 本フェーズは範囲が広いため、以下の順序で段階的に実装し、各段階を単体で動作確認してから次へ進む（ただし本フェーズのcommitは、AGENTS.mdの規則により、全段階の実装・検証が完了してから1つにまとめる）。
 
-1. **Web UI利用者認証**（`/v1/operator-session`）の追加。既存の単一ホスト構成のまま検証できる。
+1. **Web UI利用者認証**（`/v1/operator`・`/v1/operator-session`。初回はWeb UIでアカウントを作成し、以後は設定画面から変更する）の追加。既存の単一ホスト構成のまま検証できる。
 2. **ゲートウェイ制御チャネルのmTLS TCP化**（UDS→TCP＋mTLS）。単一ホスト構成のまま（ローカル宛のmTLS）で検証できる。
 3. **compose分割とロール別インストーラ**（`--role`）・証明書ペアリング。実際に複数ホストへ分離配置して検証する。
 
@@ -28,12 +28,14 @@ Phase1〜24完了。既存の単一ホスト構成（`docker-compose.yml`）が�
 
 ### Web UI利用者認証（`specs/apiserver/design.md`「Web UI利用者の認証」、`specs/webserver/design.md`「利用者認証の実装方針」）
 
-- [ ] APIサーバ: パスワードのハッシュ保存（`api/src/auth/password-store.ts`）、インストーラでの`--web-password`受け取りとハッシュ化。
+- [ ] APIサーバ: アカウントのハッシュ保存（`api/src/auth/operator-account-store.ts`）。
+- [ ] APIサーバ: `GET/POST/PUT /v1/operator`（`api/src/routes/operator.ts`。状態確認・初回作成・変更）。
 - [ ] APIサーバ: `POST/GET/DELETE /v1/operator-session`（`api/src/routes/operator-session.ts`）。
 - [ ] APIサーバ: `preHandler`フックによる全`/v1/*`エンドポイントの認可（`api/src/auth/require-operator-session.ts`）。
-- [ ] APIサーバ: ログイン試行のレート制限（`api/src/auth/login-rate-limiter.ts`）。
-- [ ] Web UI: ログイン画面（`web/src/components/auth/LoginPage.tsx`）、認証状態コンテキスト（`AuthContext.tsx`）、401時の遷移。
-- [ ] E2E: 未ログイン時の画面遷移、正しい/誤ったパスワードでのログイン、ログアウト、セッション切れ時の挙動。
+- [ ] APIサーバ: ログイン試行・パスワード変更のレート制限（`api/src/auth/login-rate-limiter.ts`）。
+- [ ] Web UI: 初期設定画面（`web/src/components/auth/SetupPage.tsx`）、ログイン画面（`LoginPage.tsx`）、認証状態コンテキスト（`AuthContext.tsx`）、401時の遷移。
+- [ ] Web UI: 設定ダイアログへのアカウント変更フォーム追加（`SettingsDialog.tsx`）。
+- [ ] E2E: 初回アクセス時の設定画面、正しい/誤ったユーザー名・パスワードでのログイン、ログアウト、セッション切れ時の挙動、アカウント変更（現在パスワード確認含む）。
 
 ### ゲートウェイ制御チャネルのmTLS化（`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）
 

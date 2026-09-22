@@ -204,7 +204,6 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 | `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を捨てて再検出する |
 | `--no-start` | 起動（`docker compose up`）をしない |
 | `--role <all\|web\|api\|gateway>`（Phase 25） | このホストに配置するロール。既定`all`（従来どおり単一ホストに全ロール）。`specs/design.md`「デプロイメント構成の分離とロール別インストール」参照 |
-| `--web-password <パスワード>`（Phase 25） | Web UIログインの共有パスワード。`--role api`・`all`のみ。省略時はランダム生成し完了画面に1回表示する |
 | `--gateway-ssh <ユーザー>@<ホスト>[:ポート]`、`--gateway-ssh-key <パス>`、`--gateway-host <ホスト名/IP>`、`--gateway-port <既定8443>`（Phase 25） | `--role api`のみ。ゲートウェイとのmTLSペアリングに使う接続情報 |
 | `--api-ssh <ユーザー>@<ホスト>[:ポート]`、`--api-ssh-key <パス>`、`--api-host <ホスト名/IP>`、`--api-port <既定3443>`（Phase 25） | `--role web`のみ。APIサーバとのTLSペアリング・`API_ORIGIN`設定に使う接続情報 |
 | `--rotate-pairing`（Phase 25） | 既存の証明書・ペアリングを破棄し、再ペアリングする |
@@ -219,7 +218,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 6. **ベンダーの決定（Phase 17改訂）**: `--role gateway`・`all`のみ。`--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
 7. **ベンダーのホスト側手順**: `--role gateway`・`all`のみ。有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
 8. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。`--role web`・`all`は、Web UIが応答するまで待つ（最大約3分）。
-9. **完了の表示**: ロールに応じて、Web UIのURL（`--role web`・`all`。`https://<LAN側アドレス>:<WEB_PORT>`）・生成したWeb UIパスワード（未指定時のみ、`--role api`・`all`）・有効なベンダー（`--role gateway`・`all`）・次の操作（Web UIで各ベンダーへログイン。LAN機器のデフォルトゲートウェイの向け先）を表示する。
+9. **完了の表示**: ロールに応じて、Web UIのURL（`--role web`・`all`。`https://<LAN側アドレス>:<WEB_PORT>`）・有効なベンダー（`--role gateway`・`all`）・次の操作（`--role web`・`all`はまずWeb UIへアクセスして管理者アカウント（ユーザー名・パスワード）を設定すること、その後各ベンダーへログインすること。LAN機器のデフォルトゲートウェイの向け先）を表示する。
 
 **`install-host.sh`の契約**（ベンダーバンドルの任意ファイル）: rootで`sh`により実行される。冪等で、非対話であること。実行時の環境変数`VPNGW_ROOT`（取得先）・`VPNGW_VENDOR_ID`が与えられ、カレントディレクトリはバンドルのディレクトリ。ホスト（ベアメタル）へ導入・設定するのはこのファイルだけで、共通インストーラはその内容を知らない。非ゼロ終了はインストールの中止を意味する。現在のバンドル（AdGuard VPN・Proton VPN）は、ホストの追加導入が不要なため、このファイルを持たない（実行環境は全てランナーのコンテナに閉じている）。
 
@@ -240,15 +239,24 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 分離配置によりLAN外からの到達性が生じうるため、Web UI利用者の認証を導入する（`specs/requirements.md`「認証・認可」）。Web⇄API間は前述の通り同一オリジン構成のため、ドメイン分離に起因する問題を避けてセッションCookie認証を追加できる（この設計判断はPhase 1〜24から変えていない）。
 
-- **リソース設計**: ブラウザのログイン状態を表す新規リソースを`/v1/operator-session`とする。既存の`/v1/session`（VPNベンダーへのログイン状態。`specs/apiserver/design.md`）とは別のリソースであり、混同を避けるため命名を分ける（前者はWeb UIの利用者、後者はVPNベンダーアカウントの認証状態を表す）。
-  - `POST /v1/operator-session`: ボディ`{ "password": string }`。一致すれば`Set-Cookie`でhttpOnly・Secure・SameSite=Laxのセッションcookieを発行し`200`。不一致は`401`。
+利用者アカウント（ユーザー名・パスワード）は単一の管理者アカウントとし、**インストーラではなくWeb UIの初回アクセス時に利用者自身が設定する**。以後は設定画面から自由に変更できる（インストーラは`--web-password`のような引数を持たない。2026-09-22改訂: 当初案の「インストーラの引数で指定」から変更）。
+
+- **リソース設計**: 「利用者アカウントそのもの」と「ブラウザのログイン状態（セッション）」を別リソースとして分ける。
+  - `/v1/operator`: 単一の管理者アカウント（ユーザー名・パスワード）を表す。未作成（初回アクセス前）／作成済みの状態を持つ。
+  - `/v1/operator-session`: ブラウザのログイン状態を表す。既存の`/v1/session`（VPNベンダーへのログイン状態。`specs/apiserver/design.md`）とは別のリソースであり、混同を避けるため命名を分ける（前者はWeb UIの利用者、後者はVPNベンダーアカウントの認証状態を表す）。
+- **アカウントの状態確認**: `GET /v1/operator`（認証不要）は`{ "configured": boolean }`を返す（認証済みのリクエストには`username`も含める）。Web UIはこれで「初期設定画面」と「ログイン画面」のどちらを表示するか判断する。
+- **初回設定**: `POST /v1/operator`（認証不要。`configured=false`の間のみ許可し、作成済みなら`409`）。ボディ`{ "username": string, "password": string }`。作成に成功したら、そのままログイン済み状態にする（`POST /v1/operator-session`と同様にセッションcookieを発行する）。
+- **変更**: `PUT /v1/operator`（要セッションcookie）。ボディ`{ "currentPassword": string, "username"?: string, "newPassword"?: string }`。現在のパスワードと一致しなければ`401`。`username`・`newPassword`のいずれも指定しない場合は`400`。
+- **ログイン・ログアウト**:
+  - `POST /v1/operator-session`: ボディ`{ "username": string, "password": string }`。一致すれば`Set-Cookie`でhttpOnly・Secure・SameSite=Laxのセッションcookieを発行し`200`。不一致は`401`（アカウント未作成の場合も`401`とし、未作成であること自体は`GET /v1/operator`で判断させる）。
   - `GET /v1/operator-session`: 現在のcookieが有効なら`200`、無効・無ければ`401`。
   - `DELETE /v1/operator-session`: cookieを失効させ`200`。
-- **認可の適用範囲**: `/v1/operator-session`（ログイン自体）を除く、すべての`/v1/*`エンドポイントは有効なセッションcookieを要求する（Fastifyの`preHandler`フック）。cookie無し・無効は`401`。
-- **パスワードの保管**: インストーラの引数（`--web-password`）で指定した平文パスワードを、インストーラがハッシュ化（Node.js組み込み`crypto.scrypt`）して`STATE_DIR`配下（`api-data`ボリューム）に保存する。APIサーバのコード・環境変数・ログに平文を残さない。未指定時はインストーラがランダムなパスワードを生成し、完了画面に1回だけ表示する（`specs/design.md`「本体インストーラ」の完了表示に追記）。
+- **認可の適用範囲**: `GET /v1/operator`・`POST /v1/operator`（未作成時のみ）・`POST /v1/operator-session`を除く、すべての`/v1/*`エンドポイントは有効なセッションcookieを要求する（Fastifyの`preHandler`フック）。`PUT /v1/operator`も認証必須（cookie無し・無効は`401`）。
+- **パスワードの保管**: `$STATE_DIR`配下（`api-data`ボリューム）に、ユーザー名とパスワードのハッシュ（Node.js組み込み`crypto.scrypt`）を保存する。APIサーバのコード・環境変数・ログに平文を残さない。
 - **セッションの保持**: APIサーバはステートフル（既存の`settings.json`等と同様）なため、セッションはプロセスメモリ上のマップで保持する（軽量なファイル永続化の要否は実装時に判断。複数APIプロセスへのスケールアウトは対象外）。
-- **レート制限**: `POST /v1/operator-session`への総当たり対策として、連続失敗時の一時的な受付制限を設ける（具体的な閾値は実装時に決定）。
-- **Webサーバ側**: 未認証（`GET /v1/operator-session`が`401`）を検知した場合、Web UIはログイン画面へ誘導する（`specs/webserver/design.md`「利用者認証の実装方針」）。Webサーバ自体はcookieの中身を解釈せず、ブラウザ⇄API間で透過的に転送するだけである。
+- **レート制限**: `POST /v1/operator-session`・`PUT /v1/operator`（`currentPassword`の総当たり対策）への総当たり対策として、連続失敗時の一時的な受付制限を設ける（具体的な閾値は実装時に決定）。
+- **既知の制約**: 初回設定（`POST /v1/operator`）は、インストール直後にLAN上の誰が先にアクセスしてアカウントを作成するかで決まる（同種の自己ホスト型アプリに共通する制約）。取り合いを避けたい場合は、インストール直後に運用者自身が先にWeb UIへアクセスして設定することを運用でカバーする（READMEに明記する）。
+- **Webサーバ側**: 未認証（`GET /v1/operator-session`が`401`）を検知した場合、Web UIは`GET /v1/operator`の`configured`に応じて初期設定画面またはログイン画面へ誘導する（`specs/webserver/design.md`「利用者認証の実装方針」）。Webサーバ自体はcookieの中身を解釈せず、ブラウザ⇄API間で透過的に転送するだけである。
 
 # コーディングルール
 
