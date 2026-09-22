@@ -554,9 +554,20 @@ dialog [role="alert"] {
   font-size: 0.875rem;
 }
 
-/* プランで接続できる国の参考表示（Phase 12・Phase 16で接続先リストと見た目を統一） */
+/* プランで接続できる国の参考表示（Phase 12・Phase 16で接続先リストと見た目を統一）。
+   Phase 21: 親（.location-list）から受け取った残り高さを.location-scrollへ渡すため、
+   このラッパー自身もflexの縦積みにする（囲まないと国数の多いプラン・ベンダーで
+   一覧の高さが伸び切り、ページがビューポートを超える）。 */
+.available-locations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .available-locations .location-scroll {
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .location-row-static {

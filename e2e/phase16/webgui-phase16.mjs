@@ -1,8 +1,9 @@
 // 責務: Phase16（起動時の接続復元・接続/切断ボタンの配置改善・参考一覧での現在の接続先表示）の
 // Web UI側の実機確認。実ブラウザで
-// 1) 接続／切断ボタンが画面上部（アカウント状態表示と同じ行）にあり、接続操作カードの末尾
-//    （.connect-row。「接続先を変更」のみが残る場所）には無いこと、切断ボタンが赤系の配色であること、
-//    接続/切断のたびに正しく片方だけが表示されること
+// 1) 接続／切断ボタンが画面上部（接続状態のカードの表示と同じ行。Phase21で.session-top-rowから
+//    .status-top-rowへ改称）にあり、接続操作カードの末尾（.connect-row。「接続先を変更」のみが
+//    残る場所）には無いこと、切断ボタンが赤系の配色であること、接続/切断のたびに正しく片方だけが
+//    表示されること
 // 2)（Proton VPN無料プラン等、接続先を選べないプランに接続中の場合のみ）参考一覧が接続先リストと
 //    同じ行形式になり、現在の接続先に「接続中」バッジが付くこと、ping列が出ないこと、選択・お気に入り
 //    ができないこと
@@ -11,19 +12,19 @@
 
 import { launch, assert } from "../lib/playwright.mjs";
 
-/** 目的: 指定した文言のボタンが、アカウント状態表示と同じ行（session-top-row）にあり、
+/** 目的: 指定した文言のボタンが、アカウント状態表示と同じ行（status-top-row）にあり、
  *       .connect-row（接続先を変更のみが残る場所）には無いことを確認する。 */
 async function assertButtonInSessionTopRow(page, label) {
   const result = await page.evaluate((text) => {
     const buttons = [...document.querySelectorAll("button")].filter((b) => b.textContent?.trim() === text);
     return {
       count: buttons.length,
-      inTopRow: buttons.some((b) => b.closest(".session-top-row") !== null),
+      inTopRow: buttons.some((b) => b.closest(".status-top-row") !== null),
       inConnectRow: buttons.some((b) => b.closest(".connect-row") !== null),
     };
   }, label);
   assert(result.count === 1, `［${label}］ボタンが1つだけ存在する（実際: ${result.count}）`);
-  assert(result.inTopRow, `［${label}］ボタンがsession-top-row（アカウント状態表示と同じ行）にある`);
+  assert(result.inTopRow, `［${label}］ボタンがstatus-top-row（アカウント状態表示と同じ行）にある`);
   assert(!result.inConnectRow, `［${label}］ボタンは.connect-row（接続先を変更のみの並び）には無い`);
 }
 

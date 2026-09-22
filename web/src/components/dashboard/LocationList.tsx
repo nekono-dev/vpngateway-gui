@@ -68,7 +68,10 @@ export function LocationList({
 
   if (unavailableReason !== undefined) {
     return (
-      <>
+      // 通常時の一覧（.location-list）と同じflexの縦積みで囲み、内部の.location-scrollへ残り高さを渡す
+      // （囲まないと参照一覧の行数ぶんだけ高さが伸び、ページ全体がビューポートを超えて表示されてしまう。
+      // webserver/design.md「画面の縦幅をビューポートに収める」）。
+      <div className="location-list">
         {/* ConnectButtonが同じ理由文のときaria-describedbyで参照する固定id（webserver/design.md「制限理由の重複表示の解消」）。 */}
         <RestrictionNote id="location-list-restriction" message={unavailableReason} />
         <AvailableLocations
@@ -76,7 +79,7 @@ export function LocationList({
           current={currentAvailableLocation}
           showPing={availableLocationsShowPing}
         />
-      </>
+      </div>
     );
   }
   if (isLoading) {

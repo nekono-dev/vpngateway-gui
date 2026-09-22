@@ -123,7 +123,7 @@
 - [x] コンポーネントテスト（`App.provider.test.tsx`: 現在の接続先のバッジ表示、選択・お気に入り操作ができないことの確認、ping非対応時に列が出ないことの確認）
 - [x] 検証環境（実機。Proton VPN無料アカウント）での接続中の表示確認（`e2e/phase16/webgui-phase16.mjs`）。検証中に判定ロジックの不具合（CLIの複合表記に一致しない）を発見・修正（`current-available-location.test.ts`追加。`wbs/phase16.md`「検証結果」）
 
-## ダッシュボードのカード構成・レイアウトの整理（Phase 21、検証完了）
+## ダッシュボードのカード構成・レイアウトの整理（Phase 21、不具合修正・再検証完了）
 
 - [x] `SessionCard.tsx`から`disconnectAction`・`connectAction`を削除し、ログイン導線のみの責務へ戻す
 - [x] `ConnectionStatusCard.tsx`・`GatewayStatusCard.tsx`から外枠（`.card`）を除去し、`connectionCardClassName`を切り出す
@@ -132,6 +132,7 @@
 - [x] `styles.css`を`100dvh`・flexの連鎖でビューポートに収まるレイアウトへ変更
 - [x] 既存コンポーネントテストの回帰確認、重複表示なしの新規テスト追加
 - [x] 検証環境（実機）のブラウザ（Playwright）でのカード配置・重複表示なし・画面が1画面に収まることの確認
+- [x] 【不具合修正】「接続できる国（参考）」一覧がページ全体を突き破る不具合を修正（`.location-list`の外枠漏れ）。回帰防止のコンポーネントテスト・実機E2E（`e2e/phase21/webgui-phase21.mjs`）を追加
 
 # 将来課題
 

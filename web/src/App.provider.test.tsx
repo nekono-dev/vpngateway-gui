@@ -123,6 +123,10 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       for (const button of group.querySelectorAll("button")) {
         expect(button).toBeDisabled();
       }
+      // Phase 21で発見した不具合の再発防止: 参考一覧は.location-list（flexの縦積み）に囲まれている必要がある。
+      // 囲まれていないと国数の多いベンダーで一覧の高さが伸び切り、画面がビューポートに収まらなくなる
+      // （webserver/design.md「画面の縦幅をビューポートに収める」）。
+      expect(group.closest(".location-list")).not.toBeNull();
     });
 
     it("接続中は、CLIが報告した都市名から現在の接続先を特定して「接続中」バッジを表示する（ping非対応なので列は出さない）", async () => {
