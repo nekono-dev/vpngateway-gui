@@ -133,7 +133,7 @@
 
 要件は`requirements.md`「参考一覧での現在の接続先の表示」。
 
-- **現在の接続先の特定**: `locations/current-available-location.ts`の`findCurrentAvailableLocation(connection, availableLocations)`が、`connection.location`（CLIが報告した都市名）を、参考一覧の各国の`cities`と大文字小文字を区別せず突き合わせる純粋関数。`locations/current-location.ts`の`findCurrentLocationId`（接続先リスト向け）と同じ考え方を、接続先IDを持たない参考一覧向けに行う。
+- **現在の接続先の特定**: `locations/current-available-location.ts`の`findCurrentAvailableLocation(connection, availableLocations)`が、`connection.location`（CLIが報告した接続先の表記）の中に、参考一覧の各国の`cities`のいずれかが含まれるかを、大文字小文字を区別せず判定する純粋関数。`locations/current-location.ts`の`findCurrentLocationId`（接続先リスト向け）と同じ考え方を、接続先IDを持たない参考一覧向けに行う。**都市名の完全一致ではなく部分一致とする**: 実機確認（2026-09-22、Proton VPN無料プラン）で、自動接続時にCLIが報告する`location`が都市名のみ（例: `Tokyo`）ではなく、「サーバ名 in 都市名, 国名」の複合表記（例: `US-FREE#5 in Seattle, United States`）になることが判明したため。
 - **表示**: `AvailableLocations.tsx`は、接続先リストの行（`LocationRow.tsx`が使う`location-item`・`location-row`・`location-iso`・`location-name`・`badge`等のクラス）と同じマークアップ・CSSクラスを再利用して行を描く。ただし選択（ラジオ入力）は置かず、非活性のクリックできない行として描く。★（お気に入り）も常に無効化した`<button disabled>`のみを置き、実際の登録操作は行わない（`LocationRow.tsx`本体は再利用せず、見た目のクラスのみ共有する。参考一覧はIDを持たず、`LocationItem`型に合わせる意味が無いため）。
 - **ping列の出し分け**: `capabilities/capability-state.ts`の`supportsLocationPing(capabilities)`が、`pingMeasurement`capabilityの`reason`が`"unsupported"`のときだけ非対応と判定する。`pingMeasurement`は`locationList`に従属するcapabilityのため（`apiserver/design.md`「オペレーションと実行可否（capability）」）、参考一覧が表示される状況（`locationList`がプラン制限で使えない）では、素の`isAvailable(capabilities, "pingMeasurement")`は常にfalseになってしまい判定に使えない。`reason`で「非対応（`unsupported`）」と「プラン制限の継承（`planRestricted`）」を区別することで、CLIそのものの対応可否のみを見る。
 - 参考一覧は生存確認を伴わない静的なサーバ一覧が出典のため、対応していても実際のping値は持たず、列は「-」のまま表示される。

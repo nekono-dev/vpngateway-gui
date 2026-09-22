@@ -105,22 +105,22 @@
 - [x] コンポーネントテスト（`usageNote`あり/なし）
 - [x] 実機（検証環境・AdGuard VPN無料アカウント）でのブラウザ表示確認
 
-## 切断ボタンの配置・強調（Phase 16、実装完了・検証待ち）
+## 切断ボタンの配置・強調（Phase 16、検証完了）
 
 - [x] `DisconnectButton.tsx`を切り出し、`ConnectionActions.tsx`からは切断ボタンを除去（接続／接続先を変更のみ）
 - [x] `SessionCard.tsx`が`disconnectAction`（`ReactNode`）を受け取り、アカウント状態表示の左（`session-top-row`）に描く。ログイン状態の判定に表示を左右させない
 - [x] `App.tsx`から接続中のみ`DisconnectButton`を渡すよう配線
 - [x] `styles.css`に`button.danger`（`--danger`を背景色に使う強調色）を追加
 - [x] 既存コンポーネントテスト（`App.test.tsx`等）の回帰確認
-- [ ] 実機のブラウザでの配置・配色の目視確認
+- [x] 検証環境（実機）のブラウザ（Playwright）での配置・配色の確認（`e2e/phase16/webgui-phase16.mjs`）
 
-## 参考一覧での現在の接続先の表示（Phase 16、実装完了・検証待ち）
+## 参考一覧での現在の接続先の表示（Phase 16、検証完了）
 
 - [x] `locations/current-available-location.ts`（`findCurrentAvailableLocation`）と、接続先リストと同じ行形式への`AvailableLocations.tsx`の書き換え（選択・お気に入りは常に無効化）
 - [x] `capabilities/capability-state.ts`に`supportsLocationPing`を追加（`pingMeasurement`の`reason`が`"unsupported"`のときだけping列を出さない。プラン制限からの継承とプロバイダ非対応を区別）
 - [x] `LocationList.tsx`・`App.tsx`への組み込み（`currentAvailableLocation`・`availableLocationsShowPing`の配線）
 - [x] コンポーネントテスト（`App.provider.test.tsx`: 現在の接続先のバッジ表示、選択・お気に入り操作ができないことの確認、ping非対応時に列が出ないことの確認）
-- [ ] 実機（Proton VPN無料アカウント等）での接続中の表示確認
+- [x] 検証環境（実機。Proton VPN無料アカウント）での接続中の表示確認（`e2e/phase16/webgui-phase16.mjs`）。検証中に判定ロジックの不具合（CLIの複合表記に一致しない）を発見・修正（`current-available-location.test.ts`追加。`wbs/phase16.md`「検証結果」）
 
 # 将来課題
 

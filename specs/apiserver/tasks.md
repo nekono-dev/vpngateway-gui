@@ -138,14 +138,14 @@
 - [x] バンドルの適合テスト（`vendor-samples.test.ts`・各バンドルの`samples.json`）
 - [x] コメント・エラーメッセージ例のベンダー固有名の除去
 
-## 起動時の接続状態の復元（Phase 16、実装完了・検証待ち）
+## 起動時の接続状態の復元（Phase 16、検証完了）
 
 - [x] `PUT /v1/connection`の実行本体を`connection-state/apply-connection.ts`（`applyConnectionChange`）へ切り出し、ルートハンドラから呼ぶ
 - [x] `connection-state-store.ts`: 自動接続の成功時にも空の内容（`{}`）で保存するよう拡張、`StoredConnection.country`を省略可に変更
 - [x] `connection-state/restore-connection.ts`（`restoreConnectionOnStartup`）: ランナー起動待ち（リトライ）・既接続時のスキップ・保存済み接続先への再接続・失敗時の警告ログ
 - [x] `server.ts`から起動時に呼び出す（設定通知と同方針。起動をブロックしない）
 - [x] 単体テスト（`restore-connection.test.ts`。保存なし・接続先指定あり/自動接続・既接続・ランナー未起動の各ケース）、既存テスト（`connection-state-store.test.ts`・ルート統合テスト）の回帰確認
-- [ ] 実機でのホスト再起動を伴う検証（VPN接続中に再起動→再起動後に自動的に同じ接続先へ再接続されることの確認）
+- [x] 検証環境（実機）での検証（Proton VPN無料プラン。意図しない切断→APIコンテナ再起動→自動的に再接続されることを確認。`wbs/phase16.md`「検証結果」）。**未検証**: ホスト全体の再起動（ランナー・proxyも同時に起動し直す場合）、AdGuard VPN側での確認
 
 # 将来課題
 
