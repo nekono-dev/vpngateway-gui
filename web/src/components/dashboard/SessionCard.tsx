@@ -8,8 +8,11 @@
 // 【Phase 23】ベンダー選択のプルダウンの隣に置けるよう、ログイン/ログアウトの単発ボタン（`session-action`）と
 // それ以外の状態表示・フォーム（`session-extra`）を別要素として返す。親（App）がCSS Gridで
 // `session-action`をプルダウンと同じ行に、`session-extra`をその下の行に配置する
-// （webserver/requirements.md「ベンダー選択のプルダウン化」）。資格情報入力型のログインは
-// フォーム自体が長くボタンだけを切り出せないため、`session-extra`側にフォームごと表示する。
+// （webserver/requirements.md「ベンダー選択のプルダウン化」）。
+// 【Phase 24】資格情報入力型（`loginMethod: "credentials"`）も、フォームをいきなり表示するのではなく、
+// URL提示型と同様に「ログイン」ボタンをプルダウンの隣に置き、押したときだけ下の行へフォームを開く
+// （webserver/requirements.md「ログインボタンもプルダウンの隣へ」）。フォームを開いたあとはこのボタンを
+// 隠す（フォーム自身の送信ボタンと表示名が重複するため）。
 import { Fragment, useState } from "react";
 import type { CapabilitiesState, SessionState } from "../../hooks/useDashboardPolling";
 import { deleteV1Session, postV1Session } from "../../generated/api/default/default";
@@ -31,6 +34,8 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // URL提示型のログインで返されたURL・メッセージ。
   const [result, setResult] = useState<{ loginUrl?: string; message: string }>();
+  // 資格情報入力型ログインで、「ログイン」ボタンを押してフォームを開いたか（Phase 24）。
+  const [showCredentialsForm, setShowCredentialsForm] = useState(false);
   const { notifyError, notifySuccess } = useToast();
   const loginMethod = session?.loginMethod ?? "deviceUrl";
   const loggedIn = session?.loggedIn;
@@ -89,9 +94,18 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
   // CLIの文言をそのまま出し、意味の解釈・翻訳はしない。
   const planText = session?.plan ? `${session.plan.label}${session.plan.usageNote ? `・${session.plan.usageNote}` : ""}` : undefined;
 
-  // ボタン単体（プルダウンの隣）で済む導線かどうか: ログイン済みは常にログアウトボタンのみ、
-  // 未ログインはURL提示型（ボタン1つ）のときのみ。資格情報入力型はフォームごと下の行に表示する。
-  const showLoginButton = loggedIn !== true && canLogin && loginMethod !== "credentials";
+  // プルダウンの隣（session-action）に置くボタン: ログイン済みはログアウトボタン、未ログインは
+  // 「ログイン」ボタン（URL提示型はそのままログインを実行、資格情報入力型は下の行のフォームを開くだけ）。
+  // 資格情報入力型でフォームを開いた後は、フォーム自身の送信ボタン（同じ「ログイン」表示）と重複するため隠す。
+  const showLoginButton = loggedIn !== true && canLogin && !(loginMethod === "credentials" && showCredentialsForm);
+
+  function handleLoginButtonClick(): void {
+    if (loginMethod === "credentials") {
+      setShowCredentialsForm(true);
+      return;
+    }
+    void handleLogin();
+  }
 
   return (
     <Fragment>
@@ -107,8 +121,8 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
           </button>
         ) : null}
         {showLoginButton ? (
-          <button type="button" disabled={isSubmitting} onClick={() => void handleLogin()}>
-            {isSubmitting ? "処理中..." : "VPNベンダーへログイン"}
+          <button type="button" disabled={isSubmitting} onClick={handleLoginButtonClick}>
+            {isSubmitting ? "処理中..." : loginMethod === "credentials" ? "ログイン" : "VPNベンダーへログイン"}
           </button>
         ) : null}
       </div>
@@ -123,7 +137,7 @@ export function SessionCard({ session, capabilities, onChanged }: Props) {
         {loggedIn === true ? <RestrictionNote id="logout-restriction" message={logoutReason} /> : null}
         {loggedIn !== true && canLogin ? (
           loginMethod === "credentials" ? (
-            <LoginForm isSubmitting={isSubmitting} onSubmit={(credentials) => handleLogin(credentials)} />
+            showCredentialsForm ? <LoginForm isSubmitting={isSubmitting} onSubmit={(credentials) => handleLogin(credentials)} /> : null
           ) : result ? (
             <p className="hint">
               {result.message}

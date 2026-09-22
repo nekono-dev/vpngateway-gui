@@ -226,13 +226,16 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       api.getV1Session.mockResolvedValue({ status: 200, data: { loginMethod: "credentials", loggedIn: false } });
     });
 
-    it("［接続］は「ログインしてください」の理由付きで無効になり、ログインフォームが表示される", async () => {
+    it("［接続］は「ログインしてください」の理由付きで無効になり、「ログイン」ボタンを押すとログインフォームが表示される", async () => {
       renderApp();
       const connect = await screen.findByRole("button", { name: "接続" });
       await waitFor(() => expect(connect).toBeDisabled());
       expect(connect).toHaveAccessibleDescription("ログインしてください");
       // 未ログイン時は「アカウント: 未ログイン」を表示しない（ログインフォーム自体が示すため。Phase 22）。
       expect(screen.queryByText(/アカウント:/)).not.toBeInTheDocument();
+      // 資格情報入力型もプルダウンの隣の「ログイン」ボタンを押すまではフォームを表示しない（Phase 24）。
+      expect(screen.queryByLabelText("パスワード")).not.toBeInTheDocument();
+      await userEvent.click(await screen.findByRole("button", { name: "ログイン" }));
       expect(screen.getByLabelText("パスワード")).toBeInTheDocument();
       expect(api.getV1ConnectionLocations).not.toHaveBeenCalled();
     });
@@ -247,6 +250,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
     it("ログインフォームの送信: 資格情報をボディで送り、成功後は状態を再取得し、パスワード欄は空になる", async () => {
       api.postV1Session.mockResolvedValueOnce({ status: 200, data: { message: "ログインしました。" } });
       renderApp();
+      await userEvent.click(await screen.findByRole("button", { name: "ログイン" }));
       await userEvent.type(await screen.findByLabelText("ユーザー名"), "user@proton.me");
       await userEvent.type(screen.getByLabelText("パスワード"), "hunter2-secret");
       await userEvent.type(screen.getByLabelText(/2段階認証コード/), "123456");
@@ -267,6 +271,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
         data: { error: "command_failed", exitCode: 1, stderr: "Error: Authentication failed for password ***." },
       });
       renderApp();
+      await userEvent.click(await screen.findByRole("button", { name: "ログイン" }));
       await userEvent.type(await screen.findByLabelText("ユーザー名"), "user@proton.me");
       await userEvent.type(screen.getByLabelText("パスワード"), "hunter2-secret");
       await userEvent.click(screen.getByRole("button", { name: "ログイン" }));
@@ -279,6 +284,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
 
     it("ユーザー名・パスワードが空の間は送信できない", async () => {
       renderApp();
+      await userEvent.click(await screen.findByRole("button", { name: "ログイン" }));
       expect(await screen.findByRole("button", { name: "ログイン" })).toBeDisabled();
     });
   });

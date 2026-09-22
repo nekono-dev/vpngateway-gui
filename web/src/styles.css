@@ -10,10 +10,11 @@
   --muted-bg: #eaeef2;
   --border: #d0d7de;
   --accent: #0969da;
-  /* 入力欄の枠線色（Phase 22）。ブラウザ・OS既定の枠線色（--border）とは区別し、意図的に定める。
-     【Phase 23】紫（#6e40c9）は他のUI（枠線・アクセント色）と系統が異なり一貫性を欠くため、
-     グレー系（--mutedと同系統）へ変更する（webserver/requirements.md「入力欄の枠線色の一貫性」）。 */
-  --input-border: #6e7781;
+  /* 入力欄の枠線色（Phase 22）。
+     【Phase 23】紫（#6e40c9）は他のUI（枠線・アクセント色）と系統が異なり一貫性を欠くため、グレー系へ変更した。
+     【Phase 24】そのグレーが濃すぎるという指摘を受け、ボタンの枠線色（--border）と同程度の薄さへ変更する
+     （webserver/requirements.md「入力欄の枠線色をボタン同等の薄さへ」）。 */
+  --input-border: #d0d7de;
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
   color: #1f2328;
 }
