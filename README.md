@@ -29,14 +29,14 @@ curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download
 
 | 引数 | 意味 |
 |---|---|
-| `--providers <ID>[,<ID>...]` | 有効にするベンダー（`vendors/<ID>/`のディレクトリ名）。省略時は前回の設定を維持し、初回で端末から実行していれば対話で選ぶ。指定も対話もできなければ失敗する（既定のベンダーは無い） |
+| `--providers <ID>[,<ID>...]` | 有効にするベンダー（`vendors/<ID>/`のディレクトリ名）。省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする |
 | `--lan-iface <名前>` | LAN側インターフェース名を指定する（自動検出できない・複数NICの場合） |
 | `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を捨てて再検出する（VPN未接続のときに実行する） |
 | `--no-start` | 起動しない |
 
 ### 更新・ベンダーの変更
 
-同じ操作を再実行する。新しい版へ更新するには、新しい版の`install.sh`（`releases/latest`か、タグ指定の`releases/download/<タグ>/install.sh`）を実行する。ベンダーの追加・削除は`--providers`を変えて再実行する（無効にしたベンダーのランナーは停止・削除され、ログイン情報は残る）。引数なしの再実行は、前回のベンダーのまま更新だけを行う。
+同じ操作を再実行する。新しい版へ更新するには、新しい版の`install.sh`（`releases/latest`か、タグ指定の`releases/download/<タグ>/install.sh`）を実行する。ベンダーを一部だけに絞るには`--providers`を指定して再実行する（無効にしたベンダーのランナーは停止・削除され、ログイン情報は残る）。引数なしの再実行は、その時点の全ベンダー（all）を有効にする（新しい版で追加されたベンダーも自動的に有効化される）。
 
 ```sh
 sudo sh /opt/vpngwgui/install/install.sh --providers adguardvpn   # 取得済みのソースから直接実行してもよい

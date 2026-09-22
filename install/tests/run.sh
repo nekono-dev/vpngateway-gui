@@ -54,8 +54,8 @@ check "install.sh --help は使い方を表示して成功する" sh -c "sh '$IN
 check "install.sh: 不明な引数は理由を示して失敗する" sh -c "out=\$(sh '$INSTALL_DIR/install.sh' --bogus 2>&1); [ \$? -ne 0 ] && printf '%s' \"\$out\" | grep -q '不明な引数'"
 check "install.sh: --providers の値が無ければ失敗する" sh -c "! sh '$INSTALL_DIR/install.sh' --providers >/dev/null 2>&1"
 
-# --- 対話選択（/dev/ttyから読む。`curl | sh`では標準入力がパイプのため）。scriptコマンドで擬似端末を与え、入力を流し込む。
-# 一時ディレクトリに、2つのバンドル（profile.jsonとcompose.ymlを持つ）を持つ偽のリポジトリを作って、関数だけを読み込む。
+# --- --providers省略時の挙動（Phase 17: all化）。一時ディレクトリに、2つのバンドル（profile.jsonとcompose.ymlを持つ）を持つ
+# 偽のリポジトリを作って、関数だけを読み込む（VPNGW_INSTALL_LIBを立てるとmainを実行しない）。
 FAKE="$TMP/repo"
 mkdir -p "$FAKE/install" "$FAKE/vendors/vendora" "$FAKE/vendors/vendorb" "$FAKE/vendors/nocompose"
 cp "$INSTALL_DIR/install.sh" "$FAKE/install/install.sh"
@@ -64,20 +64,16 @@ printf '{ "vendor": "vendorb" }\n' > "$FAKE/vendors/vendorb/profile.json"
 printf '{ "vendor": "nocompose" }\n' > "$FAKE/vendors/nocompose/profile.json"
 : > "$FAKE/vendors/vendora/compose.yml"
 : > "$FAKE/vendors/vendorb/compose.yml"
-# 目的: 擬似端末から入力を与えて prompt_providers を実行し、選ばれたIDを返す。 入力: 端末へ打ち込む文字列。
-prompt_with() {
-  printf '%s\n' "$1" | VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE script -qec "sh -c '. $FAKE/install/install.sh; printf \"RESULT=%s\\n\" \"\$(prompt_providers)\"'" /dev/null 2>/dev/null | tr -d '\r' | sed -n 's/^.*RESULT=//p' | tail -n 1
+# 目的: setup_providers を実行し、決定されたPROVIDERSを返す。 入力: PROVIDERS_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。
+setup_providers_with() {
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; PROVIDERS_ARG='$1'; setup_providers >/dev/null; printf '%s' \"\$PROVIDERS\""
 }
-have_script() { command -v script >/dev/null 2>&1; }
-if have_script; then
-  check "対話選択: 番号で選ぶ（複数・区切りはカンマ）" test "$(prompt_with '1,2')" = "vendora,vendorb"
-  check "対話選択: 空白区切りも可。順序は入力した順（先頭が既定の選択中になる）" test "$(prompt_with '2 1')" = "vendorb,vendora"
-  check "対話選択: 1つだけ選ぶ" test "$(prompt_with '2')" = "vendorb"
-  check "対話選択: 範囲外の番号・compose.ymlの無いバンドルは選べない（空になる）" test -z "$(prompt_with '3,9')"
-  check "対話選択: 一覧に表示名（displayName。無ければID）が出る" sh -c "printf '1\n' | VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE script -qec \"sh -c '. $FAKE/install/install.sh; prompt_providers'\" /dev/null 2>/dev/null | grep -q 'Vendor A'"
-else
-  echo "SKIP: scriptコマンドが無いため対話選択の検査を省略する"
-fi
+check "--providers省略時: vendors/にある全ベンダー（all）が選ばれる" test "$(setup_providers_with '')" = "vendora,vendorb"
+rm -f "$FAKE/.env"
+check "--providers指定時: 指定した集合のみが選ばれる（.envの有無に関係しない）" test "$(setup_providers_with 'vendora')" = "vendora"
+printf 'VPN_PROVIDERS=vendora\n' > "$FAKE/.env"
+check "--providers省略時: 既存の.envのVPN_PROVIDERSが一部でも、全ベンダー（all）になる" test "$(setup_providers_with '')" = "vendora,vendorb"
+rm -f "$FAKE/.env"
 
 echo "== 結果: FAIL $FAILS 件"
 exit "$FAILS"

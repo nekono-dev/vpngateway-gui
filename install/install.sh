@@ -10,7 +10,8 @@
 #   5. ベンダー固有のホスト側手順（vendors/<ID>/install-host.sh。あるベンダーだけ）  6. 起動と待機  7. 完了の表示
 #
 # 使い方（root権限で）: sh install/install.sh --providers <ID>[,<ID>...] [--lan-iface <名前>] [--redetect-lan-iface] [--no-start]
-#   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は.envの既存値を維持し、無ければ対話で選ぶ。
+#   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
+#                           （新しい版で追加されたベンダーも、再実行のたびに自動的に有効化される）。
 #   --lan-iface            LAN側インターフェース名を指定する（自動検出できない・複数NICの場合）。
 #   --redetect-lan-iface   保存済みのLAN側インターフェース名を捨てて再検出する。
 #   --no-start             起動（docker compose up）をしない。
@@ -246,54 +247,19 @@ list_bundles() {
   done
 }
 
-# 目的: バンドルの表示名を取り出す（profile.jsonの`displayName`。無ければID）。
-# 入力: ベンダーID。 出力: 表示名。
-bundle_label() {
-  label=$(sed -n 's/.*"displayName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$VENDORS_DIR/$1/profile.json" | head -n 1)
-  printf '%s' "${label:-$1}"
-}
-
-# 目的: 端末（/dev/tty）から対話でベンダーを選ばせる。`curl | sh`では標準入力がパイプのため、/dev/ttyから読む。
-# 出力: 選ばれたベンダーIDのカンマ区切り（入力した順。先頭が、選択中のベンダーの既定になる）。 失敗時: 端末が無い・入力が空の場合は空文字列を返す。
-prompt_providers() {
-  ( : < /dev/tty ) 2>/dev/null || return 0
-  ids=$(list_bundles)
-  [ -n "$ids" ] || return 0
-  {
-    echo "有効にするVPNベンダーを選んでください（番号をカンマまたは空白で区切って入力）:"
-    n=0
-    for id in $ids; do
-      n=$((n + 1))
-      printf '  %d) %s (%s)\n' "$n" "$(bundle_label "$id")" "$id"
-    done
-    printf '> '
-  } > /dev/tty
-  read -r answer < /dev/tty || return 0
-  chosen=""
-  for token in $(printf '%s' "$answer" | tr ',' ' '); do
-    n=0
-    for id in $ids; do
-      n=$((n + 1))
-      if [ "$token" = "$n" ]; then chosen="$chosen,$id"; fi
-    done
-  done
-  printf '%s' "${chosen#,}"
-}
-
 # 目的: 有効にするベンダーを決め、.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なバンドルのfragmentの合成）を書く。
 # 入力: グローバル変数 PROVIDERS_ARG。
 # 出力: グローバル変数 PROVIDERS（カンマ区切り）・PROVIDER_IDS（空白区切り）。
-# 優先順: --providers ＞ .envの既存のVPN_PROVIDERS ＞ 対話（/dev/tty） ＞ 失敗（既定のベンダーは持たない）。
-# 失敗時: 形式不正・バンドルが無い・重複・決められない場合は終了する。
+# 優先順: --providers ＞ その時点でvendors/にある全ベンダー（all）。.envの既存のVPN_PROVIDERSは参照しない
+#         （初回導入・アップデートのどちらでも同じ規則にし、新しく追加されたベンダーが再実行のたびに自動的に有効化されるようにする）。
+# 失敗時: 形式不正・バンドルが無い・重複の場合、または有効にできるベンダーが1つも無い場合は終了する。
 setup_providers() {
   if [ -n "$PROVIDERS_ARG" ]; then
     PROVIDERS=$PROVIDERS_ARG
-  elif [ -n "$(env_get VPN_PROVIDERS)" ]; then
-    PROVIDERS=$(env_get VPN_PROVIDERS)
-    log "有効なベンダー: 既存の設定を維持（$PROVIDERS）"
   else
-    PROVIDERS=$(prompt_providers)
-    [ -n "$PROVIDERS" ] || die "有効にするベンダーが決まりません（既定のベンダーは持ちません）。--providers <ID>[,<ID>...] で指定してください。選べるもの: $(list_bundles | tr '\n' ' ')"
+    PROVIDERS=$(list_bundles | tr '\n' ',')
+    PROVIDERS=${PROVIDERS%,}
+    [ -n "$PROVIDERS" ] || die "有効にできるベンダーがありません（vendors/ 配下にバンドルがありません）"
   fi
   PROVIDER_IDS=$(printf '%s' "$PROVIDERS" | tr ',' ' ')
   files="docker-compose.yml"
