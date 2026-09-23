@@ -56,7 +56,8 @@ async function signInIfNeeded(page) {
  */
 export async function launch(baseUrl) {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ baseURL: baseUrl });
+  // Phase25 Stage3でWebサーバが自己署名証明書のHTTPSになったため、証明書検証エラーを無視する。
+  const page = await browser.newPage({ baseURL: baseUrl, ignoreHTTPSErrors: true });
   await page.goto("/");
   await signInIfNeeded(page);
   return { browser, page };

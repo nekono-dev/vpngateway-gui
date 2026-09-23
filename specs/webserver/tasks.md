@@ -147,9 +147,9 @@
 
 ## デプロイメント構成の分離（Phase 25）
 
-- [ ] ログイン画面（`components/auth/LoginPage.tsx`）・認証状態コンテキスト（`AuthContext.tsx`）・401時の遷移
-- [ ] `API_ORIGIN`のHTTPS対応（CA証明書の検証設定）
-- [ ] Webサーバ自身のHTTPS化（Fastifyの`https`オプション）
+- [x] ログイン画面（`components/auth/LoginPage.tsx`）・認証状態コンテキスト（`AuthContext.tsx`）・401時の遷移
+- [x] `API_ORIGIN`のHTTPS対応（CA証明書の検証設定。`web/server/tls-options.ts`の`loadApiCaCertificate()`）
+- [x] Webサーバ自身のHTTPS化（Fastifyの`https`オプション。`web/server/tls-options.ts`）
 - [ ] E2E（未ログイン時の遷移、ログイン・ログアウト、セッション切れ。詳細は`../../wbs/phase25.md`）
 
 # 将来課題

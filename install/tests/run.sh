@@ -66,9 +66,9 @@ printf '{ "vendor": "vendorb" }\n' > "$FAKE/vendors/vendorb/profile.json"
 printf '{ "vendor": "nocompose" }\n' > "$FAKE/vendors/nocompose/profile.json"
 : > "$FAKE/vendors/vendora/compose.yml"
 : > "$FAKE/vendors/vendorb/compose.yml"
-# 目的: setup_providers を実行し、決定されたPROVIDERSを返す。 入力: PROVIDERS_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。
+# 目的: determine_providers を実行し、決定されたPROVIDERSを返す。 入力: PROVIDERS_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。
 setup_providers_with() {
-  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; PROVIDERS_ARG='$1'; setup_providers >/dev/null; printf '%s' \"\$PROVIDERS\""
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; PROVIDERS_ARG='$1'; determine_providers >/dev/null; printf '%s' \"\$PROVIDERS\""
 }
 check "--providers省略時: vendors/にある全ベンダー（all）が選ばれる" test "$(setup_providers_with '')" = "vendora,vendorb"
 rm -f "$FAKE/.env"
@@ -120,6 +120,44 @@ NOT_A_REPO="$TMP/not-a-repo"
 mkdir -p "$NOT_A_REPO"
 check "remove_repo_root: install/install.shが無いディレクトリは削除を拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$NOT_A_REPO sh -c '. $FAKE/install/install.sh; remove_repo_root' >/dev/null 2>&1"
 check "remove_repo_root: 拒否時にディレクトリが残る" test -d "$NOT_A_REPO"
+
+# --- デプロイメント構成の分離（Phase25 Stage3）: トポロジー決定・SAN組み立て・ロールごとのCOMPOSE_FILE構築
+rm -f "$FAKE/.env"
+
+check "build_san: ローカル配置時はlocalhost/127.0.0.1に加えLAN側アドレスを含む" sh -c \
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; build_san \"\" \"\"' | grep -q 'DNS:localhost,IP:127.0.0.1'"
+check "build_san: ホスト名指定時はDNS:として含む" sh -c \
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; build_san example.internal \"\"' | grep -q 'DNS:example.internal'"
+check "build_san: IPv4指定時はIP:として含む" sh -c \
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; build_san 192.168.1.5 \"\"' | grep -q 'IP:192.168.1.5'"
+check "build_san: 追加のSAN項目（extra）を含める" sh -c \
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; build_san \"\" DNS:api' | grep -q 'DNS:api'"
+
+check "determine_topology: 初回は--api/--web/--gatewayの指定をそのまま採用する" test \
+  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; WEB_HOST_ARG=w.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology >/dev/null; printf '%s:%s:%s' \"\$ROLE_HOST_web\" \"\$ROLE_HOST_api\" \"\$ROLE_HOST_gateway\"")" = "w.example:a.example:"
+
+printf 'TOPOLOGY_RECORDED=1\nTOPOLOGY_WEB_HOST=w.example\nTOPOLOGY_API_HOST=a.example\nTOPOLOGY_GATEWAY_HOST=\n' > "$FAKE/.env"
+check "determine_topology: 記録済みトポロジーと一致すれば成功する" sh -c \
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; WEB_HOST_ARG=w.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
+check "determine_topology: 記録済みトポロジーと異なれば変更前に失敗する" sh -c \
+  "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; WEB_HOST_ARG=other.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
+rm -f "$FAKE/.env"
+
+check "install.sh: --uninstall は --api と併用できない" sh -c \
+  "! sh '$INSTALL_DIR/install.sh' --uninstall --api example.internal >/dev/null 2>&1"
+
+# 目的: install_rolesが、割り当てられたロールだけのcompose/*.ymlをCOMPOSE_FILEへ並べることを検査する
+#      （gatewayロールを含まない場合はベンダーのcompose fragmentを並べない）。DockerもNO_START=1で回避する。
+install_roles_compose_file_with() {
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c \
+    ". $FAKE/install/install.sh; NO_START=1; GATEWAY_HOST_OVERRIDE_ARG=''; API_ORIGIN_OVERRIDE_ARG=''; preflight() { :; }; install_packages() { :; }; install_docker() { :; }; install_roles '$1' >/dev/null 2>&1; env_get COMPOSE_FILE"
+}
+check "install_roles: webロールのみの場合、compose/web.ymlだけを並べる（ベンダーfragmentは含めない）" test \
+  "$(install_roles_compose_file_with web)" = "docker-compose.yml:compose/web.yml"
+rm -f "$FAKE/.env"
+check "install_roles: web+apiロールの場合、両方のcompose fragmentを並べる" test \
+  "$(install_roles_compose_file_with web,api)" = "docker-compose.yml:compose/web.yml:compose/api.yml"
+rm -f "$FAKE/.env"
 
 echo "== 結果: FAIL $FAILS 件"
 exit "$FAILS"

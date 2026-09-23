@@ -92,9 +92,9 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 
 ## デプロイメント構成の分離（Phase 25）
 
-- [ ] ゲートウェイ制御チャネル: `proxy`にmTLS TCPリスナー（`GATEWAY_PORT`）を追加し、`/net/*`（自分自身）・`/runners/<ID>/*`（UDS転送）のパスルーティングを実装
-- [ ] compose分割（`compose/gateway.yml`）
-- [ ] インストーラの証明書ペアリング（ゲートウェイ役: CA・サーバ証明書生成、`install/gateway-issue-client-cert.sh`）
+- [x] ゲートウェイ制御チャネル: `proxy`にmTLS TCPリスナー（`GATEWAY_PORT`）を追加し、`/net/*`（自分自身）・`/runners/<ID>/*`（UDS転送）のパスルーティングを実装
+- [x] compose分割（`compose/gateway.yml`・`compose/web.yml`・`compose/api.yml`）
+- [x] インストーラの証明書生成・配布（`install/install.sh`の`generate_role_pki`・`distribute_pki_local`・`distribute_pki_remote`。別スクリプトへの分離はせず`install.sh`内の関数として実装）
 - [ ] 単体・結合テスト（証明書検証失敗時の拒否、ルーティング）、実機検証（詳細は`../../wbs/phase25.md`）
 
 # 将来課題

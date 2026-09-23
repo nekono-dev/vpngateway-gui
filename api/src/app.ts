@@ -1,6 +1,6 @@
 // 責務: Fastifyアプリケーションの構築。ルート登録、OpenAPI仕様生成、エラーハンドリングの一元化を行う。
 
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { registerConnectionLocationsRoute } from "./routes/connection-locations.js";
@@ -40,14 +40,27 @@ function isSchemaValidationError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "validation" in error;
 }
 
+export interface BuildAppOptions {
+  /** 指定時、FastifyをHTTPSで待ち受けるよう構成する（省略時はHTTP。単体テストでの利用を想定）。 */
+  https?: { cert: Buffer; key: Buffer };
+}
+
 /**
  * 目的: Fastifyアプリケーションのインスタンスを構築する（listenはしない）。
- * 入力: なし。
+ * 入力: options.https（省略可。APIサーバ自身のTLSサーバ証明書・秘密鍵。apiserver/design.md「APIサーバ自身のTLS」）。
  * 出力: ルート登録・エラーハンドラ設定済みのFastifyインスタンス。
- * 例: const app = buildApp(); await app.listen({ port: 3000 });
+ * 例: const app = buildApp({ https: loadApiServerTlsOptions() }); await app.listen({ port: 3000 });
  */
-export function buildApp() {
-  const app = Fastify({ logger: true }).withTypeProvider<TypeBoxTypeProvider>();
+export function buildApp(options: BuildAppOptions = {}) {
+  // Fastifyの型はhttps指定の有無でRawServerの型（http.Server/https.Server）が分岐し、
+  // 以降のルート登録（register/get/post等）で型の分岐が伝播してしまうため、
+  // ここで既定のFastifyInstance型（http.Server）へ統一する（実行時の挙動はhttpsオプションの
+  // 有無だけで決まり、このモジュール内でRawServer固有の型は使わない）。
+  const app = (
+    options.https
+      ? (Fastify({ logger: true, https: options.https }) as unknown as FastifyInstance)
+      : Fastify({ logger: true })
+  ).withTypeProvider<TypeBoxTypeProvider>();
 
   app.register(fastifySwagger, {
     openapi: {

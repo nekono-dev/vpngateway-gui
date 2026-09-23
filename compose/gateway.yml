@@ -1,0 +1,40 @@
+# 責務: gatewayロール（透過ゲートウェイ・Kill Switch・明示的プロキシ・ランナー群）のcompose fragment。
+# specs/design.md「デプロイメント構成の分離とロール別インストール」参照。パスの解決についてはcompose/web.yml冒頭の注記を参照。
+# ベンダーバンドルのcompose.yml（vendors/<ID>/compose.yml）は、従来どおりこのファイルの後ろに合成する
+# （install/install.shが.envのCOMPOSE_FILEへ並べる）。
+services:
+  # ネットワークコンテナ: 透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出・接続監視。
+  # ベンダーCLIは実行しない（Phase 8でランナーへ分離。specs/proxyserver/design.md「コンテナ構成（Phase 8）」）。
+  proxy:
+    restart: always
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    # 透過ゲートウェイ・明示的プロキシがホストのネットワーク名前空間を直接操作するため（Phase 2で前倒し、Phase 3で確定）。
+    network_mode: host
+    user: "10001:10001"
+    # nftables・ipの操作に必要。トンネルはランナーが作るため/dev/net/tunは不要。
+    cap_add:
+      - NET_ADMIN
+    init: true
+    # network_mode: hostのためポートマッピングは書かず、GATEWAY_PORT（既定8443）をホストの全インターフェースへ
+    # 直接bindする（proxy/src/server.ts。mTLSのクライアント証明書検証が主たる境界。ファイアウォールでの
+    # 到達元制限（APIサーバのIPのみ）を推奨する。proxyserver/design.md「多層防御」）。
+    volumes:
+      - ctl-socket:/var/run/vpngw-ctl
+      # ゲートウェイ制御チャネル（mTLS TCP）のサーバ証明書一式。install.shがホストの
+      # /etc/vpngwgui/pki/へローカル生成（単一ホスト構成）またはscp配布（分離構成）する。
+      - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
+    environment:
+      # ランナーのUDS（runner-<ベンダーID>.sock）を探すディレクトリ（gateway-channel/runner-forward.ts）。
+      CTL_SOCKET_DIR: /var/run/vpngw-ctl
+      GATEWAY_PORT: ${GATEWAY_PORT:-8443}
+      # install/install.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
+      # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
+      # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
+      LAN_IFACE: ${LAN_IFACE:-}
+      # フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため通常は未設定のまま
+      # LAN_IFACEを流用する（proxyserver/design.md「Kill Switch」参照）。
+
+volumes:
+  ctl-socket: {}

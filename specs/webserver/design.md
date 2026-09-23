@@ -8,7 +8,9 @@
 
 # Webサーバ自身のTLS（Phase 25）
 
-ブラウザ⇄Webサーバ間をHTTPSにする（`specs/requirements.md`「通信路の保護」）。`web/server/index.ts`のFastifyを`https`オプション（証明書はインストーラが配置する自己署名証明書・秘密鍵。`specs/design.md`「証明書のペアリング」）で起動する。証明書はWebサーバのホスト名・IPを対象に発行され、ブラウザは初回アクセス時に自己署名警告を表示する（運用者が手動で信頼する運用を前提とし、Let's Encrypt等の自動化は対象外）。
+ブラウザ⇄Webサーバ間をHTTPSにする（`specs/requirements.md`「通信路の保護」）。`web/server/index.ts`のFastifyを`https`オプション（証明書はインストーラが配置する自己署名証明書・秘密鍵。`specs/design.md`「証明書の生成・配布」）で起動する。証明書はWebサーバのホスト名・IPを対象に発行され、ブラウザは初回アクセス時に自己署名警告を表示する（運用者が手動で信頼する運用を前提とし、Let's Encrypt等の自動化は対象外）。
+
+証明書・秘密鍵の読み込みは`web/server/tls-options.ts`の`loadWebServerTlsOptions()`が行う。環境変数`WEB_TLS_CERT_FILE`・`WEB_TLS_KEY_FILE`（省略時は`GATEWAY_PKI_DIR`（既定`/etc/vpngwgui/pki`）配下の`web-server.crt`・`web-server.key`）から読み込む、既存のゲートウェイ制御チャネル（`proxy/src/gateway-channel/tls-options.ts`等）と同じ規約に従う。
 
 # APIクライアント生成方針
 
@@ -19,9 +21,9 @@
 
 # Web⇄API通信経路の実装
 
-- ブラウザは常にWebサーバの単一オリジンにのみアクセスし、Webサーバが `/api/*` パス配下のリクエストを、`API_ORIGIN`（既定`http://api:3000`。Phase 25以降は分離配置向けに`https://<APIサーバのホスト名/IP>:<ポート>`も指定できる）へリバースプロキシする。
+- ブラウザは常にWebサーバの単一オリジンにのみアクセスし、Webサーバが `/api/*` パス配下のリクエストを、`API_ORIGIN`（既定`https://api:3000`。分離配置時はインストーラが`https://<APIサーバのホスト名/IP>:<ポート>`を`.env`へ書く）へリバースプロキシする。単一ホスト構成でもAPIサーバ自身のTLSは常に有効なため、`API_ORIGIN`は常に`https://`になる。
 - 実装は Fastify の `@fastify/http-proxy` を用いる。
-- **【Phase 25】TLS検証**: `API_ORIGIN`が`https://`の場合、`@fastify/http-proxy`の`https.Agent`へ、インストーラがペアリングで取得したAPIサーバのCA証明書（`ca`オプション）を渡し、検証を行う（`specs/design.md`「証明書のペアリング」）。証明書検証を無効化するオプション（`rejectUnauthorized: false`等）は使わない。
+- **【Phase 25】TLS検証**: `@fastify/http-proxy`（既定でundiciを使って上流へ接続する）の`undici.connect.ca`オプションへ、インストーラが配布したAPIサーバのCA証明書（`api-ca`。`specs/design.md`「証明書の生成・配布」）を渡し、検証を行う。CA証明書の読み込みは`web/server/tls-options.ts`の`loadApiCaCertificate()`（環境変数`API_TLS_CA_FILE`、省略時`GATEWAY_PKI_DIR`配下の`api-ca.crt`）が行う。証明書検証を無効化するオプション（`rejectUnauthorized: false`等）は使わない。
 - **Cookieの透過転送**: ブラウザ⇄API間のセッションCookie（`vpngwgui_session`。下記「利用者認証の実装方針」）は、リバースプロキシがそのまま転送する。Webサーバ自身はCookieの中身を解釈・検証しない（検証はAPIサーバの責務）。同一オリジン構成のため、追加のCORS設定・`credentials`指定は不要。
 
 # 利用者認証の実装方針（Phase 25）

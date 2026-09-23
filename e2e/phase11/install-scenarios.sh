@@ -29,8 +29,9 @@ WEB_COOKIE=/tmp/e2e-cookie.txt
 # Phase25でAPIが認証必須になったため、E2E共通アカウント（初回のみ作成）でログインしてから叩く。
 # apiコンテナが再作成されるたびセッション（プロセスメモリ）がリセットされるため、web_ok()の呼び出し側
 # （t_web_has/t_web_lacks）で毎回ログインし直す。
-web_login() { ct sh -c "curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1:8080/api/v1/operator >/dev/null; curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1:8080/api/v1/operator/session >/dev/null"; }
-web_ok() { ct curl -fsS -b "$WEB_COOKIE" -m 5 http://127.0.0.1:8080/api/v1/providers; }
+# Phase25 Stage3でwebサーバが自己署名証明書のHTTPSになったため、-k（証明書検証省略）を付ける。
+web_login() { ct sh -c "curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:8080/api/v1/operator >/dev/null; curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:8080/api/v1/operator/session >/dev/null"; }
+web_ok() { ct curl -fsSk -b "$WEB_COOKIE" -m 5 https://127.0.0.1:8080/api/v1/providers; }
 env_val() { ct sh -c "grep '^$1=' $DIR/.env | tail -n 1 | cut -d= -f2-"; }
 running_services() { ct sh -c "cd $DIR && docker compose ps --services --status running | sort | tr '\n' ' '"; }
 cleanup() {
@@ -50,7 +51,7 @@ t_head_is() { test "$(ct git -C "$DIR" rev-parse HEAD)" = "$1"; }
 t_docker_official() { ct docker compose version >/dev/null && ct grep -q download.docker.com /etc/apt/sources.list.d/docker.list; }
 t_sysctl() { ct grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.d/99-vpngwgui.conf; }
 t_guard() { ct systemctl is-enabled vpngwgui-boot-guard.service | grep -q enabled; }
-t_env_initial() { test "$(env_val VPN_PROVIDERS)" = adguardvpn && test "$(env_val COMPOSE_FILE)" = "docker-compose.yml:vendors/adguardvpn/compose.yml" && test -n "$(env_val LAN_IFACE)"; }
+t_env_initial() { test "$(env_val VPN_PROVIDERS)" = adguardvpn && test "$(env_val COMPOSE_FILE)" = "docker-compose.yml:compose/web.yml:compose/api.yml:compose/gateway.yml:vendors/adguardvpn/compose.yml" && test -n "$(env_val LAN_IFACE)"; }
 t_web_has() { web_login; web_ok | grep -q "$1"; }
 t_web_lacks() { web_login; web_ok >/dev/null && ! web_ok | grep -q "$1"; }
 t_services_are() { test "$(running_services)" = "$1 "; }
@@ -60,7 +61,7 @@ t_added() { test "$(env_val VPN_PROVIDERS)" = adguardvpn,hooktest && running_ser
 t_orphan_removed() { ! ct sh -c 'docker ps -a --format {{.Names}}' | grep -q hooktest; }
 
 COMMIT=$(git -C "$ROOT" rev-parse HEAD)
-git -C "$ROOT" diff --quiet HEAD -- install vendors docker-compose.yml || echo "注意: install/・vendors/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
+git -C "$ROOT" diff --quiet HEAD -- install vendors compose docker-compose.yml || echo "注意: install/・vendors/・compose/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
 git clone -q --bare "file://$(git -C "$ROOT" rev-parse --git-common-dir)" "$WORK/vpngw.git" || exit 1
 sh "$ROOT/install/build-bootstrap.sh" e2e "$COMMIT" file:///srv/vpngw.git > "$WORK/install.sh" || exit 1
 sh "$ROOT/install/build-bootstrap.sh" e2e 0000000000000000000000000000000000000000 file:///srv/vpngw.git > "$WORK/install-bad.sh" || exit 1
@@ -116,9 +117,9 @@ BOOT="$WORK/install-bad.sh"
 check "存在しないコミットを埋め込んだ頒布物は、取得に失敗して何も実行しない" t_bootstrap_fails_with fatal --providers adguardvpn
 BOOT=""
 check "失敗後もソースは元のコミットのまま" t_head_is "$COMMIT"
-ct sh -c "echo '# local edit' >> $DIR/docker-compose.yml"
+ct sh -c "echo '# local edit' >> $DIR/compose/gateway.yml"
 check "追跡ファイルに未コミットの変更があれば、更新せず中止する" t_bootstrap_fails_with "未コミットの変更" --providers adguardvpn
-ct git -C "$DIR" checkout -q -- docker-compose.yml
+ct git -C "$DIR" checkout -q -- compose/gateway.yml
 check "変更を戻せば、再び更新できる" t_bootstrap_ok --providers adguardvpn --no-start
 
 echo "== 結果: FAIL $FAILS 件"

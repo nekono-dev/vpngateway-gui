@@ -1,0 +1,30 @@
+# 責務: webロール（SPA配信・APIへのリバースプロキシ）のcompose fragment。
+# specs/design.md「デプロイメント構成の分離とロール別インストール」: install/install.shが、このロールを
+# 配置したホストの.envのCOMPOSE_FILEへ、ルートのdocker-compose.yml（アンカー、下記注記）に続けて並べる。
+# パスはリポジトリルート基準の相対（docker-compose.ymlが常にCOMPOSE_FILEの先頭に来るため、
+# docker composeのproject directoryは常にリポジトリルートになる。compose/配下に置くこと自体は
+# パス解決に影響しない）。
+services:
+  web:
+    restart: always
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      # ホスト側のポートはinstall/install.shの--web-port（既定80）が.envのWEB_PORTへ書く。コンテナ内は常に8080（web/Dockerfile）。
+      - "${WEB_PORT:-80}:8080"
+    networks:
+      - app-net
+    # apiは分離構成では別ホストのため、depends_on（同一Compose project内限定）は指定しない。
+    # web起動時にapiが未応答でも、Fastifyは起動し続け、以後のリクエストで502を返す（プロキシ先が復旧すれば自然に回復する）。
+    volumes:
+      # Webサーバ自身のHTTPSサーバ証明書（web-server.crt/.key）と、APIサーバ検証用のCA証明書（api-ca.crt）。
+      # install.shがホストの/etc/vpngwgui/pki/へローカル生成（単一ホスト構成）またはscp配布（分離構成）する。
+      - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
+    environment:
+      # APIサーバの接続先。単一ホスト構成の既定はhttps://api:3000（同一Docker network内の名前解決）。
+      # 分離構成ではinstall.shが.envのAPI_ORIGINを相手ホストのアドレスへ上書きする。
+      API_ORIGIN: ${API_ORIGIN:-https://api:3000}
+
+networks:
+  app-net: {}

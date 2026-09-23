@@ -1,6 +1,8 @@
-// 責務: APIサーバのエントリポイント。buildApp()で構築したアプリをHTTPで待ち受ける。
+// 責務: APIサーバのエントリポイント。buildApp()で構築したアプリをHTTPSで待ち受ける
+// （Webサーバ⇄APIサーバ間の通信路保護。specs/requirements.md「通信路の保護」）。
 
 import { buildApp } from "./app.js";
+import { loadApiServerTlsOptions } from "./tls-options.js";
 import { getSettings } from "./settings/settings-store.js";
 import { notifySettings } from "./proxy-client/proxy-client.js";
 import { getProviders } from "./providers/provider-registry.js";
@@ -9,7 +11,7 @@ import { restoreConnectionOnStartup } from "./connection-state/restore-connectio
 // 有効なベンダーのプロファイルを起動時に読み込み、不正なら起動を失敗させる（実行時に初めて壊れるのを避ける）。
 const providers = getProviders();
 
-const app = buildApp();
+const app = buildApp({ https: loadApiServerTlsOptions() });
 app.log.info({ providers: providers.map((provider) => provider.id) }, "enabled VPN providers loaded");
 const port = Number(process.env.PORT ?? 3000);
 

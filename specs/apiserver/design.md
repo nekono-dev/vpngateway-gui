@@ -387,7 +387,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 
 - `executeVendorCommand`は、ベンダーIDを受け取り、ゲートウェイの`https://$GATEWAY_HOST:$GATEWAY_PORT/runners/<ID>/exec`へ送る（接続はゲートウェイ1台に対し1つのHTTP/1.1 keep-aliveプールで共有し、ベンダーごとの個別プールは持たない。パスでランナーを識別する）。リクエストボディは従来（`vendor`・`binary`・`resolvedArgv`・`timeoutMs`・`completionPattern`・`stdin`）のまま。
 - `notifySettings`・`fetchProxyStatus`（`POST /settings`・`GET /status`）・`POST /connection-checks`は`https://$GATEWAY_HOST:$GATEWAY_PORT/net/settings`・`/net/status`・`/net/connection-checks`へ送る。
-- 送信には`undici`の`Agent({ connect: { ca, cert, key } })`等でmTLSクライアントを構成する（`ca`＝ゲートウェイのCA証明書、`cert`・`key`＝ペアリングで取得したAPIサーバのクライアント証明書・秘密鍵。`specs/design.md`「証明書のペアリング」）。証明書検証に失敗する接続はエラーとし、平文・検証省略へのフォールバックは行わない。
+- 送信には`undici`の`Agent({ connect: { ca, cert, key } })`等でmTLSクライアントを構成する（`ca`＝ゲートウェイのCA証明書、`cert`・`key`＝ペアリングで取得したAPIサーバのクライアント証明書・秘密鍵。`specs/design.md`「証明書の生成・配布」）。証明書検証に失敗する接続はエラーとし、平文・検証省略へのフォールバックは行わない。
 - ランナーの`POST /exec`のレスポンスと、ネットワークコンテナの`/settings`・`/status`の形状は変えない。Phase 24までの`$CTL_SOCKET_DIR/runner-<ID>.sock`・`$CTL_SOCKET_DIR/net.sock`は廃止する（APIサーバはゲートウェイに対しUDSを一切使わない）。
 
 ### ファイル配置（AGENTS.mdの規約）
@@ -469,7 +469,7 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
 - 手書きのOpenAPI YAMLやサーバスタブの生成・同期は行わない（スキーマがそのまま実装かつ仕様書の唯一の情報源となる）。
 - 生成されたOpenAPI仕様は `/openapi.json`（または同等のパス）で公開し、orvalがこれを読み込んでWeb側クライアントを生成する。
 - 後述のゲートウェイとの内部通信経路（mTLS TCP）は、このOpenAPI仕様の対象に含めない。
-- **【Phase 25】APIサーバ自身のTLS**: Fastifyを`https`オプション（証明書は`specs/design.md`「証明書のペアリング」でインストーラが配置したサーバ証明書・秘密鍵）で起動する。Webサーバ（同一ホスト構成では`localhost`、分離構成ではネットワーク経由）はこの証明書をCA経由で検証してから接続する。
+- **【Phase 25】APIサーバ自身のTLS**: Fastifyを`https`オプション（証明書は`specs/design.md`「証明書の生成・配布」でインストーラが配置したサーバ証明書・秘密鍵）で起動する。Webサーバ（同一ホスト構成では`api`という名前でのDocker内部名前解決、分離構成では相手ホストのアドレス経由）はこの証明書をCA経由で検証してから接続する。証明書・秘密鍵の読み込みは`api/src/tls-options.ts`の`loadApiServerTlsOptions()`が行う（環境変数`API_TLS_CERT_FILE`・`API_TLS_KEY_FILE`。省略時は`GATEWAY_PKI_DIR`配下の`api-server.crt`・`api-server.key`。ゲートウェイ制御チャネル用の証明書読み込み（`api/src/proxy-client/gateway-tls-options.ts`）と同じ規約）。単一ホスト構成でもapiのポート（既定`3000`）はホストへ公開する（`compose/api.yml`の`ports`。分離構成でweb側から到達できるようにするため。TLS＋CA検証が実質的な境界）。
 
 # ゲートウェイとの内部通信仕様（Phase 25で、UDSからmTLS TCPへ変更）
 

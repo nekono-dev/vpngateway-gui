@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 const root = process.argv[2] ?? join(fileURLToPath(import.meta.url), "..", "..");
 
 // 検査するディレクトリ（再帰）とファイル。
-const TARGET_DIRS = ["api/src", "api/scripts", "proxy/src", "web/src", "web/server", "install"];
+const TARGET_DIRS = ["api/src", "api/scripts", "proxy/src", "web/src", "web/server", "install", "compose"];
 const TARGET_FILES = [
   "docker-compose.yml",
   "api/Dockerfile",

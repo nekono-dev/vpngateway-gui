@@ -29,8 +29,9 @@ WEB_COOKIE=/tmp/e2e-cookie.txt
 # Phase25でAPIが認証必須になったため、E2E共通アカウント（初回のみ作成）でログインしてから叩く。
 # 導入・再導入のたびapiコンテナが（再）作成されセッション（プロセスメモリ）がリセットされるため、
 # web_ok()を呼ぶ前に毎回ログインし直す。
-web_login() { ct sh -c "curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1/api/v1/operator >/dev/null; curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1/api/v1/operator/session >/dev/null"; }
-web_ok() { ct curl -fsS -b "$WEB_COOKIE" -m 5 http://127.0.0.1/api/v1/providers; }
+# Phase25 Stage3でwebサーバが自己署名証明書のHTTPSになったため、-k（証明書検証省略）を付ける。
+web_login() { ct sh -c "curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1/api/v1/operator >/dev/null; curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1/api/v1/operator/session >/dev/null"; }
+web_ok() { ct curl -fsSk -b "$WEB_COOKIE" -m 5 https://127.0.0.1/api/v1/providers; }
 cleanup() {
   [ "${E2E_KEEP:-0}" = 1 ] || lxc delete -f "$NAME" >/dev/null 2>&1
   rm -rf "$WORK"
@@ -46,7 +47,7 @@ t_guard_not_enabled() { ! ct systemctl is-enabled vpngwgui-boot-guard.service >/
 t_web_has_adguard() { web_login; web_ok | grep -q adguardvpn; }
 
 COMMIT=$(git -C "$ROOT" rev-parse HEAD)
-git -C "$ROOT" diff --quiet HEAD -- install vendors docker-compose.yml || echo "注意: install/・vendors/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
+git -C "$ROOT" diff --quiet HEAD -- install vendors compose docker-compose.yml || echo "注意: install/・vendors/・compose/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
 git clone -q --bare "file://$(git -C "$ROOT" rev-parse --absolute-git-dir)" "$WORK/vpngw.git" || exit 1
 sh "$ROOT/install/build-bootstrap.sh" e2e "$COMMIT" file:///srv/vpngw.git > "$WORK/install.sh" || exit 1
 

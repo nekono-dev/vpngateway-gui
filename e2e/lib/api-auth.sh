@@ -25,16 +25,16 @@ GW_COOKIE_JAR=/tmp/vpngwgui-e2e-cookie.txt
 # 副作用: E2E_COOKIE_JARへセッションCookieを保存する。
 e2e_api_login() {
   local base=$1
-  curl -s -m 30 -c "$E2E_COOKIE_JAR" -X POST -H 'content-type: application/json' \
+  curl -sk -m 30 -c "$E2E_COOKIE_JAR" -X POST -H 'content-type: application/json' \
     -d "{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}" "$base/api/v1/operator" >/dev/null
-  curl -s -m 30 -c "$E2E_COOKIE_JAR" -X POST -H 'content-type: application/json' \
+  curl -sk -m 30 -c "$E2E_COOKIE_JAR" -X POST -H 'content-type: application/json' \
     -d "{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}" "$base/api/v1/operator/session" >/dev/null
 }
 
 # 目的: ゲートウェイ役自身の上（`gw`経由）でcurlがAPIへ到達する際の認証。
 # 副作用: ゲートウェイ役の$GW_COOKIE_JARへセッションCookieを保存する。
 gw_api_login() {
-  gw sh -c "curl -s -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' localhost:8080/api/v1/operator >/dev/null; curl -s -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' localhost:8080/api/v1/operator/session >/dev/null"
+  gw sh -c "curl -sk -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' https://localhost:8080/api/v1/operator >/dev/null; curl -sk -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' https://localhost:8080/api/v1/operator/session >/dev/null"
 }
 
 # 目的: ゲートウェイ役の永続環境から、E2Eで作成したWeb UI利用者アカウントを消し、

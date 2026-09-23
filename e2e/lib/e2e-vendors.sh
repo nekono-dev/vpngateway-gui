@@ -32,10 +32,12 @@ make_e2e_vendors_dir() {
   export E2E_VENDORS_DIR VPN_PROVIDERS
 }
 
-# 目的: `docker compose`へ渡す-f引数（本体・E2E用のoverride・有効なベンダーのfragment）を返す。パスはリポジトリルート基準の相対。
+# 目的: `docker compose`へ渡す-f引数（本体・3ロール分・E2E用のoverride・有効なベンダーのfragment）を返す。
+# パスはリポジトリルート基準の相対（docker-compose.ymlを先頭に置くことで、docker composeのproject
+# directoryをリポジトリルートへ固定する。docker-compose.yml冒頭のコメント参照）。
 # 入力: id...(有効にするベンダーID)。
 e2e_compose_files() {
-  local args="-f docker-compose.yml -f docker-compose.e2e-mock.yml" id
+  local args="-f docker-compose.yml -f compose/web.yml -f compose/api.yml -f compose/gateway.yml -f docker-compose.e2e-mock.yml" id
   for id in "$@"; do args="$args -f $(e2e_bundle_dir "$id")/compose.yml"; done
   echo "$args"
 }

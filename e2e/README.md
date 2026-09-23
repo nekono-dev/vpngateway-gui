@@ -56,7 +56,7 @@ bash e2e/lxc/setup.sh                     # 環境構築（初回のみ。GW_IP�
 bash e2e/lxc/sync.sh --no-build           # リポジトリ転送
 lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/install.sh --providers adguardvpn --no-start   # LAN側IF検出・sysctl・起動ガード・.env（Docker導入済みなら何もしない）
 bash e2e/lxc/sync.sh                      # ビルド・起動
-node e2e/phase3/webgui-login.mjs http://<GW_IP>:8080   # 認証URLを表示 → 人手でブラウザ認証
+node e2e/phase3/webgui-login.mjs https://<GW_IP>:8080   # 認証URLを表示 → 人手でブラウザ認証
 bash e2e/phase3/gateway-scenarios.sh      # 全シナリオ（A〜H）。個別実行: ... A B
 # 実機ゲートウェイの場合は、各e2eコマンドの前に GW_MODE=ssh を付ける。installスクリプトは実機上で
 # （/opt/vpngwgui で）`sudo sh install/...` として直接実行する。
@@ -94,7 +94,7 @@ GW_MODE=ssh bash e2e/phase4/dashboard-scenarios.sh jp  # 接続国を引数に�
 
 ## Phase 7の実行手順
 
-実VPN・実ネットワークは使わない。開発ホストのdocker composeで、モックプロバイダCLI（`e2e/vendors/mockproton/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コード）を、モックのベンダーバンドル（`e2e/vendors/mockproton/`。ランナー`runner-mockproton`）で実行する専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）を起動して検証する。
+実VPN・実ネットワークは使わない。開発ホストのdocker composeで、モックプロバイダCLI（`e2e/vendors/mockproton/protonvpn-mock.mjs`。Proton VPN公式CLI 1.0.3のソースに基づく出力・終了コード）を、モックのベンダーバンドル（`e2e/vendors/mockproton/`。ランナー`runner-mockproton`）で実行する専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`https://localhost:18080`（自己署名証明書））を起動して検証する。
 
 ```sh
 bash e2e/phase7/mock-scenarios.sh        # 起動（ビルド含む）→ unauth/free/paid/twofa/learned/secrets → 後始末（down -v）
@@ -107,7 +107,7 @@ bash e2e/phase7/mock-scenarios.sh        # 起動（ビルド含む）→ unauth
 
 ## Phase 8の実行手順
 
-Phase 7と同じ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`http://localhost:18080`）に、AdGuard VPN（ランナーは同梱するが未ログイン）とモックProton VPNの2ベンダーを有効にして検証する（`make_e2e_vendors_dir adguardvpn mockproton`）。
+Phase 7と同じ専用構成（`docker-compose.e2e-mock.yml`。compose project `vpngwgui-e2e-mock`、Web UIは`https://localhost:18080`（自己署名証明書））に、AdGuard VPN（ランナーは同梱するが未ログイン）とモックProton VPNの2ベンダーを有効にして検証する（`make_e2e_vendors_dir adguardvpn mockproton`）。
 
 ```sh
 bash e2e/phase8/provider-scenarios.sh   # 起動（ビルド含む）→ initial/switch-idle/mock-login-connect/switch-decline/switch-accept/switch-back → ランナー・ネットワークコンテナの構成確認 → unavailable → 後始末

@@ -56,16 +56,21 @@ Phase1〜24完了。既存の単一ホスト構成（`docker-compose.yml`）が�
 
 ### オーケストレーション型インストーラ・証明書の生成・配布（`specs/design.md`「デプロイメント構成の分離とロール別インストール」）
 
-- [ ] compose分割（`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`）とルートの`docker-compose.yml`のラッパー化。
-- [ ] `install/install.sh`: `--api`・`--web`・`--gateway`引数によるトポロジー決定、記録済みトポロジーとの不一致検出（再実行時のエラー停止）。
-- [ ] `install/install.sh`: 指定されたリモートホストへのSSH/SCP到達性の事前検証（失敗時は変更前に停止）。
-- [ ] `install/install.sh`: 証明書一式（`web`用自己署名証明書、`api-ca`＋apiサーバ証明書、`gateway-ca`＋`proxy`サーバ証明書＋apiクライアント証明書）のローカル生成と、ロールごとの配置先（ローカル／`scp`）への配布。
-- [ ] `install/install.sh`: リモートロールの実行（`git archive`によるソース転送＋`ssh`経由のリモート実行）。
-- [ ] Webサーバ・APIサーバ自身のHTTPS化（配布された自己署名証明書を使用）。
-- [ ] `install/install.sh --uninstall`: トポロジー記録に基づくロールごとの後始末（ローカル／`ssh`経由）、最終状態確認による成功判定、オーケストレーター以外のホストで実行された場合の警告＋ローカルのみ後始末。
-- [ ] 実機検証: 3台（web・api・gateway）に分離した構成で、Web UIからの全操作が動作すること。トポロジー不一致での再実行エラー、証明書の再生成（`--rotate-pairing`）、分離構成でのアンインストール（オーケストレーターから／非オーケストレーターから）。
+- [x] compose分割（`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`）とルートの`docker-compose.yml`のアンカー化（`include:`は不採用。理由は`specs/design.md`参照）。
+- [x] `install/install.sh`: `--api`・`--web`・`--gateway`引数によるトポロジー決定、記録済みトポロジーとの不一致検出（再実行時のエラー停止）。
+- [x] `install/install.sh`: 指定されたリモートホストへのSSH/SCP到達性の事前検証（失敗時は変更前に停止）。
+- [x] `install/install.sh`: 証明書一式（`web`用自己署名証明書、`api-ca`＋apiサーバ証明書、`gateway-ca`＋`proxy`サーバ証明書＋apiクライアント証明書）のローカル生成と、ロールごとの配置先（ローカル／`scp`）への配布。
+- [x] `install/install.sh`: リモートロールの実行（`git archive`によるソース転送＋`ssh`経由のリモート実行）。
+- [x] Webサーバ・APIサーバ自身のHTTPS化（配布された自己署名証明書を使用）。
+- [x] `install/install.sh --uninstall`: トポロジー記録に基づくロールごとの後始末（ローカル／`ssh`経由）、オーケストレーター以外のホストで実行された場合の警告＋ローカルのみ後始末。
+- [x] 実機検証: 3台（web・api・gateway）に分離した構成で、Web UIからの主要操作（利用者アカウント作成・ログイン・ベンダー一覧取得・ゲートウェイ稼働状況取得）が動作すること。トポロジー不一致での再実行エラー、証明書の再生成（`--rotate-pairing`は単体テストのみ）、分離構成でのアンインストール（オーケストレーターから）。
 
-**検証記録（Stage2、2026-09-23、単一ホスト構成・検証環境192.168.3.240）**:
+**検証記録（Stage3、2026-09-23、検証環境192.168.3.240）**:
+- `npm test`（api 294件・proxy 109件・web 122件・ベンダー中立性・installスクリプト40件超）全件成功、`npm run build`全ワークスペース成功。
+- 単一ホスト構成（`sudo sh install/install.sh --providers adguardvpn,protonvpn --web-port 8080`）を実行し、`https://192.168.3.240:8080`でWeb UIが応答すること、web→api（HTTPS＋CA検証）・api→gateway（mTLS）が正しく動作することをcurlで確認。`GW_MODE=ssh bash e2e/phase3/gateway-scenarios.sh A B`を再実行しFAIL 0（透過ゲートウェイ・Kill Switch・Web UI到達性が、HTTPS化後も従来どおり動作する。ブラウザ操作はPlaywrightの`ignoreHTTPSErrors: true`で自己署名証明書を許容）。
+- 3台に分離した構成（検証環境上にLXDコンテナ3台（web・api・gateway役）を用意。SSH鍵認証・NOPASSWD sudoを設定）で`install/install.sh --web <IP> --api <IP> --gateway <IP> --providers adguardvpn`を実行し、3台それぞれへソース転送・Docker導入・ビルド・起動が完了、証明書一式が各ロールへ配布されることを確認。Web UI（`https://<webのIP>`）から利用者アカウント作成→ログイン→`GET /v1/providers`→`GET /v1/connection/gateway`（web→api→gatewayの3ホップがすべて正しいTLS/mTLSで疎通）をcurlで確認。トポロジー不一致での再実行エラー、`--uninstall`による3台の後始末（コンテナ・証明書・`/opt/vpngwgui`の削除）とオーケストレーター自身の後始末を確認。
+- 検証中に見つけて修正した不具合: (1) Web UI健全性チェック（`start_stack`）が認証必須の`/v1/providers`を叩いていたため常にタイムアウトしていた（`/v1/operator`へ変更）、(2) apiロール単独ホストで`VPN_PROVIDERS`が未設定になる（`determine_providers`をapiロールでも呼ぶよう修正）、(3) 分離構成でapiのポートがホストに公開されておらず、webから到達できない（`compose/api.yml`に`ports`を追加）、(4) 証明書配布時、非特権ユーザーのシェルが`/etc/vpngwgui/pki`（root所有・700）をリスト化できずグロブ展開に失敗する（`sudo sh -c`の中でグロブ展開させるよう修正）、(5) `--uninstall`（`sudo`実行）がrootの鍵でSSHしようとして接続に失敗する（`$SUDO_USER`として`sudo -u`でssh/scpを実行するよう修正）。
+- 未実施: 実VPN接続を伴う操作（接続・切断・国変更）を3台分離構成で行う検証、`--rotate-pairing`の実機での再配布確認（単体テストのみ）、他のphaseのE2Eの網羅的な再実行、初回設定・ログイン専用のE2E（`wbs/phase25.md`Stage1から引き続き未着手）。
 - `npm test`（api 292件・proxy 109件・web 121件・ベンダー中立性・installスクリプト）全件成功。
 - `sudo sh install/install.sh --providers adguardvpn,protonvpn`を実行し、`setup_gateway_pki`が`/etc/vpngwgui/pki/`（gateway-ca.crt・proxy-server.crt/.key・api-client.crt/.key、所有者10001:10001、鍵は600）を生成することを確認。
 - `docker compose up -d --build`後、`proxy`が`gatewayPort: 8443`でmTLS TCPをlistenし、`GET /v1/providers`（`/runners/<ID>/health`を中継）・`GET /v1/connection/gateway`（`/net/status`を中継）・設定変更（`/net/settings`）が、APIサーバ経由で正しく動作することをcurlで確認。
