@@ -579,7 +579,6 @@ dialog [role="alert"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 24rem;
 }
 
 .login-form label {
