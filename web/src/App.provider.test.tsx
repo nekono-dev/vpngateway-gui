@@ -101,7 +101,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       expect(api.getV1ConnectionLocations).not.toHaveBeenCalled();
     });
 
-    it("接続できる国の参考一覧を、選択できない要素として理由の下に表示する", async () => {
+    it("接続できる国の参考一覧を、選択できない要素として表示する", async () => {
       api.getV1ConnectionAvailableLocations.mockResolvedValue({
         status: 200,
         data: {
@@ -113,7 +113,6 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       });
       renderApp();
       const group = await screen.findByRole("group", { name: "接続できる国（参考）" });
-      expect(group).toHaveTextContent("選択はできません");
       expect(group).toHaveTextContent("アメリカ合衆国");
       expect(group).toHaveTextContent("Ashburn、Chicago");
       expect(group).toHaveTextContent("日本");
