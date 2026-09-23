@@ -21,6 +21,7 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$HERE/../lxc/env.sh"
 . "$HERE/../lib/gw.sh"
+. "$HERE/../lib/api-auth.sh"
 # ゲートウェイ側のLAN側NIC名（LXC内GWはeth0、実機は例えばenp6s18）
 LAN_IF=$GW_LAN_IF
 # LAN側NICのIPv4アドレスを直接取得する（`lxc list`はdockerブリッジ等の複数IPを返すため使わない）
@@ -28,6 +29,8 @@ GW_IP=$(gw_lan_ip)
 CLIENT_IP=$(lxc exec "$CLIENT_NAME" -- ip -4 -o addr show eth0 | awk '{sub("/.*","",$4); print $4}')
 BASE="http://$GW_IP:8080"
 FAILS=0
+# Phase25でAPIが認証必須になったため、ゲートウェイ役自身の上で叩くreset_vpn用にログインしておく。
+gw_api_login
 # VPN接続のE2Eに使う国（ISO国コード）。検証環境のLAN出口IPと出口IPが一致する接続先（例: 環境によりjpのTokyo）を避けるため、既定はus。
 VPN_COUNTRY=${VPN_COUNTRY:-us}
 
@@ -46,7 +49,7 @@ gw_ip()     { gw curl -s -m 8 https://api.ipify.org 2>/dev/null; }
 # 条件が真になるまで最大N秒ポーリングする（例: wait_for 20 'cmd'）
 wait_for()  { local n=$1; shift; for _ in $(seq "$n"); do if eval "$1"; then return 0; fi; sleep 1; done; return 1; }
 # 前のシナリオから接続状態が持ち越されないよう、APIで切断状態に揃える（Web UIの検証対象は本操作ではない）
-reset_vpn() { gw curl -s -X PUT localhost:8080/api/v1/connection -H 'Content-Type: application/json' -d '{"connect":false}' >/dev/null; sleep 2; }
+reset_vpn() { gw curl -s -b "$GW_COOKIE_JAR" -X PUT localhost:8080/api/v1/connection -H 'Content-Type: application/json' -d '{"connect":false}' >/dev/null; sleep 2; }
 # nftのforwardチェーンにVPN経由acceptがあるか
 has_vpn_rule() { gw nft list table inet vpngwgui 2>/dev/null | grep -q 'oifname "tun[0-9]*" accept'; }
 
@@ -254,6 +257,8 @@ scenario_H() {
   check "再起動中〜復旧までにKill Switch ONのLAN端末通信がリークしない（実IPが観測されない）" '[ "$LEAK" = 0 ]'
   check "再起動後: 起動ガード(vpngwgui-boot-guard.service)が実行された" 'gw systemctl is-active vpngwgui-boot-guard.service | grep -q active'
   check "再起動後: ip_forward が永続設定により1である" '[ "$(gw cat /proc/sys/net/ipv4/ip_forward)" = 1 ]'
+  # ホスト再起動でapiコンテナも再作成され、セッション（プロセスメモリ）がリセットされているため再ログインする。
+  gw_api_login
   reset_vpn
 }
 
@@ -270,5 +275,10 @@ ensure_client_route
 
 SELECTED=("$@"); [ ${#SELECTED[@]} -eq 0 ] && SELECTED=(A B C D E F G H)
 for s in "${SELECTED[@]}"; do "scenario_$s"; done
+
+echo "== 後始末: Web UI利用者アカウントを削除し、インストール直後の未設定状態へ戻す"
+reset_operator_account
+e2e_api_cleanup
+
 echo "=== FAIL件数: $FAILS ==="
 exit $FAILS

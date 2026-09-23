@@ -9,7 +9,8 @@
 | `lxc/env.sh` | 検証環境の名前・パスの定義 |
 | `lxc/setup.sh` | LXCコンテナ2台（ゲートウェイ役・LAN端末役）の作成、Docker導入、LAN端末のGW設定（冪等） |
 | `lxc/sync.sh` | リポジトリをゲートウェイ役へ転送し、`docker compose build/up`まで実施（`--no-build`で転送のみ） |
-| `lib/playwright.mjs` | グローバルインストールのPlaywright読み込み、ブラウザ起動、アサーション |
+| `lib/playwright.mjs` | グローバルインストールのPlaywright読み込み、ブラウザ起動、アサーション。Phase25以降は`launch()`がE2E共通アカウント（`E2E_USERNAME`/`E2E_PASSWORD`）で初期設定・ログインを自動的に済ませる |
+| `lib/api-auth.sh` | Phase25以降、シェルスクリプトが直接curlでAPIを呼ぶ際の認証。`e2e_api_login`（ローカルからのcurl用）・`gw_api_login`（`gw`経由でゲートウェイ役自身の上から叩く場合用）・`reset_operator_account`（検証後、Web UI利用者アカウントを削除しインストール直後の未設定状態へ戻す） |
 | `phase3/webgui-login.mjs` | Web UIの「VPNベンダーへログイン」ボタン→認証URL表示の確認 |
 | `phase3/webgui-settings.mjs` | 設定ダイアログで透過ゲートウェイ・Kill Switchを切り替え、保存・再読込後の保持を確認 |
 | `phase3/webgui-connection.mjs` | Web UIから接続・切断し、状態表示の切替を確認 |
@@ -38,6 +39,15 @@
 - 検証ホストにLXD（`lxc`）・Playwright（`npm i -g playwright`＋Chromium）・Nodeがあること。
 - KVMが無い環境でも動くよう、LXD「VM」ではなく`security.nesting=true`のLXCシステムコンテナを使う（`GW_MODE=lxc`、既定）。
 - 実機ゲートウェイ（`GW_MODE=ssh`）: SSH鍵認証で`sudo`が使えるホスト（`GW_SSH`、既定`ubuntu@192.168.3.240`）と、開発ホストと同じLANにあること。LAN端末役は開発ホスト上のmacvlan LXCコンテナ（実LANのIPv4/IPv6を持つ。NIC名は`LAN_PARENT`）。資材はscpで転送する。
+
+## Web UI利用者認証（Phase25以降）への対応
+
+APIサーバが全`/v1/*`にセッションCookie認証を要求するため、各E2Eスクリプトは以下のいずれかでこれを通過する。
+
+- ブラウザ操作（`lib/playwright.mjs`の`launch()`）: E2E共通アカウント（`e2e-admin`）で自動的に初期設定・ログインを行う。個別スクリプトの変更は不要。
+- シェルから直接curlでAPIを叩くスクリプト（`*-scenarios.sh`）: `lib/api-auth.sh`の`e2e_api_login`（ローカル実行）または`gw_api_login`（`gw`経由でゲートウェイ役自身の上から）でログインし、Cookieを付けて呼ぶ。
+
+検証環境（実機ゲートウェイ・LXCゲートウェイいずれも、`docker compose down -v`でvolumeごと消える一時構成を除く）を使うスクリプトは、終了時に`reset_operator_account`（`lib/api-auth.sh`）を呼び、Web UI利用者アカウントを削除して**インストール直後の未設定状態**（初期設定画面が出る状態）へ戻す。新しいE2Eスクリプトを永続環境（`GW_MODE=ssh`/`lxc`の検証機）向けに追加する場合は、同様に終了時のクリーンアップを組み込むこと。
 
 ## Phase 3の実行手順
 

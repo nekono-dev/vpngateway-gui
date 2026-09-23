@@ -28,14 +28,23 @@ Phase1〜24完了。既存の単一ホスト構成（`docker-compose.yml`）が�
 
 ### Web UI利用者認証（`specs/apiserver/design.md`「Web UI利用者の認証」、`specs/webserver/design.md`「利用者認証の実装方針」）
 
-- [ ] APIサーバ: アカウントのハッシュ保存（`api/src/auth/operator-account-store.ts`）。
-- [ ] APIサーバ: `GET/POST/PUT /v1/operator`（`api/src/routes/operator.ts`。状態確認・初回作成・変更）。
-- [ ] APIサーバ: `POST/GET/DELETE /v1/operator/session`（`api/src/routes/operator-session.ts`）。
-- [ ] APIサーバ: `preHandler`フックによる全`/v1/*`エンドポイントの認可（`api/src/auth/require-operator-session.ts`）。
-- [ ] APIサーバ: ログイン試行・パスワード変更のレート制限（`api/src/auth/login-rate-limiter.ts`）。
-- [ ] Web UI: 初期設定画面（`web/src/components/auth/SetupPage.tsx`）、ログイン画面（`LoginPage.tsx`）、認証状態コンテキスト（`AuthContext.tsx`）、401時の遷移。
-- [ ] Web UI: 設定ダイアログへのアカウント変更フォーム追加（`SettingsDialog.tsx`）。
-- [ ] E2E: 初回アクセス時の設定画面、正しい/誤ったユーザー名・パスワードでのログイン、ログアウト、セッション切れ時の挙動、アカウント変更（現在パスワード確認含む）。
+- [x] APIサーバ: アカウントのハッシュ保存（`api/src/auth/operator-account-store.ts`）。
+- [x] APIサーバ: `GET/POST/PUT /v1/operator`（`api/src/routes/operator.ts`。状態確認・初回作成・変更）。
+- [x] APIサーバ: `POST/GET/DELETE /v1/operator/session`（`api/src/routes/operator-session.ts`）。
+- [x] APIサーバ: `preHandler`フックによる全`/v1/*`エンドポイントの認可（`api/src/auth/require-operator-session.ts`）。
+- [x] APIサーバ: ログイン試行・パスワード変更のレート制限（`api/src/auth/login-rate-limiter.ts`）。
+- [x] Web UI: 初期設定画面（`web/src/components/auth/SetupPage.tsx`）、ログイン画面（`LoginPage.tsx`）、認証状態コンテキスト（`AuthContext.tsx`）、401時の遷移（`Root.tsx`＋`AuthContext.tsx`のセッション定期確認）。
+- [x] Web UI: 設定ダイアログへのアカウント変更フォーム追加（`SettingsDialog.tsx`。`AccountSettingsForm.tsx`として分離）。
+- [x] E2E共通化: `e2e/lib/playwright.mjs`の`launch()`が初期設定・ログインを自動で済ませるようにし、既存の各phaseのE2Eスクリプトを個別に変更せず認証ゲートを通過できるようにした。
+- [x] E2E（curlベース）: 全`/v1/*`の認証必須化で壊れていた、シェルで直接curlを叩く既存のE2Eスクリプト（`phase3/gateway-scenarios.sh`・`phase4/dashboard-scenarios.sh`・`phase5/locations-scenarios.sh`・`phase6/proxy-scenarios.sh`・`phase7/mock-scenarios.sh`・`phase8/provider-scenarios.sh`・`phase8/real-switch-scenarios.sh`・`phase10/add-vendor-scenarios.sh`・`phase11/install-scenarios.sh`・`phase20/uninstall-scenarios.sh`）を、共通ヘルパー`e2e/lib/api-auth.sh`（ローカルcurl用`e2e_api_login`・`gw`経由用`gw_api_login`）で対応した。
+- [x] E2E後始末: 永続環境（`GW_MODE=ssh`/`lxc`の検証機。volumeごと消える一時構成は対象外）を使うスクリプトの終了時に、`reset_operator_account`でWeb UI利用者アカウントを削除し、インストール直後の未設定状態へ戻すようにした（`e2e/README.md`「Web UI利用者認証（Phase25以降）への対応」）。
+- [ ] E2E: 初回アクセス時の設定画面、正しい/誤ったユーザー名・パスワードでのログイン、ログアウト、セッション切れ時の挙動、アカウント変更（現在パスワード確認含む）専用のE2Eシナリオ（未作成。手動検証は実施済み、下記「検証記録」参照）。
+
+**検証記録（2026-09-23、単一ホスト構成・検証環境192.168.3.240）**:
+- `npm test`（api 292件・web 121件・ベンダー中立性・installスクリプト）全件成功。
+- curlによるAPI直接検証: 初期設定→未認証時401→Cookie付きで200→ログアウト→旧Cookieで401→正しいパスワードでログイン200→誤ったパスワードで401、を確認。
+- 実ブラウザ（Playwright、ヘッドレスChromium）による既存E2Eの一部実行: `phase21`・`phase22`は認証ゲートを自動突破してPASS。`phase3`（login）・`phase16`・`phase23`は、検証環境の現在のVPNベンダーログイン状態・選択中ベンダー・Phase24での枠線色変更という、Phase25と無関係な既存の前提差異により失敗（認証ゲート自体は正常に通過できていることを、後続の失敗箇所から確認済み）。全phaseのE2Eを網羅的に再実行してはいない。
+- `GW_MODE=ssh bash e2e/phase3/gateway-scenarios.sh A`・`... B`を実際に実行し、認証（`gw_api_login`）・Web UI操作・後始末（`reset_operator_account`）が正常に機能し、実行後は`GET /v1/operator`が`configured:false`に戻ることを確認した。他のシェルベースE2E（phase4〜phase10・phase11・phase20）は構文検証（`bash -n`）のみで、実際の通し実行はしていない。
 
 ### ゲートウェイ制御チャネルのmTLS化（`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）
 

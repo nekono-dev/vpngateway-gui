@@ -23,7 +23,13 @@ vi.mock("../proxy-client/proxy-client.js", () => ({
   checkRunnerHealth: async () => true,
 }));
 
-const { buildApp } = await import("../app.js");
+const { buildApp: buildRawApp } = await import("../app.js");
+const { withAuthenticatedInject } = await import("../auth/test-support.js");
+// Phase 25で追加した/v1/*の認可により、認証無しのapp.injectは401になるため、
+// 既存の統合テストはログイン済みCookie付きのinjectへ差し替えて呼び出す。
+function buildApp() {
+  return withAuthenticatedInject(buildRawApp());
+}
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: "" });
 const statusOutput = (city: string) => `Connected to \x1B[1m${city}\x1B[0m in \x1B[1mTUN\x1B[0m mode, running on \x1B[1mtun0\x1B[0m`;

@@ -25,7 +25,12 @@ ct() { lxc exec "$NAME" -- "$@"; }              # コンテナ内でコマンド
 sh_ct() { lxc exec "$NAME" -- sh -c "$1"; }     # コンテナ内でシェル文字列を実行する
 # 頒布物（ブートストラップ）を、`curl | sh`と同じく標準入力のパイプで実行する。 入力: 頒布物のファイル, 本体への引数...
 run_bootstrap() { local f=$1; shift; lxc exec "$NAME" -- sh -s -- "$@" < "$f"; }
-web_ok() { ct curl -fsS -m 5 http://127.0.0.1:8080/api/v1/providers; }
+WEB_COOKIE=/tmp/e2e-cookie.txt
+# Phase25でAPIが認証必須になったため、E2E共通アカウント（初回のみ作成）でログインしてから叩く。
+# apiコンテナが再作成されるたびセッション（プロセスメモリ）がリセットされるため、web_ok()の呼び出し側
+# （t_web_has/t_web_lacks）で毎回ログインし直す。
+web_login() { ct sh -c "curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1:8080/api/v1/operator >/dev/null; curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1:8080/api/v1/operator/session >/dev/null"; }
+web_ok() { ct curl -fsS -b "$WEB_COOKIE" -m 5 http://127.0.0.1:8080/api/v1/providers; }
 env_val() { ct sh -c "grep '^$1=' $DIR/.env | tail -n 1 | cut -d= -f2-"; }
 running_services() { ct sh -c "cd $DIR && docker compose ps --services --status running | sort | tr '\n' ' '"; }
 cleanup() {
@@ -46,8 +51,8 @@ t_docker_official() { ct docker compose version >/dev/null && ct grep -q downloa
 t_sysctl() { ct grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.d/99-vpngwgui.conf; }
 t_guard() { ct systemctl is-enabled vpngwgui-boot-guard.service | grep -q enabled; }
 t_env_initial() { test "$(env_val VPN_PROVIDERS)" = adguardvpn && test "$(env_val COMPOSE_FILE)" = "docker-compose.yml:vendors/adguardvpn/compose.yml" && test -n "$(env_val LAN_IFACE)"; }
-t_web_has() { web_ok | grep -q "$1"; }
-t_web_lacks() { web_ok >/dev/null && ! web_ok | grep -q "$1"; }
+t_web_has() { web_login; web_ok | grep -q "$1"; }
+t_web_lacks() { web_login; web_ok >/dev/null && ! web_ok | grep -q "$1"; }
 t_services_are() { test "$(running_services)" = "$1 "; }
 t_env_unchanged() { test "$(ct cat $DIR/.env)" = "$BEFORE_ENV"; }
 t_hook_contract() { test "$(ct cat /tmp/hook-ran)" = "hooktest $DIR $DIR/vendors/hooktest"; }

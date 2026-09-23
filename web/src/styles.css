@@ -743,3 +743,68 @@ dialog [role="alert"] {
   height: 16px;
   fill: currentColor;
 }
+
+/* 初期設定・ログイン画面（Phase 25）: ダッシュボードのmainとは別に、フォーム1つを中央に表示する。 */
+.auth-page {
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.auth-card h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.auth-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.auth-card [role="alert"] {
+  color: var(--danger);
+  background: var(--danger-bg);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.account-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.account-settings-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-settings-form [role="alert"] {
+  color: var(--danger);
+  background: var(--danger-bg);
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+.account-settings-form [role="status"] {
+  color: var(--ok);
+  background: var(--ok-bg);
+  padding: 6px 10px;
+  border-radius: 6px;
+}

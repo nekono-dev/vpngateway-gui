@@ -25,7 +25,12 @@ check() { # check <説明> <条件が真のときexit 0となる関数・コマ�
 ct() { lxc exec "$NAME" -- "$@"; }
 sh_ct() { lxc exec "$NAME" -- sh -c "$1"; }
 run_bootstrap() { local f=$1; shift; lxc exec "$NAME" -- sh -s -- "$@" < "$f"; }
-web_ok() { ct curl -fsS -m 5 http://127.0.0.1/api/v1/providers; }
+WEB_COOKIE=/tmp/e2e-cookie.txt
+# Phase25でAPIが認証必須になったため、E2E共通アカウント（初回のみ作成）でログインしてから叩く。
+# 導入・再導入のたびapiコンテナが（再）作成されセッション（プロセスメモリ）がリセットされるため、
+# web_ok()を呼ぶ前に毎回ログインし直す。
+web_login() { ct sh -c "curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1/api/v1/operator >/dev/null; curl -s -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' http://127.0.0.1/api/v1/operator/session >/dev/null"; }
+web_ok() { ct curl -fsS -b "$WEB_COOKIE" -m 5 http://127.0.0.1/api/v1/providers; }
 cleanup() {
   [ "${E2E_KEEP:-0}" = 1 ] || lxc delete -f "$NAME" >/dev/null 2>&1
   rm -rf "$WORK"
@@ -38,7 +43,7 @@ t_no_containers() { test -z "$(ct sh -c "docker ps -a --format '{{.Names}}' 2>/d
 t_no_sysctl() { ! ct test -f /etc/sysctl.d/99-vpngwgui.conf; }
 t_no_guard() { ! ct test -f /etc/systemd/system/vpngwgui-boot-guard.service; }
 t_guard_not_enabled() { ! ct systemctl is-enabled vpngwgui-boot-guard.service >/dev/null 2>&1; }
-t_web_has_adguard() { web_ok | grep -q adguardvpn; }
+t_web_has_adguard() { web_login; web_ok | grep -q adguardvpn; }
 
 COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 git -C "$ROOT" diff --quiet HEAD -- install vendors docker-compose.yml || echo "注意: install/・vendors/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
@@ -55,6 +60,7 @@ lxc file push -r "$WORK/vpngw.git" "$NAME/srv/" >/dev/null && ct chown -R root:r
 echo "== 準備: 頒布URL経由（ブートストラップの標準入力パイプ）で導入する（既定ポート80）"
 check "ブートストラップの導入が成功する" t_bootstrap_ok --providers adguardvpn
 tail -5 "$WORK/install.log" | sed 's/^/    | /'
+web_login
 check "Web UIが応答する（ポート80）" web_ok
 check "AdGuard VPNが有効なベンダーとして現れる" t_web_has_adguard
 
@@ -70,6 +76,7 @@ check "起動時のKill Switchガードが無効（未登録）になってい�
 echo "== reinstall: アンインストール後も、同じ頒布URLで再導入できる"
 check "再導入（ブートストラップ）が成功する" t_bootstrap_ok --providers adguardvpn
 check "再導入後、取得先ディレクトリが復元されている" ct test -d "$DIR"
+web_login
 check "再導入後、Web UIが応答する" web_ok
 
 echo "== 結果: FAIL $FAILS 件"

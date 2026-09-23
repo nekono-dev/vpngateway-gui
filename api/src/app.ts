@@ -12,6 +12,9 @@ import { registerConnectionGatewayRoute } from "./routes/connection-gateway.js";
 import { registerConnectionLogRoute } from "./routes/connection-log.js";
 import { registerProvidersRoute } from "./routes/providers.js";
 import { registerSessionRoute } from "./routes/session.js";
+import { registerOperatorRoute } from "./routes/operator.js";
+import { registerOperatorSessionRoute } from "./routes/operator-session.js";
+import { requireOperatorSession } from "./auth/require-operator-session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
 import { FavoriteLocationsError } from "./locations/favorite-locations-store.js";
@@ -22,6 +25,10 @@ import {
   OperationRestrictedError,
   OperationUnsupportedError,
   ProviderSwitchingError,
+  UnauthenticatedError,
+  OperatorAlreadyConfiguredError,
+  OperatorValidationError,
+  RateLimitedError,
 } from "./errors.js";
 
 /**
@@ -55,9 +62,25 @@ export function buildApp() {
       error instanceof PlaceholderValidationError ||
       error instanceof SettingsValidationError ||
       error instanceof FavoriteLocationsError ||
+      error instanceof OperatorValidationError ||
       isSchemaValidationError(error)
     ) {
       reply.code(400).send({ error: "invalid_input", message: (error as Error).message });
+      return;
+    }
+    // 【Phase 25】未認証（セッションCookie欠如・不正・期限切れ、またはPUT /v1/operatorの現在パスワード不一致）。
+    if (error instanceof UnauthenticatedError) {
+      reply.code(401).send({ error: "unauthenticated", message: error.message });
+      return;
+    }
+    // 【Phase 25】アカウントが既に作成済みの状態でPOST /v1/operatorが呼ばれた。
+    if (error instanceof OperatorAlreadyConfiguredError) {
+      reply.code(409).send({ error: "already_configured", message: error.message });
+      return;
+    }
+    // 【Phase 25】ログイン試行・パスワード変更のレート制限超過。
+    if (error instanceof RateLimitedError) {
+      reply.code(429).send({ error: "too_many_requests", message: error.message });
       return;
     }
     if (error instanceof ProxyUnavailableError) {
@@ -94,6 +117,9 @@ export function buildApp() {
 
   app.get("/openapi.json", async () => app.swagger());
 
+  // 【Phase 25】全`/v1/*`ルートへのセッションCookie認可（GET/POST /v1/operator・POST /v1/operator/sessionを除く）。
+  app.addHook("preHandler", requireOperatorSession);
+
   app.register(registerConnectionLocationsRoute);
   app.register(registerConnectionRoute);
   app.register(registerConnectionCapabilitiesRoute);
@@ -103,6 +129,8 @@ export function buildApp() {
   app.register(registerConnectionGatewayRoute);
   app.register(registerSessionRoute);
   app.register(registerProvidersRoute);
+  app.register(registerOperatorRoute);
+  app.register(registerOperatorSessionRoute);
 
   return app;
 }

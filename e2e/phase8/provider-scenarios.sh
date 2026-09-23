@@ -11,6 +11,7 @@ ROOT=$(CDPATH= cd -- "$HERE/../.." && pwd)
 BASE=${BASE:-http://localhost:18080}
 PROJECT=vpngwgui-e2e-mock
 . "$HERE/../lib/e2e-vendors.sh"
+. "$HERE/../lib/api-auth.sh"
 make_e2e_vendors_dir adguardvpn mockproton
 # 相対パスのcomposeファイル（本体の位置が基準）を使うため、リポジトリルートで実行する。
 cd "$ROOT" || exit 1
@@ -21,7 +22,8 @@ check() { # check <説明> <条件が真のときexit 0となるコマンド...>
   local desc=$1; shift
   if "$@"; then echo "PASS: $desc"; else echo "FAIL: $desc"; FAILS=$((FAILS+1)); fi
 }
-cleanup() { $DC down -v >/dev/null 2>&1; rm -rf "$E2E_VENDORS_DIR"; }
+# down -vでvolumeごと消えるため、Web UI利用者アカウント（operator-account.json）はreset_operator_account不要。
+cleanup() { $DC down -v >/dev/null 2>&1; rm -rf "$E2E_VENDORS_DIR"; e2e_api_cleanup; }
 trap cleanup EXIT
 
 # ランナーのUDSへ、任意のバイナリの実行要求を直接送り、HTTPステータスを返す（ランナーの許可バイナリの確認用）。
@@ -36,7 +38,9 @@ mock_status() { $DC exec -T runner-mockproton /usr/local/bin/protonvpn-mock stat
 
 echo "== 準備: 2ベンダー（AdGuard VPN・モックProton VPN）構成の起動（ビルドを含む）"
 $DC up -d --build >/dev/null 2>&1 || { echo "FAIL: 起動に失敗"; exit 1; }
-for _ in $(seq 1 60); do curl -sf "$BASE/api/v1/providers" 2>/dev/null | grep -q mockproton && break; sleep 1; done
+for _ in $(seq 1 60); do curl -sf "$BASE/api/v1/operator" >/dev/null 2>&1 && break; sleep 1; done
+e2e_api_login "$BASE"
+for _ in $(seq 1 60); do curl -sf -b "$E2E_COOKIE_JAR" "$BASE/api/v1/providers" 2>/dev/null | grep -q mockproton && break; sleep 1; done
 
 echo "== initial: 選択部品・選択中・利用可否"
 gui initial
@@ -51,7 +55,7 @@ check "拒否後もモックCLIは接続中のまま" bash -c "$DC exec -T runne
 echo "== switch-accept: 接続中の切替で確認を承諾（現在のVPNを自動で切断）"
 gui switch-accept
 check "承諾後、モックCLIが切断されている（自動切断）" bash -c "$DC exec -T runner-mockproton /usr/local/bin/protonvpn-mock status | grep -q 'Status: Disconnected'"
-check "APIの選択中がadguardvpn" bash -c "curl -s $BASE/api/v1/providers | grep -q '\"id\":\"adguardvpn\",\"displayName\":\"AdGuard VPN\",\"active\":true'"
+check "APIの選択中がadguardvpn" bash -c "curl -s -b \"\$E2E_COOKIE_JAR\" $BASE/api/v1/providers | grep -q '\"id\":\"adguardvpn\",\"displayName\":\"AdGuard VPN\",\"active\":true'"
 echo "== switch-back: ベンダー別のログイン状態の保持"
 gui switch-back
 
@@ -63,12 +67,12 @@ check "ネットワークコンテナは/execを持たない（404）" bash -c "
 
 echo "== unavailable: ランナー停止中のベンダーは選択できない"
 # 選択中のベンダーは（ランナーが止まっても）選択状態のまま操作対象なので、先に別のベンダー（AdGuard VPN）へ切り替えておく。
-curl -s -X PUT -H 'content-type: application/json' -d '{"providerId":"adguardvpn"}' "$BASE/api/v1/providers/active" >/dev/null
+curl -s -b "$E2E_COOKIE_JAR" -X PUT -H 'content-type: application/json' -d '{"providerId":"adguardvpn"}' "$BASE/api/v1/providers/active" >/dev/null
 $DC stop runner-mockproton >/dev/null 2>&1
 gui unavailable
 $DC start runner-mockproton >/dev/null 2>&1
 sleep 3
-check "ランナー再開後は利用可能に戻る" bash -c "curl -s $BASE/api/v1/providers | grep -q '\"id\":\"mockproton\".*\"available\":true'"
+check "ランナー再開後は利用可能に戻る" bash -c "curl -s -b \"\$E2E_COOKIE_JAR\" $BASE/api/v1/providers | grep -q '\"id\":\"mockproton\".*\"available\":true'"
 
 echo "== 結果: FAIL=$FAILS"
 exit "$FAILS"

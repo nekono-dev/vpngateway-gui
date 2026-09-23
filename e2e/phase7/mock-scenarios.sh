@@ -27,7 +27,7 @@ trap cleanup EXIT
 
 echo "== 準備: モックプロバイダ構成の起動（ビルドを含む）"
 $DC up -d --build >/dev/null 2>&1 || { echo "FAIL: 起動に失敗"; exit 1; }
-for _ in $(seq 1 60); do curl -sf "$BASE/api/v1/session" >/dev/null 2>&1 && break; sleep 1; done
+for _ in $(seq 1 60); do curl -sf "$BASE/api/v1/operator" >/dev/null 2>&1 && break; sleep 1; done
 
 echo "== unauth: 未ログイン（接続が理由付きで無効・ログインフォーム）"
 gui unauth

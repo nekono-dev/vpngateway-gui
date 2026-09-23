@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
+import { Root } from "./Root";
+import { AuthProvider } from "./contexts/AuthContext";
 import { ToastProvider } from "./notifications/ToastProvider";
 import "./styles.css";
 
@@ -12,7 +13,9 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <ToastProvider>
-      <App />
+      <AuthProvider>
+        <Root />
+      </AuthProvider>
     </ToastProvider>
   </StrictMode>,
 );

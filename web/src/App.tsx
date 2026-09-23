@@ -24,7 +24,13 @@ import { findCurrentAvailableLocation } from "./locations/current-available-loca
 import { locationLabel } from "./locations/location-filter";
 import { isAvailable, reasonOf, supportsLocationPing, usesAutoConnect } from "./capabilities/capability-state";
 
-export function App() {
+interface Props {
+  // ログアウト操作（Phase 25）。認証状態はApp自身が持たず（責務外）、呼び出し元（Root.tsx）から
+  // ハンドラを受け取るだけにする。未指定（既存のApp単体テスト等）ではログアウトボタンを出さない。
+  onLogout?: () => void;
+}
+
+export function App({ onLogout }: Props) {
   // 利用者が接続先リストで明示的に選んだ接続先ID。未選択の間は、接続中なら現在の接続先、
   // 切断中なら最後に接続した接続先が対象になる（locations/current-location.ts）。
   const [selectedId, setSelectedId] = useState<string>();
@@ -128,6 +134,11 @@ export function App() {
           <button type="button" onClick={() => setIsSettingsOpen(true)}>
             設定
           </button>
+          {onLogout ? (
+            <button type="button" onClick={onLogout}>
+              ログアウト
+            </button>
+          ) : null}
         </div>
       </header>
       {/* ベンダーが替わったら、ログイン導線のローカルな状態（入力中のフォーム・URL提示の結果）を捨てるため、IDをkeyにして再マウントする。 */}

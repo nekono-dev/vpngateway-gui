@@ -8,6 +8,7 @@ import type { GetV1ConnectionConfig200 } from "../../generated/api/endpoints.sch
 import { useDialogOpen } from "../../hooks/useDialogOpen";
 import { describeApiError, describeThrownError } from "../../notifications/describe-api-error";
 import { LineListEditor } from "./LineListEditor";
+import { AccountSettingsForm } from "./AccountSettingsForm";
 
 interface Props {
   open: boolean;
@@ -128,6 +129,7 @@ export function SettingsDialog({ open, onClose }: Props) {
           </div>
         </form>
       )}
+      <AccountSettingsForm />
     </dialog>
   );
 }

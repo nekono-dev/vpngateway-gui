@@ -9,12 +9,14 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$HERE/../lxc/env.sh"
 . "$HERE/../lib/gw.sh"
+. "$HERE/../lib/api-auth.sh"
 COUNTRY=${1:-jp}
 GW_IP=$(gw_lan_ip)
 BASE="http://$GW_IP:8080"
 FAILS=0
+e2e_api_login "$BASE"
 gui() { node "$HERE/webgui-dashboard.mjs" "$BASE" "$@" || FAILS=$((FAILS+1)); }
-api() { curl -s -m 30 -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} "$BASE/api$2"; }
+api() { curl -s -m 30 -b "$E2E_COOKIE_JAR" -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} "$BASE/api$2"; }
 
 # proxy停止・起動コマンド（error-502用。GW_MODEの差はgw.shと同じ方針で吸収する）
 if [ "$GW_MODE" = ssh ]; then
@@ -42,9 +44,11 @@ echo "== error-422: 実CLI異常終了のトースト"
 gui error-422 "$COUNTRY"
 echo "== error-502: proxy停止中のトースト"
 gui error-502 "$COUNTRY"
-echo "== 後始末: proxy復旧待ち・VPN切断"
+echo "== 後始末: proxy復旧待ち・VPN切断・Web UI利用者アカウントを削除しインストール直後の未設定状態へ戻す"
 sleep 15
 api PUT /v1/connection '{"connect":false}' >/dev/null
+reset_operator_account
+e2e_api_cleanup
 
 echo "FAIL件数: $FAILS"
 exit "$FAILS"

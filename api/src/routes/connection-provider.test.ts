@@ -23,7 +23,13 @@ vi.mock("../proxy-client/proxy-client.js", () => ({
   checkRunnerHealth: async () => true,
 }));
 
-const { buildApp } = await import("../app.js");
+const { buildApp: buildRawApp } = await import("../app.js");
+const { withAuthenticatedInject } = await import("../auth/test-support.js");
+// Phase 25で追加した/v1/*の認可により、認証無しのapp.injectは401になるため、
+// 既存の統合テストはログイン済みCookie付きのinjectへ差し替えて呼び出す。
+function buildApp() {
+  return withAuthenticatedInject(buildRawApp());
+}
 const { invalidateSessionInfo } = await import("../session/session-probe.js");
 const { clearLearnedRestrictions } = await import("../capabilities/restriction-learner.js");
 

@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 
+const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
 process.env.VENDORS_DIR = join(import.meta.dirname, "../../../vendors");
 process.env.ENABLED_PROVIDERS = "adguardvpn";
-process.env.AUDIT_LOG_FILE = join(mkdtempSync(join(tmpdir(), "vpngwgui-test-")), "audit.log");
+process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
+process.env.STATE_DIR = dir;
 
 const { fetchProxyStatusMock } = vi.hoisted(() => ({ fetchProxyStatusMock: vi.fn() }));
 
@@ -16,7 +18,13 @@ vi.mock("../proxy-client/proxy-client.js", () => ({
   fetchProxyStatus: fetchProxyStatusMock,
 }));
 
-const { buildApp } = await import("../app.js");
+const { buildApp: buildRawApp } = await import("../app.js");
+const { withAuthenticatedInject } = await import("../auth/test-support.js");
+// Phase 25で追加した/v1/*の認可により、認証無しのapp.injectは401になるため、
+// 既存の統合テストはログイン済みCookie付きのinjectへ差し替えて呼び出す。
+function buildApp() {
+  return withAuthenticatedInject(buildRawApp());
+}
 const { ProxyUnavailableError, ProxyTimeoutError } = await import("../errors.js");
 
 describe("GET /v1/connection/gateway", () => {

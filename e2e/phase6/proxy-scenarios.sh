@@ -18,8 +18,10 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 . "$HERE/../lxc/env.sh"
 . "$HERE/../lib/gw.sh"
+. "$HERE/../lib/api-auth.sh"
 GW_IP=$(gw_lan_ip)
 BASE="http://$GW_IP:8080"
+e2e_api_login "$BASE"
 SOCKS_PORT=1080
 HTTP_PORT=3128
 FAILS=0
@@ -34,7 +36,7 @@ ok()    { echo "PASS: $1"; }
 ng()    { echo "FAIL: $1"; FAILS=$((FAILS+1)); }
 check() { if eval "$2"; then ok "$1"; else ng "$1"; fi; }
 gui()   { node "$HERE/webgui-explicit-proxy.mjs" "$BASE" "$@" || FAILS=$((FAILS+1)); }
-api()   { curl -s -m 60 -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} "$BASE/api$2"; }
+api()   { curl -s -m 60 -b "$E2E_COOKIE_JAR" -X "$1" ${3:+-H 'content-type: application/json' -d "$3"} "$BASE/api$2"; }
 wait_for() { local n=$1; shift; for _ in $(seq "$n"); do if eval "$1"; then return 0; fi; sleep 1; done; return 1; }
 # LAN端末役から見た、プロキシ経由の外部IP（取得不能なら空）
 via_socks() { client curl -s -m 15 -x "socks5h://$GW_IP:$SOCKS_PORT" https://api.ipify.org 2>/dev/null; }
@@ -94,8 +96,8 @@ scenario_B() {
   check "再有効化で再度listenする" 'wait_for 20 "listening $SOCKS_PORT && listening $HTTP_PORT"'
   set_proxy true '[]'
   check "有効でも許可CIDRが空なら停止し、状態は unconfigured（全許可・全拒否のどちらでも起動しない）" 'wait_for 20 "[ \"\$(explicit_state)\" = unconfigured ] && ! listening $SOCKS_PORT"'
-  check "不正なCIDR（設定行の注入を含む）のPUTは400で拒否される" 'curl -s -m 10 -o /dev/null -w "%{http_code}" -X PUT -H "content-type: application/json" -d "{\"explicitProxyAllowedCidrs\":[\"192.168.3.0/24\\nallow * 0.0.0.0/0\"]}" $BASE/api/v1/connection/config | grep -q 400'
-  check "不正なCIDR（プレフィックス長なし）のPUTは400で拒否される" 'curl -s -m 10 -o /dev/null -w "%{http_code}" -X PUT -H "content-type: application/json" -d "{\"explicitProxyAllowedCidrs\":[\"192.168.3.5\"]}" $BASE/api/v1/connection/config | grep -q 400'
+  check "不正なCIDR（設定行の注入を含む）のPUTは400で拒否される" 'curl -s -m 10 -b "$E2E_COOKIE_JAR" -o /dev/null -w "%{http_code}" -X PUT -H "content-type: application/json" -d "{\"explicitProxyAllowedCidrs\":[\"192.168.3.0/24\\nallow * 0.0.0.0/0\"]}" $BASE/api/v1/connection/config | grep -q 400'
+  check "不正なCIDR（プレフィックス長なし）のPUTは400で拒否される" 'curl -s -m 10 -b "$E2E_COOKIE_JAR" -o /dev/null -w "%{http_code}" -X PUT -H "content-type: application/json" -d "{\"explicitProxyAllowedCidrs\":[\"192.168.3.5\"]}" $BASE/api/v1/connection/config | grep -q 400'
   check "拒否された不正値は保存されていない" '! api GET /v1/connection/config | grep -q "192.168.3.5"'
 }
 
@@ -213,8 +215,10 @@ SCENARIOS=("$@")
 [ ${#SCENARIOS[@]} -eq 0 ] && SCENARIOS=(A B C D E F H G)
 for s in "${SCENARIOS[@]}"; do "scenario_$s"; done
 
-echo "== 後始末: 明示的プロキシ無効・VPN切断"
+echo "== 後始末: 明示的プロキシ無効・VPN切断・Web UI利用者アカウントを削除しインストール直後の未設定状態へ戻す"
 set_proxy false '[]'
 api PUT /v1/connection '{"connect":false}' >/dev/null
+reset_operator_account
+e2e_api_cleanup
 echo "FAIL件数: $FAILS"
 exit "$FAILS"
