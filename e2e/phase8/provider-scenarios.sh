@@ -1,5 +1,5 @@
 #!/bin/bash
-# 責務: Phase 8完了基準（wbs/phase8.md）のうち、Web UIからのベンダー選択・接続中の切替（確認→自動切断）・ベンダー別状態の独立・
+# 責務: Phase 8完了基準のうち、Web UIからのベンダー選択・接続中の切替（確認→自動切断）・ベンダー別状態の独立・
 #       ランナーの利用可否・ランナーの許可バイナリ・ネットワークコンテナへのCLI非同梱を、AdGuard VPN（ランナーは同梱・未ログイン）と
 #       モックProton VPNの2ベンダーで検証する（開発ホストのdocker compose。実VPN不要）。
 # 実行: bash e2e/phase8/provider-scenarios.sh

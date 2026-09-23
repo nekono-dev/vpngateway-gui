@@ -1,5 +1,5 @@
 #!/bin/bash
-# 責務: Phase 6完了基準（wbs/phase6.md）を、実VPNログイン済みのゲートウェイ役（e2e/lxc/sync.sh構築済み）と、
+# 責務: Phase 6完了基準を、実VPNログイン済みのゲートウェイ役（e2e/lxc/sync.sh構築済み）と、
 # 実LANのLAN端末役（macvlan LXCコンテナ。CLIENT_NAME）から、SOCKS5/HTTPプロキシとして通信して検証する。
 # 実行: [GW_MODE=ssh] bash e2e/phase6/proxy-scenarios.sh [A|B|C|D|E|F|G ...]  ※省略時は全シナリオ
 #   A: 許可CIDR内のクライアントがSOCKS5/HTTP(HTTPS CONNECT含む)で通信でき、許可CIDR外は拒否される
@@ -195,7 +195,7 @@ scenario_G() {
   local via
   via=$(via_socks)
   if [ -n "$via" ]; then
-    echo "INFO: VPN未接続・Kill Switch ONでも、明示的プロキシ経由の通信は直接($via)で抜ける（Kill SwitchはFORWARDのみが対象。wbs/phase6.md申し送り・phase15.md参照）"
+    echo "INFO: VPN未接続・Kill Switch ONでも、明示的プロキシ経由の通信は直接($via)で抜ける（Kill SwitchはFORWARDのみが対象。specs/proxyserver/tasks.md「将来課題」参照）"
   else
     echo "INFO: VPN未接続・Kill Switch ONで、明示的プロキシ経由の通信は遮断された"
   fi

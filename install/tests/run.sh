@@ -1,7 +1,7 @@
 #!/bin/sh
 # 責務: インストーラ関連スクリプト（install/bootstrap.sh・build-bootstrap.sh・install.sh）の、root権限もネットワークも要らない範囲の検査。
 # 内容: 構文、頒布物の生成（値の埋め込み・置換漏れ・不正な引数の拒否）、雛形のまま実行した場合の中止、install.shの引数の解釈。
-# 実際の導入（apt・Docker・ホスト設定・起動）は、クリーンなLXC環境でのE2E（wbs/phase11.md）で検証する。
+# 実際の導入（apt・Docker・ホスト設定・起動）は、クリーンなLXC環境でのE2E（e2e/phase11/install-scenarios.sh）で検証する。
 # 使い方: sh install/tests/run.sh   出力: 各検査をPASS/FAILで表示し、FAIL件数を終了コードにする。
 
 set -u

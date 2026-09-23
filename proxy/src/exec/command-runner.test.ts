@@ -158,7 +158,7 @@ describe("runDetachableCommand", () => {
 
   it("completionPattern一致後、標準入力を読み続けても即座にEOFとならずブロックする（'pipe'指定の確認）", async () => {
     // 実VPNベンダーCLIが認証完了後にstdinから読み取ろうとして即時EOFを異常終了扱いしてしまう不具合の
-    // 再現・回帰確認（wbs/phase2.md参照）。stdinが"ignore"（即時EOF）なら`read`が即座に失敗し
+    // 再現・回帰確認。stdinが"ignore"（即時EOF）なら`read`が即座に失敗し
     // マーカーへ"got-eof-immediately"を書き込むが、"pipe"指定でブロックする場合は
     // `read -t 1`のタイムアウト（非ゼロ終了）により"blocked-as-expected"を書き込む。
     const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-marker-"));

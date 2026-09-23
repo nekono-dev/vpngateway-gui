@@ -2,7 +2,7 @@
 # （`dist/runner.js`）だけを持つ。ネットワーク制御（nftables・3proxy）は持たない（ネットワークコンテナ`proxy`の責務）。
 # 公式CLIはNetworkManager・Secret Service（gnome-keyring）・システム/セッションD-Busに依存し、公式にはheadless非対応のため、
 # それらをこのコンテナ内で起動する（エントリポイント`entrypoint.sh`）。
-# 設計: specs/runner/design.md「Proton VPN用ランナー」、wbs/phase10.md。
+# 設計: specs/runner/design.md「Proton VPN用ランナー」。
 
 # ビルドステージ: ランナー本体（TypeScript）。他のランナーと同じ（実行時の依存パッケージは無く、distのみを使う）。
 FROM node:22-alpine AS build

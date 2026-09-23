@@ -5,7 +5,7 @@
 # 背景: /etc/machine-idはDockerコンテナ再作成のたびに（systemd等が存在しないAlpineベースでは
 # ファイル自体が存在しないため）失われる。実CLIバイナリの文字列解析で/etc/machine-idおよび
 # /var/lib/dbus/machine-idへの参照が見つかっており、これがコンテナ再作成のたびにログイン
-# セッションが失効する不具合の原因と判明した（wbs/phase2.md「次フェーズへの申し送り」参照）。
+# セッションが失効する不具合の原因と判明した。
 # ログイン情報自体は${HOME}/.local/share/adguardvpn-cliを永続化ボリュームとしてマウント済みのため、
 # 同ディレクトリ配下にmachine-idも保存することで、既存のvolume定義を変更せずに永続化する。
 

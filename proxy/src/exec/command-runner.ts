@@ -23,7 +23,7 @@ const EXIT_FLUSH_GRACE_MS = 50;
  *             ファイルディスクリプタが完全に閉じられるまで）を待つ。実VPNベンダーCLIの`connect`のように、
  *             子プロセスがバックグラウンドにデーモン（孫プロセス）をforkし、そのデーモンが標準出力/エラーの
  *             パイプを引き継いだまま存在し続ける場合、`'close'`は永久に発火せずハングする
- *             （実機検証で発覚。wbs/phase2.md「次フェーズへの申し送り」参照）。
+ *             （実機検証で発覚）。
  *             そのため本関数は`spawn`を使い、子プロセス自身の終了を表す`'exit'`イベントのみを待つ
  *             （`runDetachableCommand`と同じ方式に統一）。
  * 失敗時の方針: stdin書き込み中のEPIPE（CLIが入力を読まずに終了）は無視する（終了コードと出力で結果が分かる）。
@@ -97,7 +97,7 @@ export interface BackgroundExitInfo {
 
 // completionPattern一致後、プロセスが自然終了しない場合に強制killするまでの猶予（デフォルト30分）。
 // 実VPNベンダーCLIの`login`はブラウザでの認証完了まで数分〜最大約30分かかりうるため
-// （wbs/phase2.md参照）、それに合わせた値とする。
+// それに合わせた値とする。
 const DEFAULT_BACKGROUND_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
@@ -118,7 +118,7 @@ const DEFAULT_BACKGROUND_TIMEOUT_MS = 30 * 60 * 1000;
  * 実装上の注意: 実機検証で、認証完了後もCLI内部の確認入力待ち処理がstdin終端（`stdio:"ignore"`は
  *             読み取り時に即座にEOFとなる）を正しく扱えず、`ConsoleIOImpl get_char`のエラーを
  *             ログに出し続けるビジーループに陥り、プロセスが自然終了しない不具合を確認した
- *             （wbs/phase2.md「次フェーズへの申し送り」参照）。この種の異常なCPU消費を避けるため、
+ *             この種の異常なCPU消費を避けるため、
  *             stdinは`"ignore"`ではなく書き込みを行わない`"pipe"`とし、読み取りをブロックさせる
  *             （即時EOFより安全）。加えて、上記のような不具合でプロセスが自然終了しないケースに
  *             備え、`backgroundTimeoutMs`経過後は強制killしてプロセスの無期限な滞留を防ぐ。

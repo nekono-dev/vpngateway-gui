@@ -2,8 +2,6 @@
 
 （Phase 8で、ベンダーCLIを実行するランナーコンテナを`../runner/`（要件・設計・タスク）へ切り出した。モックCLI・内部コマンド受信サーバ（`POST /exec`）・実VPNベンダーCLI統合・プロバイダ抽象化のタスクは`../runner/tasks.md`へ移動した。）
 
-Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタスクは最終形（Phase 2以降）を含めた全体像であり、Phase 1では下記「モックVPN CLI (Phase 1)」節と「内部コマンド受信サーバ」節のみを対象とする。実VPNベンダーCLIへの置換はネットワーク基盤移行より前のPhase 2で行う（`wbs/README.md`「フェーズ分割の考え方」参照）。
-
 ## プロジェクトセットアップ
 
 - [x] Node.js/TSプロジェクト初期化
@@ -67,9 +65,9 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 
 ## テスト
 
-- [ ] nftablesルール適用/撤去の動作確認（実機・実nftableskernelでの検証が必要。ルール文字列組み立て・撤去→再適用の調停ロジック自体は`proxy/src/network/ruleset.test.ts`・`gateway-controller.test.ts`で単体テスト済みだが、実nftバイナリ・実カーネルでの動作は未検証。wbs/phase3.md「次フェーズへの申し送り」参照）
-- [ ] Kill Switch（ON/OFF双方）の動作確認（同上、ルール生成ロジックの単体テストのみ実施済み。実機でのLAN機器からの疎通確認は未実施）
-- [ ] UDS受信サーバの単体テスト（許可リスト外バイナリの拒否含む）
+- [x] nftablesルール適用/撤去の動作確認（ルール文字列組み立て・撤去→再適用の調停ロジックは`proxy/src/network/ruleset.test.ts`・`gateway-controller.test.ts`で単体テスト済み。実nftバイナリ・実カーネルでの動作は、LXC検証環境と実機（Ubuntu 24.04・単一NIC・実LAN、2026-09-21）で確認。実機シナリオA〜Hの93項目がFAIL 0）
+- [x] Kill Switch（ON/OFF双方）の動作確認（実機・LAN端末からの疎通確認。切断・瞬断・上流断・ホスト再起動のいずれでもフェイルクローズ、OFF時はフェイルオープンを確認。2026-09-21）
+- [x] UDS受信サーバの単体テスト（許可リスト外バイナリの拒否含む。Phase 8のランナー分離後は`../runner/tasks.md`「ランナーの分離」の`allowlist.test.ts`・`exec/exec-handler.test.ts`）
 - [x] 明示的プロキシのE2E疎通確認（`e2e/phase6/proxy-scenarios.sh`。許可/拒否CIDR・有効無効・強制終了・crashLoop・VPN接続との独立・Web UI・コンテナ再起動を実機で確認。2026-09-21）
 - [ ] 透過ゲートウェイと明示的プロキシを同時に有効にした状態での長時間・高負荷の安定性確認（未実施）
 
@@ -87,19 +85,26 @@ Phase分けは`wbs/`配下の各`phaseN.md`を参照。本ファイルのタス�
 - [x] （Phase 10）ネットワークコンテナのコード・コメントからベンダー固有名を除去（存在しない`proxy/Dockerfile.adguardvpn`への参照の修正を含む）
 - [x] （Phase 11）`install/install.sh`（本体。`setup-sysctl.sh`・`detect-lan-interface.sh`・`setup-boot-guard.sh`・`select-providers.sh`の統合。従来の4本は削除）
 - [x] （Phase 11）`install/bootstrap.sh`（頒布物の雛形）・`install/build-bootstrap.sh`
-- [x] （Phase 11）`.github/workflows/installer.yml`（検査・ブランチのartifact・タグのRelease。**GitHub上では未実行**。YAML構文・shellcheck・生成物の検査はローカルで確認）
-- [x] （Phase 11）クリーンな環境（LXC）での検証: 導入・ベンダーの追加/削除・再実行・`install-host.sh`のフック
+- [x] （Phase 11）`.github/workflows/installer.yml`（検査・ブランチのartifact・タグのRelease）。GitHub Actionsでの実行を確認済み: pushで`installer-main`のartifactを生成、タグ`v0.1.0`のpushでGitHub Releaseに`install.sh`・`install.sh.sha256`を添付し、認証なしの`curl -fsSL .../releases/latest/download/install.sh | sh`で導入できることを確認
+- [x] （Phase 11）クリーンな環境（LXC、Ubuntu 24.04・Debian 12）での検証: 導入・ベンダーの追加/削除・再実行・`install-host.sh`のフック（26項目FAIL 0）
+- [x] （Phase 11）Raspberry Pi OS Lite arm64（trixie。実イメージ、カーネルのみQEMU向け汎用arm64）での1コマンド導入・起動・再起動を確認
+- [x] （Phase 11）利用者が用意した実機arm64ホスト（Debian 13、単一NIC・実LAN）で、Kill Switchの実通信（フェイルクローズ・フェイルオープン、19項目FAIL 0）と実VPN（AdGuard VPN）接続シナリオ（24項目FAIL 0）を確認。検証中にDocker Engine 28以降のFORWARD既定ポリシー変更でフェイルオープンが機能しない不具合を発見し、`daemon.json`の`ip-forward-no-drop`設定で修正（`specs/design.md`「本体インストーラ」参照）
 
 ## デプロイメント構成の分離（Phase 25）
 
 - [x] ゲートウェイ制御チャネル: `proxy`にmTLS TCPリスナー（`GATEWAY_PORT`）を追加し、`/net/*`（自分自身）・`/runners/<ID>/*`（UDS転送）のパスルーティングを実装
 - [x] compose分割（`compose/gateway.yml`・`compose/web.yml`・`compose/api.yml`）
 - [x] インストーラの証明書生成・配布（`install/install.sh`の`generate_role_pki`・`distribute_pki_local`・`distribute_pki_remote`。別スクリプトへの分離はせず`install.sh`内の関数として実装）
-- [ ] 単体・結合テスト（証明書検証失敗時の拒否、ルーティング）、実機検証（詳細は`../../wbs/phase25.md`）
+- [x] 単体・結合テスト（証明書検証失敗時の拒否: クライアント証明書無し・別CA署名のいずれも接続確立せず正しい証明書のみ確立することを実TLSサーバ・クライアントで確認。パスルーティングの単体テスト）
+- [x] 実機検証: 単一ホスト構成で`proxy`が`gatewayPort: 8443`でmTLS TCPをlistenし、`GET /v1/providers`・`GET /v1/connection/gateway`・設定変更が正しく中継されることをcurlで確認。クライアント証明書無し接続がTLSアラートで拒否されることを確認。3台に分離した構成でも同様に到達性を確認
+- [ ] 透過ゲートウェイ・明示的プロキシの実VPN接続を伴うシナリオ（gateway-scenariosのC以降）の、mTLS化後・3台分離構成での網羅的な再実行は未実施
 
 # 将来課題
 
 - IPv6対応（現行設計はIPv4のNAT/FORWARDのみを前提としている）。
 - 複数VPNベンダー・複数トンネルの同時稼働可否。
 - `excludedDomains` のDNS TTL追従の詳細実装。
-- 証明書の失効・自動ローテーション、外部認証局（Let's Encrypt等）との連携（Phase 25）。
+- 証明書の失効・自動ローテーション、外部認証局（Let's Encrypt等）との連携。
+- 明示的プロキシへのKill Switch適用（現状はKill Switchが`forward`チェーンのみを対象とするため、VPN未接続時は`killSwitch=true`でも明示的プロキシ経由の通信が実回線から直接出る。既知の制約、`design.md`「Kill Switch」参照。対処案: 3proxy専用UIDでの起動と、そのUIDに対する`output`チェーンでのVPN未接続時dropの追加）。
+- 明示的プロキシのユーザー名・パスワード認証（現状は送信元IPのCIDRのみ）。
+- 設定変更時の3proxy再起動（SIGTERMから終了まで約10秒応答が途切れる）の無停止化（SIGUSR1による設定再読み込みの検討）。

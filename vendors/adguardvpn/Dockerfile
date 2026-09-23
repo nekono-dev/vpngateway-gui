@@ -17,7 +17,7 @@ RUN npm run build -w proxy
 # ビルドステージ: 実VPNベンダーCLI（AdGuard VPN CLI）バイナリの取得。
 # ソース非公開の配布バイナリのため、公式GitHub Releasesから対象アーキテクチャ向けの
 # 静的リンク済みバイナリを取得する（ビルド時のみネットワークアクセスが必要。実行イメージには含めない）。
-# Phase 2で実CLIへ置換した（wbs/phase2.md「Step 1: proxy — 実CLI同梱・権限付与」参照）。
+# Phase 2で実CLIへ置換した。
 FROM alpine:3.20 AS vpn-cli
 # 動作確認済みバージョンを固定する。更新時はこの値のみを変更する。
 ARG ADGUARDVPN_CLI_VERSION=1.7.12

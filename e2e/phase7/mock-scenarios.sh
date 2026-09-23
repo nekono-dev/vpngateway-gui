@@ -1,5 +1,5 @@
 #!/bin/bash
-# 責務: Phase 7完了基準（wbs/phase7.md）のうち、プロバイダ抽象化基盤（操作の実行可否によるUI制限・入力型ログイン・
+# 責務: Phase 7完了基準のうち、プロバイダ抽象化基盤（操作の実行可否によるUI制限・入力型ログイン・
 #       プラン制限の学習・秘密情報が残らないこと）を、モックプロバイダCLI（Proton VPN公式CLIの挙動を模擬）で検証する。
 # 実行: bash e2e/phase7/mock-scenarios.sh
 # 前提: 開発ホストにdocker compose・Node・Playwright（e2e/README.md）。実VPN・実ネットワークは使わない。

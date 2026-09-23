@@ -1,5 +1,5 @@
 #!/bin/bash
-# 責務: Phase 3完了基準（wbs/phase3.md）を、LXC検証環境（e2e/lxc/setup.sh・sync.sh構築済み）上で
+# 責務: Phase 3完了基準を、LXC検証環境（e2e/lxc/setup.sh・sync.sh構築済み）上で
 # 自動検証する。ゲートウェイ役コンテナでdocker compose（web/api/proxy）を動かし、LAN端末役コンテナの
 # デフォルトゲートウェイをそれに向けて、実VPN（AdGuard VPN CLI）経由の通信・Kill Switch・再起動冪等性を確認する。
 # Web UI操作はPlaywright（同ディレクトリの*.mjs）で行い、通信結果の確認はLAN端末役からのcurlで行う。

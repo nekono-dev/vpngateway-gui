@@ -52,8 +52,8 @@
 ## AdGuard VPN用ランナー
 
 - **イメージ**: `vendors/adguardvpn/Dockerfile`。ビルドステージでAdGuard VPN CLI（GitHub Releases、動作確認済みバージョン固定）を取得し、実行ステージ（Alpine＋Node.js）へバイナリ1つを渡す。CLIは非root実行時にTUN設定（`ip link`等）を`sudo`経由で行うため、`vpngwgui`にパスワードなしsudoを付与する（`cap_add: NET_ADMIN`があってもCLI内部の実装上必須）。`RUNNER_ALLOWED_BINARY=/usr/local/bin/adguardvpn-cli`を`ENV`で焼き込む。
-- **ログイン情報の永続化**: CLIは認証情報を`$HOME/.local/share/adguardvpn-cli`へ保存する。`adguard-data`ボリュームでマウントし、コンテナ再作成のたびに再ログインが必要にならないようにする。加えて、CLIがログインセッションの妥当性検証に用いる`/etc/machine-id`・`/var/lib/dbus/machine-id`を、エントリポイント（`vendors/adguardvpn/entrypoint.sh`）が同ボリューム上に保存した値から復元する（コンテナ再作成のたびに失われるとログインが失効するため。`wbs/phase2.md`「次フェーズへの申し送り」）。
-- **`network_mode: host`が必須**: Dockerブリッジネットワークはコンテナ再作成のたびに実CLIのログインセッションが失効する不具合があった（IPv6を透過しない。`wbs/phase2.md`）。
+- **ログイン情報の永続化**: CLIは認証情報を`$HOME/.local/share/adguardvpn-cli`へ保存する。`adguard-data`ボリュームでマウントし、コンテナ再作成のたびに再ログインが必要にならないようにする。加えて、CLIがログインセッションの妥当性検証に用いる`/etc/machine-id`・`/var/lib/dbus/machine-id`を、エントリポイント（`vendors/adguardvpn/entrypoint.sh`）が同ボリューム上に保存した値から復元する（コンテナ再作成のたびに失われるとログインが失効するため）。
+- **`network_mode: host`が必須**: Dockerブリッジネットワークは、実CLIの起動時バックエンド疎通（IPv6）を透過せず、コンテナ再作成のたびにログインセッションが失効する不具合があった。
 
 ## Proton VPN用ランナー（Phase 9。Phase 8でproxyイメージからランナーイメージへ位置づけを変更）
 
@@ -62,7 +62,7 @@ Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーション
 | 依存 | 用途 | コンテナ内での用意 |
 |---|---|---|
 | NetworkManager（`network-manager`、`python3-proton-vpn-network-manager`系） | WireGuardトンネルの確立（NMの接続として作成・有効化） | コンテナ内でNMをシステムD-Bus上に起動する。ホストの他のインターフェースを管理させない設定にする（下記） |
-| `proton-vpn-daemon` | 分割トンネリング用のD-Bus活性化サービス（公式CLIはaptの依存で要求するが、接続・ログインには不要。PoCで確認） | **起動しない**（導入のみ。postinstがsystemd無しで失敗するため、導入時の回避が必要。`wbs/phase9.md`「PoC途中の知見」） |
+| `proton-vpn-daemon` | 分割トンネリング用のD-Bus活性化サービス（公式CLIはaptの依存で要求するが、接続・ログインには不要。PoCで確認） | **起動しない**（導入のみ。postinstがsystemd無しで失敗するため、導入時の回避が必要。下記「導入時のsystemctl」） |
 | gnome-keyring（Secret Service。`python3-proton-keyring-linux`） | ログインセッション（トークン）の保管 | コンテナ内のセッションバスで`gnome-keyring-daemon`を起動し、空パスワードで解錠する。保管先を永続化ボリュームにする |
 | セッションD-Bus | keyring・GUI二重起動検知（CLIは起動時にセッションバスを見て、GUIアプリが動作中なら実行を拒否する） | コンテナ内でセッションバスを起動する（GUIは存在しないため二重起動検知は素通しになる） |
 
@@ -79,12 +79,14 @@ Proton VPN公式CLI（`proton-vpn-cli` 1.0.3）はPythonアプリケーション
 - **Kill Switch**: Proton VPN CLIのKill Switch（`config set kill-switch`）は使わず、既定（無効）のままとして、本システムのnftablesのKill Switchに一本化する（二重の遮断規則による競合・切断後の通信不能を避ける）。PoCで既定値と、有効化されていた場合の切り戻しを確認する。
 - **権限**: `cap_add: [NET_ADMIN]`、`/dev/net/tun`（従来と同じ）に加え、NMの起動のためにrootで動く。`privileged: true`は使わず、追加の権限が必要と判明した場合のみPoCの結果として個別に追加する。ノード本体・CLIの実行は`vpngwgui`（非root）とする。
 - **永続化**: `~/.config/Proton/VPN`（設定）・`~/.local/share/keyrings`（keyring）・`~/.cache/Proton/VPN`（サーバー一覧のキャッシュ）と、`/etc/machine-id`（コンテナ再作成でログインが失効しないよう、AdGuard用の`docker-entrypoint.sh`と同じ方針でボリュームから復元）を永続化する。
-- **PoCの合否基準**（`wbs/phase9.md`で先に実施する。不合格の場合は、ホストへ`proton-vpn-cli`・NM・daemonを導入しD-Bus・keyringのソケットをコンテナへ共有する代替へ切り替え、本節と`wbs/phase9.md`を改訂する）:
+- **PoCの合否基準**（実装前にコンテナ内実行基盤の成立を先に確認した。全項目合格）:
   1. コンテナ内でNM・keyringが起動し、`protonvpn status`が終了コード0で応答する。
-  2. `protonvpn signin`が、TTYの無いコンテナで標準入力からパスワードを受け取れ（`getpass`が標準入力へフォールバックする。**確認済み**）、ログイン情報がコンテナ再作成後も保持される（keyringの永続化。**keyringの保持は確認済み、実アカウントでのログインは検証待ち**）。
+  2. `protonvpn signin`が、TTYの無いコンテナで標準入力からパスワードを受け取れ（`getpass`が標準入力へフォールバックする）、ログイン情報がコンテナ再作成後も保持される（keyring・トークンの永続化。無料アカウントでの実ログイン、`docker compose up -d --force-recreate`後のログイン保持を確認済み）。
   3. `protonvpn connect`でWireGuardのインターフェースが作られ、`ip route get 1.1.1.1`がそのインターフェースを指す。切断で元に戻る。
   4. NMがホストの既存インターフェース（物理NIC・Docker・LXC）の設定を変更しない。
   5. 本システムの透過ゲートウェイ（nftablesのNAT/FORWARD）が、そのインターフェースを経由してLAN端末の通信をVPNへ通す。
+
+（合格を受けてホスト導入＋D-Bus共有の代替は検討していない。有料版の挙動（国指定の接続・国一覧・接続先変更）はアカウントが無く未検証のまま。）
 
 
 ## モックプロバイダ用ランナー（E2E専用）

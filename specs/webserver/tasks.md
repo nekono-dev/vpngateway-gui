@@ -23,7 +23,7 @@
 - [x] 接続国表示（`GET /v1/connection`の`country`／`location`を表示。当初はクライアントのメモリ保持による暫定対応としたが、再読み込みで消える不具合のため、API側の永続化（apiserver/tasks.md）へ移行しクライアント保持は撤去。2026-09-21）
 - [x] 最小限のスタイル適用（`styles.css`。レイアウト・状態の色分け・ボタンの視認性のみ。2026-09-21実装）
 - [x] 設定ダイアログ起動ボタン実装（2026-09-14: 設定ダイアログ本体と合わせて実装。下記「画面: 設定ダイアログ」参照）
-- [x] ログイン代行ボタン実装（`POST /v1/session`呼び出し・返却されたログインURL/メッセージの表示。Phase2で前倒し実装。ログイン完了後の状態反映は既存の接続状態ポーリングに委ね、待機処理は持たない。`wbs/phase2.md`参照）
+- [x] ログイン代行ボタン実装（`POST /v1/session`呼び出し・返却されたログインURL/メッセージの表示。Phase2で前倒し実装。ログイン完了後の状態反映は既存の接続状態ポーリングに委ね、待機処理は持たない）
 
 ## 画面: 接続操作
 
@@ -32,7 +32,7 @@
 
 ## 画面: 接続操作の刷新 (Phase 5)
 
-`wbs/phase5.md`。設計は`design.md`「接続先リストの実装方針（Phase 5）」。
+設計は`design.md`「接続先リストの実装方針（Phase 5）」。
 
 - [x] orval再生成（`GET /v1/connection/locations`・`PUT/DELETE .../favorite`・`PUT /v1/connection`の`locationId`反映）
 - [x] `useLocations`フック（取得・再取得・★の楽観的更新・`lastConnected`のローカル更新）
@@ -41,7 +41,7 @@
 - [x] 設定ダイアログから`defaultCountry`を削除
 - [x] 接続ログの接続先表示を`locationId`対応にする
 - [x] コンポーネントテスト
-- [x] 実VPNでのE2E（`e2e/phase5/`。2026-09-21実施、`wbs/phase5.md`「検証結果」参照）
+- [x] 実VPNでのE2E（`e2e/phase5/`。2026-09-21実施、46項目PASS）
 
 ## 画面: 設定ダイアログ (Phase 2で前倒し実装済み)
 
@@ -70,7 +70,7 @@
 ## テスト
 
 - [x] 画面単位のコンポーネントテスト（vitest＋jsdom＋Testing Library。`App.test.tsx`等。2026-09-21実装）
-- [x] Web⇄API（実API・実VPN）でのE2E動作確認（`e2e/phase4/`。2026-09-21実施、`wbs/phase4.md`「検証結果」参照）
+- [x] Web⇄API（実API・実VPN）でのE2E動作確認（`e2e/phase4/`。2026-09-21実施、25項目PASS）
 
 ## 操作の制限表示（Phase 7）
 
@@ -121,7 +121,7 @@
 - [x] `capabilities/capability-state.ts`に`supportsLocationPing`を追加（`pingMeasurement`の`reason`が`"unsupported"`のときだけping列を出さない。プラン制限からの継承とプロバイダ非対応を区別）
 - [x] `LocationList.tsx`・`App.tsx`への組み込み（`currentAvailableLocation`・`availableLocationsShowPing`の配線）
 - [x] コンポーネントテスト（`App.provider.test.tsx`: 現在の接続先のバッジ表示、選択・お気に入り操作ができないことの確認、ping非対応時に列が出ないことの確認）
-- [x] 検証環境（実機。Proton VPN無料アカウント）での接続中の表示確認（`e2e/phase16/webgui-phase16.mjs`）。検証中に判定ロジックの不具合（CLIの複合表記に一致しない）を発見・修正（`current-available-location.test.ts`追加。`wbs/phase16.md`「検証結果」）
+- [x] 検証環境（実機。Proton VPN無料アカウント）での接続中の表示確認（`e2e/phase16/webgui-phase16.mjs`）。検証中に判定ロジックの不具合（CLIの複合表記に一致しない）を発見・修正（`current-available-location.test.ts`追加）
 
 ## ダッシュボードのカード構成・レイアウトの整理（Phase 21、不具合修正・再検証完了）
 
@@ -145,12 +145,34 @@
 - [x] 既存コンポーネントテスト（`App.provider.test.tsx`）の回帰確認・追従修正
 - [x] 検証環境（実機）のブラウザ（Playwright）で、①入力欄の見た目（枠線色・文字サイズ・padding）、②「アカウント: 未ログイン」が表示されないこと、③ログイン済み時の色分け表示、④接続先が0件・制限時に接続操作カードが余分な高さを取らないこと、⑤フッターのGitHubリンクを確認（`e2e/phase22/webgui-phase22.mjs`）
 
+## ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善（Phase 23、検証完了）
+
+- [x] `specs/webserver/requirements.md`「ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善（Phase 23）」に要件を追記
+- [x] `specs/webserver/design.md`に実装方針を追記
+- [x] `ProviderSelector.tsx`をラジオボタンの並びからプルダウン（`<select>`）へ変更
+- [x] `SessionCard.tsx`を`Fragment`化し、単発ボタン（ログアウト／URL提示型ログイン）を`session-action`、それ以外（状態表示・フォーム・制限理由）を`session-extra`として分離
+- [x] `styles.css`に`.provider-card`（CSS Grid）・プルダウンのテキストボックス風装飾（`appearance: none`＋自前の矢印）・`--input-border`のグレー化・モバイル幅での余白詰め・縦積み・`overscroll-behavior-y: none`を追加
+- [x] PWA資材（`web/public/manifest.webmanifest`・`sw.js`・アイコン一式）を追加し、`index.html`・`main.tsx`から参照・登録
+- [x] 既存コンポーネントテスト（`App.providers.test.tsx`）をプルダウン操作へ追従修正
+- [x] 検証環境（実機）のブラウザ（Playwright、デスクトップ幅・モバイル幅）で、プルダウン化・装飾・行内配置・枠線色・レイアウト崩れなし・PWA資材の配信を確認（`e2e/phase23/webgui-phase23.mjs`）。**既知の制約**: PWAのService Workerは、配信がHTTP（`window.isSecureContext`が`false`）のセキュアコンテキスト要件により実機では有効化されない。配信のHTTPS化は本機能のスコープ外（manifest・アイコンによる基本的な識別は機能する）
+
+## ログインボタンの配置・入力欄の枠線色の調整（Phase 24、検証完了）
+
+- [x] `specs/webserver/requirements.md`「ログインボタンもプルダウンの隣へ・入力欄の枠線色をボタン同等の薄さへ（Phase 24）」に要件を追記
+- [x] `specs/webserver/design.md`に実装方針を追記
+- [x] `SessionCard.tsx`に`showCredentialsForm`状態を追加し、資格情報入力型ログインも「ログイン」ボタンをプルダウンの隣（`session-action`）に表示、押すまでフォームを表示しないよう変更
+- [x] `styles.css`の`--input-border`をボタンの枠線色（`--border`、`#d0d7de`）と同じ値へ変更
+- [x] 既存コンポーネントテスト（`App.provider.test.tsx`）を「ログイン」ボタンのクリックを挟むよう追従修正
+- [x] 検証環境（実機）のブラウザ（Playwright）で、資格情報入力型ログインのボタン化・クリック前後のフォーム表示切替・枠線色（`rgb(208, 215, 222)`）を確認（`e2e/phase24/webgui-phase24.mjs`）
+
 ## デプロイメント構成の分離（Phase 25）
 
 - [x] ログイン画面（`components/auth/LoginPage.tsx`）・認証状態コンテキスト（`AuthContext.tsx`）・401時の遷移
 - [x] `API_ORIGIN`のHTTPS対応（CA証明書の検証設定。`web/server/tls-options.ts`の`loadApiCaCertificate()`）
 - [x] Webサーバ自身のHTTPS化（Fastifyの`https`オプション。`web/server/tls-options.ts`）
-- [ ] E2E（未ログイン時の遷移、ログイン・ログアウト、セッション切れ。詳細は`../../wbs/phase25.md`）
+- [x] 実機検証: 単一ホスト構成で、既存の実ブラウザE2E（phase21・phase22）が認証ゲートを自動突破してPASSすることを確認（Playwrightの共通ヘルパーが初期設定・ログインを自動で済ませる）。分離構成でも、Web UI（`https://<webのIP>`）からのアカウント作成・ログイン・ベンダー一覧取得・ゲートウェイ稼働状況取得をcurlで確認
+- [ ] Web UI利用者認証専用のE2Eシナリオ（未ログイン時の遷移、ログイン・ログアウト、セッション切れ、アカウント変更）は未作成（手動でのブラウザ確認は実施済み）
+- [ ] 既存E2E（phase1〜24相当）の網羅的な再実行によるリグレッション確認は未実施
 
 # 将来課題
 

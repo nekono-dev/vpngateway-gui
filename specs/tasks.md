@@ -1,25 +1,68 @@
-# ベンダー非依存化（Phase 10）
+# タスク一覧について
 
-- [x] 中立性の検査（`scripts/check-vendor-neutrality.mjs`・`scripts/vendor-neutrality.words`）をルートの`npm test`へ組み込む
-- [ ] AGENTS.mdへ「ベンダー非依存」の規則を追記（完了。Phase 10の設計時）
-- 詳細は`apiserver/tasks.md`・`runner/tasks.md`・`proxyserver/tasks.md`の各節と`../wbs/phase10.md`
+タスクは、アプリケーションごとの`tasks.md`（[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)・[runner/tasks.md](runner/tasks.md)）に、機能実装の単位で記載する。本ファイル（`specs/tasks.md`）は、複数アプリケーションにまたがる機能の索引と、システム全体に関わるタスク・将来課題のみを扱う（各アプリケーション固有の詳細はそれぞれの`tasks.md`が一次情報）。
 
-# インストーラ（Phase 11）
+# 実装済み機能の索引
 
-- 詳細は`proxyserver/tasks.md`「ベンダー非依存化・インストーラ」と`../wbs/phase11.md`
+すべて実装・検証が完了している（個別の未検証事項があるものは備考に記載）。
 
-# インストーラの`--providers`省略時のall化（Phase 17）
+| 機能 | 対応アプリ | 備考 |
+|---|---|---|
+| 骨格検証（モックCLI・最小Web・疎通確認） | api, web, proxy, runner | |
+| 実VPNベンダーCLI統合・ログイン代行 | runner, api, web | |
+| ネットワーク基盤移行＋透過ゲートウェイモード | proxy | IPv6は対象外、複数NICは未検証 |
+| Web UI完成（簡易機能版プロトタイプ） | web, api | |
+| 接続先選択UIの刷新（ping順リスト・お気に入り） | api, web | |
+| 明示的プロキシモード（3proxy） | proxy, api, web | Kill Switch対象外（将来課題） |
+| プロバイダ抽象化基盤（実行可否・プラン制限） | api, web | |
+| Web UIからのベンダー選択（ネットワーク制御とCLI実行の分離） | proxy, runner, api, web | |
+| Proton VPN対応 | runner, api | 有料版の挙動は未検証 |
+| ベンダー非依存化（ベンダーバンドル・プロファイル明示化） | api, runner, proxy | |
+| インストーラと頒布（1コマンド導入） | proxy | Raspberry Pi実機・armhfは未検証 |
+| プランで接続できる接続先の参考表示 | api, web | |
+| プランの補足情報の参考表示（AdGuard VPN無料版対応） | api, web | |
+| 起動時の接続状態の復元 | api | ホスト全体再起動時の挙動は未検証 |
+| 接続/切断ボタンの配置・参考一覧での現在の接続先表示 | web | |
+| インストーラの`--providers`省略時のall化 | proxy | |
+| インストーラのアンインストール機能 | proxy | |
+| インストーラのWeb UIポート指定機能 | proxy | |
+| アンインストールの頒布URL対応・取得先ディレクトリの削除 | proxy | |
+| ダッシュボードのカード構成・レイアウトの整理 | web | |
+| モバイル表示・入力欄の視認性改善 | web | |
+| ベンダー選択のプルダウン化・PWA対応 | web | PWAはHTTPS化まで完全動作しない（既知の制約） |
+| ログインボタンの配置・枠線色の調整 | web | |
+| デプロイメント構成の分離（ロール別配置・認証・mTLS） | api, proxy, web | 未着手の残作業は下記「デプロイメント構成の分離」参照 |
 
-- 詳細は`../wbs/phase17.md`
+未着手の機能は「未着手の機能」を参照。
 
+# 未着手の機能
 
-# デプロイメント構成の分離（Phase 25）
+## excludedDomains split-tunnel実処理
 
-- 詳細は`apiserver/tasks.md`・`proxyserver/tasks.md`・`webserver/tasks.md`の各節と`../wbs/phase25.md`。
+ドメイン単位でVPNトンネルを迂回させる`excludedDomains`設定を、透過ゲートウェイ・明示的プロキシの双方で実際に機能させる。設定ダイアログの編集UI自体は実装済みだが、値は保存されるだけで通信には反映されない。
 
-# 将来課題
+- [ ] ドメイン単位除外のDNS解決・ルーティング反映方式の詳細設計（DNS TTLに追従した名前解決結果IPの動的反映方式を確定する）
+- [ ] 3proxy側の除外設定実装（該当ドメイン宛の接続をVPN迂回で直接ルーティングする設定生成）
+- [ ] 透過ゲートウェイ側の除外実装（名前解決結果IPをポリシールーティングでVPN迂回させる仕組み）
+- [ ] DNS TTL満了に伴うルール更新の仕組み（定期的な再解決＋ルール再適用）
+- [ ] 設定ダイアログの`excludedDomains`項目に表示している「未対応」暫定表示の除去
 
-- 証明書の失効・自動ローテーション（現状は`--rotate-pairing`による手動再発行のみ、Phase 25）。
-- 外部認証局（Let's Encrypt等）との連携（現状は自己署名証明書のみ、Phase 25）。
-- 複数ゲートウェイの同時管理（現状はAPIサーバ1つに対しゲートウェイ1組の1対1のみ、Phase 25）。
-- Web UIからのパスワード変更機能（現状はインストーラの再実行でのみ変更可能、Phase 25）。
+完了基準: `excludedDomains`に登録したドメインへの通信が、VPNトンネルを経由せず直接ルートで疎通し、DNS TTL満了後もIPアドレスの変化に追従すること（透過ゲートウェイ・明示的プロキシ双方）。
+
+## デプロイメント構成の分離（残作業）
+
+単一ホスト構成・3台分離構成とも主要な動作（利用者アカウント作成・ログイン・接続・稼働状況取得・mTLSの拒否確認）は実機検証済み（詳細は[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「デプロイメント構成の分離」節）。残る作業は以下。
+
+- [ ] Web UI利用者認証の専用E2E（初回設定画面、正誤ログイン、ログアウト、セッション切れ、アカウント変更）
+- [ ] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証
+- [ ] `--rotate-pairing`の実機での再配布確認（現状は単体テストのみ）
+- [ ] 既存E2E（phase1〜24相当）の網羅的な再実行によるリグレッション確認
+
+# システム全体に関わる将来課題
+
+- 証明書の失効・自動ローテーション（現状は`--rotate-pairing`による手動再発行のみ）。
+- 外部認証局（Let's Encrypt等）との連携（現状は自己署名証明書のみ）。
+- 複数ゲートウェイの同時管理（現状はAPIサーバ1つに対しゲートウェイ1組の1対1のみ）。
+- Raspberry Pi OSの32bit（armhf）・実際のRaspberry Pi機（QEMUエミュレーションではない実物）でのインストーラ検証（arm64は実機ハードウェアで検証済み）。
+
+各アプリケーション固有の将来課題は、[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)・[runner/tasks.md](runner/tasks.md)の「将来課題」節を参照。

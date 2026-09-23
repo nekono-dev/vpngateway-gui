@@ -1,9 +1,5 @@
 # 実装タスク
 
-# Phase 1スコープについて
-
-本ファイルのタスクはPhase 1（`wbs/phase1.md`）ではモックVPN CLI（proxyserver）を対象に実装する。`PUT /v1/connection/config`で受理する`killSwitch`等の設定値は、Phase 1では永続化のみ行い、プロキシ側への実反映（nftables操作等）はPhase 3以降（`wbs/phase3.md`）で行う。
-
 ## プロジェクトセットアップ
 
 - [x] Fastify + TypeBox + `@fastify/swagger` によるプロジェクト初期化
@@ -31,7 +27,7 @@
 
 ## 接続先（ロケーション）API (Phase 5)
 
-`wbs/phase5.md`。設計は`design.md`「接続先（ロケーション）」。
+設計は`design.md`「接続先（ロケーション）」。
 
 - [x] プロファイル: `listLocations`アクション追加、`countries`・`enumFrom`方式の廃止、`%LOCATION%`（`source: "locations"`）の動的な許可値検証（`profile.schema.ts`・`placeholder-resolver.ts`・`api/config/vpn-profile.json`）
 - [x] `list-locations`出力パーサー・接続先ID・接続時指定名（`(Virtual)`除去）（`locations/location-list-parser.ts`・`locations/location-id.ts`・`lib/slugify.ts`）
@@ -45,7 +41,7 @@
 
 ## ログイン代行API
 
-- [x] `POST /v1/session` 実装（`login` アクション解決・実行結果からログインURL抽出）（Phase2で実装、`wbs/phase2.md`参照）
+- [x] `POST /v1/session` 実装（`login` アクション解決・実行結果からログインURL抽出）（Phase2で実装）
 
 ## 稼働状況取得API (Phase 4)
 
@@ -73,7 +69,7 @@
 - [x] プロキシ実行失敗（`422`、`exitCode`/`stderr`要約含む）のハンドリング実装
 - [x] 接続先国の永続化（接続成功時に要求した国＋接続先の都市名を保存し、`GET /v1/connection`・`PUT`の応答へ`country`/`location`を付与、切断・接続先不一致で消去。`connection-state/connection-state-store.ts`。2026-09-21。Web UI再読み込みで接続国が消える不具合の修正）
 - [x] 422の`stderr`が空の場合はstdoutを診断として返す（実CLI `adguardvpn-cli`はエラーをstdoutへ出力するため。Phase 4のE2Eで判明。`lib/failure-output.ts`。2026-09-21）
-- [x] タイムアウト（`504`）のハンドリング実装（2026-09-14: 実機で`proxy`コンテナを`docker compose pause`により意図的に無応答化し、`GET /v1/connection`が`504 {"error":"proxy_timeout",...}`を返すことをE2Eで確認済み。`wbs/phase2.md`参照）
+- [x] タイムアウト（`504`）のハンドリング実装（2026-09-14: 実機で`proxy`コンテナを`docker compose pause`により意図的に無応答化し、`GET /v1/connection`が`504 {"error":"proxy_timeout",...}`を返すことをE2Eで確認済み）
 
 ## OpenAPI公開
 
@@ -124,7 +120,7 @@
 - [x] `profile.schema.ts`の`PlanDefSchema`へ`usageNote`（`{ pattern: string }`、省略可）を追加
 - [x] `session-probe.ts`の`evaluateAccountOutput`で、確定したプランの`usageNote.pattern`を出力に対して評価し、一致すれば`SessionInfo.plan.usageNote`へキャプチャを設定
 - [x] `schemas/session.ts`（`SessionStateSchema`）・`routes/session.ts`（`GET /v1/session`）へ`plan.usageNote`を反映
-- [x] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加（実機確認済みの出力形式に基づく。`wbs/phase13.md`「次フェーズへの申し送り」参照）
+- [x] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加（実機確認済みの出力形式に基づく）
 - [x] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプル（`license`のFREE版出力）を追加。`list-locations`の10件・`connect`失敗（一覧外指定）のサンプルは、`vendor-samples.test.ts`が扱う`kind`（`status`/`listLocations`/`account`）に対応する検証手段が無く、`connect`失敗は`restrictedPattern`として宣言しない方針（`specs/apiserver/design.md`「検討し、採用しなかった案」）のためコードからも参照されないので追加しなかった。
 - [x] 単体テスト: `session-probe.test.ts`（`usageNote`の抽出・不一致時の省略）、`profile-loader.test.ts`（不正な`usageNote.pattern`の拒否）、`vendor-samples.test.ts`（AdGuard VPNの無料版サンプル）
 
@@ -145,7 +141,7 @@
 - [x] `connection-state/restore-connection.ts`（`restoreConnectionOnStartup`）: ランナー起動待ち（リトライ）・既接続時のスキップ・保存済み接続先への再接続・失敗時の警告ログ
 - [x] `server.ts`から起動時に呼び出す（設定通知と同方針。起動をブロックしない）
 - [x] 単体テスト（`restore-connection.test.ts`。保存なし・接続先指定あり/自動接続・既接続・ランナー未起動の各ケース）、既存テスト（`connection-state-store.test.ts`・ルート統合テスト）の回帰確認
-- [x] 検証環境（実機）での検証（Proton VPN無料プラン。意図しない切断→APIコンテナ再起動→自動的に再接続されることを確認。`wbs/phase16.md`「検証結果」）。**未検証**: ホスト全体の再起動（ランナー・proxyも同時に起動し直す場合）、AdGuard VPN側での確認
+- [x] 検証環境（実機）での検証（Proton VPN無料プラン。意図しない切断→APIコンテナ再起動→自動的に再接続されることを確認）。**未検証**: ホスト全体の再起動（ランナー・proxyも同時に起動し直す場合）、AdGuard VPN側での確認
 
 ## デプロイメント構成の分離（Phase 25）
 
@@ -153,9 +149,13 @@
 - [x] ゲートウェイとの内部通信をUDSからmTLS TCPへ変更（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`等を`undici`のmTLSクライアントへ置き換え）
 - [x] APIサーバ自身のHTTPS化（Fastifyの`https`オプション。`api/src/tls-options.ts`）
 - [x] インストーラ（オーケストレーター）が配置した証明書の読み込み
-- [ ] 単体・結合テスト、実機検証（詳細は`../../wbs/phase25.md`）
+- [x] 単体・結合テスト（api 294件。証明書検証失敗時の拒否、`/v1/operator`系ルート、mTLSクライアント設定）
+- [x] 実機検証: 単一ホスト構成で、curlによる初期設定→未認証401→Cookie付き200→ログアウト→旧Cookieで401→正しいパスワードでログイン200→誤ったパスワードで401を確認。3台に分離した構成で、Web UI利用者アカウント作成→ログイン→`GET /v1/providers`→`GET /v1/connection/gateway`（web→api→gatewayの3ホップがTLS/mTLSで疎通）をcurlで確認
+- [ ] Web UI利用者認証の専用E2E（初回アクセス時の設定画面、正誤ログイン、ログアウト、セッション切れ、アカウント変更）は未作成（手動でのcurl・ブラウザ確認は実施済み）
+- [ ] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証
 
 # 将来課題
 
 - レート制限の閾値のチューニング（Web UIログイン以外の操作系エンドポイントへの適用要否を含む）。
 - 監査ログの長期保存・ローテーション方針。
+- ユーザ向け設定ストアの単純read-modify-write方式（同時書き込み競合を考慮しない）の見直し要否の判断。

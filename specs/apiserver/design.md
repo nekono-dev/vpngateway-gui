@@ -45,7 +45,7 @@
 
 ## Phase 1における具体プロファイル
 
-Phase 1（`wbs/phase1.md`）では実VPNベンダーCLIの代わりにモックCLIスクリプトを使用する。この段階でのプロファイルは以下の内容とし、`outputFormat`フィールド（Phase 1では`"json"`固定）を追加する。これはモックCLIのstdoutをJSON固定にしている割り切りをプロファイル側から表現するためのもので、Phase 2で実CLI統合時に`"text"`等の値を追加し対応するパーサーを実装する拡張点となる（実CLI統合はネットワーク基盤移行より前のPhase 2で行う。理由は`wbs/README.md`「フェーズ分割の考え方」参照）。
+Phase 1では実VPNベンダーCLIの代わりにモックCLIスクリプトを使用した。この段階でのプロファイルは以下の内容とし、`outputFormat`フィールド（Phase 1では`"json"`固定）を追加する。これはモックCLIのstdoutをJSON固定にしている割り切りをプロファイル側から表現するためのもので、Phase 2で実CLI統合時に`"text"`等の値を追加し対応するパーサーを実装する拡張点となる（実CLI統合をネットワーク基盤移行より前のPhase 2で行ったのは、モックの疑似的な状態遷移ではなく実CLIの非決定的な挙動を早期に検証し、後続のネットワーク制御ロジックの検証も実際のVPN接続状態で行うため）。
 
 ```json
 {
@@ -71,7 +71,7 @@ Phase 1（`wbs/phase1.md`）では実VPNベンダーCLIの代わりにモックC
 
 ## Phase 2における具体プロファイル
 
-Phase 2（`wbs/phase2.md`）でモックCLIから実VPNベンダーCLI（AdGuard VPN CLI）へ置換した。実バイナリ（v1.7.12、Linux amd64/arm64/armv7）を用いて実機検証した結果に基づき、以下の内容とする。
+Phase 2でモックCLIから実VPNベンダーCLI（AdGuard VPN CLI）へ置換した。実バイナリ（v1.7.12、Linux amd64/arm64/armv7）を用いて実機検証した結果に基づき、以下の内容とする。
 
 ```json
 {
@@ -106,7 +106,7 @@ Phase 2（`wbs/phase2.md`）でモックCLIから実VPNベンダーCLI（AdGuard
 
 ## Phase 5における具体プロファイル
 
-Phase 5（`wbs/phase5.md`）で、静的な`countries`と`enumFrom`による許可値検証を廃止し、接続先を実CLIの`list-locations`から都度取得する方式へ変更した（`countries`が陳腐化する問題、および国コード指定では米国の12都市などを選べない問題の解消）。
+Phase 5で、静的な`countries`と`enumFrom`による許可値検証を廃止し、接続先を実CLIの`list-locations`から都度取得する方式へ変更した（`countries`が陳腐化する問題、および国コード指定では米国の12都市などを選べない問題の解消）。
 
 ```json
 {
@@ -133,11 +133,11 @@ Phase 5（`wbs/phase5.md`）で、静的な`countries`と`enumFrom`による許�
 - `placeholders.<KEY>.source`に`"locations"`を追加した。値が、直前に`listLocations`アクションで取得した接続先から導出した「接続時の指定名」（下記「接続先の識別と接続時の指定名」）のいずれかに一致することを検証する。（`"enum"`（`enumFrom`）はPhase 10で廃止した。）許可値はプロファイルではなく実行時に決まるため、`resolveArgv`は呼び出し元から許可値の集合（プレースホルダー名→値の配列）を受け取る。
 - `pattern`は許可値検証の前段の防御（先頭が`-`でないこと＝CLIオプションとして解釈されない、制御文字・空白のみでない、長さ上限）であり、都市名の文字種は制限しない（`São Paulo`等の非ASCII都市名が実在し、実CLIも接続できることを実機確認した）。argvはシェルを経由しないため、記号を許してもコマンド注入にはならない。
 - `listLocations`のアクション名は、他のアクション名（`connect`等）と同様のキャメルケースとし、実CLIのサブコマンド名（`list-locations`）とは`argv`で対応付ける。
-- 管理者向け設定の`countries`を編集していた運用（`wbs/phase2.md`申し送り「経年劣化」）は不要になる。
+- 管理者向け設定の`countries`を手動で定期更新していた運用は不要になる。
 
 ## Phase 7における具体プロファイル（プロバイダ抽象化・プラン制限）
 
-Phase 7（`wbs/phase7.md`）で、プロバイダごとの機能差・プラン制限をデータで表現するため、プロファイルを以下のように拡張する。（**Phase 10で、ベンダー固有の暗黙の既定値を廃止し、下記の項目の一部を必須にした。「Phase 10におけるプロファイルの明示化」参照。以降の表の「既定」「省略時は従来のAdGuard形式」は、Phase 10で廃止された記述である**。）設計の全体像は../design.md「プロバイダ抽象化アーキテクチャ」。
+Phase 7で、プロバイダごとの機能差・プラン制限をデータで表現するため、プロファイルを以下のように拡張する。（**Phase 10で、ベンダー固有の暗黙の既定値を廃止し、下記の項目の一部を必須にした。「Phase 10におけるプロファイルの明示化」参照。以降の表の「既定」「省略時は従来のAdGuard形式」は、Phase 10で廃止された記述である**。）設計の全体像は../design.md「プロバイダ抽象化アーキテクチャ」。
 
 ```json
 {
@@ -276,7 +276,7 @@ Phase 7（`wbs/phase7.md`）で、プロバイダごとの機能差・プラン�
 3. 結果は**30秒間キャッシュ**する（プロセス内メモリ。同時要求は1回の実行にまとめる）。Web UIが5秒周期で取得してもCLIの起動は最大30秒に1回になる。失敗（不明）はキャッシュせず、次の要求で再判定する。ログイン・ログアウトの成功時、および学習した制限の変化時にキャッシュを破棄する。
 4. `account`はプラン判定のために有料機能を実行してはならない（../design.md）。読み取り専用のコマンドを選ぶ。
 
-**Proton VPN**: `protonvpn config list`。未ログインは`Error: Authentication required to view feature status.`（終了コード2）。ログイン済みの無料版は、有料機能の値が`Upgrade to enable`になり末尾に`To upgrade to VPN Plus visit: ...`が出る（公式CLI 1.0.3のソースで確認。実機での出力確認は`wbs/phase9.md`）。有料版にはどちらも現れない。**AdGuard VPN**: `license`。実機（CLI 1.7.12）で確認した出力: ログイン済み（PREMIUM）は`Logged in as <メール>`／`You are using the PREMIUM version`（終了コード0）、未ログインは`Please log in to view your license info`（終了コード11）。プロファイルは`premium`・`free`（`using the FREE version`）・既定`unknown`（プラン名「不明」）の3通りで判定し、AdGuard VPN無料版の制限は**実機で確認できていない**ため`restricts`は空（無料版の出力文言も推測。`wbs/phase7.md`「次フェーズへの申し送り」）。`logout`は`adguardvpn-cli logout`。
+**Proton VPN**: `protonvpn config list`。未ログインは`Error: Authentication required to view feature status.`（終了コード2）。ログイン済みの無料版は、有料機能の値が`Upgrade to enable`になり末尾に`To upgrade to VPN Plus visit: ...`が出る（公式CLI 1.0.3のソース・実機で確認）。有料版にはどちらも現れない。**AdGuard VPN**: `license`。実機（CLI 1.7.12）で確認した出力: ログイン済み（PREMIUM）は`Logged in as <メール>`／`You are using the PREMIUM version`（終了コード0）、未ログインは`Please log in to view your license info`（終了コード11）、無料版は`You are using the FREE version`（Phase 13で実機確認）。プロファイルは`premium`・`free`・既定`unknown`（プラン名「不明」）の3通りで判定する。AdGuard VPN無料版の接続先・分割トンネルは制限を受けないため`restricts`は空（Phase 13の調査結果、下記「プランの補足情報の参考表示」参照）。`logout`は`adguardvpn-cli logout`。
 
 ## 実行失敗からの学習（`restrictedPattern`）
 

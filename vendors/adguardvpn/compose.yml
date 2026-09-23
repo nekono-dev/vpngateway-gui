@@ -23,7 +23,7 @@ services:
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
       # 実CLIのログイン情報（および永続化したmachine-id、entrypoint.sh参照）の永続化。
-      # 無ければコンテナ再作成のたびに再ログインが必要になる（wbs/phase2.md「次フェーズへの申し送り」参照）。
+      # 無ければコンテナ再作成のたびに再ログインが必要になる。
       - adguard-data:/home/vpngwgui/.local/share/adguardvpn-cli
 
 volumes:

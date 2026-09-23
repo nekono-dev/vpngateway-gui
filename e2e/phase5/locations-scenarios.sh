@@ -1,5 +1,5 @@
 #!/bin/bash
-# 責務: Phase 5完了基準（wbs/phase5.md）を、Phase 3で構築した検証環境（実VPNログイン済みのゲートウェイ役。
+# 責務: Phase 5完了基準を、Phase 3で構築した検証環境（実VPNログイン済みのゲートウェイ役。
 # e2e/lxc/sync.sh構築済み）上でWeb UI（Playwright）から検証する。
 # 実行: [GW_MODE=ssh] bash e2e/phase5/locations-scenarios.sh
 # 前提: 実VPNベンダーへのログイン済み。開始時に透過ゲートウェイON・Kill Switch ON・VPN切断・お気に入り全解除へ初期化する

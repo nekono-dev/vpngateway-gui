@@ -26,8 +26,8 @@
 - [x] 実行可能バイナリ許可リストのモックCLIパスから実CLIパスへの置換
 - [x] （apiserver側）stdout/stderrパーサーの実CLI用差し替え、`POST /v1/session`（ログイン代行）実装
 - [x] 内部コマンド受信サーバへの`completionPattern`対応追加（`runDetachableCommand`、長時間プロセスの早期応答・バックグラウンド継続実行）
-- [x] 実機（対象ホスト・実VPN接続）での`connect`動作確認（2026-09-14実施。`adguardvpn-cli connect -l jp -y`でTOKYOへ接続し外部IPが`156.146.34.246`に変化することを確認、`disconnect`で復帰も確認。詳細はwbs/phase2.md「次フェーズへの申し送り」参照）
-- [x] Web UI経由（未ログイン→URL表示→ブラウザ認証→状態反映、接続/切断/国変更、504タイムアウト）のE2E確認（2026-09-14実施。詳細はwbs/phase2.md「次フェーズへの申し送り」参照）
+- [x] 実機（対象ホスト・実VPN接続）での`connect`動作確認（2026-09-14実施。`adguardvpn-cli connect -l jp -y`でTOKYOへ接続し外部IPが`156.146.34.246`に変化することを確認、`disconnect`で復帰も確認）
+- [x] Web UI経由（未ログイン→URL表示→ブラウザ認証→状態反映、接続/切断/国変更、504タイムアウト）のE2E確認（2026-09-14実施）
 - [x] ログイン代行バックグラウンドプロセスが認証完了後もCPUを消費し続ける不具合の修正（stdinを`"pipe"`化、`backgroundTimeoutMs`による安全装置追加。`command-runner.ts`・`command-runner.test.ts`参照）
 - [x] ログイン情報永続化がコンテナ再作成で失われる不具合の修正（原因はDockerブリッジネットワークのIPv6非透過。`network_mode: host`への移行をPhase3から前倒し。`docker-compose.yml`・`docker-entrypoint.sh`参照）
 
@@ -41,7 +41,7 @@
 - [x] （Phase 7）`proxy/Dockerfile`を`proxy/Dockerfile.adguardvpn`へ改名し、`docker-compose.yml`を`VPN_PROVIDER`で切り替え可能にする
 - [x] （Phase 9）Proton VPN用ランナーのPoC（合否基準はdesign.md「Proton VPN用ランナー」）。基準1・4と2の一部まで合格（実ログインが必要な基準2の残り・3・5は検証待ち。2026-09-21）
 - [x] （Phase 9）`proxy/Dockerfile.runner-protonvpn`・エントリポイント・NM設定・`docker-compose.yml`の`runner-protonvpn`サービス・`RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn`
-- [x] （Phase 9）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持。有料版は未検証。`wbs/phase9.md`）
+- [x] （Phase 9）実機検証（人手ログイン。透過ゲートウェイ・Kill Switch・コンテナ再起動後のログイン保持。有料版は未検証）
 
 ## ランナーの分離（Phase 8）
 
@@ -61,7 +61,7 @@
 
 ## デプロイメント構成の分離（Phase 25）
 
-- [ ] ランナー自体の実装（`POST /exec`・`GET /health`・UDS）は変更しない。呼び出し元が`api`から`proxy`（同一ホスト内のUDS転送）へ変わる点のみ、`../runner/design.md`「UDS」に追記済み（詳細は`../../wbs/phase25.md`）
+- [x] ランナー自体の実装（`POST /exec`・`GET /health`・UDS）は変更不要と判断した。呼び出し元が`api`から`proxy`（同一ホスト内のUDS転送）へ変わる点のみ、`design.md`「UDS」に追記済み
 
 # 将来課題
 

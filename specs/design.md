@@ -41,13 +41,19 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 
 プロバイダ（AdGuard VPN・Proton VPN等）ごとの機能差・プラン制限を、コードの分岐ではなく**管理者向け設定（プロファイル）のデータ**として表現する。APIサーバは「操作（オペレーション）」単位の実行可否（capability）を計算してWebサーバへ返し、Webサーバはそれに従ってUIを制限する。
 
-```
-プロファイル（管理者向け設定）        APIサーバ                         Webサーバ
- ├ actions（存在＝プロバイダ対応）──▶ ① 静的な可否（非対応）
- ├ account（読み取り専用の判定コマンド）─▶ ② ログイン状態・プランの自動判定（短時間キャッシュ）
- ├ plans[].restricts（プラン制限）─────▶ ③ プラン制限
- └ actions.*.restrictedPattern ────────▶ ④ 実行失敗からの学習（フォールバック）
-                                        └▶ GET /v1/connection/capabilities ──▶ 操作ごとに有効/無効＋理由を表示
+```mermaid
+flowchart LR
+    subgraph Profile["プロファイル（管理者向け設定）"]
+        A["actions<br/>（存在＝プロバイダ対応）"]
+        B["account<br/>（読み取り専用の判定コマンド）"]
+        C["plans[].restricts<br/>（プラン制限）"]
+        D["actions.*.restrictedPattern"]
+    end
+    A -->|"① 静的な可否（非対応）"| API[APIサーバ]
+    B -->|"② ログイン状態・プランの自動判定<br/>（短時間キャッシュ）"| API
+    C -->|"③ プラン制限"| API
+    D -->|"④ 実行失敗からの学習<br/>（フォールバック）"| API
+    API -->|"GET /v1/connection/capabilities"| Web["Webサーバ<br/>（操作ごとに有効/無効＋理由を表示）"]
 ```
 
 - **オペレーション（操作）**: Web UIの操作単位を表す固定の語彙。`login` `logout` `connectToLocation`（接続先を指定した接続）`connectAuto`（接続先を指定しない接続）`changeLocation`（接続中の接続先変更）`disconnect` `locationList`（接続先一覧の取得）`locationFavorites` `pingMeasurement`（ping値の計測・再計測）。プロバイダが増えても語彙は変えない（プロバイダごとの差は、各オペレーションが可能か否かのデータで表す）。
@@ -60,14 +66,17 @@ VPNトンネルが切断された場合の挙動は、ユーザ向け設定「**
 
 Web UI利用者が、管理者の有効化したベンダーの中から使うベンダーを選ぶ（`specs/requirements.md`「VPNベンダーの選択（Web UI）」）。接続は常に1ベンダーのみ（切替式）。
 
+```mermaid
+flowchart LR
+    Browser[ブラウザ] --> Web[web]
+    Web --> Api[api]
+    Api -- "mTLS TCP" --> Proxy["proxy<br/>（ゲートウェイ制御チャネルの受信・ルーティング。<br/>ネットワーク: 透過GW・Kill Switch・3proxy・トンネル検出・接続監視）"]
+    Proxy -- "UDS net.sock（自分自身）" --> Proxy
+    Proxy -- "UDS runner-adguardvpn.sock" --> RunnerA["runner-adguardvpn<br/>（AdGuard VPN CLI）"]
+    Proxy -- "UDS runner-protonvpn.sock" --> RunnerP["runner-protonvpn<br/>（Proton VPN CLI＋NetworkManager・D-Bus・keyring）"]
 ```
-ブラウザ ─▶ web ─▶ api ─ mTLS TCP ─▶ proxy（ゲートウェイ制御チャネルの受信・ルーティング。ネットワーク: 透過GW・Kill Switch・3proxy・トンネル検出・接続監視）
-                                       ├─ UDS net.sock（自分自身）
-                                       ├─ UDS runner-adguardvpn.sock ─▶ runner-adguardvpn（AdGuard VPN CLI）
-                                       └─ UDS runner-protonvpn.sock ──▶ runner-protonvpn（Proton VPN CLI＋NetworkManager・D-Bus・keyring）
-   （proxy・runner-*はいずれも network_mode: host。ランナーのCLIはトンネルをホストのネットワーク名前空間に作る。
-    APIからゲートウェイへは常にmTLS TCPの単一経路（`proxy`が窓口）で到達し、proxy⇄runner-*間は同一ホスト常在を前提に従来どおりUDSを使う。Phase 25「ゲートウェイ制御チャネル」参照）
-```
+
+`proxy`・`runner-*`はいずれも`network_mode: host`。ランナーのCLIはトンネルをホストのネットワーク名前空間に作る。APIからゲートウェイへは常にmTLS TCPの単一経路（`proxy`が窓口）で到達し、`proxy`⇄`runner-*`間は同一ホスト常在を前提に従来どおりUDSを使う（「ゲートウェイ制御チャネル」参照）。
 
 - **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視に加え、**ゲートウェイ制御チャネル（APIからのmTLS TCP接続の受信と、ランナーへのUDS転送。Phase 25）**を担い、ベンダーCLIそのものは実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
 - **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
@@ -82,7 +91,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 | ランナーイメージ | `vendors/adguardvpn/Dockerfile`（Alpine。単体バイナリ同梱） | `vendors/protonvpn/Dockerfile`（Ubuntu。CLI・NetworkManager・D-Bus・keyringを同梱） |
 | composeのサービス | `runner-adguardvpn`（`vendors/adguardvpn/compose.yml`） | `runner-protonvpn`（`vendors/protonvpn/compose.yml`） |
 
-Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。Phase 9の最初にランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計する（詳細は`runner/design.md`「Proton VPN用ランナー」、`wbs/phase9.md`）。
+Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依存し、公式にはheadless非対応とされている。ランナーコンテナ内で成立するかをPoCで確認し、成立しない場合の代替（ホストへの導入＋D-Bus共有）へ切り替える前提で設計した（PoCは合格。詳細は`runner/design.md`「Proton VPN用ランナー」）。
 
 # ベンダー非依存の設計原則（Phase 10）
 
@@ -243,7 +252,8 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 以下2〜9は、ロールごとに（配置先がローカルなら直接、リモートなら`ssh`経由で）実行する。
 
 2. **事前検査**: root、Debian系（`/etc/os-release`の`ID`・`ID_LIKE`）、systemd、CPU（Dockerの公式リポジトリが対応するamd64・arm64・armhfのうち、Debian系の対応するもの）。満たさなければ理由を示して失敗する。
-3. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
+3. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、`/etc/docker/daemon.json`が無い場合に`{"ip-forward-no-drop": true}`を先に作成した上で（下記）、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
+   - **`ip-forward-no-drop`が必要な理由**: Docker Engine 28以降は、IPフォワーディングを自ら有効化した際にiptables/nftablesのFORWARDチェーンの既定ポリシーを`DROP`へ変更する。本製品は独自のnftablesテーブル（`inet vpngwgui`）でLAN機器の転送を制御するため、この既定ポリシー変更があると、同じフックの別テーブル（Dockerが追加する`ip filter`テーブル）でパケットが最終的に破棄され、透過ゲートウェイ・Kill Switchのフェイルオープン（KS OFF時の直接インターネット転送）が機能しなくなる（実機で発見・修正済み）。この設定でDocker自身にFORWARD既定ポリシーを変更させないようにする。導入済みのDockerが既に`daemon.json`を持つ場合は上書きしない。
 4. **ホストの設定**: gatewayロールの実行時のみ、`/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
 5. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（gatewayロールの実行時のみ。`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`WEB_PORT`（webロールの実行時のみ。Web UIを配信するホスト側のポート。優先順は`--web-port` ＞ `.env`の既存値 ＞ 既定80。`docker-compose.yml`の`services.web.ports`が`"${WEB_PORT:-80}:8080"`で参照する。コンテナ内は常に8080固定）、`VPN_PROVIDERS`、`API_ORIGIN`（webロールの実行時のみ）、`GATEWAY_HOST`・`GATEWAY_PORT`（apiロールの実行時のみ）、`COMPOSE_FILE`（そのロールのcomposeファイルを並べる）。オーケストレーター自身の`.env`には、加えてステップ0で決定したトポロジー（`TOPOLOGY_API_HOST`等）を記録する。
 6. **ベンダーの決定（Phase 17改訂）**: gatewayロールの実行時のみ。`--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
@@ -262,7 +272,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 **ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
 
-**nftables.serviceとの順序**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）は、Debian 12では`nftables`パッケージを導入しても既定で無効だが、**Raspberry Pi OS（trixie）では既定で有効**である。有効な環境では起動時のルールが消去されうるため、起動ガードのユニットに`After=nftables.service`を付けて、その後に適用する（順序だけで、`nftables.service`が無い・無効な環境でも害はない）。利用者の設定は書き換えない。**既知の制約**: ホストの再起動後にガードが実際にproxyの適用まで維持されるかのKill Switchの実通信での確認、Raspberry Pi OSの32bit（armhf・`ID=raspbian`）、実際のRaspberry Pi機（GPIO・Pi用カーネル等）は未検証。IPv6は対象外。
+**nftables.serviceとの順序**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）は、Debian 12では`nftables`パッケージを導入しても既定で無効だが、**Raspberry Pi OS（trixie）では既定で有効**である。有効な環境では起動時のルールが消去されうるため、起動ガードのユニットに`After=nftables.service`を付けて、その後に適用する（順序だけで、`nftables.service`が無い・無効な環境でも害はない）。利用者の設定は書き換えない。ホスト再起動後もガードがproxyの適用まで維持されることは、実機arm64ハードウェア（Debian 13）でのKill Switch実通信（フェイルクローズ・フェイルオープン）により確認済み。**既知の制約**: Raspberry Pi OSの32bit（armhf・`ID=raspbian`）、実際のRaspberry Pi機（GPIO・Pi用カーネル等）は未検証。IPv6は対象外。
 
 ## 頒布（CI）
 
@@ -289,17 +299,8 @@ APIサーバは Fastify + TypeBox + `@fastify/swagger` を用い、TypeBoxで定
 
 ただし、APIサーバ⇄ゲートウェイ間の内部コマンド実行チャネル（mTLS TCP経由の内部専用HTTPサーバ。`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）はこの限りではなく、OpenAPI仕様の対象外とする。
 
-# 実装フェーズ
+# 実装状況
 
-実装は`wbs/`配下のフェーズ計画（`wbs/phase1.md`〜`wbs/phase11.md`）に従い段階的に行う。各フェーズの詳細は当該ファイルを参照。フェーズ番号は識別子であり実施順ではない（2026-09-21以降の実施順は `1 → 2 → 3 → 5 → 8 → 4 → 9 → 11 → 10 → 12 → 13 → 6 → 7`。簡易機能版プロトタイプを早期に利用可能にするため、Web UI完成のPhase 4をPhase 6より前に前倒し。`wbs/README.md`参照）。
+本ファイルおよび各アプリケーションの`design.md`・`requirements.md`は、現時点で確定している仕様（最終形）を記載する。どの機能をいつ・どう実装し、どう検証したかは、各アプリケーションの`tasks.md`（`apiserver/tasks.md`・`proxyserver/tasks.md`・`webserver/tasks.md`・`runner/tasks.md`）に機能単位で記録する。全体の実装状況の一覧・横断的な残課題は`specs/tasks.md`を参照。
 
-| 項目 | 最終形（本ファイル） | Phase 1（wbs/phase1.md） |
-|---|---|---|
-| proxyのネットワーク | `network_mode: host` | 通常のDockerブリッジネットワーク（api/webと同一） |
-| proxyの権限 | `cap_add:[NET_ADMIN]`, `devices:[/dev/net/tun]` | 付与しない |
-| VPNベンダーCLI | 実CLI（adguardvpn-cli等） | モックCLIスクリプト |
-| 透過ゲートウェイ／明示的プロキシ／Kill Switch | 実装する | 実装しない（ユーザ向け設定APIは受理・永続化のみ行う） |
-| インストールスクリプト | 実装する | 実装しない |
-| Web UI | ダッシュボード＋接続操作＋設定ダイアログ＋接続ログ | ダッシュボード＋接続操作のみ |
-
-Phase 2以降で、本ファイルおよび各サービスdesign.mdに記載の最終形（host networking、nftables、3proxy、Kill Switch実処理、インストールスクリプト、実VPNベンダーCLI、Web設定ダイアログ・接続ログ画面）を段階的に実装する。
+本システムは、最小構成（モックCLI・単一ネットワークによる疎通確認）から始め、実VPNベンダーCLI統合・ネットワーク基盤移行（`network_mode: host`）・透過ゲートウェイ／Kill Switch／明示的プロキシの実装・プロバイダ抽象化・ベンダー非依存化・インストーラ整備・デプロイメント構成の分離という順に、機能単位で段階的に実装してきた。各段階の判断根拠（前倒し・後回しにした理由等）のうち現在も有効なものは、関連するdesign.mdの該当節に記載している。
