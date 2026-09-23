@@ -253,7 +253,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       await userEvent.click(await screen.findByRole("button", { name: "ログイン" }));
       await userEvent.type(await screen.findByLabelText("ユーザー名"), "user@proton.me");
       await userEvent.type(screen.getByLabelText("パスワード"), "hunter2-secret");
-      await userEvent.type(screen.getByLabelText(/2段階認証コード/), "123456");
+      await userEvent.type(screen.getByLabelText(/2段階認証/), "123456");
       const callsBefore = api.getV1Session.mock.calls.length;
       await userEvent.click(screen.getByRole("button", { name: "ログイン" }));
 
@@ -261,7 +261,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       expect(await screen.findByText("ログインしました。")).toBeInTheDocument();
       await waitFor(() => expect(api.getV1Session.mock.calls.length).toBeGreaterThan(callsBefore));
       expect(screen.getByLabelText("パスワード")).toHaveValue("");
-      expect(screen.getByLabelText(/2段階認証コード/)).toHaveValue("");
+      expect(screen.getByLabelText(/2段階認証/)).toHaveValue("");
       expect(document.body).not.toHaveTextContent("hunter2-secret");
     });
 

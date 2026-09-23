@@ -7,8 +7,8 @@
 // - credentials: ユーザー名・パスワード（・2FAコード）を受け取り、パスワード等はCLIの標準入力にのみ渡す
 //   （コマンド引数・監査ログ・エラー応答・APIのログに残さない）。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { Type } from "@sinclair/typebox";
 import { SessionLoginBodySchema, SessionResponseSchema, SessionStateSchema } from "../schemas/session.js";
+import { Nullable } from "../lib/typebox-nullable.js";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import { getActiveProvider } from "../providers/active-provider-store.js";
 import { assertNotSwitching } from "../providers/provider-switcher.js";
@@ -64,8 +64,10 @@ export const registerSessionRoute: FastifyPluginAsyncTypebox = async (fastify) =
     {
       schema: {
         // ボディ無し（URL提示型）とnull（生成クライアントがボディ引数にnullを渡す場合）を許す。
-        // Type.Optionalではボディ無しのリクエストが「body must be object」で400になるため、Nullとのユニオンにする。
-        body: Type.Union([SessionLoginBodySchema, Type.Null()]),
+        // Type.Optionalではボディ無しのリクエストが「body must be object」で400になるため、null許容にする
+        // （`Type.Union([schema, Type.Null()])`はOpenAPI 3.0の`type: "null"`非対応でswagger schema
+        // validationに失敗するため使わない。`Nullable`は`nullable: true`で表現する）。
+        body: Nullable(SessionLoginBodySchema),
         response: {
           200: SessionResponseSchema,
           400: ErrorResponseSchema,
