@@ -15,6 +15,9 @@ export const TransparentGatewayStatusSchema = Type.Object({
   ]),
   // 検出中のVPNトンネルIF名。未接続時は含まれない。
   vpnInterface: Type.Optional(Type.String()),
+  // フェイルオープン中（VPN未接続・killSwitch=false）に実際にパケットを送出しているWAN側インターフェース名。
+  // それ以外の場合は含まれない。
+  wanInterface: Type.Optional(Type.String()),
   // Kill Switchによりforwardが遮断中か。
   killSwitchBlocking: Type.Boolean(),
 });

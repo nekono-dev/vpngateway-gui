@@ -87,6 +87,8 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
         <span className={`badge badge-${badge.tone}`}>{badge.label}</span>
         {loaded.transparentGateway.vpnInterface ? (
           <span className="hint"> VPN IF: {loaded.transparentGateway.vpnInterface}</span>
+        ) : loaded.transparentGateway.wanInterface ? (
+          <span className="hint"> WAN IF: {loaded.transparentGateway.wanInterface}</span>
         ) : null}
       </>
     );

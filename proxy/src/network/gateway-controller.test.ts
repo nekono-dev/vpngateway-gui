@@ -144,10 +144,14 @@ describe("GatewayController", () => {
       expect(controller.getStatus()).toEqual({ state: "active", killSwitchBlocking: true });
     });
 
-    it("有効・VPN未接続・killSwitch=false は active かつ遮断なし（フェイルオープン）", async () => {
+    it("有効・VPN未接続・killSwitch=false は active かつ遮断なし・WAN IF名を返す（フェイルオープン）", async () => {
       const controller = new GatewayController("eth0", "eth0", makeRecordingRunNft().runNft);
       await controller.applySettings({ transparentGatewayEnabled: true, killSwitch: false });
-      expect(controller.getStatus()).toEqual({ state: "active", killSwitchBlocking: false });
+      expect(controller.getStatus()).toEqual({
+        state: "active",
+        wanInterface: "eth0",
+        killSwitchBlocking: false,
+      });
     });
 
     it("有効・VPN接続中は active・遮断なしでIF名を返し、切断すると遮断中になる", async () => {

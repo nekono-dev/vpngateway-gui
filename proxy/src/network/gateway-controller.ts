@@ -29,6 +29,9 @@ export interface GatewayStatus {
   state: "active" | "stopped" | "unconfigured" | "error";
   // 検出中のVPNトンネルIF名。未接続時は省略。
   vpnInterface?: string;
+  // フェイルオープン中（透過ゲートウェイ適用中・VPN未接続・killSwitch=false）に実際にパケットを
+  // 送出しているWAN側インターフェース名。それ以外（VPN接続中、killSwitchによる遮断中など）は省略。
+  wanInterface?: string;
   // Kill Switchによりforwardが遮断中（透過ゲートウェイ適用中・VPN未接続・killSwitch=true）か。
   killSwitchBlocking: boolean;
 }
@@ -120,10 +123,19 @@ export class GatewayController {
     if (!this.lastReconcileSucceeded) {
       return { state: "error", ...vpnInterface, killSwitchBlocking: false };
     }
+    const killSwitchBlocking = this.settings.killSwitch && this.vpnIface === undefined;
+    // フェイルオープン中（VPN未接続・killSwitch=false）のみ、実際に送出に使われるWAN側IF名を返す。
+    // VPN接続中やkillSwitchによる遮断中は`wanIface`が実際の転送経路に使われていないため含めない
+    // （ruleset.ts参照）。
+    const wanInterface =
+      this.vpnIface === undefined && !this.settings.killSwitch && this.wanIface !== undefined
+        ? { wanInterface: this.wanIface }
+        : {};
     return {
       state: "active",
       ...vpnInterface,
-      killSwitchBlocking: this.settings.killSwitch && this.vpnIface === undefined,
+      ...wanInterface,
+      killSwitchBlocking,
     };
   }
 

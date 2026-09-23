@@ -35,6 +35,18 @@ describe("GatewayStatusCard 透過ゲートウェイ", () => {
     expect(screen.getByText(/VPN IF: tun0/)).toBeInTheDocument();
   });
 
+  it("稼働中（VPN未接続・killSwitch=off）はフェイルオープン中のWAN IF名を表示する", () => {
+    render(
+      <GatewayStatusCard
+        gateway={gatewayOf({ state: "active", wanInterface: "eth0", killSwitchBlocking: false })}
+        gatewayError={undefined}
+        isLoading={false}
+      />,
+    );
+    expect(within(transparentGatewayRow()).getByText("稼働中")).toHaveClass("badge-ok");
+    expect(screen.getByText(/WAN IF: eth0/)).toBeInTheDocument();
+  });
+
   it("Kill Switch遮断中は稼働中より優先して警告色で表示する", () => {
     render(
       <GatewayStatusCard
