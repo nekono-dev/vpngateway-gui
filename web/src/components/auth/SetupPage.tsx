@@ -8,7 +8,7 @@ import { useAuth } from "../../contexts/AuthContext";
 
 export function SetupPage() {
   const { setAuthenticated } = useAuth();
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,12 +61,12 @@ export function SetupPage() {
           />
         </label>
         <label>
-          パスワード（8文字以上）
+          パスワード（4文字以上）
           <input
             type="password"
             autoComplete="off"
             required
-            minLength={8}
+            minLength={4}
             value={password}
             disabled={isSubmitting}
             onChange={(event) => setPassword(event.target.value)}
@@ -78,7 +78,7 @@ export function SetupPage() {
             type="password"
             autoComplete="off"
             required
-            minLength={8}
+            minLength={4}
             value={passwordConfirm}
             disabled={isSubmitting}
             onChange={(event) => setPasswordConfirm(event.target.value)}

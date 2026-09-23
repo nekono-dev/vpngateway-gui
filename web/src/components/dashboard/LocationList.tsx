@@ -2,7 +2,7 @@
 // 取得失敗/空の表示）のみを行う。並び順はAPIが決めたping昇順をそのまま表示する。
 // タブと検索語は表示上の状態としてここで保持し、選択・お気に入り・再計測はコールバックで親へ委ねる。
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { filterLocations, type LocationItem, type LocationTab } from "../../locations/location-filter";
 import type { ErrorContent } from "../../notifications/describe-api-error";
 import { LocationRow } from "./LocationRow";
@@ -35,6 +35,9 @@ interface Props {
   // ★（お気に入り）・「再計測」を操作できない理由。指定されていれば該当ボタンを無効化して理由を表示する。
   favoritesDisabledReason?: string;
   refreshDisabledReason?: string;
+  // ［接続先を変更］ボタン（ConnectionActions）。「再計測」ボタンの隣に並べて表示する（親から丸ごと受け取る。
+  // 何を接続先とするか・変更可否の判定はLocationListの責務外のため）。
+  changeAction?: ReactNode;
 }
 
 const TAB_LABELS: Record<LocationTab, string> = { all: "すべて", favorites: "お気に入り" };
@@ -56,6 +59,7 @@ export function LocationList({
   availableLocationsShowPing = true,
   favoritesDisabledReason,
   refreshDisabledReason,
+  changeAction,
 }: Props) {
   const [tab, setTab] = useState<LocationTab>("all");
   const [query, setQuery] = useState("");
@@ -120,14 +124,17 @@ export function LocationList({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          disabled={isRefreshing || refreshDisabledReason !== undefined}
-          aria-describedby={refreshDisabledReason === undefined ? undefined : "refresh-restriction"}
-          onClick={onRefresh}
-        >
-          {isRefreshing ? "計測中..." : "再計測"}
-        </button>
+        <div className="location-toolbar-actions">
+          <button
+            type="button"
+            disabled={isRefreshing || refreshDisabledReason !== undefined}
+            aria-describedby={refreshDisabledReason === undefined ? undefined : "refresh-restriction"}
+            onClick={onRefresh}
+          >
+            {isRefreshing ? "計測中..." : "再計測"}
+          </button>
+          {changeAction}
+        </div>
       </div>
       <RestrictionNote id="refresh-restriction" message={refreshDisabledReason} />
       <RestrictionNote message={favoritesDisabledReason} />

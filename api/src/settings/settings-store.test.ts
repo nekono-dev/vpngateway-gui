@@ -17,8 +17,14 @@ describe("settings-store", () => {
     expect(settings).not.toHaveProperty("defaultCountry");
     expect(settings.killSwitch).toBe(false);
     expect(settings.excludedDomains).toEqual(["example.com"]);
-    // 保存ファイルに無い項目はデフォルト値で補う
-    expect(settings.transparentGatewayEnabled).toBe(false);
+    // 保存ファイルに無い項目はデフォルト値で補う（透過ゲートウェイはデフォルト有効）
+    expect(settings.transparentGatewayEnabled).toBe(true);
+  });
+
+  it("透過ゲートウェイ・明示的プロキシの両方を無効にする更新は拒否し、保存済みの値を変えない", () => {
+    updateSettings({ transparentGatewayEnabled: true, explicitProxyEnabled: false });
+    expect(() => updateSettings({ transparentGatewayEnabled: false, explicitProxyEnabled: false })).toThrow(SettingsValidationError);
+    expect(getSettings().transparentGatewayEnabled).toBe(true);
   });
 
   it("更新すると、廃止項目は保存ファイルからも消える", () => {

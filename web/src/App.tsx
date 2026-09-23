@@ -21,7 +21,6 @@ import { useAvailableLocations } from "./hooks/useAvailableLocations";
 import { useLocations } from "./hooks/useLocations";
 import { findCurrentLocationId, resolveEffectiveId } from "./locations/current-location";
 import { findCurrentAvailableLocation } from "./locations/current-available-location";
-import { locationLabel } from "./locations/location-filter";
 import { isAvailable, reasonOf, supportsLocationPing, usesAutoConnect } from "./capabilities/capability-state";
 
 interface Props {
@@ -196,22 +195,19 @@ export function App({ onLogout }: Props) {
           availableLocationsShowPing={supportsLocationPing(capabilities)}
           favoritesDisabledReason={reasonOf(capabilities, "locationFavorites")}
           refreshDisabledReason={reasonOf(capabilities, "pingMeasurement")}
-        />
-        {target && !autoConnect ? (
-          <p className="hint">
-            選択中の接続先: {target.country.toUpperCase()} / {locationLabel(target)}
-          </p>
-        ) : null}
-        <ConnectionActions
-          connection={connection}
-          submitting={submitting}
-          canChange={canChange}
-          capabilities={capabilities}
-          disabled={isSwitchingProvider}
-          onChange={() => void handleSubmit("change")}
+          changeAction={
+            <ConnectionActions
+              connection={connection}
+              submitting={submitting}
+              canChange={canChange}
+              capabilities={capabilities}
+              disabled={isSwitchingProvider}
+              onChange={() => void handleSubmit("change")}
+            />
+          }
         />
       </section>
-      <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} defaultExplicitProxyAllowedCidr={data?.gateway?.lanCidr} />
       <ConnectionLogDialog open={isLogOpen} onClose={() => setIsLogOpen(false)} />
       <footer className="app-footer">
         <a href="https://github.com/nekono-dev/vpngateway-gui" target="_blank" rel="noreferrer">

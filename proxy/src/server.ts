@@ -18,6 +18,7 @@ import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forwa
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController, type GatewaySettings } from "./network/gateway-controller.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
+import { getLanSubnetCidr } from "./network/lan-subnet.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 
 const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
@@ -32,6 +33,11 @@ const LAN_IFACE = process.env.LAN_IFACE || undefined;
 // フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため未設定時はLAN_IFACEを流用する。
 const WAN_IFACE = process.env.WAN_IFACE || LAN_IFACE;
 const CONNECTION_POLL_INTERVAL_MS = Number(process.env.CONNECTION_POLL_INTERVAL_MS ?? 10_000);
+
+// LAN側のネットワークCIDR（例: 192.168.3.0/24）。起動時に一度だけ検出する（実行中にLAN側のIPアドレスが
+// 変わる運用は想定しないため、`GET /status`のたびに`ip`を実行しない）。Web UIの設定ダイアログで、
+// 明示的プロキシの許可CIDR欄の初期値として使う（webserver/requirements.md「明示的プロキシの許可CIDRの初期値」）。
+const lanCidr = await getLanSubnetCidr(LAN_IFACE);
 
 // 明示的プロキシ（3proxy）のLAN向け待ち受けポート。HTTPの既定を8080にしないのは、Web UI（webコンテナが
 // ホストの8080を公開）と衝突するため。いずれもhostネットワークのためホストのLAN側へ直接bindする。
@@ -140,6 +146,7 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
     sendJson(res, 200, {
       transparentGateway: gatewayController.getStatus(),
       explicitProxy: explicitProxyController.getStatus(),
+      lanCidr,
     });
     return;
   }

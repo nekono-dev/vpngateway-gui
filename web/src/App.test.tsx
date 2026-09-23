@@ -111,7 +111,6 @@ describe("App", () => {
     renderApp();
     await screen.findByText("切断");
     expect(await screen.findByRole("radio", { name: /Seoul/ })).toBeChecked();
-    expect(screen.getByText("選択中の接続先: KR / Seoul")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "接続" }));
     expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: "kr-seoul" });

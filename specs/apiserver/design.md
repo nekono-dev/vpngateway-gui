@@ -412,7 +412,7 @@ Web UI利用者が、管理者の有効化したベンダーの中から使う�
 ### 各エンドポイントの詳細
 
 - `GET /v1/operator`: `{ "configured": boolean }`を返す（有効なセッションCookieがある場合のみ`username`も含める）。Web UIはこれで初期設定画面／ログイン画面を出し分ける。
-- `POST /v1/operator`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`に既にアカウントがあれば`409 { "error": "already_configured" }`。無ければ作成し、`POST /v1/operator/session`と同様にセッションを発行して`200`（初回設定後にそのままログイン状態にする）。`username`は空文字不可、`password`は最小文字数（実装時に決定、既定8文字以上）を満たさなければ`400`。
+- `POST /v1/operator`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`に既にアカウントがあれば`409 { "error": "already_configured" }`。無ければ作成し、`POST /v1/operator/session`と同様にセッションを発行して`200`（初回設定後にそのままログイン状態にする）。`username`は空文字不可、`password`は最小文字数（実装時に決定、既定4文字以上）を満たさなければ`400`。
 - `PUT /v1/operator`: ボディ`{ "currentPassword": string, "username"?: string, "newPassword"?: string }`。`currentPassword`が現在の保存内容と一致しなければ`401`。`username`・`newPassword`のいずれも指定しなければ`400`。成功時は`operator-account-store.ts`を更新し`200`。現在のセッションは維持する（強制的な再ログインは要求しない）。
 - `POST /v1/operator/session`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`（`scrypt`によるハッシュの読み込み・検証）で照合する。一致すれば`api/src/auth/session-store.ts`（プロセスメモリのMap。`sessionId → { createdAt }`）にセッションを作成し、`Set-Cookie: vpngwgui_session=<sessionId>; HttpOnly; Secure; SameSite=Lax; Path=/`を返す。不一致・アカウント未作成のいずれも`401`（未作成であること自体は`GET /v1/operator`の`configured`で判別させ、ログイン失敗の応答からは区別できないようにする）。
 - `GET /v1/operator/session`: Cookieのセッションが有効なら`200 { "authenticated": true }`、無効・無ければ`401`。

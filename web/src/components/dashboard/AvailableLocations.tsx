@@ -20,7 +20,6 @@ export function AvailableLocations({ locations, current, showPing }: Props) {
   if (locations.length === 0) return null;
   return (
     <div className="available-locations" role="group" aria-label="接続できる国（参考）">
-      <p className="hint">自動接続で、次のいずれかの国のサーバに接続されます（選択はできません）。</p>
       <div className="location-scroll">
         <ul className="location-items">
           {locations.map((location) => {

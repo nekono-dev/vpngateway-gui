@@ -13,8 +13,10 @@ vi.mock("../../contexts/AuthContext", () => ({ useAuth: () => auth }));
 const { SetupPage } = await import("./SetupPage");
 
 async function fillAndSubmit(username: string, password: string, passwordConfirm = password) {
+  // ユーザー名欄は既定値"admin"が入っているため、一旦クリアしてから入力する。
+  await userEvent.clear(screen.getByLabelText("ユーザー名"));
   await userEvent.type(screen.getByLabelText("ユーザー名"), username);
-  await userEvent.type(screen.getByLabelText("パスワード（8文字以上）"), password);
+  await userEvent.type(screen.getByLabelText("パスワード（4文字以上）"), password);
   await userEvent.type(screen.getByLabelText("パスワード（確認）"), passwordConfirm);
   await userEvent.click(screen.getByRole("button", { name: "設定する" }));
 }
@@ -23,6 +25,11 @@ describe("SetupPage", () => {
   beforeEach(() => {
     api.postV1Operator.mockReset();
     auth.setAuthenticated.mockReset();
+  });
+
+  it("ユーザー名欄の初期値はadmin", () => {
+    render(<SetupPage />);
+    expect(screen.getByLabelText("ユーザー名")).toHaveValue("admin");
   });
 
   it("パスワードが一致しなければAPIを呼ばずエラーを表示する", async () => {

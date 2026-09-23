@@ -2,8 +2,8 @@
 // リクエスト/レスポンスのTypeBoxスキーマ定義。apiserver/design.md「Web UI利用者の認証」参照。
 import { Type, type Static } from "@sinclair/typebox";
 
-// パスワードの最小文字数（apiserver/design.md「Web UI利用者の認証」既定8文字以上）。
-const PASSWORD_MIN_LENGTH = 8;
+// パスワードの最小文字数（apiserver/design.md「Web UI利用者の認証」既定4文字以上）。
+const PASSWORD_MIN_LENGTH = 4;
 
 // `GET/POST/PUT /v1/operator`の応答。`username`は有効なセッションCookieがある場合のみ含める。
 export const OperatorStateSchema = Type.Object({

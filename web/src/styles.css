@@ -125,16 +125,60 @@ button.primary {
   font-weight: 600;
 }
 
-/* 切断ボタン（Phase 16）: 押しやすい位置（ログイン/ログアウト導線の隣）に置き、誤操作を避けるため目立つ配色にする */
+/* 切断ボタン（Phase 16）: 押しやすい位置（ログイン/ログアウト導線の隣）に置く。
+   赤背景は誤操作の印象が強すぎるため、他のボタンと同じ白背景にし、文字色のみ強調する。 */
 button.danger {
-  background: var(--danger);
+  background: #fff;
   border-color: var(--danger);
-  color: #fff;
+  color: var(--danger);
   font-weight: 600;
 }
 
-/* チェックボックス・ラジオボタンはブラウザ既定の小さな部品のままにし、文字入力欄（テキスト・パスワード・
-   数値・検索等）のみを対象にする（チェックボックスへpadding・枠線を付けると見た目が崩れるため）。 */
+/* チェックボックスはブラウザ・OS既定の見た目（システムのチェックボックス）を使わず、青いチェックボタン風の
+   自前デザインにする（`appearance: none`でOS既定の見た目を消し、チェック時に背景を塗って✓を描く）。
+   ラジオボタン（接続先リストの選択）は対象外（location-rowで視覚的に隠して独自表示しているため）。 */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 0;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+}
+
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 文字入力欄（テキスト・パスワード・数値・検索等）のみを対象にする（select・textareaと同様の枠線）。
+   チェックボックス・ラジオボタンは対象外（チェックボックスは上記で独自にスタイルし、ラジオボタンは
+   接続先リストで視覚的に隠して独自表示しているため）。 */
 select,
 textarea,
 input:not([type="checkbox"]):not([type="radio"]) {
@@ -227,6 +271,13 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
 .location-tabs {
   display: flex;
   gap: 4px;
+}
+
+.location-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .location-tabs button {
@@ -379,7 +430,9 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 6px 16px;
-  margin-top: 0.5rem;
+  /* dl要素はブラウザ既定でmargin-block-endが1em付き、上（0.5rem指定）より下側の余白が大きくなっていたため、
+     margin-block-endも明示的に同じ0.5remへ揃える。 */
+  margin-block: 0.5rem;
 }
 
 .status-list dt {
@@ -783,9 +836,6 @@ dialog [role="alert"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
 }
 
 .account-settings-form label {

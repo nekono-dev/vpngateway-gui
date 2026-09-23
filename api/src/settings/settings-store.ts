@@ -13,7 +13,8 @@ const SETTINGS_FILE = process.env.SETTINGS_FILE ?? "/var/lib/vpngwgui/settings.j
 const DEFAULT_SETTINGS: UserSettings = {
   killSwitch: true,
   excludedDomains: [],
-  transparentGatewayEnabled: false,
+  // 透過ゲートウェイと明示的プロキシは少なくとも一方が有効である必要があるため、初期値は透過ゲートウェイを有効にする。
+  transparentGatewayEnabled: true,
   explicitProxyEnabled: false,
   explicitProxyAllowedCidrs: [],
 };
@@ -84,6 +85,9 @@ export function updateSettings(patch: UserSettingsPatch): UserSettings {
     validateAllowedCidrs(patch.explicitProxyAllowedCidrs);
   }
   const next: UserSettings = { ...getSettings(), ...patch };
+  if (!next.transparentGatewayEnabled && !next.explicitProxyEnabled) {
+    throw new SettingsValidationError("transparentGatewayEnabled or explicitProxyEnabled must be enabled");
+  }
   mkdirSync(dirname(SETTINGS_FILE), { recursive: true });
   writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
   return next;

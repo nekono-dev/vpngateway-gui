@@ -50,7 +50,7 @@ export function AccountSettingsForm() {
 
   return (
     <form className="account-settings-form" onSubmit={(event) => void handleSubmit(event)}>
-      <h3>アカウント</h3>
+      <h2>アカウント</h2>
       <label>
         現在のパスワード
         <input
@@ -67,11 +67,11 @@ export function AccountSettingsForm() {
         <input type="text" autoComplete="off" value={username} disabled={isSaving} onChange={(event) => setUsername(event.target.value)} />
       </label>
       <label>
-        新しいパスワード（変更する場合のみ、8文字以上）
+        新しいパスワード（変更する場合のみ、4文字以上）
         <input
           type="password"
           autoComplete="off"
-          minLength={8}
+          minLength={4}
           value={newPassword}
           disabled={isSaving}
           onChange={(event) => setNewPassword(event.target.value)}

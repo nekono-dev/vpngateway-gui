@@ -83,7 +83,7 @@ describe("POST /v1/operator", () => {
 
   it("パスワードが最小文字数未満なら400", async () => {
     const app = buildApp();
-    const response = await app.inject({ method: "POST", url: "/v1/operator", payload: { username: "admin", password: "short" } });
+    const response = await app.inject({ method: "POST", url: "/v1/operator", payload: { username: "admin", password: "abc" } });
     expect(response.statusCode).toBe(400);
   });
 });
