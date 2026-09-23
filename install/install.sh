@@ -37,6 +37,11 @@ VENDORS_DIR="$REPO_ROOT/vendors"
 SYSCTL_FILE="/etc/sysctl.d/99-vpngwgui.conf"
 GUARD_UNIT="/etc/systemd/system/vpngwgui-boot-guard.service"
 WEB_PORT_DEFAULT=80
+# ゲートウェイ制御チャネル（api⇄proxy、mTLS TCP）の証明書一式の置き場（specs/design.md「証明書の生成・配布」）。
+PKI_DIR="/etc/vpngwgui/pki"
+# コンテナ（api・proxyとも user: "10001:10001"）がread-onlyマウント越しに読めるよう所有者を合わせる。
+PKI_UID=10001
+PKI_GID=10001
 
 PROVIDERS_ARG=""
 WEB_PORT_ARG=""
@@ -285,6 +290,50 @@ list_bundles() {
   done
 }
 
+# 目的: api⇄gateway間のmTLSに使う証明書一式（gateway-ca・proxyのサーバ証明書・apiのクライアント証明書）を
+#      単一ホスト構成向けにローカル生成する（specs/design.md「証明書の生成・配布」）。分離構成でのSSH/SCPによる
+#      配布・`--rotate-pairing`（既存の破棄・再生成）はStage3（オーケストレーション型インストーラ）で対応する。
+# 副作用: $PKI_DIR に生成する。既に一式（gateway-ca.crt・proxy-server.crt/.key・api-client.crt/.key）が
+#        揃っていれば何もしない（再実行の冪等性）。CA秘密鍵はこの関数の中だけで使い、生成後に破棄する
+#        （どこにも配布しない。再生成が必要な場合は一式を削除してから再実行する）。
+setup_gateway_pki() {
+  if [ -f "$PKI_DIR/gateway-ca.crt" ] && [ -f "$PKI_DIR/proxy-server.crt" ] && [ -f "$PKI_DIR/proxy-server.key" ] \
+    && [ -f "$PKI_DIR/api-client.crt" ] && [ -f "$PKI_DIR/api-client.key" ]; then
+    log "ゲートウェイ制御チャネルの証明書: 生成済み（$PKI_DIR）"
+    return 0
+  fi
+  command -v openssl >/dev/null 2>&1 || die "openssl コマンドが見つかりません"
+  install -m 0755 -d "$PKI_DIR"
+  pki_tmp=$(mktemp -d)
+  trap 'rm -rf "$pki_tmp"' EXIT
+
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+    -keyout "$pki_tmp/gateway-ca.key" -out "$PKI_DIR/gateway-ca.crt" \
+    -subj "/CN=vpngwgui-gateway-ca" >/dev/null 2>&1
+
+  printf 'subjectAltName=DNS:localhost,DNS:host.docker.internal,IP:127.0.0.1\n' > "$pki_tmp/proxy-server.ext"
+  openssl req -newkey rsa:2048 -nodes \
+    -keyout "$PKI_DIR/proxy-server.key" -out "$pki_tmp/proxy-server.csr" \
+    -subj "/CN=vpngwgui-proxy" >/dev/null 2>&1
+  openssl x509 -req -in "$pki_tmp/proxy-server.csr" -CA "$PKI_DIR/gateway-ca.crt" -CAkey "$pki_tmp/gateway-ca.key" \
+    -CAcreateserial -days 3650 -out "$PKI_DIR/proxy-server.crt" \
+    -extfile "$pki_tmp/proxy-server.ext" >/dev/null 2>&1
+
+  openssl req -newkey rsa:2048 -nodes \
+    -keyout "$PKI_DIR/api-client.key" -out "$pki_tmp/api-client.csr" \
+    -subj "/CN=vpngwgui-api" >/dev/null 2>&1
+  openssl x509 -req -in "$pki_tmp/api-client.csr" -CA "$PKI_DIR/gateway-ca.crt" -CAkey "$pki_tmp/gateway-ca.key" \
+    -CAcreateserial -days 3650 -out "$PKI_DIR/api-client.crt" >/dev/null 2>&1
+
+  rm -rf "$pki_tmp"
+  trap - EXIT
+  chown -R "$PKI_UID:$PKI_GID" "$PKI_DIR"
+  chmod 700 "$PKI_DIR"
+  chmod 600 "$PKI_DIR"/*.key
+  chmod 644 "$PKI_DIR"/*.crt
+  log "ゲートウェイ制御チャネルの証明書を生成しました（$PKI_DIR）"
+}
+
 # 目的: 有効にするベンダーを決め、.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なバンドルのfragmentの合成）を書く。
 # 入力: グローバル変数 PROVIDERS_ARG。
 # 出力: グローバル変数 PROVIDERS（カンマ区切り）・PROVIDER_IDS（空白区切り）。
@@ -404,6 +453,16 @@ uninstall_sysctl() {
   fi
 }
 
+# 目的: ゲートウェイ制御チャネルの証明書一式（setup_gateway_pkiが生成したもの）を削除する。
+uninstall_gateway_pki() {
+  if [ -d "$PKI_DIR" ]; then
+    rm -rf "$PKI_DIR"
+    log "ゲートウェイ制御チャネルの証明書: 削除しました（$PKI_DIR）"
+  else
+    log "ゲートウェイ制御チャネルの証明書: 対象なし"
+  fi
+}
+
 # 目的: vendors/ 配下の全バンドル（有効・無効を問わない。アンインストール時点で.envが無い・古い場合があるため）の
 #       ホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）を実行する。
 # 契約: run_host_hooksのuninstall版。同じ環境変数（VPNGW_ROOT・VPNGW_VENDOR_ID）を渡す。
@@ -437,6 +496,7 @@ uninstall_main() {
   uninstall_stack
   uninstall_boot_guard
   uninstall_sysctl
+  uninstall_gateway_pki
   uninstall_host_hooks
   echo
   log "アンインストール完了"
@@ -461,6 +521,7 @@ main() {
   setup_lan_iface
   setup_web_port
   setup_boot_guard
+  setup_gateway_pki
   setup_providers
   run_host_hooks
   if [ "$NO_START" -eq 1 ]; then

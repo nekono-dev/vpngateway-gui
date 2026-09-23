@@ -1,22 +1,29 @@
 // 責務: ネットワークコンテナ（`proxy`）のエントリポイント。透過ゲートウェイ・Kill Switch・明示的プロキシ・
-// トンネル検出・接続監視を担い、APIコンテナからUDS経由で設定反映・状態取得・接続状態の再確認を受ける内部専用HTTPサーバ。
-// コンテナ外部（LAN含む）から一切到達不能なUnixドメインソケット上でのみlistenする。ベンダーCLIは実行しない
-// （Phase 11でランナー`runner.ts`へ分離。specs/proxyserver/design.md「コンテナ構成（Phase 11）」）。
-//   POST /settings         : ユーザ向け設定の反映
-//   GET  /status           : 稼働状況の取得
-//   POST /connection-checks: 接続状態の即時再確認（接続・切断・ベンダー切替の直後にAPIが呼ぶ）
+// トンネル検出・接続監視を担い、APIサーバからゲートウェイ制御チャネル（mTLS TCP、既定ポート8443。
+// 環境変数GATEWAY_PORT）経由で設定反映・状態取得・接続状態の再確認を受ける内部専用HTTPSサーバ。
+// クライアント証明書（requestCert・rejectUnauthorized）でAPIサーバを認証する
+// （Phase 25。proxyserver/design.md「ゲートウェイ制御チャネル」。Phase 24までのUDS限定方針からの転換）。
+// ベンダーCLIは実行しない（Phase 11でランナー`runner.ts`へ分離）。
+//   POST /net/settings         : ユーザ向け設定の反映
+//   GET  /net/status           : 稼働状況の取得
+//   POST /net/connection-checks: 接続状態の即時再確認（接続・切断・ベンダー切替の直後にAPIが呼ぶ）
+//   /runners/<ベンダーID>/*    : 対応するランナーのUDS（runner-<ベンダーID>.sock）へ転送（gateway-channel/runner-forward.ts）
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { logAuditEvent } from "./lib/audit-event.js";
 import { readRequestBody, sendJson } from "./lib/http-json.js";
-import { listenOnUnixSocket } from "./lib/socket-bootstrap.js";
+import { loadGatewayTlsOptions } from "./gateway-channel/tls-options.js";
+import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController, type GatewaySettings } from "./network/gateway-controller.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 
-const SOCKET_PATH = process.env.CTL_SOCKET_PATH ?? "/var/run/vpngw-ctl/net.sock";
-const SOCKET_MODE = 0o770;
+const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
+// ゲートウェイ機のファイアウォールでAPIサーバのIPへ絞ることを推奨する（多層防御。proxyserver/design.md）。
+// アプリ自身は特定インターフェースへ限定せず、mTLSのクライアント証明書検証を主たる境界とする。
+const GATEWAY_BIND_HOST = "0.0.0.0";
 
 // インストールスクリプトが検出しnetwork.env経由で渡すLAN側インターフェース名（proxyserver/design.md
 // 「NAT/FORWARDルール」参照）。未設定（インストールスクリプト未実行環境）の場合、透過ゲートウェイは
@@ -127,8 +134,8 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
   sendJson(res, 200, { applied: outcome.applied });
 }
 
-const server = createServer((req, res) => {
-  if (req.method === "GET" && req.url === "/status") {
+const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
+  if (req.method === "GET" && req.url === "/net/status") {
     // 副作用なしの読み取り専用。メモリ上の状態のみを返す（proxyserver/design.md「`GET /status`」）。
     sendJson(res, 200, {
       transparentGateway: gatewayController.getStatus(),
@@ -136,18 +143,23 @@ const server = createServer((req, res) => {
     });
     return;
   }
-  if (req.method === "POST" && req.url === "/connection-checks") {
+  if (req.method === "POST" && req.url === "/net/connection-checks") {
     handleConnectionCheck(res).catch((error: unknown) => {
       logAuditEvent({ event: "connection_check_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });
     return;
   }
-  if (req.method === "POST" && req.url === "/settings") {
+  if (req.method === "POST" && req.url === "/net/settings") {
     handleSettings(req, res).catch((error: unknown) => {
       logAuditEvent({ event: "settings_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });
+    return;
+  }
+  const runnerTarget = matchRunnerPath(req.url);
+  if (runnerTarget) {
+    forwardToRunner(runnerTarget.vendorId, runnerTarget.runnerPath, req, res);
     return;
   }
   sendJson(res, 404, { error: "not_found" });
@@ -173,5 +185,5 @@ if (await ensureIpForwardEnabled()) {
 // ため（api/src/server.ts）、この空白期間は最大でその周期に収まる。
 startConnectionMonitor(gatewayController, LAN_IFACE, CONNECTION_POLL_INTERVAL_MS);
 
-await listenOnUnixSocket(server, SOCKET_PATH, SOCKET_MODE);
-logAuditEvent({ event: "server_started", socketPath: SOCKET_PATH, lanIface: LAN_IFACE, wanIface: WAN_IFACE });
+await new Promise<void>((resolve) => server.listen(GATEWAY_PORT, GATEWAY_BIND_HOST, resolve));
+logAuditEvent({ event: "server_started", gatewayPort: GATEWAY_PORT, lanIface: LAN_IFACE, wanIface: WAN_IFACE });

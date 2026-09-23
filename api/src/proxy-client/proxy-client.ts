@@ -1,21 +1,24 @@
-// 責務: APIコンテナから、ベンダー別のランナーコンテナ（コマンド実行・利用可否）と、ネットワークコンテナ
-// （設定反映・稼働状況・接続状態の再確認）の内部専用HTTPサーバへ、UDS経由で要求を送信する。
-// apiserver/design.md「プロキシとの内部通信仕様」「内部プロトコルの変更」参照。この経路はOpenAPI非公開の内部チャネル。
-// Phase 11で、従来の単一のproxyコンテナ宛（exec.sock）を、ランナー宛（runner-<ベンダーID>.sock）と
-// ネットワークコンテナ宛（net.sock）に分けた。
+// 責務: APIコンテナから、ゲートウェイ（`proxy`が単一の窓口として公開するmTLS TCP、既定ポート8443・
+// 環境変数GATEWAY_PORT）へ、ベンダー別のランナー宛（コマンド実行・利用可否）とネットワークコンテナ宛
+// （設定反映・稼働状況・接続状態の再確認）の要求を送信する。apiserver/design.md「内部プロトコルの変更」
+// 「ゲートウェイとの内部通信仕様」参照。この経路はOpenAPI非公開の内部チャネル。
+// Phase 25で、Phase 11以来のUDS（`ctl-socket`ボリューム上の`net.sock`・`runner-<ベンダーID>.sock`）を廃止し、
+// mTLS TCP（`undici`の`Agent({ connect: { ca, cert, key } })`）へ変更した。ゲートウェイ1台に対し1つの
+// HTTP/1.1 keep-alive接続プールを共有し、ベンダーごとの個別プールは持たない（パスでランナーを識別する）。
 
-import { join } from "node:path";
-import { Pool } from "undici";
+import { Agent } from "undici";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
 import { ProxyUnavailableError, ProxyTimeoutError } from "../errors.js";
+import { loadGatewayClientTlsOptions } from "./gateway-tls-options.js";
 
-// UDSを置くディレクトリ。各コンテナは自分のソケットファイルだけを作る（ランナー: runner-<ベンダーID>.sock、ネットワーク: net.sock）。
-const SOCKET_DIR = process.env.CTL_SOCKET_DIR ?? "/var/run/vpngw-ctl";
+const GATEWAY_HOST = process.env.GATEWAY_HOST ?? "127.0.0.1";
+const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
+const GATEWAY_ORIGIN = `https://${GATEWAY_HOST}:${GATEWAY_PORT}`;
 
 // プロキシは別コンテナ・別プロセスで動くため、TypeScriptの型だけでは実際のレスポンス形状を保証できない
-// （バージョン不一致・実装ミス等でプロトコルが乖離する可能性がある）。UDS経由の内部通信とはいえ、
+// （バージョン不一致・実装ミス等でプロトコルが乖離する可能性がある）。mTLS TCP経由の内部通信とはいえ、
 // 誤った形状のレスポンスをそのままExecResultとして扱うと後続処理で不可解な失敗を招くため、実行時に検証する。
 const ExecResultSchema = Type.Object({
   exitCode: Type.Union([Type.Number(), Type.Null()]),
@@ -23,22 +26,15 @@ const ExecResultSchema = Type.Object({
   stderr: Type.String(),
 });
 
-// Unixドメインソケット経由の接続プール。TCPは使用しない。ネットワークコンテナ宛は1つ、ランナー宛はベンダーごとに1つ。
-const netPool = new Pool("http://localhost", { socketPath: join(SOCKET_DIR, "net.sock") });
-const runnerPools = new Map<string, Pool>();
-
-/**
- * 目的: ベンダーのランナー宛の接続プールを返す（初回に作成してキャッシュする）。
- * 入力: providerId(検証済みのベンダーID。ソケット名に使うため形式は呼び出し元（provider-registry）が保証する)。
- * 出力: そのランナーのUDSへ接続するundici Pool。
- */
-function runnerPool(providerId: string): Pool {
-  let pool = runnerPools.get(providerId);
-  if (!pool) {
-    pool = new Pool("http://localhost", { socketPath: join(SOCKET_DIR, `runner-${providerId}.sock`) });
-    runnerPools.set(providerId, pool);
+// 証明書ファイルの読み込みは、モジュール読み込み時ではなく初回リクエスト時まで遅延させる（証明書未配置の
+// 環境でもモジュール自体は読み込めるようにするため。失敗時はProxyUnavailableError等へ変換される呼び出し元の
+// try/catchが自然に効く）。
+let gatewayAgent: Agent | undefined;
+function getGatewayAgent(): Agent {
+  if (!gatewayAgent) {
+    gatewayAgent = new Agent({ connect: loadGatewayClientTlsOptions() });
   }
-  return pool;
+  return gatewayAgent;
 }
 
 export interface ExecInput {
@@ -62,18 +58,20 @@ export interface ExecResult {
 }
 
 /**
- * 目的: 解決済みコマンドを、そのベンダーのランナーの`POST /exec`へ送信し、実行結果を取得する。
+ * 目的: 解決済みコマンドを、そのベンダーのランナーの`/runners/<ID>/exec`へ送信し、実行結果を取得する
+ *      （`proxy`が対応する`runner-<ID>.sock`へUDS転送する）。
  * 入力: providerId(実行先のベンダーID), input(vendor/binary/resolvedArgv/timeoutMs)。
  * 出力: ExecResult(exitCode/stdout/stderr)。
- * 失敗時の方針: UDS接続失敗（ソケット未起動等）はProxyUnavailableError、
+ * 失敗時の方針: ゲートウェイへの接続失敗（証明書未配置・未起動等）はProxyUnavailableError、
  *              応答タイムアウトはProxyTimeoutErrorへ変換して投げる（呼び出し元で502/504にマッピングする）。
  */
 export async function executeVendorCommand(providerId: string, input: ExecInput): Promise<ExecResult> {
   const bodyTimeout = input.timeoutMs + 2000;
 
   try {
-    const response = await runnerPool(providerId).request({
-      path: "/exec",
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: `/runners/${providerId}/exec`,
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
@@ -98,7 +96,7 @@ const SettingsResultSchema = Type.Object({
 });
 
 /**
- * 目的: ユーザ向け設定の最新値をネットワークコンテナの`POST /settings`へ通知し、nftables等への実反映を要求する。
+ * 目的: ユーザ向け設定の最新値をネットワークコンテナの`/net/settings`へ通知し、nftables等への実反映を要求する。
  *      `executeVendorCommand`（VPNベンダーCLI実行系）とは別の内部プロトコルのため、最初から関数を分離する
  *      （proxyserver/design.md「内部プロトコル拡張」参照）。
  * 入力: settings(UserSettings全体。プロキシ側が実際に用いるのはkillSwitch/transparentGatewayEnabledのみだが、
@@ -110,8 +108,9 @@ const SettingsResultSchema = Type.Object({
  */
 export async function notifySettings(settings: Record<string, unknown>): Promise<{ applied: boolean }> {
   try {
-    const response = await netPool.request({
-      path: "/settings",
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: "/net/settings",
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(settings),
@@ -130,7 +129,7 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
 }
 
 /**
- * 目的: ネットワークコンテナの`GET /status`から透過ゲートウェイ等の実際の稼働状況を取得する（読み取り専用）。
+ * 目的: ネットワークコンテナの`/net/status`から透過ゲートウェイ等の実際の稼働状況を取得する（読み取り専用）。
  * 入力: なし。
  * 出力: GatewayStatus（スキーマはschemas/gateway.ts。プロキシのレスポンス形状を実行時に検証する）。
  * 失敗時の方針: 他の内部通信と同じ分類でProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる
@@ -139,8 +138,9 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
  */
 export async function fetchProxyStatus(): Promise<GatewayStatus> {
   try {
-    const response = await netPool.request({
-      path: "/status",
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: "/net/status",
       method: "GET",
       bodyTimeout: 3000,
       headersTimeout: 3000,
@@ -157,16 +157,18 @@ export async function fetchProxyStatus(): Promise<GatewayStatus> {
 }
 
 /**
- * 目的: ベンダーのランナーが応答するか（利用可能か）を、`GET /health`で確認する。
+ * 目的: ベンダーのランナーが応答するか（利用可能か）を、`/runners/<ID>/health`で確認する。
  * 入力: providerId(確認するベンダーID)。
- * 出力: 200で応答すればtrue。ソケットが無い・接続拒否・タイムアウト・想定外の応答はfalse（例外にしない）。
+ * 出力: 200で応答すればtrue。ソケットが無い・接続拒否・タイムアウト・証明書未配置・想定外の応答はfalse
+ *      （例外にしない）。
  * 副作用: なし（ランナー内でCLIは起動されない）。一覧表示を遅くしないよう短いタイムアウトにする。
  * 例: await checkRunnerHealth("vendorb") // => false（ランナー未起動）
  */
 export async function checkRunnerHealth(providerId: string): Promise<boolean> {
   try {
-    const response = await runnerPool(providerId).request({
-      path: "/health",
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: `/runners/${providerId}/health`,
       method: "GET",
       bodyTimeout: 2000,
       headersTimeout: 2000,
@@ -180,7 +182,7 @@ export async function checkRunnerHealth(providerId: string): Promise<boolean> {
 
 /**
  * 目的: ネットワークコンテナへ、接続状態の即時再確認（トンネル検出→ゲートウェイルールの再構成）を依頼する
- *      （`POST /connection-checks`）。接続・切断・ログアウトの実行後と、ベンダー切替後に呼ぶ。
+ *      （`/net/connection-checks`）。接続・切断・ログアウトの実行後と、ベンダー切替後に呼ぶ。
  * 入力: なし。
  * 出力: 再確認できたか（`checked`）。
  * 失敗時の方針: 通信失敗・タイムアウト・想定外の応答は例外にせずfalseを返す（ルールの反映は接続監視ループが
@@ -188,8 +190,9 @@ export async function checkRunnerHealth(providerId: string): Promise<boolean> {
  */
 export async function requestConnectionCheck(): Promise<boolean> {
   try {
-    const response = await netPool.request({
-      path: "/connection-checks",
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: "/net/connection-checks",
       method: "POST",
       bodyTimeout: 5000,
       headersTimeout: 5000,
@@ -203,8 +206,8 @@ export async function requestConnectionCheck(): Promise<boolean> {
 
 function toProxyClientError(error: unknown): Error {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
-  if (code === "ENOENT" || code === "ECONNREFUSED" || code === "UND_ERR_SOCKET") {
-    return new ProxyUnavailableError("failed to connect to proxy control socket");
+  if (code === "ENOENT" || code === "ECONNREFUSED" || code === "UND_ERR_SOCKET" || code === "EPROTO" || code === "ERR_TLS_CERT_ALTNAME_INVALID") {
+    return new ProxyUnavailableError("failed to connect to gateway control channel");
   }
   if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT") {
     return new ProxyTimeoutError("proxy did not respond within timeout");

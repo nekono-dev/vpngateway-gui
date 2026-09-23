@@ -48,11 +48,11 @@ Phase1〜24完了。既存の単一ホスト構成（`docker-compose.yml`）が�
 
 ### ゲートウェイ制御チャネルのmTLS化（`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）
 
-- [ ] インストーラ: 単一ホスト構成向けのCA・サーバ証明書・クライアント証明書のローカル生成（SSHを使わない経路）。
-- [ ] proxy: mTLS TCPリスナー（`GATEWAY_PORT`）とパスルーティング（`/net/*`→自分自身、`/runners/<ID>/*`→UDS転送）の実装。
-- [ ] API: `undici`のmTLSクライアント設定、UDSクライアントの置き換え（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`等）。
-- [ ] 単体・結合テスト: 証明書検証失敗時の拒否、パスルーティング、既存の`/settings`・`/status`・`/exec`等の挙動が変わらないこと。
-- [ ] 実機検証: 単一ホスト構成のまま、Web UIからの全操作（接続・切断・ベンダー切替・設定変更等）が従来どおり動作すること。
+- [x] インストーラ: 単一ホスト構成向けのCA・サーバ証明書・クライアント証明書のローカル生成（SSHを使わない経路。`install/install.sh`の`setup_gateway_pki`、`/etc/vpngwgui/pki/`。`--uninstall`側は`uninstall_gateway_pki`）。
+- [x] proxy: mTLS TCPリスナー（`GATEWAY_PORT`。`proxy/src/gateway-channel/tls-options.ts`）とパスルーティング（`/net/*`→自分自身、`/runners/<ID>/*`→UDS転送、`proxy/src/gateway-channel/runner-forward.ts`）の実装。`proxy/src/server.ts`をUDS（`net.sock`）からこのmTLS TCPへ置き換えた。
+- [x] API: `undici`の`Agent({ connect: { ca, cert, key } })`によるmTLSクライアント設定（`api/src/proxy-client/gateway-tls-options.ts`）、UDS（`Pool`＋ソケットパス）の置き換え（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`・`checkRunnerHealth`・`requestConnectionCheck`。いずれも`api/src/proxy-client/proxy-client.ts`）。
+- [x] 単体・結合テスト: 証明書検証失敗時の拒否（`proxy/src/gateway-channel/tls-options.test.ts`。クライアント証明書無し・別CA署名のいずれも接続確立せず、正しい証明書のみ確立することを実TLSサーバ・クライアントで確認）、パスルーティング（`proxy/src/gateway-channel/runner-forward.test.ts`）、既存の`/net/settings`・`/net/status`・`/runners/<ID>/exec`等の挙動が変わらないこと（`api/src/proxy-client/proxy-client.test.ts`）。
+- [x] 実機検証: 単一ホスト構成のまま、Web UIからの全操作（接続・切断・ベンダー切替・設定変更等）が従来どおり動作すること（下記「検証記録」参照）。
 
 ### オーケストレーション型インストーラ・証明書の生成・配布（`specs/design.md`「デプロイメント構成の分離とロール別インストール」）
 
@@ -64,6 +64,15 @@ Phase1〜24完了。既存の単一ホスト構成（`docker-compose.yml`）が�
 - [ ] Webサーバ・APIサーバ自身のHTTPS化（配布された自己署名証明書を使用）。
 - [ ] `install/install.sh --uninstall`: トポロジー記録に基づくロールごとの後始末（ローカル／`ssh`経由）、最終状態確認による成功判定、オーケストレーター以外のホストで実行された場合の警告＋ローカルのみ後始末。
 - [ ] 実機検証: 3台（web・api・gateway）に分離した構成で、Web UIからの全操作が動作すること。トポロジー不一致での再実行エラー、証明書の再生成（`--rotate-pairing`）、分離構成でのアンインストール（オーケストレーターから／非オーケストレーターから）。
+
+**検証記録（Stage2、2026-09-23、単一ホスト構成・検証環境192.168.3.240）**:
+- `npm test`（api 292件・proxy 109件・web 121件・ベンダー中立性・installスクリプト）全件成功。
+- `sudo sh install/install.sh --providers adguardvpn,protonvpn`を実行し、`setup_gateway_pki`が`/etc/vpngwgui/pki/`（gateway-ca.crt・proxy-server.crt/.key・api-client.crt/.key、所有者10001:10001、鍵は600）を生成することを確認。
+- `docker compose up -d --build`後、`proxy`が`gatewayPort: 8443`でmTLS TCPをlistenし、`GET /v1/providers`（`/runners/<ID>/health`を中継）・`GET /v1/connection/gateway`（`/net/status`を中継）・設定変更（`/net/settings`）が、APIサーバ経由で正しく動作することをcurlで確認。
+- `curl`でクライアント証明書無し・`--cacert`のみ（クライアント証明書省略）でmTLS接続を試み、TLSアラート`certificate required`で拒否されることを確認（完了基準の1つ「クライアント証明書無しでの接続拒否」）。正しいクライアント証明書（`api-client.crt`/`.key`）では`200`で応答することも確認。
+- 実ブラウザ（Playwright）で`e2e/phase22/webgui-phase22.mjs`を実行しPASS（ダッシュボードの表示・稼働状況表示がmTLS経由のデータで正しく描画される）。
+- シェルベースE2E（`GW_MODE=ssh bash e2e/phase3/gateway-scenarios.sh A B`）を再実行しFAIL 0を確認（透過ゲートウェイ・Kill Switch・設定の保存/反映が、UDSからmTLS TCPへの置き換え後も従来どおり動作する）。
+- 未実施: 明示的プロキシ・接続系（シナリオC以降、実VPN接続を伴う）、他のphaseのE2Eの網羅的な再実行。
 
 ## 完了基準
 

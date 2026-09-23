@@ -26,17 +26,28 @@ services:
     # （起動していないランナーは、APIが「利用不可」として扱う。specs/apiserver/design.md「ランナーの利用可否」）。
     depends_on:
       - proxy
+    # 単一ホスト構成では、network_mode: hostのproxyが公開するGATEWAY_PORTへ、ホストのゲートウェイIP経由で
+    # 到達する（apiはブリッジネットワーク上のため、コンテナから見た「ホスト自身」を名前解決する必要がある）。
+    # 分離構成（Stage3）ではGATEWAY_HOSTを相手ホストのアドレスへ上書きするため、この行は無害。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ctl-socket:/var/run/vpngw-ctl
       # ベンダーバンドル（vendors/<ベンダーID>/profile.json）。有効にするのは下のENABLED_PROVIDERS。
       - ./vendors:/etc/vpngwgui/vendors:ro
       - api-data:/var/lib/vpngwgui
+      # ゲートウェイ制御チャネル（mTLS TCP）のクライアント証明書一式。install.shがホストの
+      # /etc/vpngwgui/pki/へローカル生成する（分離構成でのSCP配布はStage3。Phase 25でctl-socket（UDS）は
+      # 経由しなくなったためマウントしない）。
+      - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
     environment:
       VENDORS_DIR: /etc/vpngwgui/vendors
       # 有効なベンダー（カンマ区切り）。既定は無い。install/install.shが.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なベンダーの
       # compose fragment）を書く。
       ENABLED_PROVIDERS: ${VPN_PROVIDERS:?VPN_PROVIDERSが未設定です。install/install.sh --providers <ベンダーID>,... で有効にするベンダーを指定してください}
-      CTL_SOCKET_DIR: /var/run/vpngw-ctl
+      # ゲートウェイ制御チャネル（mTLS TCP）の接続先。単一ホスト構成の既定はhost.docker.internal:8443
+      # （上のextra_hosts参照）。分離構成（Stage3）ではinstall.shが.envのGATEWAY_HOST・GATEWAY_PORTを書く。
+      GATEWAY_HOST: ${GATEWAY_HOST:-host.docker.internal}
+      GATEWAY_PORT: ${GATEWAY_PORT:-8443}
       # ベンダーCLIのキャッシュ（読み取り専用）の置き場（<置き場>/<ベンダーID>/）。プランで接続できる接続先の参考一覧を読むため。
       # 各ベンダーのキャッシュのボリュームは、そのバンドルのcompose.yml（services.apiのvolumes）が、この置き場の下へ読み取り専用でマウントする。
       PROVIDER_CACHE_DIR: /var/lib/vpngwgui-provider-cache
@@ -58,10 +69,18 @@ services:
     cap_add:
       - NET_ADMIN
     init: true
+    # network_mode: hostのためポートマッピングは書かず、GATEWAY_PORT（既定8443）をホストの全インターフェースへ
+    # 直接bindする（proxy/src/server.ts。mTLSのクライアント証明書検証が主たる境界。ファイアウォールでの
+    # 到達元制限（APIサーバのIPのみ）を推奨する。proxyserver/design.md「多層防御」）。
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
+      # ゲートウェイ制御チャネル（mTLS TCP）のサーバ証明書一式。install.shがホストの
+      # /etc/vpngwgui/pki/へローカル生成する（分離構成でのSCP配布はStage3）。
+      - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
     environment:
-      CTL_SOCKET_PATH: /var/run/vpngw-ctl/net.sock
+      # ランナーのUDS（runner-<ベンダーID>.sock）を探すディレクトリ（gateway-channel/runner-forward.ts）。
+      CTL_SOCKET_DIR: /var/run/vpngw-ctl
+      GATEWAY_PORT: ${GATEWAY_PORT:-8443}
       # install/install.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
       # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
       # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
