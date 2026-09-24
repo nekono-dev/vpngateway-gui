@@ -79,6 +79,37 @@ DNS中継は、LAN機器の名前解決をゲートウェイが受け取り、�
 
 自宅DNSサーバには、問い合わせたLAN機器を区別できる識別子が付いて届く（MACアドレスから作った`mac-aa-bb-cc-dd-ee-ff`。MACアドレスが分からない場合は`ip-192-168-3-25`）。AdGuard Homeでは、この識別子をクライアントの識別子（ClientID）として登録すると、名前を付けて管理できる。自宅DNSサーバ側では、DoHを受け付ける設定（暗号化の有効化と証明書）が必要である。明示的プロキシを経由した通信の名前解決は、プロキシ利用者ごとには区別されず、`explicit-proxy`という識別子で届く。
 
+### 自宅DNSサーバ（AdGuard Home）のDoH用証明書の発行
+
+DNS中継は、自宅DNSサーバへDoH（HTTPS）で転送する。自宅DNSサーバのHTTPS用に、証明書と秘密鍵が必要である。公的な認証局の証明書（Let's Encrypt等）を使える場合は、この手順は不要で、Web UIの「自宅DNSサーバの証明書を発行したCA」は空でよい。ここでは、自前の認証局（CA）を作り、それで自宅DNSサーバの証明書を発行する手順を示す。`openssl`が使える任意のホストで実行してよい。
+
+証明書に含めるアドレスは、Web UIの「自宅DNSサーバ（DoHのURL）」に書くホスト名またはIPアドレスと一致させる。一致しないと、ゲートウェイは接続を拒否する。以下では、自宅DNSサーバのアドレスを`192.168.3.240`、ホスト名を`dns.home.example`とする（環境に合わせて読み替える）。
+
+```sh
+# 1. 認証局（CA）の鍵と証明書を作る（有効期間10年）
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout ca.key -out ca.pem -subj "/CN=home-dns-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+# 2. 自宅DNSサーバの鍵と証明書要求を作る
+openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj "/CN=dns.home.example"
+
+# 3. アドレスを指定して、CAで署名する（有効期間1年）
+printf 'subjectAltName=DNS:dns.home.example,IP:192.168.3.240\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n' > san.ext
+openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 365 -extfile san.ext -out server.pem
+```
+
+| 生成物 | 使い道 |
+|---|---|
+| `server.pem`（証明書） | AdGuard Homeの暗号化設定の「証明書」に貼り付ける |
+| `server.key`（秘密鍵） | AdGuard Homeの暗号化設定の「秘密鍵」に貼り付ける。他へ渡さない |
+| `ca.pem`（CAの証明書） | Web UIの「自宅DNSサーバの証明書を発行したCA」に貼り付ける |
+| `ca.key`（CAの秘密鍵） | 証明書の再発行に使うため、安全な場所に保管する。他へ渡さない |
+
+AdGuard Homeでは、「設定」→「暗号化設定」で、暗号化を有効にし、サーバー名に上記のアドレス（ホスト名またはIPアドレス）、HTTPSポートに任意のポート（既定443）を指定して、証明書と秘密鍵を貼り付ける。Web UIの「自宅DNSサーバ（DoHのURL）」には、`https://<アドレス>:<ポート>/dns-query`を指定する。
+
+サーバの証明書の有効期限（1年）が切れたら、手順2・3をやり直して`server.pem`・`server.key`を差し替える。CAは変わらないため、Web UIの設定を変更する必要はない。
+
 ## 注意事項
 
 ### アンインストール
