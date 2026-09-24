@@ -432,7 +432,7 @@ Web UIから変更可能な運用設定（目的・意味は../requirements.md�
 | 設定項目 | 型 | 説明 |
 |---|---|---|
 | `killSwitch` | boolean | ONの場合、VPN切断検知時にLAN側通信を遮断する（デフォルト: true） |
-| `excludedDomains` | string[] | VPNトンネルを経由させない宛先ドメイン（split-tunnel除外リスト）。要素は`example.com`（サブドメイン込み）または`*.example.com`（サブドメインのみ）。ホスト名のラベル（英数字・ハイフン、各63文字以内、全体253文字以内）のみ許可し、先頭の`*.`以外の`*`・空白・制御文字は400で拒否する。最大200件 |
+| `excludedDomains` | string[] | VPNトンネルを経由させない宛先ドメイン（split-tunnel除外リスト）。要素は`example.com`（完全一致のみ）または`*.example.com`（サブドメインのみ。`example.com`自体は含まない）。ホスト名のラベル（英数字・ハイフン、各63文字以内、全体253文字以内）のみ許可し、先頭の`*.`以外の`*`・空白・制御文字は400で拒否する。最大200件 |
 | `transparentGatewayEnabled` | boolean | 透過ゲートウェイモードの有効/無効 |
 | `explicitProxyEnabled` | boolean | 明示的SOCKS5/HTTPプロキシモードの有効/無効 |
 | `explicitProxyAllowedCidrs` | string[] | 明示的プロキシモードで接続を許可するLAN側CIDR |

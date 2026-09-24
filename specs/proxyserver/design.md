@@ -197,7 +197,7 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 |---|---|
 | 待受アドレス | LAN側インターフェースのIPv4アドレスと`127.0.0.1`（後者は3proxy用）。ポートは環境変数`DNS_RELAY_PORT`（既定`53`。`network_mode: host`のためホスト上の他のDNSと衝突しうる。衝突時は`error`状態にする） |
 | 問い合わせの処理 | ①問い合わせ名を迂回リストと照合 → ②上流へ転送 → ③応答が成功で、かつ照合が一致していれば、応答内のA（IPv4）レコードのIPをnft setへ投入 → ④応答をクライアントへ返す。応答の内容は改変しない（AAAAは対象外） |
-| 照合規則 | `example.com`は`example.com`とそのすべてのサブドメイン、`*.example.com`はサブドメインのみ（`example.com`自体は含まない）。大文字小文字は区別せず、末尾のドットは無視する。照合するのは問い合わせ名のみとする（応答のCNAME先の名前は照合しない。CNAME先のドメインを迂回したい場合は利用者がそのドメインを追加する） |
+| 照合規則 | `example.com`は`example.com`のみ（サブドメインは含まない。完全一致）、`*.example.com`はすべてのサブドメイン（複数階層を含む。`example.com`自体は含まない）。両方を対象にするには両方の表記を登録する。大文字小文字は区別せず、末尾のドットは無視する。照合するのは問い合わせ名のみとする（応答のCNAME先の名前は照合しない。CNAME先のドメインを迂回したい場合は利用者がそのドメインを追加する） |
 | 上流への転送 | 上流（`dnsUpstreamUrl`）へDoH（RFC 8484。`application/dns-message`のPOST）で、`<dnsUpstreamUrl>/<ClientID>`宛に転送する。サーバ証明書は、システムのCAに加えて`dnsUpstreamCaPem`（あれば）で検証する。検証に失敗する接続は使わない |
 | ClientID | クライアントのMAC（`/proc/net/arp`から引く。30秒キャッシュ）から`mac-aa-bb-cc-dd-ee-ff`を、引けなければIPから`ip-192-168-3-25`を生成する（AdGuard Homeの制約: 小文字英数字とハイフン、63文字以内）。ゲートウェイ自身（`127.0.0.1`。3proxyからの問い合わせ）は固定で`explicit-proxy`とする。名前への対応付けは、自宅DNSサーバ側でClientIDを持つクライアントとして登録する運用とする |
 | 上流障害 | 上流が接続失敗・タイムアウト（5秒）・5xxのとき、`dnsFailureMode=failClosed`ならSERVFAILを返す。`fallback`なら`dnsFallbackServers`へ平文DNS（UDP、失敗時TCP）で転送する（この場合はClientIDを付けられず、履歴も残らない。監査ログに`dns_relay_fallback`を記録する）。上流のNXDOMAIN・フィルタによるブロック応答は障害ではなく、そのままクライアントへ返す |
