@@ -125,6 +125,7 @@ export function LocationList({
           ))}
         </div>
         <div className="location-toolbar-actions">
+          {changeAction}
           <button
             type="button"
             disabled={isRefreshing || refreshDisabledReason !== undefined}
@@ -133,7 +134,6 @@ export function LocationList({
           >
             {isRefreshing ? "計測中..." : "再計測"}
           </button>
-          {changeAction}
         </div>
       </div>
       <RestrictionNote id="refresh-restriction" message={refreshDisabledReason} />

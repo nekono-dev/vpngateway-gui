@@ -90,17 +90,24 @@ h2 {
 
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
+/* ボタンは、狭い画面幅でも文字を折り返さず・縮めず（大きさを保ち）、複数のボタンを並べる親の
+   flex-wrap: wrapでボタンごと折り返す（webserver/requirements.md「ボタンの折り返し」）。 */
 button {
   font: inherit;
+  white-space: nowrap;
+  flex: none;
   padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -136,7 +143,7 @@ button.danger {
 
 /* チェックボックスはブラウザ・OS既定の見た目（システムのチェックボックス）を使わず、青いチェックボタン風の
    自前デザインにする（`appearance: none`でOS既定の見た目を消し、チェック時に背景を塗って✓を描く）。
-   ラジオボタン（接続先リストの選択）は対象外（location-rowで視覚的に隠して独自表示しているため）。 */
+   ラジオボタンは下記で同様に独自スタイルにする（接続先リストのものは視覚的に隠して独自表示）。 */
 input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
@@ -172,6 +179,47 @@ input[type="checkbox"]:focus-visible {
 }
 
 input[type="checkbox"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ラジオボタンも、チェックボックスと同じ青系の自前デザインにする（`appearance: none`でOS既定の見た目を消し、
+   選択時に背景を塗って中央に白い点を描く）。接続先リストのラジオは`.visually-hidden`で視覚的に隠して
+   行全体を独自表示しているため、対象から除く。 */
+input[type="radio"]:not(.visually-hidden) {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 0;
+  border: 1px solid var(--input-border);
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+}
+
+input[type="radio"]:not(.visually-hidden):checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type="radio"]:not(.visually-hidden):checked::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+input[type="radio"]:not(.visually-hidden):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type="radio"]:not(.visually-hidden):disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -260,24 +308,32 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
   min-height: 0;
 }
 
+/* タブ・［接続先を変更］・［再計測］は1行に並べ、幅を超えるときは折り返さず横スクロール（スワイプ）で
+   表示できるようにする（webserver/requirements.md「接続先リストのツールバー」。他のボタン列の
+   「ボタンごとの折り返し」の例外）。 */
 .location-toolbar {
   display: flex;
+  /* overflowを持つ要素は縦の縮み（親.location-listのflex縮小）で潰れるため、高さは内容のまま固定する。 */
+  flex: none;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .location-tabs {
   display: flex;
+  flex: none;
   gap: 4px;
 }
 
 .location-toolbar-actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .location-tabs button {
@@ -477,10 +533,24 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
 }
 
 dialog {
-  width: min(560px, calc(100vw - 32px));
+  /* border-boxにして、padding・枠線を含めて画面幅（100vw - 32px）に収める（content-boxだと狭い画面で
+     padding・枠線の分だけはみ出す）。PC幅での見た目は従来と同じ（内容560px＋padding・枠線）。 */
+  box-sizing: border-box;
+  width: min(602px, calc(100vw - 32px));
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 20px;
+}
+
+/* スマートフォン幅では、画面の左右の余白を半分にして、小さい画面をできるだけ広く使う
+   （webserver/requirements.md「設定ダイアログの横幅」）。現在の余白は、ブラウザ既定の
+   `dialog:modal { max-width: calc(100% - 6px - 2em) }`（=38px、左右各19px）で決まっているため、
+   この上限を外し、全体で19px（左右各約9.5px）を引いた幅にする。PC幅は変更しない。 */
+@media (max-width: 420px) {
+  dialog {
+    max-width: none;
+    width: calc(100vw - 19px);
+  }
 }
 
 dialog::backdrop {
@@ -491,6 +561,13 @@ dialog form {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.settings-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
 }
 
 dialog label {
@@ -506,20 +583,30 @@ dialog label:has(> input[type="radio"]) {
   gap: 8px;
 }
 
-/* DNS中継の設定グループ（Phase 14）。他の設定項目と同じ縦の並びに、枠線でまとまりを示す。 */
-dialog fieldset.dns-relay-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 8px 12px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* 設定ダイアログの複数行入力欄（Phase 26）。ログインフォーム（.login-form input）と同様に、
+   幅をラベルいっぱいに揃え（box-sizing込み）、縦方向のみリサイズ可能にする。
+   無効の間は背景を薄くして、編集できないことを示す。 */
+dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  background: #fff;
+  color: inherit;
 }
 
-dialog fieldset.dns-relay-settings legend {
-  padding: 0 4px;
-  font-weight: 600;
+dialog textarea:disabled {
+  background: var(--muted-bg);
+  cursor: not-allowed;
+}
+
+/* 設定ダイアログのタブ列は、幅に収まらないとき折り返さず、タブ列だけが横スクロール（スワイプ）する
+   （ダイアログ全体は横スクロールさせない。webserver/requirements.md「設定ダイアログのタブ化」）。 */
+dialog .location-tabs {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 dialog [role="alert"] {
@@ -531,9 +618,17 @@ dialog [role="alert"] {
 
 .dialog-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* 一緒に折り返したいボタンの組（保存・キャンセル等）。組の中は折り返さず横並びを保ち、
+   組ごと次の行へ回る。 */
+.dialog-actions-group {
+  display: flex;
+  gap: 8px;
 }
 
 .log-scroll {
@@ -572,6 +667,18 @@ dialog [role="alert"] {
   gap: 8px;
   width: min(380px, calc(100vw - 24px));
   z-index: 1000;
+}
+
+/* スマートフォン幅（他の@media (max-width: 420px)と同じ境界）では、通知を画面下部に表示する
+   （webserver/requirements.md「通知の表示位置」）。ホームインジケータ等のセーフエリアを避ける。
+   PC幅は上記（右上）のまま。 */
+@media (max-width: 420px) {
+  .toast-region {
+    top: auto;
+    right: auto;
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    left: 12px;
+  }
 }
 
 .toast {
@@ -760,6 +867,7 @@ dialog [role="alert"] {
 .session-action {
   grid-area: action;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }

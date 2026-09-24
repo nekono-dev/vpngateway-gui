@@ -35,6 +35,7 @@
 | `phase14/scenarios.sh` | Phase14完了基準（モックの範囲）を通しで自動検証（シナリオA〜M）。検証サーバ上で実行する |
 | `phase14/webgui-phase14.mjs` | Phase14のWeb UI側のPlaywright検証（設定ダイアログのDNS中継の入力・保存前チェック・保持、稼働状況の「DNS中継」欄） |
 | `phase14/remote.sh` | 開発ホストから検証サーバのラボを操作する（`sync`: 資材の転送とゲートウェイ役の再ビルド、`run`: scenarios.shの実行、`lab`: lab.shの実行） |
+| `phase26/webgui-settings-tabs.mjs` | Phase26（設定ダイアログのタブ化）のPlaywright検証（タブ表示・切替・未保存入力の保持・保存・保存不可時の警告印）。実行: `node e2e/phase26/webgui-settings-tabs.mjs <baseUrl>` |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |

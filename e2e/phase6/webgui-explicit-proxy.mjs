@@ -24,6 +24,7 @@ async function openDashboard() {
 async function openSettings() {
   await page.getByRole("button", { name: "設定", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "設定" });
+  await dialog.getByRole("tab", { name: /ゲートウェイ/ }).click();
   await dialog.getByRole("checkbox", { name: /明示的プロキシモード/ }).waitFor();
   return dialog;
 }

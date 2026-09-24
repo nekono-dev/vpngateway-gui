@@ -85,6 +85,30 @@
 
 `defaultCountry`ドロップダウンと、それに使っていた`countries`の受け渡しを削除する（`CountrySelect.tsx`も削除）。
 
+## 接続先リストのツールバーの実装方針（Phase 26）
+
+要件は`requirements.md`「接続先リストのツールバー」。`LocationList.tsx`のツールバーで`changeAction`を［再計測］の前に描画する。`styles.css`の`.location-toolbar`は`flex-wrap: nowrap`＋`overflow-x: auto`とし、`.location-tabs`・`.location-toolbar-actions`は`flex: none`で縮めず、幅を超えた分を横スクロールにする（`.location-tabs`等の`flex-wrap: wrap`は他の場所のボタン列向けで、このツールバーでは使わない）。
+
+## 通知の表示位置の実装方針（Phase 26）
+
+要件は`requirements.md`「通知の表示位置」。`styles.css`の`.toast-region`は`position: fixed`で右上（`top`・`right`）に置き、幅420px以下のメディアクエリで`top`・`right`を解除して`bottom`（`env(safe-area-inset-bottom)`を考慮）・`left`へ切り替える。メディアクエリは、上書き対象の`.toast-region`の定義より後ろに置く（前に置くと通常ルールに上書きされるため）。
+
+## 設定ダイアログのタブ化の実装方針（Phase 26）
+
+要件は`requirements.md`「設定ダイアログのタブ化」。
+
+- `SettingsDialog.tsx`に、`role="tablist"`のボタン群（`.location-tabs`のスタイルを共用し、選択中は`tab-active`・`aria-selected`）と`role="tabpanel"`を置く。選択中のタブは`useState`で保持する。ダイアログを開くたびに先頭のタブへ戻す。
+- 設定値（`settings`）・保存・エラー表示・ボタン列は従来どおり`SettingsDialog`が1つだけ持ち、タブはフォームの入力部品の表示を切り替えるだけとする（タブごとに状態・保存処理を分けない）。非選択のタブのパネルは`hidden`で残すのではなく描画しないが、値は親の`settings`にあるため失われない。
+- タブは「通信制御」「ゲートウェイ」「上位DNSリゾルバ」「DNS詳細」の4つ。DNS中継の設定は、従来の枠線付きグループ（`fieldset`）をやめ、上位DNSリゾルバ（有効化・DoH URL・CA）とDNS詳細（失敗時の挙動・公開DNS・クライアント名の取得先・リダイレクト）の2タブへ分けて表示する。「DNS詳細」は`dnsRelayEnabled`がONのときだけ`tablist`に含め、OFFの間は描画しない（選択中のタブが消えた場合は`activeTab`が「上位DNSリゾルバ」へ落ちる）。DNS詳細の入力は、タブが見えない間に保存を妨げないよう、`dnsFallbackNeedsServers`を`dnsRelayEnabled`がONのときだけ有効にする（`dnsFailureMode`等の値自体は保持して送信する）。
+- 保存不可条件（`explicitProxyNeedsCidr`・`hasIncompleteDnsSettings`）は従来どおりダイアログ全体の保存ボタンの`disabled`に使い、該当タブ（ゲートウェイ・上位DNSリゾルバ・DNS詳細）のラベル末尾に`!`を付ける。
+- ラジオボタンは`styles.css`の`input[type="radio"]:not(.visually-hidden)`で、チェックボックスと同様に`appearance: none`の自前デザインにする（`.visually-hidden`の接続先リストのラジオは除外する）。
+- 複数行入力欄のスタイルは`styles.css`の`dialog textarea`に置く（`width: 100%`・`box-sizing: border-box`・`resize: vertical`・無効時の背景）。複数行入力欄は既定の折り返し（横スクロールなし）とする。
+- 設定ダイアログのボタン列（`.dialog-actions`）は、「保存」「キャンセル」を`.dialog-actions-group`（折り返さない`flex`）で囲み、組ごと折り返す。
+- 設定ダイアログの幅は、PC幅では`width: min(602px, calc(100vw - 32px))`だが、モーダルの`dialog`にはブラウザ既定の`max-width: calc(100% - 6px - 2em)`（左右各約19px）が掛かるため、実際の余白はこちらで決まる。幅420px以下のメディアクエリで`max-width: none`・`width: calc(100vw - 19px)`（左右各約9.5px）にする（メディアクエリは`dialog`の通常定義より後ろに置く）。
+- 設定ダイアログのタブ列（`dialog .location-tabs`）は`flex-wrap: nowrap`・`overflow-x: auto`・`min-width: 0`とし、タブ列だけを横スクロールさせる（`.location-tabs`の共通定義は`flex-wrap`を持たないため、折り返しを戻すとダイアログ全体が横に溢れる）。
+- ボタンの折り返しは、`styles.css`の`button`に`white-space: nowrap`・`flex: none`を与え（文字を折り返さず大きさを保つ）、ボタンを並べる親（`.app-header`・`.header-actions`・`.dialog-actions`・`.location-tabs`・`.session-action`・`.connect-row`・`.location-toolbar(-actions)`）に`flex-wrap: wrap`を与えて、ボタンごと折り返す。新しくボタンを並べる親を追加するときも`flex-wrap: wrap`を付ける。
+- 高さは、タブの内容で最も高いものに合わせ固定せず、選択中のタブの内容に従う。
+
 # ベンダーの選択の実装方針（Phase 8）
 
 要件は`requirements.md`「ベンダーの選択」。ベンダーの保持・切替・切断の手順はAPI（`specs/apiserver/design.md`「ベンダーの選択」）が行い、Webは一覧の表示と切替の要求だけを行う。
@@ -122,7 +146,7 @@
 
 # 暫定表示の実装方針（Phase 4）
 
-- `excludedDomains`（Phase 14）は、DNS中継が有効な間だけ通信へ反映される。「未対応」の暫定表示はPhase 14で除去し、`dnsRelayEnabled`がOFFのときの注意表示（`webserver/requirements.md`「設定ダイアログの入力項目」）に置き換える。稼働状況欄は`GET /v1/connection/gateway`の`dnsRelay`（状態・上流の疎通・迂回中のIP数）を表示する。DNS中継の設定項目は、`SettingsDialog.tsx`に「DNS中継」のグループとして追加する（ラジオボタン・複数行入力は既存のUI部品規約に従う）。明示的プロキシはPhase 6で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
+- `excludedDomains`（Phase 14）は、DNS中継が有効な間だけ通信へ反映される。「未対応」の暫定表示はPhase 14で除去し、`dnsRelayEnabled`がOFFのときの注意表示（`webserver/requirements.md`「設定ダイアログの入力項目」）に置き換える。稼働状況欄は`GET /v1/connection/gateway`の`dnsRelay`（状態・上流の疎通・迂回中のIP数）を表示する。DNS中継の設定項目は、`SettingsDialog.tsx`に「上位DNSリゾルバ」「DNS詳細」のタブ（Phase 26でグループ表示から変更）として追加する（ラジオボタン・複数行入力は既存のUI部品規約に従う）。明示的プロキシはPhase 6で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
 - 稼働状況カードの各行（透過ゲートウェイ・明示的プロキシ）は、テスト（単体・E2E）が行を特定できるよう`dd`に`data-testid`を付ける（`dd`はARIA上アクセシブルネームを付けられず、`aria-labelledby`が実ブラウザで機能しないことがE2Eで判明したため）。取得失敗の理由（`role="alert"`）は1行目にだけ全文を出し、2行目は「取得失敗」のみとする（同一文言の重複読み上げを避ける）。
 
 ## プランで接続できる接続先の参考表示の実装方針（Phase 12）

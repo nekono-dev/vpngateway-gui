@@ -316,7 +316,7 @@ describe("App", () => {
     }
   });
 
-  it("接続ログ・設定ボタンでそれぞれのダイアログが開き、DNS中継の設定グループが出る", async () => {
+  it("接続ログ・設定ボタンでそれぞれのダイアログが開き、DNS中継の設定タブが出る", async () => {
     api.getV1ConnectionLog.mockResolvedValue({ status: 200, data: [] });
     api.getV1ConnectionConfig.mockResolvedValue({
       status: 200,
@@ -343,7 +343,7 @@ describe("App", () => {
     expect(await screen.findByText("履歴はありません。")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "設定" }));
-    expect(await screen.findByText("DNS中継")).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: "上位DNSリゾルバ" })).toBeInTheDocument();
     // 迂回ドメインの「未対応」の暫定表示はPhase 14で除去した。
     expect(screen.queryByText(/未対応/)).not.toBeInTheDocument();
     // Phase 8でデフォルト接続国は廃止した
