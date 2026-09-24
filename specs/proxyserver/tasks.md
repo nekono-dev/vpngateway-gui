@@ -49,35 +49,44 @@
 
 設計は`design.md`「ドメイン迂回とDNS中継」。実装後に、主要タスクをまとめて実機検証する。
 
-### Step 1: 実装
+### Step 1: 実装（完了）
 
-- [ ] 設定の形状検証の拡張（`server.ts`の`handleSettings`。`excludedDomains`・`dns*`）
-- [ ] 迂回リストの照合（完全一致・`*.`ワイルドカード。両者は独立で、片方の登録が他方を含意しないこと）の実装と単体テスト（`proxy/src/dns-relay/`）
-- [ ] DNSメッセージの解析・応答IPとTTLの抽出（UDP・TCP）
-- [ ] DoH上流への転送（ClientID付与、`dnsUpstreamCaPem`による検証、タイムアウト）
-- [ ] ClientIDの生成（`/proc/net/arp`からのMAC取得・キャッシュ・IPへのフォールバック）
-- [ ] 上流障害時の挙動（フェイルクローズ／`dnsFallbackServers`へのフォールバック）と、上流の疎通状態の管理
-- [ ] `DnsRelayController`（設定の反映・再構成・状態・監査ログ）
-- [ ] nft set（`bypass4`）・マーク付けチェーン・forward許可・マスカレードの追加（`ruleset.ts`）と、再構成時のset要素の引き継ぎ
-- [ ] `ip rule`／テーブル100の管理（デフォルトゲートウェイの検出・追従）
-- [ ] 明示的プロキシ: 3proxyの`nserver`をリゾルバへ向ける設定生成、`output`チェーンのマーク付け
-- [ ] 53番リダイレクト（nat prerouting、除外CIDR）
-- [ ] `GET /net/status`への`dnsRelay`追加
-- [ ] インストーラ: `send_redirects=0`のsysctl設定
-- [ ] 単体テスト（ruleset・config-builder・DNS中継の各モジュール）
+- [x] 設定の形状検証（`settings-request.ts`。Phase 14より前の形状は既定値で補って受理する）
+- [x] 迂回リストの照合（完全一致・`*.`ワイルドカード。両者は独立で、片方の登録が他方を含意しない。`dns-relay/domain-matcher.ts`）
+- [x] DNSメッセージの解析・応答IPとTTLの抽出・SERVFAIL/切り詰め応答（`dns-relay/dns-message.ts`）、UDP/TCPの待受（`dns-relay/listener.ts`）
+- [x] DoH上流への転送（ClientID付与、`dnsUpstreamCaPem`による検証、タイムアウト）と平文DNSへのフォールバック（`dns-relay/upstream.ts`）
+- [x] ClientIDの生成（`/proc/net/arp`からのMAC取得・キャッシュ・IPへのフォールバック。`dns-relay/client-id.ts`）
+- [x] 問い合わせ処理（照合・転送・setへの登録・上流障害時の挙動・上流の疎通状態。`dns-relay/relay.ts`）
+- [x] `DnsRelayController`（設定の反映・待受の起動/停止/再試行・状態・監査ログ）
+- [x] nft set（`bypass4`）・マーク付けチェーン・forward許可・マスカレードの追加（`network/ruleset.ts`）と、再構成時のset要素の引き継ぎ（`network/bypass-set.ts`・`gateway-controller.ts`）
+- [x] `ip rule`／テーブル100の管理（`network/policy-routing.ts`。接続監視の周期で再確認）
+- [x] 明示的プロキシ: 3proxyの`nserver`をリゾルバへ向ける設定生成（`explicit-proxy/config-builder.ts`）、`output`チェーンのマーク付け
+- [x] 53番リダイレクト（nat prerouting、除外CIDR）
+- [x] `GET /net/status`への`dnsRelay`追加
+- [x] インストーラ: `send_redirects=0`のsysctl設定（`install/install.sh`）
+- [x] 特権ポート（53番）のbind権限（`proxy/Dockerfile`の`setcap`）と`DNS_RELAY_PORT`の受け渡し（`compose/gateway.yml`）
+- [x] 単体テスト（照合・DNSメッセージ・ClientID・上流転送（自己署名CAのHTTPSサーバ）・待受（実ソケット）・ruleset・policy-routing・bypass-set・各コントローラ）
 
-### Step 2: 実機検証（検証サーバ。テスト用AdGuard Home導入後）
+### Step 2: 検証（検証サーバのLXDラボ・実機。完了）
 
-- [ ] モックVPN: 迂回ドメインへの通信が実回線から出て、非対象はトンネルを経由すること（透過ゲートウェイ）
-- [ ] モックVPN: 同上（明示的プロキシ）
-- [ ] TTLの短いドメインでIP変化に追従し、期限後は迂回対象から外れること
-- [ ] 完全一致と`*.`ワイルドカードの照合（`example.com`のみ登録時にサブドメインが迂回されないこと、`*.example.com`のみ登録時に`example.com`が迂回されないこと）
-- [ ] AdGuard Homeの履歴に、クライアントがClientIDで区別されて記録されること
-- [ ] 上流停止時: フェイルクローズ／フォールバックの両方
-- [ ] 53番リダイレクト有効時、手動DNS指定の端末の問い合わせが中継されること
-- [ ] VPN未接続・Kill Switch ON時に、名前解決と迂回対象の疎通が意図どおりであること
-- [ ] 実VPN（Web UIから利用者が手動ログイン）: 出口IPの差で迂回を確認
-- [ ] 検証で確定した仕様（CNAME・set期限の猶予・ゲートウェイ検出等）の`design.md`への反映
+検証環境は`e2e/phase14/`（`lab.sh`: LAN・ISPルータ・VPN出口・宛先サーバ・モックDNSのコンテナ群、`scenarios.sh`: 自動検証、`webgui-phase14.mjs`: Web UI）。「VPN接続」は、ゲートウェイ役のデフォルトルートを別インターフェース（VPN出口経由）へ張り替えて再現し、宛先サーバが見る接続元IPで経路を判別する。
+
+- [x] 迂回ドメインへの通信が実回線から出て、非対象はVPN出口を経由すること（透過ゲートウェイ）
+- [x] 同上（明示的プロキシ。透過ゲートウェイと併用／明示的プロキシのみ）
+- [x] TTLの短いドメインでIP変化に追従し、期限（TTL＋猶予）後は迂回対象から外れること
+- [x] 完全一致と`*.`ワイルドカードの照合（`example.com`のみ登録時にサブドメインが迂回されないこと、`*.example.com`のみ登録時に`example.com`が迂回されないこと）
+- [x] 上流（モックDNS）にクライアントがClientID（MAC由来）で区別されて渡ること
+- [x] 上流停止時: フェイルクローズ／フォールバックの両方と、復旧後の状態
+- [x] 53番リダイレクト有効時、手動DNS指定の端末の問い合わせ（UDP・TCP）が中継されること、除外CIDRが対象外になること
+- [x] VPN未接続・Kill Switch ON時に、名前解決の中継と迂回対象の疎通は保たれ、迂回対象外は遮断されること
+- [x] 設定変更による再構成後も迂回対象が維持されること、DNS中継の無効化で待受・nft・ip ruleが撤去されること
+- [x] 53番ポートが使用中で待受に失敗したとき、状態が`error`になり、リダイレクトを入れず、解消後に自動回復すること
+- [x] Web UI（Playwright）: 設定ダイアログの入力・保存前チェック・保持、稼働状況の「DNS中継」欄
+- [x] 検証で確定した仕様（応答前のset反映、マーク後のマスカレード、特権ポート、共有IPの制約等）の`design.md`への反映
+- [x] テスト用AdGuard Home（検証サーバへDockerで導入。DoHを有効化）で、履歴にクライアントが`client_id`（`mac-…`）で区別されて記録されること、フィルタのブロック応答（0.0.0.0）が迂回対象に登録されないこと
+- [x] 実VPN（AdGuard VPN。利用者がWeb UIから手動ログイン済み、接続中）: 明示的プロキシ（SOCKS5・HTTP）経由で、迂回ドメインは実回線の出口IP、対象外はVPNの出口IPになること。VPNベンダーCLIのポリシールール（`ip rule`・テーブル880）が存在しても、迂回用のルール（優先度100）が優先されること（`ip route get`で、転送されるLAN機器の通信も迂回用テーブルへ向くことを確認）
+
+検証: モックの範囲は、`e2e/phase14/scenarios.sh`の全シナリオ（A〜M、57項目）とWeb UIの16項目がPASS。実機（検証サーバ・実VPN・実AdGuard Home）は上記のとおり。既知の未検証事項: 実VPN接続中の透過ゲートウェイ経由（LAN機器の実転送。検証サーバ自身がゲートウェイのためLAN端末役を用意できず、転送経路の判定のみ確認。転送の実動作はモックで確認済み）、実機での53番リダイレクト（同前）、複数NIC構成、Raspberry Pi実機。
 
 ## インストールスクリプト (Phase 3以降)
 
@@ -128,11 +137,14 @@
 - [x] 実機検証: 単一ホスト構成で`proxy`が`gatewayPort: 8443`でmTLS TCPをlistenし、`GET /v1/providers`・`GET /v1/connection/gateway`・設定変更が正しく中継されることをcurlで確認。クライアント証明書無し接続がTLSアラートで拒否されることを確認。3台に分離した構成でも同様に到達性を確認
 - [ ] 透過ゲートウェイ・明示的プロキシの実VPN接続を伴うシナリオ（gateway-scenariosのC以降）の、mTLS化後・3台分離構成での網羅的な再実行は未実施
 
+# 積み残し（作業スコープ外で見つかった不具合）
+
+- [ ] インストーラ完了メッセージのWeb UIのポート表示が不正（`install/install.sh`の`summary_port=${WEB_PORT_ARG:-$WEB_PORT_DEFAULT}`が、`--web-port`を省略した再実行で、`.env`に保存済みのポート（`WEB_PORT`）ではなく既定の80を表示する。実際のWeb UIは`.env`のポートで動いている。修正案: 表示には`setup_web_port`が確定したグローバル変数`WEB_PORT`を使う。`install/tests/`へ、`--web-port`省略時の再実行で保存済みのポートが表示されるテストを追加する）。Phase 14の実機検証中（2026-09-24、検証サーバで`WEB_PORT=443`のまま再実行して発見）。
+
 # 将来課題
 
 - IPv6対応（現行設計はIPv4のNAT/FORWARDのみを前提としている）。
 - 複数VPNベンダー・複数トンネルの同時稼働可否。
-- `excludedDomains` のDNS TTL追従の詳細実装。
 - 証明書の失効・自動ローテーション、外部認証局（Let's Encrypt等）との連携。
 - 明示的プロキシへのKill Switch適用（現状はKill Switchが`forward`チェーンのみを対象とするため、VPN未接続時は`killSwitch=true`でも明示的プロキシ経由の通信が実回線から直接出る。既知の制約、`design.md`「Kill Switch」参照。対処案: 3proxy専用UIDでの起動と、そのUIDに対する`output`チェーンでのVPN未接続時dropの追加）。
 - 明示的プロキシのユーザー名・パスワード認証（現状は送信元IPのCIDRのみ）。

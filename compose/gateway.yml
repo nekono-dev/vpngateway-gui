@@ -29,6 +29,8 @@ services:
       # ランナーのUDS（runner-<ベンダーID>.sock）を探すディレクトリ（gateway-channel/runner-forward.ts）。
       CTL_SOCKET_DIR: /var/run/vpngw-ctl
       GATEWAY_PORT: ${GATEWAY_PORT:-8443}
+      # DNS中継リゾルバの待受ポート（既定53。ホストの他のDNSサーバと衝突する場合に変更する）。
+      DNS_RELAY_PORT: ${DNS_RELAY_PORT:-53}
       # install/install.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
       # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
       # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。

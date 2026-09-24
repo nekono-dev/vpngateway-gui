@@ -61,6 +61,27 @@ function toExplicitProxyBadge(explicitProxy: GatewayStatus["explicitProxy"]): Ba
   }
 }
 
+/**
+ * 目的: DNS中継の稼働状況を、表示ラベルと色調（tone）へ変換する。
+ * 入力: dnsRelay(APIレスポンスのdnsRelayオブジェクト)。
+ * 出力: Badge。待受中でも上流（自宅DNSサーバ）への転送が失敗している間は、名前解決が止まりうるため警告で示す。
+ * 例: toDnsRelayBadge({ state: "active", upstream: "failing", bypassEntries: 0 }) // => { label: "自宅DNSサーバに接続できません", tone: "danger" }
+ */
+function toDnsRelayBadge(dnsRelay: NonNullable<GatewayStatus["dnsRelay"]>): Badge {
+  switch (dnsRelay.state) {
+    case "active":
+      return dnsRelay.upstream === "failing"
+        ? { label: "自宅DNSサーバに接続できません", tone: "danger" }
+        : { label: "稼働中", tone: "ok" };
+    case "stopped":
+      return { label: "停止", tone: "muted" };
+    case "unconfigured":
+      return { label: "未構成（自宅DNSサーバ未設定）", tone: "warn" };
+    case "error":
+      return { label: "待受に失敗（ポート衝突等）", tone: "danger" };
+  }
+}
+
 export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
   // 取得失敗・取得中は両行に共通の表示とし、取得できた場合のみ各機能の実状態を出す。
   // 失敗理由の全文は1行目にだけ出す（同じ文言を2回alertとして読み上げさせないため）。
@@ -107,6 +128,19 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
     );
   }, false);
 
+  // 古いゲートウェイ（DNS中継なし）では項目自体を出さない。
+  const dnsRelayView = renderRow((loaded) => {
+    if (loaded.dnsRelay === undefined) return null;
+    const badge = toDnsRelayBadge(loaded.dnsRelay);
+    return (
+      <>
+        <span className={`badge badge-${badge.tone}`}>{badge.label}</span>
+        {loaded.dnsRelay.state === "active" ? <span className="hint"> 迂回中のIP: {loaded.dnsRelay.bypassEntries}件</span> : null}
+      </>
+    );
+  }, false);
+  const showDnsRelay = gateway?.dnsRelay !== undefined;
+
   return (
     <div aria-label="稼働状況">
       <dl className="status-list">
@@ -115,6 +149,12 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
         <dd data-testid="status-transparent-gateway">{transparentGatewayView}</dd>
         <dt>明示的プロキシ</dt>
         <dd data-testid="status-explicit-proxy">{explicitProxyView}</dd>
+        {showDnsRelay ? (
+          <>
+            <dt>DNS中継</dt>
+            <dd data-testid="status-dns-relay">{dnsRelayView}</dd>
+          </>
+        ) : null}
       </dl>
     </div>
   );

@@ -45,6 +45,20 @@ describe("GET /v1/connection/gateway", () => {
     expect(response.json()).toEqual(status);
   });
 
+  it("DNS中継の稼働状況（Phase 14）も、そのまま200で返す", async () => {
+    const status = {
+      transparentGateway: { state: "active", killSwitchBlocking: false },
+      explicitProxy: { state: "stopped", restartCount: 0 },
+      dnsRelay: { state: "active", upstream: "failing", bypassEntries: 12 },
+    };
+    fetchProxyStatusMock.mockResolvedValue(status);
+
+    const response = await buildApp().inject({ method: "GET", url: "/v1/connection/gateway" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().dnsRelay).toEqual(status.dnsRelay);
+  });
+
   it("プロキシ未応答は502", async () => {
     fetchProxyStatusMock.mockRejectedValue(new ProxyUnavailableError("down"));
     const response = await buildApp().inject({ method: "GET", url: "/v1/connection/gateway" });

@@ -9,7 +9,12 @@ export interface ExplicitProxyConfigInput {
   allowedCidrs: readonly string[];
   socksPort: number;
   httpPort: number;
+  // 名前解決に使うDNSサーバ（`127.0.0.1`または`127.0.0.1:5353`の形式）。DNS中継が有効なとき、3proxyの名前解決も
+  // 中継リゾルバへ向けて迂回対象のsetへ登録させる。省略時は3proxy既定（コンテナのresolv.conf）を使う。
+  nameServer?: string;
 }
+
+const NAME_SERVER_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(:\d{1,5})?$/;
 
 /**
  * 目的: 許可元CIDRとポートから3proxy設定ファイルの内容を生成する。
@@ -37,10 +42,14 @@ export function buildExplicitProxyConfig(input: ExplicitProxyConfigInput): strin
   if (input.socksPort === input.httpPort) {
     throw new Error("socksPort and httpPort must differ");
   }
+  if (input.nameServer !== undefined && !NAME_SERVER_PATTERN.test(input.nameServer)) {
+    throw new Error(`invalid nameServer: ${JSON.stringify(input.nameServer)}`);
+  }
 
   return [
     // 認証は送信元IPのみで判定する（許可CIDR外は拒否）。
     "auth iponly",
+    ...(input.nameServer !== undefined ? [`nserver ${input.nameServer}`] : []),
     // 3proxyのACLは先頭から評価され最初の一致で確定する。許可CIDRを列挙し、それ以外は末尾のdenyで拒否する。
     // 同一ACLがこの後に定義する両サービス（socks/proxy）へ適用される。
     `allow * ${input.allowedCidrs.join(",")}`,

@@ -4,10 +4,39 @@
 // （実nftバイナリなしに単体テスト可能にするため）。
 
 import { isValidInterfaceName } from "../lib/interface-name.js";
+import { isIpv4Cidr } from "../lib/ipv4-cidr.js";
 
 // ホスト上の既存ルール（ufw等）と衝突・意図せぬ上書きが起きないよう、専用テーブル名で独立管理する
 // （proxyserver/design.md「NAT/FORWARDルール」参照）。
 export const GATEWAY_TABLE_NAME = "vpngwgui";
+
+// ドメイン迂回（split-tunnel）: 迂回対象のIPv4アドレスを入れるsetの名前、迂回する通信に付けるfwmark、
+// 迂回経路（実回線のデフォルトゲートウェイ）を置くルーティングテーブルの番号
+// （proxyserver/design.md「ドメイン迂回とDNS中継」の「nft set・ポリシールーティング」）。
+export const BYPASS_SET_NAME = "bypass4";
+export const BYPASS_FWMARK = 0x100;
+export const BYPASS_ROUTE_TABLE = 100;
+
+export interface BypassEntry {
+  address: string;
+  // setの要素の残り期限（秒）。
+  timeoutSeconds: number;
+}
+
+export interface BypassRulesetInput {
+  // 適用時点でsetへ入れておく要素（再構成で失われないよう、呼び出し元が保持している有効な要素を渡す）。
+  entries: readonly BypassEntry[];
+  // 明示的プロキシ（3proxy）の実行ユーザーID。指定するとホスト自身の発信（3proxy）も迂回の対象にする。
+  explicitProxyUid: number | undefined;
+}
+
+export interface DnsRedirectInput {
+  // 中継リゾルバの待受アドレス・ポート（DNATの宛先）。
+  listenAddress: string;
+  port: number;
+  // リダイレクトしない宛先のIPv4 CIDR（LAN内のDNSサーバ等）。
+  excludedCidrs: readonly string[];
+}
 
 export interface GatewayRulesetInput {
   // LAN側インターフェース名（インストールスクリプトが検出しnetwork.env経由で渡す）。
@@ -20,6 +49,20 @@ export interface GatewayRulesetInput {
   vpnIface: string | undefined;
   // ユーザ向け設定`killSwitch`の現在値。
   killSwitch: boolean;
+  // 透過ゲートウェイ（LAN機器の転送・Kill Switch）を構成するか。省略時はtrue。falseの場合は、
+  // ドメイン迂回・DNSリダイレクトのための要素のみを含むテーブルを作る（明示的プロキシのみで迂回する場合）。
+  transparentGateway?: boolean;
+  // ドメイン迂回。省略すると迂回の要素を作らない。
+  bypass?: BypassRulesetInput;
+  // 宛先ポート53の通信を中継リゾルバへ誘導する。省略するとリダイレクトしない。
+  dnsRedirect?: DnsRedirectInput;
+}
+
+const IPV4_ADDRESS_PATTERN = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+function isIpv4Address(value: string): boolean {
+  const match = IPV4_ADDRESS_PATTERN.exec(value);
+  return match !== null && match.slice(1).every((octet) => Number(octet) <= 255);
 }
 
 /**
@@ -44,7 +87,8 @@ export function buildTeardownScript(): string {
  * 例: buildGatewayRuleset({ lanIface: "eth0", wanIface: "eth0", vpnIface: "tun0", killSwitch: true })
  */
 export function buildGatewayRuleset(input: GatewayRulesetInput): string {
-  const { lanIface, wanIface, vpnIface, killSwitch } = input;
+  const { lanIface, wanIface, vpnIface, killSwitch, bypass, dnsRedirect } = input;
+  const transparentGateway = input.transparentGateway ?? true;
 
   // 動的に決まる値（vpnIfaceはip routeの解析結果、lan/wanIfaceは設定ファイル由来）を
   // ルール文字列へ埋め込む前に必ず形式検証する（proxyserver/design.md「実行可能バイナリの許可リストに
@@ -52,6 +96,24 @@ export function buildGatewayRuleset(input: GatewayRulesetInput): string {
   for (const iface of [lanIface, wanIface, vpnIface].filter((v): v is string => v !== undefined)) {
     if (!isValidInterfaceName(iface)) {
       throw new Error(`invalid interface name: ${iface}`);
+    }
+  }
+  // 迂回・リダイレクトの値も、ルール文字列へ埋め込むため検証する。
+  for (const entry of bypass?.entries ?? []) {
+    if (!isIpv4Address(entry.address) || !Number.isInteger(entry.timeoutSeconds) || entry.timeoutSeconds < 1) {
+      throw new Error(`invalid bypass entry: ${JSON.stringify(entry)}`);
+    }
+  }
+  if (bypass?.explicitProxyUid !== undefined && (!Number.isInteger(bypass.explicitProxyUid) || bypass.explicitProxyUid < 0)) {
+    throw new Error(`invalid uid: ${bypass.explicitProxyUid}`);
+  }
+  if (dnsRedirect !== undefined) {
+    if (!isIpv4Address(dnsRedirect.listenAddress)) throw new Error(`invalid listen address: ${dnsRedirect.listenAddress}`);
+    if (!Number.isInteger(dnsRedirect.port) || dnsRedirect.port < 1 || dnsRedirect.port > 65535) {
+      throw new Error(`invalid port: ${dnsRedirect.port}`);
+    }
+    for (const cidr of dnsRedirect.excludedCidrs) {
+      if (!isIpv4Cidr(cidr)) throw new Error(`invalid CIDR: ${JSON.stringify(cidr)}`);
     }
   }
 
@@ -63,15 +125,60 @@ export function buildGatewayRuleset(input: GatewayRulesetInput): string {
     `add table inet ${GATEWAY_TABLE_NAME}`,
     `delete table inet ${GATEWAY_TABLE_NAME}`,
     `add table inet ${GATEWAY_TABLE_NAME}`,
-    `add chain inet ${GATEWAY_TABLE_NAME} postrouting { type nat hook postrouting priority 100 ; }`,
-    // forwardチェーンは`policy accept`とし、末尾の`iifname "<lan>" drop`で「LAN側インターフェースから入ってきた
-    // 転送」だけを遮断対象にする。`policy drop`だと、同居する他のDockerコンテナ等ゲートウェイ機能と無関係な
-    // 転送（コンテナのインターネット向け通信）まで巻き込んで遮断してしまうため（実機検証で確認）。
-    `add chain inet ${GATEWAY_TABLE_NAME} forward { type filter hook forward priority 0 ; policy accept ; }`,
   ];
   const rule = (body: string): void => {
     lines.push(`add rule inet ${GATEWAY_TABLE_NAME} ${body}`);
   };
+
+  // natのpostroutingチェーン。透過ゲートウェイ（トンネル・WAN側へのマスカレード）と、ドメイン迂回（実回線側への
+  // マスカレード）の両方が使う。
+  if (transparentGateway || bypass !== undefined) {
+    lines.push(`add chain inet ${GATEWAY_TABLE_NAME} postrouting { type nat hook postrouting priority 100 ; }`);
+  }
+  if (transparentGateway) {
+    lines.push(
+      // forwardチェーンは`policy accept`とし、末尾の`iifname "<lan>" drop`で「LAN側インターフェースから入ってきた
+      // 転送」だけを遮断対象にする。`policy drop`だと、同居する他のDockerコンテナ等ゲートウェイ機能と無関係な
+      // 転送（コンテナのインターネット向け通信）まで巻き込んで遮断してしまうため（実機検証で確認）。
+      `add chain inet ${GATEWAY_TABLE_NAME} forward { type filter hook forward priority 0 ; policy accept ; }`,
+    );
+  }
+
+  if (bypass !== undefined) {
+    lines.push(`add set inet ${GATEWAY_TABLE_NAME} ${BYPASS_SET_NAME} { type ipv4_addr ; flags timeout ; }`);
+    if (bypass.entries.length > 0) {
+      const elements = bypass.entries.map((entry) => `${entry.address} timeout ${entry.timeoutSeconds}s`).join(", ");
+      lines.push(`add element inet ${GATEWAY_TABLE_NAME} ${BYPASS_SET_NAME} { ${elements} }`);
+    }
+    // LAN機器からの通信のうち、宛先が迂回対象のものへfwmarkを付ける（ルーティング判定の前=prerouting・mangle優先度）。
+    // 応答方向をforwardで許可できるよう、conntrackにも同じマークを付ける。
+    lines.push(`add chain inet ${GATEWAY_TABLE_NAME} bypass_mark { type filter hook prerouting priority -150 ; }`);
+    rule(`bypass_mark iifname "${lanIface}" ip daddr @${BYPASS_SET_NAME} meta mark set ${BYPASS_FWMARK} ct mark set ${BYPASS_FWMARK}`);
+    if (bypass.explicitProxyUid !== undefined) {
+      // ホスト自身の発信（明示的プロキシ）。`type route`はマーク変更後に経路を再評価する。
+      lines.push(`add chain inet ${GATEWAY_TABLE_NAME} bypass_mark_output { type route hook output priority -150 ; }`);
+      rule(`bypass_mark_output meta skuid ${bypass.explicitProxyUid} ip daddr @${BYPASS_SET_NAME} meta mark set ${BYPASS_FWMARK}`);
+    }
+    // 迂回する通信を実回線側でマスカレードする。ホスト自身の発信（明示的プロキシ）は、接続時にVPN側の経路で送信元
+    // アドレスが選ばれた後にマークで実回線へ経路が変わるため、送信元がVPN側のアドレスのまま出てしまい、応答が戻らない
+    // （実機検証で確認）。LAN機器からの転送も同じ規則で、実回線側のアドレスへ揃える。
+    rule(`postrouting meta mark ${BYPASS_FWMARK} oifname "${wanIface}" masquerade`);
+  }
+
+  if (dnsRedirect !== undefined) {
+    // 宛先ポート53のLAN発の通信を、中継リゾルバへ誘導する（手動でDNSを指定した端末も対象にする）。
+    // ゲートウェイ自身宛と、利用者が除外したCIDR宛は誘導しない。
+    lines.push(`add chain inet ${GATEWAY_TABLE_NAME} dns_redirect { type nat hook prerouting priority -100 ; }`);
+    const excluded = [dnsRedirect.listenAddress, ...dnsRedirect.excludedCidrs].join(", ");
+    rule(
+      `dns_redirect iifname "${lanIface}" meta l4proto { udp, tcp } th dport 53 ip daddr != { ${excluded} } ` +
+        `dnat ip to ${dnsRedirect.listenAddress}:${dnsRedirect.port}`,
+    );
+  }
+
+  if (!transparentGateway) {
+    return lines.map((line) => `${line}\n`).join("");
+  }
 
   // (1) Dockerの公開ポート（web UIの8080等）宛の転送はDNAT済みのconntrackエントリを持つ。LAN側からこの経路で
   // 到達するWeb UIまでもが遮断されると、透過ゲートウェイ有効化後にWeb UIから設定を戻せなくなるため、
@@ -83,6 +190,11 @@ export function buildGatewayRuleset(input: GatewayRulesetInput): string {
   // 末尾の遮断に巻き込まれないようにする。`ct direction reply`により、LAN機器発の確立済み通信（オリジナル
   // 方向）はここでは許可されない（KS ON切替後に旧接続が漏れ続けるのを防ぐ）。
   rule(`forward oifname != "${lanIface}" ct direction reply ct state established,related accept`);
+  if (bypass !== undefined) {
+    // (3) 迂回対象として印を付けた通信は、VPN未接続・Kill Switch ONでも許可する（利用者が迂回を指定した通信であり、
+    // 実回線から出る）。単一NICでは応答方向もLAN側インターフェースから入ってくるため、conntrackのマークで双方向を許可する。
+    rule(`forward ct mark ${BYPASS_FWMARK} accept`);
+  }
 
   if (vpnIface !== undefined) {
     // VPN接続中: トンネル経由の転送のみを許可する（フェイルクローズ・フェイルオープン共通の経路）。

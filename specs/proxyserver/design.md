@@ -195,8 +195,8 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 
 | 項目 | 内容 |
 |---|---|
-| 待受アドレス | LAN側インターフェースのIPv4アドレスと`127.0.0.1`（後者は3proxy用）。ポートは環境変数`DNS_RELAY_PORT`（既定`53`。`network_mode: host`のためホスト上の他のDNSと衝突しうる。衝突時は`error`状態にする） |
-| 問い合わせの処理 | ①問い合わせ名を迂回リストと照合 → ②上流へ転送 → ③応答が成功で、かつ照合が一致していれば、応答内のA（IPv4）レコードのIPをnft setへ投入 → ④応答をクライアントへ返す。応答の内容は改変しない（AAAAは対象外） |
+| 待受アドレス | LAN側インターフェースのIPv4アドレスと`127.0.0.1`（後者は3proxy用）。ポートは環境変数`DNS_RELAY_PORT`（既定`53`。`network_mode: host`のためホスト上の他のDNSと衝突しうる。衝突時は`error`状態にし、設定の再通知（10秒周期）のたびに再試行して、解消すれば自動で回復する）。`proxy`は非rootで動くため、53番（特権ポート）のbind権限だけを、nodeバイナリへのファイルcapability（`setcap cap_net_bind_service=+ep`。`proxy/Dockerfile`）で与える（`network_mode: host`ではコンテナ側のsysctl`net.ipv4.ip_unprivileged_port_start`を変えられないため。`NET_BIND_SERVICE`はDockerの既定のcapabilityに含まれる） |
+| 問い合わせの処理 | ①問い合わせ名を迂回リストと照合 → ②上流へ転送 → ③応答が成功（NOERROR）で、かつ照合が一致していれば、応答内のA（IPv4）レコードのIPをnft setへ投入 → ④**setへの反映が終わってから**応答をクライアントへ返す。応答の内容は改変しない（AAAAは対象外）。④の順序が必要なのは、応答を受け取ったクライアントが直ちに接続しても、最初のパケットから迂回されるようにするため（反映を待たずに返すと、最初の接続だけVPN経由になる。実機で確認）。反映の失敗は応答を妨げない |
 | 照合規則 | `example.com`は`example.com`のみ（サブドメインは含まない。完全一致）、`*.example.com`はすべてのサブドメイン（複数階層を含む。`example.com`自体は含まない）。両方を対象にするには両方の表記を登録する。大文字小文字は区別せず、末尾のドットは無視する。照合するのは問い合わせ名のみとする（応答のCNAME先の名前は照合しない。CNAME先のドメインを迂回したい場合は利用者がそのドメインを追加する） |
 | 上流への転送 | 上流（`dnsUpstreamUrl`）へDoH（RFC 8484。`application/dns-message`のPOST）で、`<dnsUpstreamUrl>/<ClientID>`宛に転送する。サーバ証明書は、システムのCAに加えて`dnsUpstreamCaPem`（あれば）で検証する。検証に失敗する接続は使わない |
 | ClientID | クライアントのMAC（`/proc/net/arp`から引く。30秒キャッシュ）から`mac-aa-bb-cc-dd-ee-ff`を、引けなければIPから`ip-192-168-3-25`を生成する（AdGuard Homeの制約: 小文字英数字とハイフン、63文字以内）。ゲートウェイ自身（`127.0.0.1`。3proxyからの問い合わせ）は固定で`explicit-proxy`とする。名前への対応付けは、自宅DNSサーバ側でClientIDを持つクライアントとして登録する運用とする |
@@ -213,12 +213,14 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 | チェーン`bypass_mark`（prerouting、`mangle`優先度） | `iifname "<lan_iface>" ip daddr @bypass4 meta mark set 0x100` |
 | チェーン`bypass_mark_output`（output、`type route`） | 明示的プロキシ用。`meta skuid <3proxyのUID> ip daddr @bypass4 meta mark set 0x100` |
 | forward | マーク付きのLAN発通信を許可する（Kill Switchのdropより前）。VPN未接続でも迂回対象は疎通する（利用者が迂回を指定した通信であるため） |
-| postrouting（nat） | 実回線側へ出るマーク付き通信をマスカレードする |
+| postrouting（nat） | 実回線側（`<wan_iface>`）へ出るマーク付き通信（`meta mark`）をマスカレードする。LAN機器からの転送に加え、**ホスト自身の発信（明示的プロキシ）にも必要**: 接続時にVPN側の経路で送信元アドレスが選ばれた後、マークで経路が実回線へ変わるため、マスカレードしないと送信元がVPN側のアドレスのまま出て応答が戻らない（実機で確認）。透過ゲートウェイが無効でも、迂回が有効ならこのチェーンだけを作る |
 | `ip rule` | `fwmark 0x100 lookup 100`（VPNベンダーCLIが追加するポリシールールより高い優先度）。テーブル100に、`<lan_iface>`のデフォルトゲートウェイへの`default`経路を置く。ゲートウェイのアドレスは接続監視ループで再検出する |
 
 - 迂回はIPv4のみ（IPv6は対象外）。
-- 単一NIC構成では、LANクライアントの通信が同一インターフェースへ折り返す。ICMPリダイレクトの送出は無効化する（`send_redirects=0`。インストーラの設定に含める）。
-- 明示的プロキシ: 3proxyの`nserver`をこのリゾルバ（`127.0.0.1:<DNS_RELAY_PORT>`）へ向けて生成する。これにより3proxyの名前解決もsetへの投入と上流転送を経る。プロキシ利用者ごとの識別はできない（ClientIDは`explicit-proxy`固定）。
+- 単一NIC構成では、LANクライアントの通信が同一インターフェースへ折り返す。ゲートウェイが「ルータへ直接送れ」というICMPリダイレクトをクライアントへ返すと、以後クライアントが直接送って透過ゲートウェイを迂回してしまうため、ICMPリダイレクトの送出を無効化する。インストーラが`/etc/sysctl.d/99-vpngwgui.conf`へ`net.ipv4.conf.{all,default,<LAN側IF>}.send_redirects=0`を書く（アンインストールで既定値へ戻す）。
+- **IPアドレス単位の判定であることの制約**: 迂回対象のドメインと、対象外のドメインが同じIPアドレスを共有している場合（CDN等）、その対象外のドメイン宛の通信も迂回される（次の名前解決までの間、または期限まで）。ドメイン名ではなくIPで経路を決める方式の本質的な制約である。
+- **待受に失敗している間の安全側の挙動**: 中継リゾルバが待受中でない間は、名前解決を中継へ向ける設定（53番リダイレクト、3proxyの名前解決先）を入れない（入れると名前解決が止まるため）。迂回のsetとポリシールーティングは構成する。
+- 明示的プロキシ: 3proxyの`nserver`をこのリゾルバ（`127.0.0.1`。`DNS_RELAY_PORT`が53以外なら`127.0.0.1:<ポート>`）へ向けて生成する（設定が変わると3proxyは再起動する）。これにより3proxyの名前解決もsetへの投入と上流転送を経る。プロキシ利用者ごとの識別はできない（ClientIDは`explicit-proxy`固定）。ホスト自身の発信のうち`bypass_mark_output`が対象にするのは、`proxy`プロセスの実行ユーザー（3proxyの実行ユーザーと同じ）が発信するもので、迂回対象のIP宛のものだけである。
 
 ## 53番リダイレクト
 
@@ -228,7 +230,8 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 
 - `POST /net/settings`のボディへ、`dnsRelayEnabled`・`dnsUpstreamUrl`・`dnsUpstreamCaPem`・`dnsFailureMode`・`dnsFallbackServers`・`dnsRedirectEnabled`・`dnsRedirectExcludedCidrs`と、`excludedDomains`が加わる（形状は`../apiserver/design.md`「設定反映」）。`DnsRelayController`が`applySettings()`で、設定が前回と同一なら何もせず、変わればリゾルバを再構成する（`GatewayController`・`ExplicitProxyController`と同じ調停の役割）。
 - `GET /net/status`へ`dnsRelay`（`state`: `active`／`stopped`／`unconfigured`／`error`、`upstream`: `ok`／`failing`（直近の転送が失敗）、`bypassEntries`: set内の要素数）が加わる。`unconfigured`は有効設定だが上流もフォールバックも空の場合。
-- 監査ログ: `dns_relay_started`／`dns_relay_stopped`／`dns_relay_config_error`／`dns_relay_upstream_failing`／`dns_relay_upstream_recovered`／`dns_relay_fallback`（問い合わせ内容は記録しない）。
+- 監査ログ: `dns_relay_started`／`dns_relay_stopped`／`dns_relay_config_error`／`dns_relay_upstream_failing`／`dns_relay_upstream_recovered`／`dns_relay_fallback`（フォールバックは障害ごとに1回だけ記録する）／`bypass_set_update_error`／`bypass_routing_error`（迂回用の経路を設定できない場合。問い合わせ内容は記録しない）。
+- **ポリシールーティングの管理**（`network/policy-routing.ts`）: 迂回が有効な間、`ip rule add fwmark 0x100 table 100 priority 100`と、テーブル100の`default via <LAN側IFのデフォルトゲートウェイ> dev <LAN側IF>`を維持する（接続監視の周期ごとに現状を確認して冪等に整える）。ゲートウェイは`ip -4 route show default dev <LAN側IF>`で検出し、VPN接続でメインテーブルのデフォルトルートが書き換えられて検出できない間は、直近に検出できた値を使う。無効になれば`ip rule`とテーブル100を撤去する。
 
 # 障害時の挙動
 

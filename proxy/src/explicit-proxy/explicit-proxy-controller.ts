@@ -11,6 +11,8 @@ import { buildExplicitProxyConfig } from "./config-builder.js";
 export interface ExplicitProxySettings {
   enabled: boolean;
   allowedCidrs: readonly string[];
+  // 名前解決に使うDNSサーバ（DNS中継が有効なとき、中継リゾルバのアドレス）。省略時は3proxy既定。
+  nameServer?: string;
 }
 
 // active: 稼働中（一時的な再起動待ちを含む） / stopped: 無効 / unconfigured: 有効設定だが許可CIDRが空 /
@@ -128,8 +130,9 @@ export class ExplicitProxyController {
       !this.configFailed &&
       settings.enabled === this.settings.enabled &&
       settings.allowedCidrs.length === this.settings.allowedCidrs.length &&
-      settings.allowedCidrs.every((cidr, index) => cidr === this.settings.allowedCidrs[index]);
-    this.settings = { enabled: settings.enabled, allowedCidrs: [...settings.allowedCidrs] };
+      settings.allowedCidrs.every((cidr, index) => cidr === this.settings.allowedCidrs[index]) &&
+      settings.nameServer === this.settings.nameServer;
+    this.settings = { enabled: settings.enabled, allowedCidrs: [...settings.allowedCidrs], nameServer: settings.nameServer };
     this.hasApplied = true;
     if (unchanged) return;
 
@@ -150,6 +153,7 @@ export class ExplicitProxyController {
           allowedCidrs: this.settings.allowedCidrs,
           socksPort: this.options.socksPort,
           httpPort: this.options.httpPort,
+          nameServer: this.settings.nameServer,
         }),
       );
     } catch (error) {

@@ -117,3 +117,38 @@ describe("GatewayStatusCard 取得失敗・取得中", () => {
     expect(within(explicitProxyRow()).getByText("取得中...")).toBeInTheDocument();
   });
 });
+
+describe("GatewayStatusCard DNS中継（Phase 14）", () => {
+  const TRANSPARENT: GatewayStatus["transparentGateway"] = { state: "stopped", killSwitchBlocking: false };
+  function dnsRelayRow(): HTMLElement {
+    return screen.getByTestId("status-dns-relay");
+  }
+  function renderWith(dnsRelay: NonNullable<GatewayStatus["dnsRelay"]>) {
+    render(<GatewayStatusCard gateway={{ ...gatewayOf(TRANSPARENT), dnsRelay }} gatewayError={undefined} isLoading={false} />);
+  }
+
+  it("稼働中は迂回中のIP数とともに緑で表示する", () => {
+    renderWith({ state: "active", upstream: "ok", bypassEntries: 7 });
+    expect(within(dnsRelayRow()).getByText("稼働中")).toHaveClass("badge-ok");
+    expect(within(dnsRelayRow()).getByText(/迂回中のIP: 7件/)).toBeInTheDocument();
+  });
+
+  it("待受中でも上流に接続できない間は、危険色で表示する", () => {
+    renderWith({ state: "active", upstream: "failing", bypassEntries: 0 });
+    expect(within(dnsRelayRow()).getByText("自宅DNSサーバに接続できません")).toHaveClass("badge-danger");
+  });
+
+  it.each([
+    ["stopped", "停止", "badge-muted"],
+    ["unconfigured", "未構成（自宅DNSサーバ未設定）", "badge-warn"],
+    ["error", "待受に失敗（ポート衝突等）", "badge-danger"],
+  ] as const)("%sは「%s」を表示する", (state, label, tone) => {
+    renderWith({ state, upstream: "unknown", bypassEntries: 0 });
+    expect(within(dnsRelayRow()).getByText(label)).toHaveClass(tone);
+  });
+
+  it("古いゲートウェイ（dnsRelayなし）では、DNS中継の行を出さない", () => {
+    render(<GatewayStatusCard gateway={gatewayOf(TRANSPARENT)} gatewayError={undefined} isLoading={false} />);
+    expect(screen.queryByTestId("status-dns-relay")).not.toBeInTheDocument();
+  });
+});

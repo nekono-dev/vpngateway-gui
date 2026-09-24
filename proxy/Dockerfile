@@ -35,13 +35,18 @@ FROM node:22-alpine
 # proxyserver/design.md「NAT/FORWARDルール」参照）。iproute2: `ip route get`によるVPNトンネルインターフェース
 # 動的検出用（Alpine標準の busybox ip では出力形式が異なりうるため明示的に導入）。
 # sudo: nft/ipをvpngwguiから実行するため（cap_add: NET_ADMINを付与していても非root実行では昇格が必要）。
-RUN apk add --no-cache sudo nftables iproute2 \
+# libcap-utils: nodeに特権ポート（DNS中継の53番）のbind権限だけを与えるため（下のsetcap）。
+RUN apk add --no-cache sudo nftables iproute2 libcap-utils \
   && addgroup -g 10001 vpngwgui && adduser -D -u 10001 -G vpngwgui vpngwgui \
   && echo "vpngwgui ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vpngwgui \
   && chmod 0440 /etc/sudoers.d/vpngwgui
 WORKDIR /app
 COPY --from=build /repo/proxy/dist ./dist
 COPY --from=proxy-build /src/bin/3proxy /usr/local/bin/3proxy
+# DNS中継リゾルバは非rootのvpngwguiで53番（特権ポート）をlistenする。network_mode: hostのため、コンテナ側のsysctl
+# （net.ipv4.ip_unprivileged_port_start）では変えられないので、nodeバイナリにbind権限（NET_BIND_SERVICE。Dockerの既定の
+# capabilityに含まれる）だけをファイルcapabilityで付与する（proxyserver/design.md「DNS中継リゾルバ」）。
+RUN setcap cap_net_bind_service=+ep /usr/local/bin/node
 RUN mkdir -p /var/run/vpngw-ctl && chown vpngwgui:vpngwgui /var/run/vpngw-ctl
 USER vpngwgui
 ENV CTL_SOCKET_PATH=/var/run/vpngw-ctl/net.sock

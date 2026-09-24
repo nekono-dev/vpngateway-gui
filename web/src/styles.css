@@ -476,15 +476,6 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
   font-size: 0.875rem;
 }
 
-.unsupported {
-  margin: 2px 0 8px;
-  color: var(--warn);
-  background: var(--warn-bg);
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-}
-
 dialog {
   width: min(560px, calc(100vw - 32px));
   border: 1px solid var(--border);
@@ -508,10 +499,27 @@ dialog label {
   gap: 4px;
 }
 
-dialog label:has(> input[type="checkbox"]) {
+dialog label:has(> input[type="checkbox"]),
+dialog label:has(> input[type="radio"]) {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+
+/* DNS中継の設定グループ（Phase 14）。他の設定項目と同じ縦の並びに、枠線でまとまりを示す。 */
+dialog fieldset.dns-relay-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+dialog fieldset.dns-relay-settings legend {
+  padding: 0 4px;
+  font-weight: 600;
 }
 
 dialog [role="alert"] {

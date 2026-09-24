@@ -41,4 +41,18 @@ describe("buildExplicitProxyConfig", () => {
       /differ/,
     );
   });
+
+  it("nameServerを指定すると、3proxyの名前解決先（nserver）を出力する", () => {
+    const config = buildExplicitProxyConfig({ allowedCidrs: ["192.168.3.0/24"], socksPort: 1080, httpPort: 3128, nameServer: "127.0.0.1" });
+    expect(config.split("\n")).toContain("nserver 127.0.0.1");
+    expect(buildExplicitProxyConfig({ allowedCidrs: ["192.168.3.0/24"], socksPort: 1080, httpPort: 3128 })).not.toContain("nserver");
+  });
+
+  it("不正なnameServer（設定行の注入を含む）は例外", () => {
+    for (const nameServer of ["localhost", "127.0.0.1\nallow *", "1.2.3"]) {
+      expect(() =>
+        buildExplicitProxyConfig({ allowedCidrs: ["192.168.3.0/24"], socksPort: 1080, httpPort: 3128, nameServer }),
+      ).toThrow(/invalid nameServer/);
+    }
+  });
 });

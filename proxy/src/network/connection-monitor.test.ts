@@ -13,6 +13,10 @@ function makeFakeController() {
   const calls: Array<string | undefined> = [];
   return {
     calls,
+    refreshCount: 0,
+    refreshPolicyRouting: async function (this: { refreshCount: number }) {
+      this.refreshCount += 1;
+    },
     updateVpnInterface: async (vpnIface: string | undefined) => {
       calls.push(vpnIface);
       return {} as never;
@@ -46,5 +50,14 @@ describe("checkConnectionOnce", () => {
     await checkConnectionOnce(controller as never, "eth0");
 
     expect(controller.calls).toEqual([undefined]);
+  });
+
+  it("接続状態の反映のあと、ドメイン迂回用の経路の再確認も毎回行う", async () => {
+    getEgressInterfaceMock.mockResolvedValue("eth0");
+    const controller = makeFakeController();
+
+    await checkConnectionOnce(controller as never, "eth0");
+
+    expect(controller.refreshCount).toBe(1);
   });
 });

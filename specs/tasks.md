@@ -31,22 +31,13 @@
 | モバイル表示・入力欄の視認性改善 | web | |
 | ベンダー選択のプルダウン化・PWA対応 | web | PWAはHTTPS化まで完全動作しない（既知の制約） |
 | ログインボタンの配置・枠線色の調整 | web | |
+| ドメイン迂回（split-tunnel）とDNS中継 | proxy, api, web | 実VPN接続中の透過ゲートウェイ経由の実転送・実機での53番リダイレクトは未検証（モックで確認済み） |
 | デプロイメント構成の分離（ロール別配置・認証・mTLS） | api, proxy, web | 未着手の残作業は下記「デプロイメント構成の分離」参照 |
 
 未着手の機能は「未着手の機能」を参照。
 
 # 未着手の機能
 
-## ドメイン迂回（split-tunnel）とDNS中継（Phase 14）
-
-`excludedDomains`を透過ゲートウェイ・明示的プロキシの双方で実際に機能させ、名前解決を自宅DNSサーバ（AdGuard Home想定）へ中継する。設計は[design.md](design.md)「ドメイン単位の迂回とDNS中継の設計方針」、実装タスクは各アプリの`tasks.md`の「ドメイン迂回とDNS中継」節（[proxyserver](proxyserver/tasks.md)・[apiserver](apiserver/tasks.md)・[webserver](webserver/tasks.md)）が一次情報。
-
-- [x] 要件・設計の確定（本節の起票時点）
-- [ ] 各アプリの実装（proxy → api → web）
-- [ ] 実機検証（検証サーバのテスト用AdGuard Home・モックVPN、続いて実VPN）
-- [ ] READMEへのDNS中継・迂回ドメインの導入・設定・制約（暗号化DNS・IPv6・手動DNS指定端末）の追記
-
-完了基準: `excludedDomains`のドメイン宛の通信がVPNを経由せず直接ルートで疎通し、DNSのTTL満了後もIPの変化に追従すること。名前解決が自宅DNSサーバへ転送され、クライアントごとに区別されて履歴へ記録されること（透過ゲートウェイ・明示的プロキシ双方。明示的プロキシは`explicit-proxy`固定）。
 ## デプロイメント構成の分離（残作業）
 
 単一ホスト構成・3台分離構成とも主要な動作（利用者アカウント作成・ログイン・接続・稼働状況取得・mTLSの拒否確認）は実機検証済み（詳細は[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「デプロイメント構成の分離」節）。残る作業は以下。

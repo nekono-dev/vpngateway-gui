@@ -158,10 +158,12 @@
 
 設計は`design.md`「ユーザ向け設定の具体スキーマ」「設定反映」。
 
-- [ ] `UserSettings`（`schemas/settings.ts`）へ`dns*`を追加し、既定値で補完
-- [ ] 形式検証（`excludedDomains`のワイルドカード表記、`dnsUpstreamUrl`、`dnsFallbackServers`、`dnsRedirectExcludedCidrs`、項目間の整合）と単体テスト
-- [ ] ゲートウェイへの反映（`/net/settings`のボディ）と、稼働状況の中継（`dnsRelay`）
-- [ ] OpenAPI・orval生成物の更新
+- [x] `UserSettings`（`schemas/settings.ts`）へ`dns*`を追加し、既定値で補完
+- [x] 形式検証（`excludedDomains`のワイルドカード表記、`dnsUpstreamUrl`、`dnsFallbackServers`、`dnsRedirectExcludedCidrs`、項目間の整合）と単体テスト
+- [x] ゲートウェイへの反映（`/net/settings`のボディ）と、稼働状況の中継（`dnsRelay`）
+- [x] OpenAPI・orval生成物の更新
+
+検証: 単体テスト（設定の形式検証・項目間の整合・稼働状況の中継）と、検証サーバのLXDラボでの通しの動作（`e2e/phase14/scenarios.sh`。設定の保存→ゲートウェイへの反映→稼働状況の取得）で確認。
 
 # 将来課題
 

@@ -549,6 +549,7 @@ Web UIのダッシュボードが「設定値」ではなく「実際に適用�
 - `vpnInterface`: 検出中のVPNトンネルIF名。未接続時は省略。
 - `killSwitchBlocking`: Kill Switchによりforwardが遮断中（VPN未接続かつ`killSwitch=true`）か。
 - **`explicitProxy`（Phase 6で追加）**: `{ "state", "socksPort"?, "httpPort"?, "restartCount" }`。`state`は`"active"`（稼働中。`socksPort`・`httpPort`はこの状態のみ付く）／`"stopped"`（`explicitProxyEnabled=false`）／`"unconfigured"`（有効設定だが`explicitProxyAllowedCidrs`が空で起動しない）／`"crashLoop"`（3proxyが起動直後の異常終了を連続して繰り返している）／`"error"`（3proxy設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数。`crashLoop`等のproxy側の異常は本エンドポイントの中継で利用者へ届く（proxyserver/design.md「`GET /status`」参照）。
+- **`dnsRelay`（Phase 14で追加。省略可）**: `{ "state", "upstream", "bypassEntries" }`。`state`は`"active"`（待受中）／`"stopped"`（`dnsRelayEnabled=false`）／`"unconfigured"`（有効設定だが上流もフォールバック先も空）／`"error"`（待受に失敗。ポート衝突等）。`upstream`は`"ok"`／`"failing"`（直近の上流への転送が失敗）／`"unknown"`（未転送・待受していない）。`bypassEntries`は保持中（期限内）の迂回対象IPv4アドレス数。`dnsRelay`を持たない旧ゲートウェイでも読めるよう、レスポンス・検証とも省略可能とする。
 - proxyが`explicitProxy`を含まない旧形式で応答した場合は、形状不一致として例外（502相当）になる（api・proxyは同時にデプロイすること）。
 - proxy未応答時は既存方針どおり`502`／`504`（下記エラーハンドリング方針）。
 

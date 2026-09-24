@@ -4,11 +4,34 @@
 // 本ファイルは「いつ・どの状態で再構成するか」の調停のみを行う。
 
 import { runNftScript, type NftResult } from "./nft-client.js";
-import { buildGatewayRuleset, buildTeardownScript } from "./ruleset.js";
+import { BYPASS_SET_NAME, GATEWAY_TABLE_NAME, buildGatewayRuleset, buildTeardownScript, type DnsRedirectInput } from "./ruleset.js";
+import { BypassSet, type BypassAddressInput } from "./bypass-set.js";
+
+// ドメイン迂回・DNSリダイレクトに関する設定（proxyserver/design.md「ドメイン迂回とDNS中継」）。
+export interface GatewayDnsSettings {
+  // 迂回対象のsetとfwmark、ポリシールーティングを構成するか（DNS中継が有効で、迂回ドメインが1件以上）。
+  bypassEnabled: boolean;
+  // 宛先ポート53の通信を中継リゾルバへ誘導する設定。undefinedなら誘導しない。
+  redirect?: DnsRedirectInput;
+}
 
 export interface GatewaySettings {
   transparentGatewayEnabled: boolean;
   killSwitch: boolean;
+  dns?: GatewayDnsSettings;
+}
+
+// ポリシールーティング（`ip rule`・テーブル100）の管理。テストで差し替えるための最小限の境界。
+export interface BypassRouting {
+  sync(active: boolean): Promise<boolean>;
+}
+
+export interface GatewayControllerOptions {
+  policyRouting?: BypassRouting;
+  bypassSet?: BypassSet;
+  // 明示的プロキシ（3proxy）の実行ユーザーID。ドメイン迂回でホスト自身の発信も対象にする。
+  explicitProxyUid?: number;
+  onEvent?: (event: Record<string, unknown>) => void;
 }
 
 export interface ReconcileOutcome {
@@ -65,7 +88,12 @@ export class GatewayController {
     private readonly lanIface: string | undefined,
     private readonly wanIface: string | undefined = lanIface,
     private readonly runNft: (script: string) => Promise<NftResult> = runNftScript,
-  ) {}
+    private readonly options: GatewayControllerOptions = {},
+  ) {
+    this.bypassSet = options.bypassSet ?? new BypassSet();
+  }
+
+  private readonly bypassSet: BypassSet;
 
   /**
    * 目的: ユーザ向け設定（killSwitch/transparentGatewayEnabled）の最新値を反映し、nftルールを再構成する。
@@ -77,10 +105,7 @@ export class GatewayController {
     // APIサーバは設定を定期的に再通知する（api/src/server.ts）。前回成功した適用と同じ内容であれば、
     // nftルールを触らず（不要な再構成を避け）前回の結果を返す。プロセス起動後の最初の通知は必ず適用する。
     const unchanged =
-      this.hasReconciled &&
-      this.lastReconcileSucceeded &&
-      settings.killSwitch === this.settings.killSwitch &&
-      settings.transparentGatewayEnabled === this.settings.transparentGatewayEnabled;
+      this.hasReconciled && this.lastReconcileSucceeded && JSON.stringify(settings) === JSON.stringify(this.settings);
     this.settings = settings;
     if (unchanged) {
       return this.queue.then((outcome) => ({ ...outcome, reconciled: false }));
@@ -139,6 +164,53 @@ export class GatewayController {
     };
   }
 
+  /**
+   * 目的: 迂回対象のアドレス（DNS中継が得た名前解決結果）を登録する。テーブルが適用済みなら、nftのsetへも追加する。
+   *      テーブルが未適用・再構成中の場合は、次の再構成が保持中の要素をまとめて引き継ぐ。
+   * 入力: addresses(Aレコードのアドレスとキャッシュ期限)。
+   */
+  addBypass(addresses: readonly BypassAddressInput[]): Promise<void> {
+    const added = this.bypassSet.add(addresses);
+    if (added.length === 0 || !this.isBypassActive()) return Promise.resolve();
+    const elements = added.map((entry) => `${entry.address} timeout ${entry.timeoutSeconds}s`).join(", ");
+    const script = `add element inet ${GATEWAY_TABLE_NAME} ${BYPASS_SET_NAME} { ${elements} }\n`;
+    const task = this.queue.then(async (previous) => {
+      if (this.lastReconcileSucceeded && this.isBypassActive()) {
+        const result = await this.runNft(script);
+        if (result.exitCode !== 0) {
+          this.options.onEvent?.({ event: "bypass_set_update_error", message: result.stderr.trim() });
+        }
+      }
+      return previous;
+    });
+    this.queue = task;
+    return task.then(() => undefined);
+  }
+
+  /** 目的: 保持中（期限内）の迂回対象アドレス数を返す（`GET /status`用）。 */
+  bypassEntryCount(): number {
+    return this.bypassSet.size();
+  }
+
+  /**
+   * 目的: ポリシールーティングを現状に合わせ直す（接続監視ごとに呼ぶ。VPN接続でメインテーブルが書き換わった後や、
+   *      ゲートウェイの変化への追従）。迂回が無効なら何もしない。
+   */
+  async refreshPolicyRouting(): Promise<void> {
+    if (!this.isBypassActive()) return;
+    await this.syncPolicyRouting(true);
+  }
+
+  private isBypassActive(): boolean {
+    return this.lanIface !== undefined && this.settings.dns?.bypassEnabled === true;
+  }
+
+  private async syncPolicyRouting(active: boolean): Promise<void> {
+    if (this.options.policyRouting === undefined) return;
+    const ok = await this.options.policyRouting.sync(active);
+    if (!ok) this.options.onEvent?.({ event: "bypass_routing_error", message: "迂回用の経路を設定できない（デフォルトゲートウェイを特定できない等）" });
+  }
+
   private reconcile(): Promise<ReconcileOutcome> {
     this.hasReconciled = true;
     this.queue = this.queue.then(() => this.applyCurrentState());
@@ -146,14 +218,20 @@ export class GatewayController {
   }
 
   private async applyCurrentState(): Promise<ReconcileOutcome> {
-    if (!this.settings.transparentGatewayEnabled || this.lanIface === undefined) {
-      // 透過ゲートウェイ無効、またはインストールスクリプト未実行等でLAN側インターフェースが不明な場合は、
-      // 安全に構成できない（誤ったインターフェースでの転送を避ける）ため撤去のみで終える。
-      // テーブルが存在しない場合nftはエラー終了しうるが、撤去が目的のため結果は無視する。
+    const dns = this.settings.dns;
+    const transparent = this.settings.transparentGatewayEnabled;
+    const bypassEnabled = dns?.bypassEnabled === true;
+    if (this.lanIface === undefined || (!transparent && !bypassEnabled && dns?.redirect === undefined)) {
+      // 透過ゲートウェイ・ドメイン迂回・DNSリダイレクトのいずれも不要、またはインストールスクリプト未実行等で
+      // LAN側インターフェースが不明な場合は、安全に構成できない（誤ったインターフェースでの転送を避ける）ため
+      // 撤去のみで終える。テーブルが存在しない場合nftはエラー終了しうるが、撤去が目的のため結果は無視する。
       const teardown = await this.runNft(buildTeardownScript());
+      this.bypassSet.clear();
+      await this.syncPolicyRouting(false);
       this.lastReconcileSucceeded = true;
       return { applied: false, vpnIface: this.vpnIface, reconciled: true, teardown, apply: undefined };
     }
+    if (!bypassEnabled) this.bypassSet.clear();
 
     // 再接続・国変更・設定変更のいずれでも、旧ルールが残ったまま新ルールが重複しないよう、毎回テーブル全体を
     // 組み立て直す（proxyserver/design.md「再接続・国変更時の旧ルール撤去→新IFでの再適用処理」）。
@@ -163,9 +241,14 @@ export class GatewayController {
       wanIface: this.wanIface ?? this.lanIface,
       vpnIface: this.vpnIface,
       killSwitch: this.settings.killSwitch,
+      transparentGateway: transparent,
+      // 再構成で失われないよう、保持中の迂回対象を新しいテーブルへ同時に入れる（原子的な置換）。
+      bypass: bypassEnabled ? { entries: this.bypassSet.live(), explicitProxyUid: this.options.explicitProxyUid } : undefined,
+      dnsRedirect: dns?.redirect,
     });
     const apply = await this.runNft(script);
     this.lastReconcileSucceeded = apply.exitCode === 0;
+    await this.syncPolicyRouting(bypassEnabled);
     return {
       applied: apply.exitCode === 0,
       vpnIface: this.vpnIface,

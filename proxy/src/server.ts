@@ -16,9 +16,12 @@ import { readRequestBody, sendJson } from "./lib/http-json.js";
 import { loadGatewayTlsOptions } from "./gateway-channel/tls-options.js";
 import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
-import { GatewayController, type GatewaySettings } from "./network/gateway-controller.js";
+import { GatewayController } from "./network/gateway-controller.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
-import { getLanSubnetCidr } from "./network/lan-subnet.js";
+import { getLanIpv4Address, getLanSubnetCidr } from "./network/lan-subnet.js";
+import { PolicyRouting } from "./network/policy-routing.js";
+import { DnsRelayController } from "./dns-relay/dns-relay-controller.js";
+import { parseSettingsRequest, toDnsRelaySettings, toGatewayDnsSettings } from "./settings-request.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 
 const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
@@ -44,7 +47,24 @@ const lanCidr = await getLanSubnetCidr(LAN_IFACE);
 const EXPLICIT_SOCKS_PORT = Number(process.env.EXPLICIT_SOCKS_PORT ?? 1080);
 const EXPLICIT_HTTP_PORT = Number(process.env.EXPLICIT_HTTP_PORT ?? 3128);
 
-const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE);
+// DNS中継リゾルバの待受ポート（ホストのDNSと衝突する場合に変更する）。LAN側アドレスと127.0.0.1（3proxy用）で待ち受ける。
+const DNS_RELAY_PORT = Number(process.env.DNS_RELAY_PORT ?? 53);
+const lanAddress = await getLanIpv4Address(LAN_IFACE);
+
+const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE, undefined, {
+  policyRouting: new PolicyRouting(LAN_IFACE),
+  // 3proxyはこのプロセスから起動するため、実行ユーザーが同じ。迂回の対象にするホスト自身の発信の判定に使う。
+  explicitProxyUid: process.getuid?.(),
+  onEvent: (event) => logAuditEvent(event),
+});
+const dnsRelayController = new DnsRelayController({
+  port: DNS_RELAY_PORT,
+  listenAddresses: [...(lanAddress !== undefined ? [lanAddress] : []), "127.0.0.1"],
+  // nftのsetへの反映が終わってから、中継リゾルバがクライアントへ応答を返す。
+  registerBypass: (addresses) => gatewayController.addBypass(addresses),
+  bypassEntryCount: () => gatewayController.bypassEntryCount(),
+  onEvent: (event) => logAuditEvent(event),
+});
 const explicitProxyController = new ExplicitProxyController({
   binaryPath: process.env.EXPLICIT_PROXY_BINARY ?? "/usr/local/bin/3proxy",
   configPath: process.env.EXPLICIT_PROXY_CONFIG ?? "/tmp/vpngwgui/3proxy.cfg",
@@ -52,36 +72,6 @@ const explicitProxyController = new ExplicitProxyController({
   httpPort: EXPLICIT_HTTP_PORT,
   onEvent: (event) => logAuditEvent(event),
 });
-
-// 内部プロトコルのリクエスト形状（OpenAPI非公開）。apiserver/design.md「設定反映(`/settings`)内部プロトコル」参照。
-// APIサーバはユーザ向け設定全体を送信する。プロキシが用いるのはkillSwitch/transparentGatewayEnabled
-// （透過ゲートウェイ）とexplicitProxyEnabled/explicitProxyAllowedCidrs（明示的プロキシ）。
-// excludedDomainsはPhase 6で参照する。
-interface SettingsRequestBody extends GatewaySettings {
-  explicitProxyEnabled: boolean;
-  explicitProxyAllowedCidrs: string[];
-  [key: string]: unknown;
-}
-
-/**
- * 目的: unknownな入力(JSONパース結果)がSettingsRequestBodyの最小要件を満たすかを検証する。
- * 入力: JSON.parse()の戻り値（unknown）。
- * 出力: 形状が正しければ true（TypeScriptの型ガードとしても機能する）。
- * 期待する入力形状: killSwitch/transparentGatewayEnabled/explicitProxyEnabledがboolean、
- *                explicitProxyAllowedCidrsが文字列配列。他フィールドは無視する。個々のCIDRの形式は
- *                ここでは検証せず、設定ファイル生成時（config-builder.ts）に検証する。
- */
-function isValidSettingsRequestBody(value: unknown): value is SettingsRequestBody {
-  if (typeof value !== "object" || value === null) return false;
-  const body = value as Record<string, unknown>;
-  return (
-    typeof body.killSwitch === "boolean" &&
-    typeof body.transparentGatewayEnabled === "boolean" &&
-    typeof body.explicitProxyEnabled === "boolean" &&
-    Array.isArray(body.explicitProxyAllowedCidrs) &&
-    body.explicitProxyAllowedCidrs.every((cidr) => typeof cidr === "string")
-  );
-}
 
 /**
  * 目的: `POST /connection-checks`を処理する。トンネル検出→ゲートウェイルールの再構成を即時に1回行う
@@ -112,27 +102,38 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
     return;
   }
 
-  if (!isValidSettingsRequestBody(parsed)) {
+  const body = parseSettingsRequest(parsed);
+  if (body === undefined) {
     sendJson(res, 400, { error: "invalid_request_shape" });
     return;
   }
 
+  // 中継リゾルバを先に構成する（53番リダイレクトの宛先・3proxyの名前解決先が待受を前提とするため）。
+  // 待受の成否は状態（GET /net/status）で示し、失敗しても設定反映自体は続ける。
+  await dnsRelayController.applySettings(toDnsRelaySettings(body));
+  // 待受に失敗している間（ポート衝突等）は、名前解決を中継へ向ける設定（53番リダイレクト・3proxyの名前解決先）を
+  // 入れない。入れると、中継が応答しないため名前解決が止まる。次回の再通知（10秒周期）で待受を再試行し、回復すれば入る。
+  const relayActive = dnsRelayController.getStatus().state === "active";
   const outcome = await gatewayController.applySettings({
-    killSwitch: parsed.killSwitch,
-    transparentGatewayEnabled: parsed.transparentGatewayEnabled,
+    killSwitch: body.killSwitch,
+    transparentGatewayEnabled: body.transparentGatewayEnabled,
+    dns: toGatewayDnsSettings(body, lanAddress, DNS_RELAY_PORT, relayActive),
   });
   // 明示的プロキシの起動・停止は透過ゲートウェイのnft再構成とは独立して行う。同期的に状態を更新し、
   // プロセスの起動・停止イベントは監査ログへ出力される（ExplicitProxyControllerのonEvent）。
+  // 中継リゾルバが待受中なら、3proxyの名前解決も中継リゾルバ（127.0.0.1）へ向ける。
   explicitProxyController.applySettings({
-    enabled: parsed.explicitProxyEnabled,
-    allowedCidrs: parsed.explicitProxyAllowedCidrs,
+    enabled: body.explicitProxyEnabled,
+    allowedCidrs: body.explicitProxyAllowedCidrs,
+    nameServer: relayActive ? (DNS_RELAY_PORT === 53 ? "127.0.0.1" : `127.0.0.1:${DNS_RELAY_PORT}`) : undefined,
   });
   // APIの定期再通知（変更なし）のたびに監査ログが埋まらないよう、実際に再構成した場合のみ記録する。
   if (outcome.reconciled) {
     logAuditEvent({
       event: "settings_applied",
-      killSwitch: parsed.killSwitch,
-      transparentGatewayEnabled: parsed.transparentGatewayEnabled,
+      killSwitch: body.killSwitch,
+      transparentGatewayEnabled: body.transparentGatewayEnabled,
+      dnsRelayEnabled: body.dnsRelayEnabled,
       vpnIface: outcome.vpnIface,
       applied: outcome.applied,
     });
@@ -146,6 +147,7 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
     sendJson(res, 200, {
       transparentGateway: gatewayController.getStatus(),
       explicitProxy: explicitProxyController.getStatus(),
+      dnsRelay: dnsRelayController.getStatus(),
       lanCidr,
     });
     return;

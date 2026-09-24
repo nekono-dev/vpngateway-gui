@@ -316,7 +316,7 @@ describe("App", () => {
     }
   });
 
-  it("接続ログ・設定ボタンでそれぞれのダイアログが開き、除外ドメインの暫定表示が出る", async () => {
+  it("接続ログ・設定ボタンでそれぞれのダイアログが開き、DNS中継の設定グループが出る", async () => {
     api.getV1ConnectionLog.mockResolvedValue({ status: 200, data: [] });
     api.getV1ConnectionConfig.mockResolvedValue({
       status: 200,
@@ -326,6 +326,13 @@ describe("App", () => {
         transparentGatewayEnabled: true,
         explicitProxyEnabled: false,
         explicitProxyAllowedCidrs: [],
+        dnsRelayEnabled: false,
+        dnsUpstreamUrl: "",
+        dnsUpstreamCaPem: "",
+        dnsFailureMode: "failClosed",
+        dnsFallbackServers: [],
+        dnsRedirectEnabled: false,
+        dnsRedirectExcludedCidrs: [],
       },
     });
     renderApp();
@@ -335,9 +342,9 @@ describe("App", () => {
     expect(await screen.findByText("履歴はありません。")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "設定" }));
-    expect(await screen.findByText(/Phase 14で対応予定）。$/)).toBeInTheDocument();
-    // 明示的プロキシはPhase 4で実装したため「未対応」の暫定表示は出さない。
-    expect(screen.queryByText(/Phase 4で対応予定/)).not.toBeInTheDocument();
+    expect(await screen.findByText("DNS中継")).toBeInTheDocument();
+    // 迂回ドメインの「未対応」の暫定表示はPhase 14で除去した。
+    expect(screen.queryByText(/未対応/)).not.toBeInTheDocument();
     // Phase 8でデフォルト接続国は廃止した
     expect(screen.queryByText("デフォルト接続国")).not.toBeInTheDocument();
   });

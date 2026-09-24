@@ -116,6 +116,8 @@ Webサーバは以下のみを責務とし、業務ロジック（VPN接続状�
 - **現在の接続先の特定**: `GET /v1/connection`の`location`（CLIが報告した都市名）と、参考一覧の各国が持つ都市名（`cities`）を、大文字小文字を区別せず突き合わせる。一致する国が見つかれば、その行に「接続中」バッジを付け、主表示を報告された都市名にする（見つからない・未接続・都市名が無い場合は、従来どおり国名のみの表示のまま）。
 - **ping値の表示**: 参考一覧は生存確認を伴わない静的なサーバ一覧に基づくため、通常はping値を持たない。列自体は、そのベンダーのCLIがping計測に対応しているか（`GET /v1/connection/capabilities`の`pingMeasurement`が、プラン制限ではなく非対応（`unsupported`）を理由に実行不可か）で出し分ける。対応していても値が無ければ「-」と表示する。
 
+迂回ドメインの欄には、表記規則（`example.com`は自身のみ、`*.example.com`はサブドメインのみ）を入力例で示し、「ドメインとそのサブドメインの両方を迂回するには両方を登録する」旨の案内を添える。
+
 DNS中継の項目は、`dnsRelayEnabled`がOFFの間は無効化（disabled）する。`dnsFallbackServers`は`dnsFailureMode`が「切り替える」のときのみ編集できる。設定ダイアログは、`excludedDomains`に1件以上あるのに`dnsRelayEnabled`がOFFの場合、「DNS中継が無効なため、迂回ドメインは反映されません」と表示する（Phase 14）。
 
 ## 未実装機能の暫定表示（Phase 4〜Phase 14。明示的プロキシ分はPhase 6で除去済み、`excludedDomains`分はPhase 14で除去）

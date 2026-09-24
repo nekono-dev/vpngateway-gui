@@ -30,6 +30,11 @@
 | `phase16/webgui-phase16.mjs` | Phase16（起動時の接続復元・接続/切断ボタンの配置改善・参考一覧での現在の接続先表示）のうちWeb UI側のPlaywright検証（接続/切断ボタンの配置・配色、接続⇄切断での表示の切替、参考一覧での現在の接続先バッジ・ping列の出し分け・選択無効化）。開始時の接続状態（接続中/切断中）に応じて検証内容を選ぶため、実VPNの状態を問わず実行できる。起動時の接続復元そのもの（APIコンテナ再起動を伴う）は手順化されたスクリプトが無く、`specs/apiserver/tasks.md`「起動時の接続状態の復元」に記載の手順で手動で確認した |
 | `phase20/uninstall-scenarios.sh` | Phase20完了基準（アンインストールの頒布URL対応・取得先ディレクトリの削除）を、LXCのクリーンなコンテナで自動検証（`--uninstall`をブートストラップの標準入力パイプで実行し、取得先ディレクトリ・docker composeスタック・sysctl設定・起動時ガードの後始末、再導入できることを確認。`phase11/install-scenarios.sh`と同じくfile://で取得する。実VPN不要） |
 | `phase21/webgui-phase21.mjs` | Phase21（ダッシュボードのカード構成・レイアウトの整理）のWeb UI側のPlaywright検証（ページ全体がビューポートに収まること。特に「接続できる国（参考）」一覧表示時の回帰確認、未ログインのベンダーへ切り替えたときに「ログインしてください」が重複表示されないこと）。ログイン済み・未ログインの両方のベンダーが用意された環境（検証環境のAdGuard VPN・Proton VPN）で実行する |
+| `phase14/lab.sh` | Phase14（ドメイン迂回とDNS中継）の検証ラボを、検証サーバのLXD上に作る／壊す（LAN・ISPルータ・VPN出口・宛先サーバ・モックDNSの6コンテナと3つのL2ネットワーク。VPN接続はデフォルトルートの張り替えで再現し、宛先サーバが見る接続元IPで経路を判別する） |
+| `phase14/mock-doh.py`・`phase14/target-server.py` | ラボ内のモックDNS（DoH＋平文DNS。ClientIDと問い合わせ名を記録し、管理用HTTPで対応表・DoHの上下を切り替える）・宛先サーバ（接続元IPを返す） |
+| `phase14/scenarios.sh` | Phase14完了基準（モックの範囲）を通しで自動検証（シナリオA〜M）。検証サーバ上で実行する |
+| `phase14/webgui-phase14.mjs` | Phase14のWeb UI側のPlaywright検証（設定ダイアログのDNS中継の入力・保存前チェック・保持、稼働状況の「DNS中継」欄） |
+| `phase14/remote.sh` | 開発ホストから検証サーバのラボを操作する（`sync`: 資材の転送とゲートウェイ役の再ビルド、`run`: scenarios.shの実行、`lab`: lab.shの実行） |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
@@ -128,3 +133,19 @@ GW_MODE=ssh bash e2e/phase5/locations-scenarios.sh        # 全シナリオ
 - 開始時に透過ゲートウェイON・Kill Switch ON・VPN切断・お気に入り全解除へ初期化する（検証専用環境で実行すること）。
 - 実VPNへ複数回接続・切断する（約1〜2分）。`error-list`はproxyコンテナを一時停止・再開する。
 - 検証環境の`settings.json`書き換え（`defaultCountry`残存の互換確認）を含む。
+
+## Phase 14の実行手順
+
+検証サーバ（`GW_SSH`、既定`ubuntu@192.168.3.240`。LXD・python3・opensslがあること）のLXD上にラボを作り、モックVPN・モックDNSで検証する。実VPN・実の自宅DNSサーバは使わない。
+
+```sh
+bash e2e/phase14/remote.sh lab create          # ラボの作成（初回のみ。コンテナ6台・ネットワーク3つ）
+# ゲートウェイ役（p14-gw）へ本体を導入する（初回のみ。VPNベンダーは任意）
+#   資材を転送してから、p14-gw内の/opt/vpngwgui で: sh install/install.sh --providers <ベンダーID> --web-port 8080
+bash e2e/phase14/remote.sh sync                # 資材の転送・再ビルド・再起動
+bash e2e/phase14/remote.sh run                 # 全シナリオ。個別実行: run A B（Gには約70秒の待ちを含む）
+bash e2e/phase14/remote.sh lab destroy         # ラボの削除
+```
+
+- 各シナリオは、開始時にDNS中継・迂回ドメインの設定を初期化し、終了時に無効へ戻す。終了時にWeb UI利用者アカウントも削除する（インストール直後の未設定状態へ戻る）。
+- Web UIの検証は、`p14-gw`のWeb UIのポートを検証サーバへ公開（`lxc config device add p14-gw web14 proxy listen=tcp:0.0.0.0:18443 connect=tcp:127.0.0.1:8080`）してから、`node e2e/phase14/webgui-phase14.mjs https://<検証サーバ>:18443 <モックDNSのCA証明書（既定の出力先: 検証サーバの/tmp/p14-doh-ca.pem）>`で実行する。

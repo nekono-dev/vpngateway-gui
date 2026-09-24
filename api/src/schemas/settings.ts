@@ -10,6 +10,14 @@ export const UserSettingsSchema = Type.Object({
   transparentGatewayEnabled: Type.Boolean(),
   explicitProxyEnabled: Type.Boolean(),
   explicitProxyAllowedCidrs: Type.Array(Type.String()),
+  // DNS中継・ドメイン迂回（Phase 14。apiserver/design.md「ユーザ向け設定の具体スキーマ」）。
+  dnsRelayEnabled: Type.Boolean(),
+  dnsUpstreamUrl: Type.String(),
+  dnsUpstreamCaPem: Type.String(),
+  dnsFailureMode: Type.Union([Type.Literal("failClosed"), Type.Literal("fallback")]),
+  dnsFallbackServers: Type.Array(Type.String()),
+  dnsRedirectEnabled: Type.Boolean(),
+  dnsRedirectExcludedCidrs: Type.Array(Type.String()),
 });
 export type UserSettings = Static<typeof UserSettingsSchema>;
 

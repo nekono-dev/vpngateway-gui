@@ -254,12 +254,18 @@ install_docker() {
 }
 
 # 目的: IPフォワーディングを永続的に有効化する設定ファイルを作り、反映する（LAN機器への透過ゲートウェイに必要）。
+#       あわせてICMPリダイレクトの送出を無効にする（単一NICでLAN機器の通信が同一インターフェースへ折り返すとき、
+#       ゲートウェイが「ルータへ直接送れ」と指示してしまい、ドメイン迂回・透過ゲートウェイを迂回されるのを防ぐ）。
+# 入力: グローバル変数 LAN_IFACE（setup_lan_iface実行後に呼ぶこと）。
 # 副作用: /etc/sysctl.d/99-vpngwgui.conf を作成し、その設定だけをsysctlへ反映する。
 setup_sysctl() {
-  cat > "$SYSCTL_FILE" <<'EOSYSCTL'
+  cat > "$SYSCTL_FILE" <<EOSYSCTL
 # vpngateway-gui: LAN機器への透過ゲートウェイ提供に必要なIPフォワーディング設定。
 # install/install.shにより作成された。手動で削除・変更しないこと。
 net.ipv4.ip_forward=1
+net.ipv4.conf.all.send_redirects=0
+net.ipv4.conf.default.send_redirects=0
+net.ipv4.conf.${LAN_IFACE}.send_redirects=0
 EOSYSCTL
   # `sysctl --system`は無関係な他のファイル（kernel.pid_max等）も適用し、コンテナ等では権限エラーになるため、自分のファイルだけを適用する。
   sysctl -q -p "$SYSCTL_FILE" >/dev/null || die "IPフォワーディングを有効にできません（$SYSCTL_FILE）"
@@ -614,7 +620,7 @@ install_roles() {
   preflight
   install_packages
   install_docker
-  case ",$roles," in *,gateway,*) setup_sysctl; setup_lan_iface; setup_boot_guard ;; esac
+  case ",$roles," in *,gateway,*) setup_lan_iface; setup_sysctl; setup_boot_guard ;; esac
   case ",$roles," in *,web,*) setup_web_port ;; esac
 
   # apiは自身がロードするベンダープロファイル（ENABLED_PROVIDERS）を知る必要があるため、gatewayが
@@ -780,6 +786,10 @@ uninstall_boot_guard() {
 # 目的: IPフォワーディングの永続設定（setup_sysctlが作成したもの）を削除し、稼働中の値も戻す。
 uninstall_sysctl() {
   if [ -f "$SYSCTL_FILE" ]; then
+    # ICMPリダイレクトの送出設定も、削除前に稼働中の値を既定（有効）へ戻す。
+    for key in $(sed -n 's/^\(net\.ipv4\.conf\.[A-Za-z0-9._-]*\.send_redirects\)=.*/\1/p' "$SYSCTL_FILE"); do
+      sysctl -w "$key=1" >/dev/null 2>&1 || true
+    done
     rm -f "$SYSCTL_FILE"
     sysctl -w net.ipv4.ip_forward=0 >/dev/null 2>&1 || true
     log "IPフォワーディングの設定: 削除しました（$SYSCTL_FILE）"

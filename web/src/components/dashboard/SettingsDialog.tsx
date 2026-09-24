@@ -58,8 +58,11 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
     try {
       const response = await putV1ConnectionConfig({
         ...settings,
-        excludedDomains: settings.excludedDomains.filter((domain) => domain.trim().length > 0),
+        excludedDomains: settings.excludedDomains.map((domain) => domain.trim()).filter((domain) => domain.length > 0),
         explicitProxyAllowedCidrs: settings.explicitProxyAllowedCidrs.filter((cidr) => cidr.trim().length > 0),
+        dnsUpstreamUrl: settings.dnsUpstreamUrl.trim(),
+        dnsFallbackServers: settings.dnsFallbackServers.map((server) => server.trim()).filter((server) => server.length > 0),
+        dnsRedirectExcludedCidrs: settings.dnsRedirectExcludedCidrs.map((cidr) => cidr.trim()).filter((cidr) => cidr.length > 0),
       });
       if (response.status !== 200) {
         setError(describeApiError(response.status, response.data, "設定の保存に失敗しました").summary);
@@ -78,6 +81,14 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
   // webserver/requirements.md「明示的プロキシの許可CIDRが無い場合の保存禁止」）。
   const hasValidExplicitProxyAllowedCidr = settings?.explicitProxyAllowedCidrs.some((cidr) => isIpv4Cidr(cidr.trim())) ?? false;
   const explicitProxyNeedsCidr = settings?.explicitProxyEnabled === true && !hasValidExplicitProxyAllowedCidr;
+
+  // DNS中継の保存前チェック（APIサーバ側でも検証する。ここでは、保存できない組み合わせを保存前に示す）。
+  const dnsFallbackCount = settings?.dnsFallbackServers.filter((server) => server.trim().length > 0).length ?? 0;
+  const dnsRelayNeedsUpstream =
+    settings?.dnsRelayEnabled === true && settings.dnsUpstreamUrl.trim().length === 0 && dnsFallbackCount === 0;
+  const dnsFallbackNeedsServers = settings?.dnsFailureMode === "fallback" && dnsFallbackCount === 0;
+  const hasIncompleteDnsSettings = dnsRelayNeedsUpstream || dnsFallbackNeedsServers;
+  const hasExcludedDomains = settings?.excludedDomains.some((domain) => domain.trim().length > 0) ?? false;
 
   return (
     // アカウント設定ダイアログ（AccountSettingsDialog）は、この<dialog>の子要素にせず兄弟要素にする
@@ -105,11 +116,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
             </label>
 
             <LineListEditor
-              label="除外ドメイン（split-tunnel、1行1ドメイン）"
+              label="迂回ドメイン（split-tunnel、1行1ドメイン）"
+              placeholder={"VPNを経由せず直接通信するドメイン\nexample.com ← example.com自身のみ\n*.example.com ← サブドメインのみ（example.com自身は含まない）"}
               value={settings.excludedDomains}
               onChange={(excludedDomains) => setSettings({ ...settings, excludedDomains })}
             />
-            <p className="unsupported">未対応: 保存はされますが現在は通信に反映されません（Phase 14で対応予定）。</p>
+            <p className="hint">ドメインとそのサブドメインの両方を迂回するには、example.com と *.example.com の両方を登録してください。</p>
+            {hasExcludedDomains && !settings.dnsRelayEnabled ? (
+              <p className="restriction">DNS中継が無効なため、迂回ドメインは反映されません。</p>
+            ) : null}
 
             <label>
               <input
@@ -143,13 +158,99 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
               <p className="restriction">明示的プロキシモードを使うには、有効な許可CIDRを1つ以上入力してください。</p>
             ) : null}
 
+            <fieldset className="dns-relay-settings">
+              <legend>DNS中継</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={settings.dnsRelayEnabled}
+                  onChange={(event) => setSettings({ ...settings, dnsRelayEnabled: event.target.checked })}
+                />
+                DNS中継を有効にする（迂回ドメインの判定と、自宅DNSサーバでの名前解決）
+              </label>
+              <p className="hint">暗号化DNS（DoH・DoT）を使うクライアントは中継できないため、迂回ドメインが効きません。</p>
+
+              <label>
+                自宅DNSサーバ（DoHのURL）
+                <input
+                  type="text"
+                  placeholder="https://dns.home.example/dns-query"
+                  disabled={!settings.dnsRelayEnabled}
+                  value={settings.dnsUpstreamUrl}
+                  onChange={(event) => setSettings({ ...settings, dnsUpstreamUrl: event.target.value })}
+                />
+              </label>
+              <label>
+                自宅DNSサーバの証明書を発行したCA（PEM形式。公的な認証局の証明書なら空でよい）
+                <textarea
+                  rows={4}
+                  disabled={!settings.dnsRelayEnabled}
+                  value={settings.dnsUpstreamCaPem}
+                  onChange={(event) => setSettings({ ...settings, dnsUpstreamCaPem: event.target.value })}
+                />
+              </label>
+
+              <div role="radiogroup" aria-label="自宅DNSサーバが応答しないとき">
+                <label>
+                  <input
+                    type="radio"
+                    name="dnsFailureMode"
+                    checked={settings.dnsFailureMode === "failClosed"}
+                    disabled={!settings.dnsRelayEnabled}
+                    onChange={() => setSettings({ ...settings, dnsFailureMode: "failClosed" })}
+                  />
+                  名前解決を止める（フィルタと履歴を優先）
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="dnsFailureMode"
+                    checked={settings.dnsFailureMode === "fallback"}
+                    disabled={!settings.dnsRelayEnabled}
+                    onChange={() => setSettings({ ...settings, dnsFailureMode: "fallback" })}
+                  />
+                  公開DNSへ切り替える（フィルタと履歴は効かなくなる）
+                </label>
+              </div>
+              <LineListEditor
+                label="切り替え先の公開DNS（1行1アドレス、最大3件）"
+                placeholder={"1.1.1.1"}
+                value={settings.dnsFallbackServers}
+                onChange={(dnsFallbackServers) => setSettings({ ...settings, dnsFallbackServers })}
+                disabled={!settings.dnsRelayEnabled || settings.dnsFailureMode !== "fallback"}
+              />
+
+              <label>
+                <input
+                  type="checkbox"
+                  checked={settings.dnsRedirectEnabled}
+                  disabled={!settings.dnsRelayEnabled}
+                  onChange={(event) => setSettings({ ...settings, dnsRedirectEnabled: event.target.checked })}
+                />
+                手動でDNSを指定した端末の問い合わせも中継する
+              </label>
+              <LineListEditor
+                label="中継しない宛先（LAN内のDNSサーバ等、1行1CIDR）"
+                placeholder={"192.168.3.5/32"}
+                value={settings.dnsRedirectExcludedCidrs}
+                onChange={(dnsRedirectExcludedCidrs) => setSettings({ ...settings, dnsRedirectExcludedCidrs })}
+                disabled={!settings.dnsRelayEnabled || !settings.dnsRedirectEnabled}
+              />
+              {dnsRelayNeedsUpstream ? (
+                <p className="restriction">DNS中継を使うには、自宅DNSサーバのURLか、切り替え先の公開DNSを入力してください。</p>
+              ) : null}
+              {dnsFallbackNeedsServers ? (
+                <p className="restriction">公開DNSへ切り替えるには、切り替え先の公開DNSを1つ以上入力してください。</p>
+              ) : null}
+            </fieldset>
+
             {error ? <p role="alert">{error}</p> : null}
 
             <div className="dialog-actions">
               <button type="button" onClick={() => setIsAccountOpen(true)}>
                 アカウント情報を変更
               </button>
-              <button type="submit" disabled={isSaving || explicitProxyNeedsCidr}>
+              <button type="submit" disabled={isSaving || explicitProxyNeedsCidr || hasIncompleteDnsSettings}>
                 {isSaving ? "保存中..." : "保存"}
               </button>
               <button type="button" disabled={isSaving} onClick={onClose}>

@@ -69,3 +69,24 @@ export function getLanSubnetCidr(lanIface: string | undefined): Promise<string |
     });
   });
 }
+
+/**
+ * 目的: LAN側インターフェースのIPv4アドレス（プレフィックス長なし）を取得する（`ip`コマンドを実行）。
+ *      DNS中継リゾルバの待受アドレス・53番リダイレクトの宛先に使う。
+ * 入力: lanIface(LAN側インターフェース名。未設定なら検出しない)。
+ * 出力: `192.168.3.240`のようなアドレス。取得できない場合はundefined（getLanSubnetCidrと同じ方針）。
+ */
+export function getLanIpv4Address(lanIface: string | undefined): Promise<string | undefined> {
+  if (!lanIface) return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const child = spawn(IP_BIN, ["-4", "-o", "addr", "show", "dev", lanIface], { stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.on("error", () => resolve(undefined));
+    child.on("exit", (code) => {
+      resolve(code === 0 ? parseInterfaceIpv4Cidr(stdout)?.split("/")[0] : undefined);
+    });
+  });
+}

@@ -39,9 +39,25 @@ export const ExplicitProxyStatusSchema = Type.Object({
   restartCount: Type.Integer(),
 });
 
+export const DnsRelayStatusSchema = Type.Object({
+  // active: 待受中 / stopped: 無効 / unconfigured: 有効設定だが上流もフォールバック先も空 / error: 待受に失敗（ポート衝突等）。
+  state: Type.Union([
+    Type.Literal("active"),
+    Type.Literal("stopped"),
+    Type.Literal("unconfigured"),
+    Type.Literal("error"),
+  ]),
+  // 上流（自宅DNSサーバ）の疎通。ok: 直近の転送が成功 / failing: 直近の転送が失敗 / unknown: まだ転送していない・待受していない。
+  upstream: Type.Union([Type.Literal("ok"), Type.Literal("failing"), Type.Literal("unknown")]),
+  // 迂回対象として保持中（期限内）のIPv4アドレス数。
+  bypassEntries: Type.Integer(),
+});
+
 export const GatewayStatusSchema = Type.Object({
   transparentGateway: TransparentGatewayStatusSchema,
   explicitProxy: ExplicitProxyStatusSchema,
+  // Phase 14で追加。古いゲートウェイ（DNS中継なし）との組み合わせでも読めるよう省略可能とする。
+  dnsRelay: Type.Optional(DnsRelayStatusSchema),
   // LAN側のネットワークCIDR（例: 192.168.3.0/24）。ゲートウェイ機がLAN_IFACE未設定、またはIPv4アドレスを
   // 検出できない場合は含まれない。Web UIの設定ダイアログで、明示的プロキシの許可CIDR欄の初期値に使う
   // （webserver/requirements.md「明示的プロキシの許可CIDRの初期値」）。

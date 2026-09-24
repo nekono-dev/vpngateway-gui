@@ -23,6 +23,8 @@ export async function checkConnectionOnce(
   const egressIface = await getEgressInterface();
   const vpnIface = egressIface !== undefined && egressIface !== lanIface ? egressIface : undefined;
   await controller.updateVpnInterface(vpnIface);
+  // ドメイン迂回が有効なら、迂回用の経路（実回線のゲートウェイ）も現状に合わせ直す（VPN接続でメインテーブルが変わった後等）。
+  await controller.refreshPolicyRouting();
 }
 
 /**

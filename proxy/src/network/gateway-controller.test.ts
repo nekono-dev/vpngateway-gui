@@ -171,3 +171,96 @@ describe("GatewayController", () => {
     });
   });
 });
+
+describe("GatewayController: ドメイン迂回・DNSリダイレクト", () => {
+  function setup(options: { policyOk?: boolean } = {}) {
+    const scripts: string[] = [];
+    const policyCalls: boolean[] = [];
+    const events: Record<string, unknown>[] = [];
+    const controller = new GatewayController(
+      "eth0",
+      "eth0",
+      async (script) => {
+        scripts.push(script);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      {
+        policyRouting: {
+          sync: async (active) => {
+            policyCalls.push(active);
+            return options.policyOk ?? true;
+          },
+        },
+        explicitProxyUid: 10001,
+        onEvent: (event) => events.push(event),
+      },
+    );
+    return { controller, scripts, policyCalls, events };
+  }
+
+  it("透過ゲートウェイ無効でも、迂回が有効ならテーブル（迂回の要素のみ）とポリシールーティングを構成する", async () => {
+    const { controller, scripts, policyCalls } = setup();
+    await controller.applySettings({ transparentGatewayEnabled: false, killSwitch: true, dns: { bypassEnabled: true } });
+    expect(scripts).toHaveLength(1);
+    expect(scripts[0]).toContain("bypass_mark_output");
+    expect(scripts[0]).not.toContain("forward");
+    expect(policyCalls).toEqual([true]);
+  });
+
+  it("迂回もDNSリダイレクトも透過ゲートウェイも無効なら、テーブルを撤去しポリシールーティングも外す", async () => {
+    const { controller, scripts, policyCalls } = setup();
+    await controller.applySettings({ transparentGatewayEnabled: false, killSwitch: true, dns: { bypassEnabled: false } });
+    expect(scripts).toEqual(["delete table inet vpngwgui\n"]);
+    expect(policyCalls).toEqual([false]);
+  });
+
+  it("DNSリダイレクトだけ有効でも、テーブルを構成する", async () => {
+    const { controller, scripts } = setup();
+    await controller.applySettings({
+      transparentGatewayEnabled: false,
+      killSwitch: true,
+      dns: { bypassEnabled: false, redirect: { listenAddress: "192.168.3.240", port: 53, excludedCidrs: [] } },
+    });
+    expect(scripts[0]).toContain("dns_redirect");
+    expect(scripts[0]).not.toContain("bypass4");
+  });
+
+  it("迂回対象の登録: 適用済みならsetへ追加し、その後の再構成で引き継ぐ", async () => {
+    const { controller, scripts } = setup();
+    await controller.applySettings({ transparentGatewayEnabled: true, killSwitch: true, dns: { bypassEnabled: true } });
+    await controller.addBypass([{ address: "192.0.2.1", ttl: 60 }]);
+    expect(scripts.at(-1)).toBe("add element inet vpngwgui bypass4 { 192.0.2.1 timeout 120s }\n");
+    expect(controller.bypassEntryCount()).toBe(1);
+
+    await controller.updateVpnInterface("tun0");
+    expect(scripts.at(-1)).toMatch(/add element inet vpngwgui bypass4 \{ 192\.0\.2\.1 timeout (119|120)s \}/);
+  });
+
+  it("迂回が無効なときの登録は、nftを触らない", async () => {
+    const { controller, scripts } = setup();
+    await controller.applySettings({ transparentGatewayEnabled: true, killSwitch: true });
+    const before = scripts.length;
+    await controller.addBypass([{ address: "192.0.2.1", ttl: 60 }]);
+    expect(scripts).toHaveLength(before);
+  });
+
+  it("設定が同じなら再構成しない。迂回・リダイレクトの設定が変われば再構成する", async () => {
+    const { controller, scripts } = setup();
+    const settings = { transparentGatewayEnabled: true, killSwitch: true, dns: { bypassEnabled: true } };
+    await controller.applySettings(settings);
+    await controller.applySettings({ ...settings, dns: { bypassEnabled: true } });
+    expect(scripts).toHaveLength(1);
+    await controller.applySettings({ ...settings, dns: { bypassEnabled: false } });
+    expect(scripts).toHaveLength(2);
+  });
+
+  it("ポリシールーティングを整えられなければ監査イベントを出す。監視ごとの再確認は迂回が有効なときだけ行う", async () => {
+    const { controller, policyCalls, events } = setup({ policyOk: false });
+    await controller.refreshPolicyRouting();
+    expect(policyCalls).toEqual([]);
+    await controller.applySettings({ transparentGatewayEnabled: true, killSwitch: true, dns: { bypassEnabled: true } });
+    await controller.refreshPolicyRouting();
+    expect(policyCalls).toEqual([true, true]);
+    expect(events.some((event) => event.event === "bypass_routing_error")).toBe(true);
+  });
+});
