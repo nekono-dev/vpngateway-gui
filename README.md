@@ -110,6 +110,13 @@ AdGuard Homeでは、「設定」→「暗号化設定」で、暗号化を有�
 
 サーバの証明書の有効期限（1年）が切れたら、手順2・3をやり直して`server.pem`・`server.key`を差し替える。CAは変わらないため、Web UIの設定を変更する必要はない。
 
+アドレスを追加・変更する場合（`server.csr`は再利用できる）は、`san.ext`の`subjectAltName`を書き換えて手順3だけをやり直し、`server.pem`だけを差し替える（秘密鍵は変わらない）。
+
+| 表示・症状 | 原因と対処 |
+|---|---|
+| AdGuard Homeに「証明書チェーンが無効です」と表示される | AdGuard Home自身が、自前のCAを信頼していないために出る警告である。証明書の内容（件名・発行者・有効期限・ホスト名）が表示されていて、DoHは動作する。ゲートウェイはWeb UIに貼り付けた`ca.pem`で検証するため、無視してよい。警告を消すには、AdGuard Homeを動かす環境の信頼済み認証局へ`ca.pem`を登録する（Dockerの場合はコンテナ内の`/etc/ssl/certs`へ登録する） |
+| Web UIの稼働状況が「自宅DNSサーバに接続できません」になる | 次のいずれかである。①証明書のアドレス（`subjectAltName`）に、DoHのURLのホスト名またはIPアドレスが含まれていない（`openssl s_client -connect <アドレス>:<ポート> -CAfile ca.pem -verify_hostname <ホスト名>`で`hostname mismatch`と出る）。②ゲートウェイ機が、DoHのURLのホスト名を名前解決できない。ホスト名が自宅DNSサーバ自身にしか登録されていない場合に起こるため、DoHのURLにはIPアドレス（例: `https://192.168.3.252/dns-query`）を指定し、証明書のアドレスにそのIPアドレスを含める |
+
 ## 注意事項
 
 ### アンインストール
