@@ -432,10 +432,19 @@ Web UIから変更可能な運用設定（目的・意味は../requirements.md�
 | 設定項目 | 型 | 説明 |
 |---|---|---|
 | `killSwitch` | boolean | ONの場合、VPN切断検知時にLAN側通信を遮断する（デフォルト: true） |
-| `excludedDomains` | string[] | VPNトンネルを経由させない宛先ドメイン（split-tunnel除外リスト） |
+| `excludedDomains` | string[] | VPNトンネルを経由させない宛先ドメイン（split-tunnel除外リスト）。要素は`example.com`（サブドメイン込み）または`*.example.com`（サブドメインのみ）。ホスト名のラベル（英数字・ハイフン、各63文字以内、全体253文字以内）のみ許可し、先頭の`*.`以外の`*`・空白・制御文字は400で拒否する。最大200件 |
 | `transparentGatewayEnabled` | boolean | 透過ゲートウェイモードの有効/無効 |
 | `explicitProxyEnabled` | boolean | 明示的SOCKS5/HTTPプロキシモードの有効/無効 |
 | `explicitProxyAllowedCidrs` | string[] | 明示的プロキシモードで接続を許可するLAN側CIDR |
+| `dnsRelayEnabled` | boolean | DNS中継リゾルバの有効/無効（既定: false） |
+| `dnsUpstreamUrl` | string | 上流（自宅DNSサーバ）のDoH URL。空文字は未設定。`https://`のURLのみ許可（クエリ・フラグメント・認証情報は不可）。ゲートウェイがクライアントごとのClientIDをパスへ追記して転送する（既定: 空） |
+| `dnsUpstreamCaPem` | string | 上流のサーバ証明書を検証するCA（PEM。任意。最大16KB）。空文字はシステムのCAのみ |
+| `dnsFailureMode` | `"failClosed"` \| `"fallback"` | 上流障害時の挙動（既定: `failClosed`） |
+| `dnsFallbackServers` | string[] | `fallback`時の転送先（IPv4アドレス。最大3件） |
+| `dnsRedirectEnabled` | boolean | 手動DNS指定のクライアントを含め、宛先ポート53の通信を中継リゾルバへ誘導する（既定: false） |
+| `dnsRedirectExcludedCidrs` | string[] | リダイレクトしない宛先のIPv4 CIDR（例: LAN内のDNSサーバ） |
+
+`dnsRelayEnabled=true`のとき、`dnsUpstreamUrl`が空で`dnsFallbackServers`も空の設定は400で拒否する。`dnsFailureMode=fallback`で`dnsFallbackServers`が空の設定も400で拒否する。既存の設定ファイルにこれらの項目が無い場合は既定値で補完する。
 
 `defaultCountry`はPhase 5で廃止した（接続処理に使われておらず、「最後に接続した接続先」の記憶がその役割を担うため。下記「接続先（ロケーション）」）。既存の設定ファイルに`defaultCountry`が残っていても、読み込み時に無視して次回の保存で消える。
 
@@ -506,11 +515,18 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
   "excludedDomains": [],
   "transparentGatewayEnabled": true,
   "explicitProxyEnabled": false,
-  "explicitProxyAllowedCidrs": []
+  "explicitProxyAllowedCidrs": [],
+  "dnsRelayEnabled": false,
+  "dnsUpstreamUrl": "",
+  "dnsUpstreamCaPem": "",
+  "dnsFailureMode": "failClosed",
+  "dnsFallbackServers": [],
+  "dnsRedirectEnabled": false,
+  "dnsRedirectExcludedCidrs": []
 }
 ```
 
-- プロキシ側は`killSwitch`・`transparentGatewayEnabled`でnftablesルールセットを、`explicitProxyEnabled`・`explicitProxyAllowedCidrs`で3proxyを再構成する（`excludedDomains`はPhase 14で参照予定。proxyserver/design.md「透過ゲートウェイモードの実現方式」「Kill Switch」「明示的プロキシモードの実現方式」参照）。
+- プロキシ側は`killSwitch`・`transparentGatewayEnabled`でnftablesルールセットを、`explicitProxyEnabled`・`explicitProxyAllowedCidrs`で3proxyを再構成する（`excludedDomains`・`dns*`はPhase 14でDNS中継リゾルバが参照する。proxyserver/design.md「透過ゲートウェイモードの実現方式」「Kill Switch」「明示的プロキシモードの実現方式」「ドメイン迂回とDNS中継」参照）。
 - `explicitProxyAllowedCidrs`の各要素はIPv4 CIDR（`a.b.c.d/n`）でなければならず、違反は`PUT /v1/connection/config`が400で拒否し保存しない（3proxyの設定ファイルへ埋め込まれるため、設定行の注入による許可範囲の拡大を入口で防ぐ）。
 - レスポンスボディ: `{ "applied": boolean }`。`transparentGatewayEnabled=false`、またはLAN側インターフェース名が未設定（インストールスクリプト未実行環境）の場合は`false`（ルール撤去のみ実施、適用は行わない）。
 - 通知が失敗（プロキシ未起動等でProxyUnavailableError/ProxyTimeoutError）した場合でも、`PUT /v1/connection/config`自体は失敗させない（設定の永続化は既に成功しているため）。失敗はログにのみ記録し、プロキシ復旧後の次回設定変更または接続状態監視ループでの再構成に委ねる。

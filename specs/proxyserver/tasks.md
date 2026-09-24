@@ -45,10 +45,39 @@
 - [x] 接続状態・トンネル経路消失の監視処理実装（10秒間隔ポーリング。`proxy/src/network/connection-monitor.ts`）
 - [x] 切断検知トリガーとKill Switch/透過ゲートウェイ連携実装（`GatewayController`経由）
 
-## excludedDomains（split-tunnel除外）対応
+## ドメイン迂回とDNS中継（Phase 14）
 
-- [ ] ドメイン単位除外のDNS解決・ルーティング反映方式の詳細設計
-- [ ] 上記方式の実装（3proxy側／透過ゲートウェイ側それぞれ）
+設計は`design.md`「ドメイン迂回とDNS中継」。実装後に、主要タスクをまとめて実機検証する。
+
+### Step 1: 実装
+
+- [ ] 設定の形状検証の拡張（`server.ts`の`handleSettings`。`excludedDomains`・`dns*`）
+- [ ] 迂回リストの照合（完全一致・サブドメイン込み・`*.`ワイルドカード）の実装と単体テスト（`proxy/src/dns-relay/`）
+- [ ] DNSメッセージの解析・応答IPとTTLの抽出（UDP・TCP）
+- [ ] DoH上流への転送（ClientID付与、`dnsUpstreamCaPem`による検証、タイムアウト）
+- [ ] ClientIDの生成（`/proc/net/arp`からのMAC取得・キャッシュ・IPへのフォールバック）
+- [ ] 上流障害時の挙動（フェイルクローズ／`dnsFallbackServers`へのフォールバック）と、上流の疎通状態の管理
+- [ ] `DnsRelayController`（設定の反映・再構成・状態・監査ログ）
+- [ ] nft set（`bypass4`）・マーク付けチェーン・forward許可・マスカレードの追加（`ruleset.ts`）と、再構成時のset要素の引き継ぎ
+- [ ] `ip rule`／テーブル100の管理（デフォルトゲートウェイの検出・追従）
+- [ ] 明示的プロキシ: 3proxyの`nserver`をリゾルバへ向ける設定生成、`output`チェーンのマーク付け
+- [ ] 53番リダイレクト（nat prerouting、除外CIDR）
+- [ ] `GET /net/status`への`dnsRelay`追加
+- [ ] インストーラ: `send_redirects=0`のsysctl設定
+- [ ] 単体テスト（ruleset・config-builder・DNS中継の各モジュール）
+
+### Step 2: 実機検証（検証サーバ。テスト用AdGuard Home導入後）
+
+- [ ] モックVPN: 迂回ドメインへの通信が実回線から出て、非対象はトンネルを経由すること（透過ゲートウェイ）
+- [ ] モックVPN: 同上（明示的プロキシ）
+- [ ] TTLの短いドメインでIP変化に追従し、期限後は迂回対象から外れること
+- [ ] `*.`ワイルドカード・サブドメイン込みの照合
+- [ ] AdGuard Homeの履歴に、クライアントがClientIDで区別されて記録されること
+- [ ] 上流停止時: フェイルクローズ／フォールバックの両方
+- [ ] 53番リダイレクト有効時、手動DNS指定の端末の問い合わせが中継されること
+- [ ] VPN未接続・Kill Switch ON時に、名前解決と迂回対象の疎通が意図どおりであること
+- [ ] 実VPN（Web UIから利用者が手動ログイン）: 出口IPの差で迂回を確認
+- [ ] 検証で確定した仕様（CNAME・set期限の猶予・ゲートウェイ検出等）の`design.md`への反映
 
 ## インストールスクリプト (Phase 3以降)
 

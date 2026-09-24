@@ -154,6 +154,15 @@
 - [ ] Web UI利用者認証の専用E2E（初回アクセス時の設定画面、正誤ログイン、ログアウト、セッション切れ、アカウント変更）は未作成（手動でのcurl・ブラウザ確認は実施済み）
 - [ ] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証
 
+## ドメイン迂回とDNS中継の設定（Phase 14）
+
+設計は`design.md`「ユーザ向け設定の具体スキーマ」「設定反映」。
+
+- [ ] `UserSettings`（`schemas/settings.ts`）へ`dns*`を追加し、既定値で補完
+- [ ] 形式検証（`excludedDomains`のワイルドカード表記、`dnsUpstreamUrl`、`dnsFallbackServers`、`dnsRedirectExcludedCidrs`、項目間の整合）と単体テスト
+- [ ] ゲートウェイへの反映（`/net/settings`のボディ）と、稼働状況の中継（`dnsRelay`）
+- [ ] OpenAPI・orval生成物の更新
+
 # 将来課題
 
 - レート制限の閾値のチューニング（Web UIログイン以外の操作系エンドポイントへの適用要否を含む）。

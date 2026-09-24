@@ -156,12 +156,13 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 | 設定項目 | 反映先 |
 |---|---|
 | `killSwitch` | nftables `forward` チェーンのフォールバックルール有無 |
-| `excludedDomains` | 3proxyの除外設定、および透過ゲートウェイ側では該当ドメインの名前解決結果IPをVPN迂回ルーティング（ポリシールーティング）に反映（実装詳細は別途検討） |
+| `excludedDomains` | DNS中継リゾルバの照合リスト。一致したドメインの名前解決結果IPを`bypass4` setへ投入し、ポリシールーティングで迂回する（下記「ドメイン迂回とDNS中継」） |
+| `dnsRelayEnabled`ほか`dns*` | DNS中継リゾルバの起動/停止・上流・障害時の挙動、53番リダイレクト（下記「ドメイン迂回とDNS中継」） |
 | `transparentGatewayEnabled` | nftables `inet vpngwgui` テーブルの適用/撤去 |
 | `explicitProxyEnabled` | 3proxyプロセスの起動/停止 |
 | `explicitProxyAllowedCidrs` | 3proxy設定ファイルの許可元CIDR |
 
-`excludedDomains`（ドメイン単位のsplit-tunnel除外）はIPベースのnftables/ルーティングでは本来IP単位でしか制御できないため、名前解決結果の変化（DNS TTL）に伴うルール更新の仕組みが必要になる。この点は実装時に別途詳細設計を行う（本ファイルでは方針のみ示す）。
+`excludedDomains`（ドメイン単位のsplit-tunnel除外）は、IPベースのnftables/ルーティングでは直接扱えないため、DNS中継リゾルバが名前解決結果のIPを期限付きで`bypass4` setへ投入する方式で実現する（下記「ドメイン迂回とDNS中継」）。
 
 （ベンダーCLIの実行要求`POST /exec`は、Phase 8でランナーへ移動した。仕様は`../runner/design.md`「`POST /exec`（内部コマンド受信サーバ）の仕様」。以下はネットワークコンテナ（`net.sock`）の内部HTTP。）
 
@@ -169,7 +170,7 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 
 具体的なリクエスト/レスポンス形状はapiserver/design.md「設定反映（`POST /settings`）内部プロトコル仕様」参照。プロキシ側の処理は以下の通り（実装: `proxy/src/server.ts`の`handleSettings`）。
 
-1. `killSwitch`・`transparentGatewayEnabled`・`explicitProxyEnabled`のboolean、`explicitProxyAllowedCidrs`の文字列配列という形状のみを検証する（他フィールド（`excludedDomains`はPhase 14で利用予定）は無視。個々のCIDRの形式は設定ファイル生成時に検証する）。形状不正は400。
+1. `killSwitch`・`transparentGatewayEnabled`・`explicitProxyEnabled`のboolean、`explicitProxyAllowedCidrs`の文字列配列という形状のみを検証する（Phase 14以降は、`excludedDomains`・`dns*`の形状も検証する。個々のCIDRの形式は設定ファイル生成時に検証する）。形状不正は400。
 2. `GatewayController.applySettings()`（`proxy/src/network/gateway-controller.ts`）へ渡し、現在のVPN接続インターフェース状態と合わせてnftルールセットを撤去→再適用する。
 3. `ExplicitProxyController.applySettings()`（`proxy/src/explicit-proxy/explicit-proxy-controller.ts`）へ渡し、3proxyを起動・再起動・停止する（上記「実装（Phase 6）」）。透過ゲートウェイのnft再構成とは独立して行う。
 4. 結果（`applied: boolean`。透過ゲートウェイのnft適用結果のみを表す）を応答し、監査ログへ記録する。
@@ -183,6 +184,51 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 - レスポンスは`{ "transparentGateway": { "state", "vpnInterface"?, "killSwitchBlocking" }, "explicitProxy": { "state", "socksPort"?, "httpPort"?, "restartCount" } }`（`GatewayController.getStatus()`・`ExplicitProxyController.getStatus()`）。`transparentGateway.state`は`active`/`stopped`/`unconfigured`/`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）。設定受信前（プロセス起動直後）は既定設定に基づき`stopped`を返す。
 - `explicitProxy.state`は`active`（稼働中。一時的な再起動待ちを含む。`socksPort`・`httpPort`はこの状態のみ付く）/`stopped`（無効）/`unconfigured`（有効設定だが許可CIDRが空）/`crashLoop`（起動直後の異常終了を連続して繰り返している）/`error`（設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数（設定変更による意図的な再起動は含まない）。プロセスの実在確認のための外部コマンドは実行しない。
 - **異常状態のAPIへの通知経路**: `crashLoop`等は、APIサーバが`GET /v1/connection/gateway`のたびにこのエンドポイントを引いて中継する（pull方式）ことでUI・API利用者へ届く。proxy→apiへの能動的なpush用の経路（APIサーバ側の受信口）は新設しない: APIサーバは状態を持たない方針（apiserver/design.md）で、UIは5秒ポーリングにより最大約5秒で異常を表示でき、push経路を足すと内部プロトコルの信頼境界（proxyからapiへの経路は無い）を広げるため。異常は監査ログにも残る。
+
+# ドメイン迂回とDNS中継（Phase 14）
+
+全体方針は`../design.md`「ドメイン単位の迂回とDNS中継の設計方針」。以降は`proxy`の実装詳細（一次情報）。
+
+## DNS中継リゾルバ（`proxy/src/dns-relay/`）
+
+`dnsRelayEnabled=true`のとき、`proxy`プロセス内でUDP・TCPの両方をlistenする。
+
+| 項目 | 内容 |
+|---|---|
+| 待受アドレス | LAN側インターフェースのIPv4アドレスと`127.0.0.1`（後者は3proxy用）。ポートは環境変数`DNS_RELAY_PORT`（既定`53`。`network_mode: host`のためホスト上の他のDNSと衝突しうる。衝突時は`error`状態にする） |
+| 問い合わせの処理 | ①問い合わせ名を迂回リストと照合 → ②上流へ転送 → ③応答が成功で、かつ照合が一致していれば、応答内のA（IPv4）レコードのIPをnft setへ投入 → ④応答をクライアントへ返す。応答の内容は改変しない（AAAAは対象外） |
+| 照合規則 | `example.com`は`example.com`とそのすべてのサブドメイン、`*.example.com`はサブドメインのみ（`example.com`自体は含まない）。大文字小文字は区別せず、末尾のドットは無視する。照合するのは問い合わせ名のみとする（応答のCNAME先の名前は照合しない。CNAME先のドメインを迂回したい場合は利用者がそのドメインを追加する） |
+| 上流への転送 | 上流（`dnsUpstreamUrl`）へDoH（RFC 8484。`application/dns-message`のPOST）で、`<dnsUpstreamUrl>/<ClientID>`宛に転送する。サーバ証明書は、システムのCAに加えて`dnsUpstreamCaPem`（あれば）で検証する。検証に失敗する接続は使わない |
+| ClientID | クライアントのMAC（`/proc/net/arp`から引く。30秒キャッシュ）から`mac-aa-bb-cc-dd-ee-ff`を、引けなければIPから`ip-192-168-3-25`を生成する（AdGuard Homeの制約: 小文字英数字とハイフン、63文字以内）。ゲートウェイ自身（`127.0.0.1`。3proxyからの問い合わせ）は固定で`explicit-proxy`とする。名前への対応付けは、自宅DNSサーバ側でClientIDを持つクライアントとして登録する運用とする |
+| 上流障害 | 上流が接続失敗・タイムアウト（5秒）・5xxのとき、`dnsFailureMode=failClosed`ならSERVFAILを返す。`fallback`なら`dnsFallbackServers`へ平文DNS（UDP、失敗時TCP）で転送する（この場合はClientIDを付けられず、履歴も残らない。監査ログに`dns_relay_fallback`を記録する）。上流のNXDOMAIN・フィルタによるブロック応答は障害ではなく、そのままクライアントへ返す |
+| 上流への通信経路 | 上流（自宅DNSサーバ）宛は通常のルーティングに従う。ゲートウェイ自身の通信のため、Kill Switchの対象外である |
+
+## nft set・ポリシールーティング
+
+`inet vpngwgui`テーブルへ次を追加する（ルールセットの原子的な置換の対象に含める。set内の要素は置換のたびに失われるが、クライアントのキャッシュが切れるまでの間に次の問い合わせで再投入される。この空白を減らすため、再構成時は現在の要素を読み出して新テーブルへ引き継ぐ）。
+
+| 要素 | 内容 |
+|---|---|
+| set `bypass4` | `type ipv4_addr; flags timeout;`。要素の期限は「応答のTTL + 猶予60秒」（TTLが0のときは猶予のみ）。同じIPが再度応答されると期限を更新する。猶予はクライアント側のキャッシュがTTLを超えて保持される場合の取りこぼしを減らすためのもの |
+| チェーン`bypass_mark`（prerouting、`mangle`優先度） | `iifname "<lan_iface>" ip daddr @bypass4 meta mark set 0x100` |
+| チェーン`bypass_mark_output`（output、`type route`） | 明示的プロキシ用。`meta skuid <3proxyのUID> ip daddr @bypass4 meta mark set 0x100` |
+| forward | マーク付きのLAN発通信を許可する（Kill Switchのdropより前）。VPN未接続でも迂回対象は疎通する（利用者が迂回を指定した通信であるため） |
+| postrouting（nat） | 実回線側へ出るマーク付き通信をマスカレードする |
+| `ip rule` | `fwmark 0x100 lookup 100`（VPNベンダーCLIが追加するポリシールールより高い優先度）。テーブル100に、`<lan_iface>`のデフォルトゲートウェイへの`default`経路を置く。ゲートウェイのアドレスは接続監視ループで再検出する |
+
+- 迂回はIPv4のみ（IPv6は対象外）。
+- 単一NIC構成では、LANクライアントの通信が同一インターフェースへ折り返す。ICMPリダイレクトの送出は無効化する（`send_redirects=0`。インストーラの設定に含める）。
+- 明示的プロキシ: 3proxyの`nserver`をこのリゾルバ（`127.0.0.1:<DNS_RELAY_PORT>`）へ向けて生成する。これにより3proxyの名前解決もsetへの投入と上流転送を経る。プロキシ利用者ごとの識別はできない（ClientIDは`explicit-proxy`固定）。
+
+## 53番リダイレクト
+
+`dnsRedirectEnabled=true`のとき、`inet vpngwgui`のnat prerouting（`iifname "<lan_iface>"`、UDP・TCPの宛先ポート53、宛先アドレスが`dnsRedirectExcludedCidrs`とゲートウェイ自身のアドレスのいずれにも含まれないもの）を、リゾルバの待受アドレス・ポートへDNATする。既定は無効。無効のとき、ゲートウェイをDNSサーバとして受け取った（DHCP配布等の）クライアントの問い合わせだけが中継される。暗号化DNS（DoH・DoT）は対象にできない。
+
+## 設定の反映と状態
+
+- `POST /net/settings`のボディへ、`dnsRelayEnabled`・`dnsUpstreamUrl`・`dnsUpstreamCaPem`・`dnsFailureMode`・`dnsFallbackServers`・`dnsRedirectEnabled`・`dnsRedirectExcludedCidrs`と、`excludedDomains`が加わる（形状は`../apiserver/design.md`「設定反映」）。`DnsRelayController`が`applySettings()`で、設定が前回と同一なら何もせず、変わればリゾルバを再構成する（`GatewayController`・`ExplicitProxyController`と同じ調停の役割）。
+- `GET /net/status`へ`dnsRelay`（`state`: `active`／`stopped`／`unconfigured`／`error`、`upstream`: `ok`／`failing`（直近の転送が失敗）、`bypassEntries`: set内の要素数）が加わる。`unconfigured`は有効設定だが上流もフォールバックも空の場合。
+- 監査ログ: `dns_relay_started`／`dns_relay_stopped`／`dns_relay_config_error`／`dns_relay_upstream_failing`／`dns_relay_upstream_recovered`／`dns_relay_fallback`（問い合わせ内容は記録しない）。
 
 # 障害時の挙動
 

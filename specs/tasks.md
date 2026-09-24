@@ -37,18 +37,16 @@
 
 # 未着手の機能
 
-## excludedDomains split-tunnel実処理
+## ドメイン迂回（split-tunnel）とDNS中継（Phase 14）
 
-ドメイン単位でVPNトンネルを迂回させる`excludedDomains`設定を、透過ゲートウェイ・明示的プロキシの双方で実際に機能させる。設定ダイアログの編集UI自体は実装済みだが、値は保存されるだけで通信には反映されない。
+`excludedDomains`を透過ゲートウェイ・明示的プロキシの双方で実際に機能させ、名前解決を自宅DNSサーバ（AdGuard Home想定）へ中継する。設計は[design.md](design.md)「ドメイン単位の迂回とDNS中継の設計方針」、実装タスクは各アプリの`tasks.md`の「ドメイン迂回とDNS中継」節（[proxyserver](proxyserver/tasks.md)・[apiserver](apiserver/tasks.md)・[webserver](webserver/tasks.md)）が一次情報。
 
-- [ ] ドメイン単位除外のDNS解決・ルーティング反映方式の詳細設計（DNS TTLに追従した名前解決結果IPの動的反映方式を確定する）
-- [ ] 3proxy側の除外設定実装（該当ドメイン宛の接続をVPN迂回で直接ルーティングする設定生成）
-- [ ] 透過ゲートウェイ側の除外実装（名前解決結果IPをポリシールーティングでVPN迂回させる仕組み）
-- [ ] DNS TTL満了に伴うルール更新の仕組み（定期的な再解決＋ルール再適用）
-- [ ] 設定ダイアログの`excludedDomains`項目に表示している「未対応」暫定表示の除去
+- [x] 要件・設計の確定（本節の起票時点）
+- [ ] 各アプリの実装（proxy → api → web）
+- [ ] 実機検証（検証サーバのテスト用AdGuard Home・モックVPN、続いて実VPN）
+- [ ] READMEへのDNS中継・迂回ドメインの導入・設定・制約（暗号化DNS・IPv6・手動DNS指定端末）の追記
 
-完了基準: `excludedDomains`に登録したドメインへの通信が、VPNトンネルを経由せず直接ルートで疎通し、DNS TTL満了後もIPアドレスの変化に追従すること（透過ゲートウェイ・明示的プロキシ双方）。
-
+完了基準: `excludedDomains`のドメイン宛の通信がVPNを経由せず直接ルートで疎通し、DNSのTTL満了後もIPの変化に追従すること。名前解決が自宅DNSサーバへ転送され、クライアントごとに区別されて履歴へ記録されること（透過ゲートウェイ・明示的プロキシ双方。明示的プロキシは`explicit-proxy`固定）。
 ## デプロイメント構成の分離（残作業）
 
 単一ホスト構成・3台分離構成とも主要な動作（利用者アカウント作成・ログイン・接続・稼働状況取得・mTLSの拒否確認）は実機検証済み（詳細は[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「デプロイメント構成の分離」節）。残る作業は以下。

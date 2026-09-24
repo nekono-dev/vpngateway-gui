@@ -122,7 +122,7 @@
 
 # 暫定表示の実装方針（Phase 4）
 
-- `excludedDomains`（Phase 14）は設定の保存のみ可能で通信へ反映されないため、設定ダイアログに「未対応」を表示する。Phase 14の実装時に除去する。明示的プロキシはPhase 6で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
+- `excludedDomains`（Phase 14）は、DNS中継が有効な間だけ通信へ反映される。「未対応」の暫定表示はPhase 14で除去し、`dnsRelayEnabled`がOFFのときの注意表示（`webserver/requirements.md`「設定ダイアログの入力項目」）に置き換える。稼働状況欄は`GET /v1/connection/gateway`の`dnsRelay`（状態・上流の疎通・迂回中のIP数）を表示する。DNS中継の設定項目は、`SettingsDialog.tsx`に「DNS中継」のグループとして追加する（ラジオボタン・複数行入力は既存のUI部品規約に従う）。明示的プロキシはPhase 6で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
 - 稼働状況カードの各行（透過ゲートウェイ・明示的プロキシ）は、テスト（単体・E2E）が行を特定できるよう`dd`に`data-testid`を付ける（`dd`はARIA上アクセシブルネームを付けられず、`aria-labelledby`が実ブラウザで機能しないことがE2Eで判明したため）。取得失敗の理由（`role="alert"`）は1行目にだけ全文を出し、2行目は「取得失敗」のみとする（同一文言の重複読み上げを避ける）。
 
 ## プランで接続できる接続先の参考表示の実装方針（Phase 12）

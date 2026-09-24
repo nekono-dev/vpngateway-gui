@@ -31,6 +31,13 @@ Webサーバは以下のみを責務とし、業務ロジック（VPN接続状�
 | `transparentGatewayEnabled` | トグルスイッチ | 透過ゲートウェイモードの有効/無効 |
 | `explicitProxyEnabled` | トグルスイッチ | 明示的SOCKS5/HTTPプロキシモードの有効/無効 |
 | `explicitProxyAllowedCidrs` | テキストボックスのリスト編集（追加・削除可能な複数行入力） | 明示的プロキシモードで接続を許可するLAN側CIDR。1行1CIDRとして入力し、保存時に配列へ変換する |
+| `dnsRelayEnabled` | トグルスイッチ | DNS中継の有効/無効。ドメイン迂回（`excludedDomains`）はこれが有効なときだけ効く |
+| `dnsUpstreamUrl` | テキスト入力 | 自宅DNSサーバのDoH URL（例: `https://dns.home.example/dns-query`） |
+| `dnsUpstreamCaPem` | 複数行テキスト入力（任意） | 上流のサーバ証明書を検証するCA（PEM） |
+| `dnsFailureMode` | ラジオボタン | 上流障害時: 名前解決を止める／公開DNSへ切り替える |
+| `dnsFallbackServers` | リスト編集（1行1アドレス） | 切り替え先の公開DNS。「切り替える」のときのみ有効 |
+| `dnsRedirectEnabled` | トグルスイッチ | 手動でDNSを指定した端末の問い合わせも中継する（暗号化DNSは対象外） |
+| `dnsRedirectExcludedCidrs` | リスト編集（1行1CIDR） | 中継しない宛先（LAN内のDNSサーバ等） |
 
 `explicitProxyEnabled` がOFFの間は `explicitProxyAllowedCidrs` の入力欄を無効化（disabled）し、設定自体は保持したまま編集不可であることを視覚的に示す。
 
@@ -109,7 +116,9 @@ Webサーバは以下のみを責務とし、業務ロジック（VPN接続状�
 - **現在の接続先の特定**: `GET /v1/connection`の`location`（CLIが報告した都市名）と、参考一覧の各国が持つ都市名（`cities`）を、大文字小文字を区別せず突き合わせる。一致する国が見つかれば、その行に「接続中」バッジを付け、主表示を報告された都市名にする（見つからない・未接続・都市名が無い場合は、従来どおり国名のみの表示のまま）。
 - **ping値の表示**: 参考一覧は生存確認を伴わない静的なサーバ一覧に基づくため、通常はping値を持たない。列自体は、そのベンダーのCLIがping計測に対応しているか（`GET /v1/connection/capabilities`の`pingMeasurement`が、プラン制限ではなく非対応（`unsupported`）を理由に実行不可か）で出し分ける。対応していても値が無ければ「-」と表示する。
 
-## 未実装機能の暫定表示（Phase 4〜Phase 14。明示的プロキシ分はPhase 6で除去済み）
+DNS中継の項目は、`dnsRelayEnabled`がOFFの間は無効化（disabled）する。`dnsFallbackServers`は`dnsFailureMode`が「切り替える」のときのみ編集できる。設定ダイアログは、`excludedDomains`に1件以上あるのに`dnsRelayEnabled`がOFFの場合、「DNS中継が無効なため、迂回ドメインは反映されません」と表示する（Phase 14）。
+
+## 未実装機能の暫定表示（Phase 4〜Phase 14。明示的プロキシ分はPhase 6で除去済み、`excludedDomains`分はPhase 14で除去）
 
 `excludedDomains`（Phase 14）はWeb UIから設定値の編集・保存ができるが、対応するproxy側処理が実装されるまで実際には反映されない。利用者が「保存できた＝効いている」と誤解しないよう、該当する設定項目に「未対応（反映されません）」の旨を表示すること。対応フェーズ完了時に除去する。明示的プロキシはPhase 6で実装済みのため暫定表示の対象外とし、稼働状況欄に実際の稼働状況（稼働中・停止・未構成・起動失敗の繰り返し等）を表示する。
 

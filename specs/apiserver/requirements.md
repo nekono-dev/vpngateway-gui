@@ -39,6 +39,7 @@ Web UIから変更可能な運用設定。APIサーバが永続化し、プロ�
 - **transparentGatewayEnabled**: 透過ゲートウェイモードの有効/無効。
 - **explicitProxyEnabled**: 明示的SOCKS5/HTTPプロキシモードの有効/無効。
 - **explicitProxyAllowedCidrs**: 明示的プロキシモードで接続を許可するLAN側CIDR。
+- **DNS中継（Phase 14）**: `dnsRelayEnabled`（有効/無効）、`dnsUpstreamUrl`（自宅DNSサーバのDoH URL）、`dnsUpstreamCaPem`（上流のサーバ証明書を検証するCA。任意）、`dnsFailureMode`（上流障害時: フェイルクローズ／フォールバック）、`dnsFallbackServers`（フォールバック先の公開DNS）、`dnsRedirectEnabled`（手動DNS指定クライアントの問い合わせも中継するか。既定は無効）、`dnsRedirectExcludedCidrs`（リダイレクトしない宛先CIDR）。意味は`../requirements.md`「ドメイン単位の迂回（split-tunnel）とDNS中継」。
 
 # 提供するAPIの要求
 
@@ -85,7 +86,7 @@ Web UIから変更可能な運用設定。APIサーバが永続化し、プロ�
 
 - Web UIからのプレースホルダー値は、VPNクライアント操作プロファイルで定義された許可条件に対してAPIサーバが必ず再検証する。
 - VPNクライアント操作プロファイルの設定は読み取り専用マウントとし、実行時にAPIサーバから改変されない。
-- ユーザ向け設定（`excludedDomains` のドメイン形式等）についても、APIサーバ側で形式検証を行う。
+- ユーザ向け設定（`excludedDomains` のドメイン形式、`dnsUpstreamUrl`・`dnsFallbackServers`・`dnsRedirectExcludedCidrs`の形式等）についても、APIサーバ側で形式検証を行う。
 - すべてのコマンド実行要求とその結果（exitコード、stdout/stderr要約）を構造化ログとして記録する。現時点で認証機構がないため、事後追跡性の確保が重要になる。
 
 # エラーハンドリング方針
