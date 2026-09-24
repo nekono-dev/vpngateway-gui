@@ -2,9 +2,9 @@
 // ③一致していれば応答のIPv4アドレスを迂回のsetへ登録 → ④応答を返す。上流の障害時は設定に従い
 // フェイルクローズ（SERVFAIL）またはフォールバック。proxyserver/design.md「DNS中継リゾルバ」に対応する。
 
-import { buildServfail, parseAnswer, parseQuery } from "./dns-message.js";
+import { buildPtrQuery, buildServfail, parseAnswer, parseQuery } from "./dns-message.js";
 import { createDomainMatcher, type DomainMatcher } from "./domain-matcher.js";
-import type { ClientIdResolver } from "./client-id.js";
+import { ClientIdResolver } from "./client-id.js";
 import { forwardDoh, forwardPlain } from "./upstream.js";
 
 export interface DnsRelayConfig {
@@ -13,6 +13,8 @@ export interface DnsRelayConfig {
   upstreamCaPem: string;
   failureMode: "failClosed" | "fallback";
   fallbackServers: readonly string[];
+  // クライアントの名前（DHCPサーバ・ルータが配る名前）を逆引きで得るDNSサーバ。空なら逆引きせず、IPベースのClientIDにする。
+  clientNameServers: readonly string[];
 }
 
 export interface BypassAddress {
@@ -21,7 +23,8 @@ export interface BypassAddress {
 }
 
 export interface RelayDependencies {
-  clientIds: ClientIdResolver;
+  // 省略時は、クライアント名の取得先（config.clientNameServers）への逆引きでClientIDを作る（テスト用に差し替え可能）。
+  clientIds?: ClientIdResolver;
   // 迂回対象のIPv4アドレスの登録先。nftのsetへの反映が終わってから解決する（応答を返す前に待つ。応答を受け取った
   // クライアントが直ちに接続しても、最初のパケットから迂回されるようにするため）。
   registerBypass: (addresses: readonly BypassAddress[]) => Promise<void> | void;
@@ -41,18 +44,41 @@ const EMPTY_CONFIG: DnsRelayConfig = {
   upstreamCaPem: "",
   failureMode: "failClosed",
   fallbackServers: [],
+  clientNameServers: [],
 };
+// クライアント名の逆引きの1サーバあたりの待ち時間。クライアントの最初の問い合わせを遅らせすぎないよう短くする。
+const NAME_LOOKUP_TIMEOUT_MS = 800;
 
 export class DnsRelay {
   private config: DnsRelayConfig = EMPTY_CONFIG;
   private matcher: DomainMatcher = () => false;
   private upstreamState: UpstreamState = "unknown";
+  private readonly clientIds: ClientIdResolver;
 
-  constructor(private readonly deps: RelayDependencies) {}
+  constructor(private readonly deps: RelayDependencies) {
+    this.clientIds = deps.clientIds ?? new ClientIdResolver(["127.0.0.1"], (clientIp) => this.lookupClientName(clientIp));
+  }
 
   updateConfig(config: DnsRelayConfig): void {
+    if (config.clientNameServers.join(",") !== this.config.clientNameServers.join(",")) this.clientIds.clear();
     this.config = config;
     this.matcher = createDomainMatcher(config.excludedDomains);
+  }
+
+  /**
+   * 目的: クライアントのIPから、DHCPサーバ・ルータが配る名前（例: `Macmini.lan.`）を逆引き（PTR）で得る。
+   * 入力: clientIp(クライアントのIPv4アドレス)。
+   * 出力: 名前。取得先が未設定・名前が無い・失敗のときはundefined。
+   */
+  private async lookupClientName(clientIp: string): Promise<string | undefined> {
+    const servers = this.config.clientNameServers;
+    if (servers.length === 0) return undefined;
+    const query = buildPtrQuery(clientIp, Math.floor(Math.random() * 0x10000));
+    if (query === undefined) return undefined;
+    const plain = this.deps.plain ?? forwardPlain;
+    const response = await plain(servers, query, NAME_LOOKUP_TIMEOUT_MS);
+    const answer = parseAnswer(response);
+    return answer !== undefined && answer.rcode === 0 ? answer.ptrNames[0] : undefined;
   }
 
   getUpstreamState(): UpstreamState {
@@ -69,7 +95,7 @@ export class DnsRelay {
   async handle(query: Buffer, clientIp: string): Promise<Buffer | undefined> {
     const question = parseQuery(query);
     if (question === undefined) return undefined;
-    const clientId = this.deps.clientIds.resolve(clientIp);
+    const clientId = await this.clientIds.resolve(clientIp);
 
     let response: Buffer;
     try {

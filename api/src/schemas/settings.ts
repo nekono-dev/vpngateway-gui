@@ -16,6 +16,8 @@ export const UserSettingsSchema = Type.Object({
   dnsUpstreamCaPem: Type.String(),
   dnsFailureMode: Type.Union([Type.Literal("failClosed"), Type.Literal("fallback")]),
   dnsFallbackServers: Type.Array(Type.String()),
+  // クライアント名の取得先（DHCPサーバ・ルータのDNS。逆引きでクライアントの名前を得て、ClientIDにする）。
+  dnsClientNameServers: Type.Array(Type.String()),
   dnsRedirectEnabled: Type.Boolean(),
   dnsRedirectExcludedCidrs: Type.Array(Type.String()),
 });

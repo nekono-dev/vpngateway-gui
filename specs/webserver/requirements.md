@@ -36,6 +36,7 @@ Webサーバは以下のみを責務とし、業務ロジック（VPN接続状�
 | `dnsUpstreamCaPem` | 複数行テキスト入力（任意） | 上流のサーバ証明書を検証するCA（PEM） |
 | `dnsFailureMode` | ラジオボタン | 上流障害時: 名前解決を止める／公開DNSへ切り替える |
 | `dnsFallbackServers` | リスト編集（1行1アドレス） | 切り替え先の公開DNS。「切り替える」のときのみ有効 |
+| `dnsClientNameServers` | リスト編集（1行1アドレス、最大3件） | クライアント名の取得先（DHCPサーバ・ルータのDNS）。指定すると、自宅DNSサーバの履歴にDHCPで配られた名前でクライアントが記録される。空ならIPアドレスで記録する |
 | `dnsRedirectEnabled` | トグルスイッチ | 手動でDNSを指定した端末の問い合わせも中継する（暗号化DNSは対象外） |
 | `dnsRedirectExcludedCidrs` | リスト編集（1行1CIDR） | 中継しない宛先（LAN内のDNSサーバ等） |
 

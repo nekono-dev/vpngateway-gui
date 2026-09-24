@@ -2,7 +2,6 @@
 // 問い合わせの処理（relay.ts）・待受（listener.ts）とは分離し、本ファイルは「いつ起動・停止・再構成するか」の
 // 調停のみを行う（GatewayController・ExplicitProxyControllerと同じ責務分離）。proxyserver/design.md「設定の反映と状態」参照。
 
-import { ClientIdResolver } from "./client-id.js";
 import { DnsListener } from "./listener.js";
 import { DnsRelay, type BypassAddress, type DnsRelayConfig } from "./relay.js";
 import { isValidDomainPattern } from "./domain-matcher.js";
@@ -51,6 +50,7 @@ export class DnsRelayController {
     upstreamCaPem: "",
     failureMode: "failClosed",
     fallbackServers: [],
+    clientNameServers: [],
   };
   private state: DnsRelayState = "stopped";
   private listening = false;
@@ -66,7 +66,6 @@ export class DnsRelayController {
     this.relay =
       options.relay ??
       new DnsRelay({
-        clientIds: new ClientIdResolver(["127.0.0.1"]),
         registerBypass: (addresses) => options.registerBypass(addresses),
         onUpstreamStateChange: (state, detail) => {
           if (state === "ok") this.fallbackReported = false;

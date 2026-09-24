@@ -17,6 +17,7 @@ export interface SettingsRequestBody {
   dnsUpstreamCaPem: string;
   dnsFailureMode: "failClosed" | "fallback";
   dnsFallbackServers: string[];
+  dnsClientNameServers: string[];
   dnsRedirectEnabled: boolean;
   dnsRedirectExcludedCidrs: string[];
 }
@@ -50,6 +51,7 @@ export function parseSettingsRequest(value: unknown): SettingsRequestBody | unde
   const dnsUpstreamCaPem = body.dnsUpstreamCaPem ?? "";
   const dnsFailureMode = body.dnsFailureMode ?? "failClosed";
   const dnsFallbackServers = body.dnsFallbackServers ?? [];
+  const dnsClientNameServers = body.dnsClientNameServers ?? [];
   const dnsRedirectEnabled = body.dnsRedirectEnabled ?? false;
   const dnsRedirectExcludedCidrs = body.dnsRedirectExcludedCidrs ?? [];
   if (
@@ -59,6 +61,7 @@ export function parseSettingsRequest(value: unknown): SettingsRequestBody | unde
     typeof dnsUpstreamCaPem !== "string" ||
     (dnsFailureMode !== "failClosed" && dnsFailureMode !== "fallback") ||
     !isStringArray(dnsFallbackServers) ||
+    !isStringArray(dnsClientNameServers) ||
     typeof dnsRedirectEnabled !== "boolean" ||
     !isStringArray(dnsRedirectExcludedCidrs)
   ) {
@@ -75,6 +78,7 @@ export function parseSettingsRequest(value: unknown): SettingsRequestBody | unde
     dnsUpstreamCaPem,
     dnsFailureMode,
     dnsFallbackServers,
+    dnsClientNameServers,
     dnsRedirectEnabled,
     dnsRedirectExcludedCidrs,
   };
@@ -89,6 +93,7 @@ export function toDnsRelaySettings(body: SettingsRequestBody): DnsRelaySettings 
     upstreamCaPem: body.dnsUpstreamCaPem,
     failureMode: body.dnsFailureMode,
     fallbackServers: body.dnsFallbackServers,
+    clientNameServers: body.dnsClientNameServers,
   };
 }
 

@@ -6,7 +6,7 @@
 #       GET /set?name=<名前>&ip=<IPv4>&ttl=<秒>   対応表を更新する
 #       GET /doh?state=up|down                      DoHを503にする/戻す（平文DNSは影響を受けない）
 #       GET /log                                    これまでの記録を返す
-# 使い方: mock-doh.py <待受アドレス> <証明書> <鍵>
+# 使い方: mock-doh.py <待受アドレス> <証明書> <鍵> [DoHのポート(既定443)] [平文DNSのポート(既定53。0で無効)]
 # 外部のDNSサーバソフトを入れず、標準ライブラリだけで動かすための検証用スクリプト（本番コードではない）。
 
 import http.server
@@ -19,6 +19,8 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler
 
 LISTEN, CERT, KEY = sys.argv[1], sys.argv[2], sys.argv[3]
+DOH_PORT = int(sys.argv[4]) if len(sys.argv) > 4 else 443
+PLAIN_PORT = int(sys.argv[5]) if len(sys.argv) > 5 else 53
 TABLE = {}          # 名前 -> (ip, ttl)
 STATE = {"doh": "up"}
 LOG = []
@@ -133,11 +135,12 @@ class ThreadedTcp(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
 context.load_cert_chain(CERT, KEY)
-doh = ThreadedHttps((LISTEN, 443), DohHandler)
+doh = ThreadedHttps((LISTEN, DOH_PORT), DohHandler)
 doh.socket = context.wrap_socket(doh.socket, server_side=True)
 admin = http.server.HTTPServer(("127.0.0.1", 9000), AdminHandler)
-udp = ThreadedUdp((LISTEN, 53), UdpHandler)
-tcp = ThreadedTcp((LISTEN, 53), TcpHandler)
-for server in (doh, admin, udp, tcp):
+servers = [doh, admin]
+if PLAIN_PORT != 0:
+    servers += [ThreadedUdp((LISTEN, PLAIN_PORT), UdpHandler), ThreadedTcp((LISTEN, PLAIN_PORT), TcpHandler)]
+for server in servers:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 threading.Event().wait()

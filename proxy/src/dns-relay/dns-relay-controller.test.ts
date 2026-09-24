@@ -11,6 +11,7 @@ const ENABLED: DnsRelaySettings = {
   upstreamCaPem: "",
   failureMode: "failClosed",
   fallbackServers: [],
+  clientNameServers: [],
 };
 
 function setup(startImpl: () => Promise<void> = async () => undefined) {

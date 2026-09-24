@@ -81,6 +81,7 @@ describe("settings-store", () => {
         dnsUpstreamCaPem: "",
         dnsFailureMode: "failClosed",
         dnsFallbackServers: [],
+        dnsClientNameServers: [],
         dnsRedirectEnabled: false,
         dnsRedirectExcludedCidrs: [],
       });
@@ -119,6 +120,13 @@ describe("settings-store", () => {
       expect(() => updateSettings({ dnsFallbackServers: ["dns.google"] })).toThrow(SettingsValidationError);
       expect(() => updateSettings({ dnsFallbackServers: ["1.1.1.1/32"] })).toThrow(SettingsValidationError);
       expect(() => updateSettings({ dnsFallbackServers: ["1.1.1.1", "8.8.8.8", "9.9.9.9", "8.8.4.4"] })).toThrow(SettingsValidationError);
+    });
+
+    it("dnsClientNameServersはIPv4アドレスのみ・最大3件（クライアント名の逆引き先）", () => {
+      expect(updateSettings({ dnsClientNameServers: ["192.168.3.254"] }).dnsClientNameServers).toEqual(["192.168.3.254"]);
+      expect(() => updateSettings({ dnsClientNameServers: ["router.lan"] })).toThrow(SettingsValidationError);
+      expect(() => updateSettings({ dnsClientNameServers: ["192.168.3.254/32"] })).toThrow(SettingsValidationError);
+      expect(() => updateSettings({ dnsClientNameServers: ["10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.4"] })).toThrow(SettingsValidationError);
     });
 
     it("dnsRedirectExcludedCidrsはIPv4 CIDRのみ（改行等による注入を拒否）", () => {

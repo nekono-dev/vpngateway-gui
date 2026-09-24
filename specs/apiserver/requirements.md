@@ -39,7 +39,7 @@ Web UIから変更可能な運用設定。APIサーバが永続化し、プロ�
 - **transparentGatewayEnabled**: 透過ゲートウェイモードの有効/無効。
 - **explicitProxyEnabled**: 明示的SOCKS5/HTTPプロキシモードの有効/無効。
 - **explicitProxyAllowedCidrs**: 明示的プロキシモードで接続を許可するLAN側CIDR。
-- **DNS中継（Phase 14）**: `dnsRelayEnabled`（有効/無効）、`dnsUpstreamUrl`（自宅DNSサーバのDoH URL）、`dnsUpstreamCaPem`（上流のサーバ証明書を検証するCA。任意）、`dnsFailureMode`（上流障害時: フェイルクローズ／フォールバック）、`dnsFallbackServers`（フォールバック先の公開DNS）、`dnsRedirectEnabled`（手動DNS指定クライアントの問い合わせも中継するか。既定は無効）、`dnsRedirectExcludedCidrs`（リダイレクトしない宛先CIDR）。意味は`../requirements.md`「ドメイン単位の迂回（split-tunnel）とDNS中継」。
+- **DNS中継（Phase 14）**: `dnsRelayEnabled`（有効/無効）、`dnsUpstreamUrl`（自宅DNSサーバのDoH URL）、`dnsUpstreamCaPem`（上流のサーバ証明書を検証するCA。任意）、`dnsFailureMode`（上流障害時: フェイルクローズ／フォールバック）、`dnsFallbackServers`（フォールバック先の公開DNS）、`dnsClientNameServers`（クライアント名の取得先。DHCPサーバ・ルータのDNS）、`dnsRedirectEnabled`（手動DNS指定クライアントの問い合わせも中継するか。既定は無効）、`dnsRedirectExcludedCidrs`（リダイレクトしない宛先CIDR）。意味は`../requirements.md`「ドメイン単位の迂回（split-tunnel）とDNS中継」。
 
 # 提供するAPIの要求
 

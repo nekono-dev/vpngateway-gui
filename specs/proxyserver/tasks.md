@@ -55,7 +55,7 @@
 - [x] 迂回リストの照合（完全一致・`*.`ワイルドカード。両者は独立で、片方の登録が他方を含意しない。`dns-relay/domain-matcher.ts`）
 - [x] DNSメッセージの解析・応答IPとTTLの抽出・SERVFAIL/切り詰め応答（`dns-relay/dns-message.ts`）、UDP/TCPの待受（`dns-relay/listener.ts`）
 - [x] DoH上流への転送（ClientID付与、`dnsUpstreamCaPem`による検証、タイムアウト）と平文DNSへのフォールバック（`dns-relay/upstream.ts`）
-- [x] ClientIDの生成（`/proc/net/arp`からのMAC取得・キャッシュ・IPへのフォールバック。`dns-relay/client-id.ts`）
+- [x] ClientIDの生成（IPベース。クライアント名の取得先への逆引き（PTR）で得た名前があればその名前。キャッシュ・タイムアウト。`dns-relay/client-id.ts`）と、設定項目`dnsClientNameServers`（api・web・`settings-request.ts`）
 - [x] 問い合わせ処理（照合・転送・setへの登録・上流障害時の挙動・上流の疎通状態。`dns-relay/relay.ts`）
 - [x] `DnsRelayController`（設定の反映・待受の起動/停止/再試行・状態・監査ログ）
 - [x] nft set（`bypass4`）・マーク付けチェーン・forward許可・マスカレードの追加（`network/ruleset.ts`）と、再構成時のset要素の引き継ぎ（`network/bypass-set.ts`・`gateway-controller.ts`）
@@ -75,7 +75,7 @@
 - [x] 同上（明示的プロキシ。透過ゲートウェイと併用／明示的プロキシのみ）
 - [x] TTLの短いドメインでIP変化に追従し、期限（TTL＋猶予）後は迂回対象から外れること
 - [x] 完全一致と`*.`ワイルドカードの照合（`example.com`のみ登録時にサブドメインが迂回されないこと、`*.example.com`のみ登録時に`example.com`が迂回されないこと）
-- [x] 上流（モックDNS）にクライアントがClientID（MAC由来）で区別されて渡ること
+- [x] 上流（モックDNS）にクライアントがClientID（IP由来）で区別されて渡ること
 - [x] 上流停止時: フェイルクローズ／フォールバックの両方と、復旧後の状態
 - [x] 53番リダイレクト有効時、手動DNS指定の端末の問い合わせ（UDP・TCP）が中継されること、除外CIDRが対象外になること
 - [x] VPN未接続・Kill Switch ON時に、名前解決の中継と迂回対象の疎通は保たれ、迂回対象外は遮断されること
@@ -83,11 +83,13 @@
 - [x] 53番ポートが使用中で待受に失敗したとき、状態が`error`になり、リダイレクトを入れず、解消後に自動回復すること
 - [x] Web UI（Playwright）: 設定ダイアログの入力・保存前チェック・保持、稼働状況の「DNS中継」欄
 - [x] 検証で確定した仕様（応答前のset反映、マーク後のマスカレード、特権ポート、共有IPの制約等）の`design.md`への反映
-- [x] テスト用AdGuard Home（検証サーバへDockerで導入。DoHを有効化）で、履歴にクライアントが`client_id`（`mac-…`）で区別されて記録されること、フィルタのブロック応答（0.0.0.0）が迂回対象に登録されないこと
+- [x] テスト用AdGuard Home（検証サーバへDockerで導入。DoHを有効化）で、履歴にクライアントが`client_id`で区別されて記録されること（当初はMAC由来。識別しにくいため、IP・名前へ変更した。下記）、フィルタのブロック応答（0.0.0.0）が迂回対象に登録されないこと
 - [x] 実VPN（AdGuard VPN。利用者がWeb UIから手動ログイン済み、接続中）: 明示的プロキシ（SOCKS5・HTTP）経由で、迂回ドメインは実回線の出口IP、対象外はVPNの出口IPになること。VPNベンダーCLIのポリシールール（`ip rule`・テーブル880）が存在しても、迂回用のルール（優先度100）が優先されること（`ip route get`で、転送されるLAN機器の通信も迂回用テーブルへ向くことを確認）
 
 - [x] 実機・実LAN端末（検証サーバのDockerのmacvlanで、デフォルトゲートウェイを検証サーバにした端末）で、透過ゲートウェイ経由の迂回（実VPN接続中）、53番リダイレクト（無効時は中継されない／有効時はUDP・TCPとも中継されて迂回setに登録される／除外CIDR宛は中継されない）を確認
 - [x] 上流のDoH URLのホスト名を、ゲートウェイ機が名前解決できない場合・証明書のアドレスがURLと一致しない場合に、稼働状況が「自宅DNSサーバに接続できません」（upstream=failing）になり、フォールバックが機能すること
+
+- [x] ClientIDの見直し（実機）: 上流のAdGuard Homeへ、クライアントのIP（`192-168-3-199`。ドット入りのClientIDは上流が異常応答を返すことを確認したためハイフン区切り）、および、クライアント名の取得先（ルータ）の逆引きで得た名前（`devsrv.lan.` → `devsrv-lan`）が渡ること。名前が得られないクライアントはIPのままであること。ルータ以外（上流のAdGuard Home）は私的な逆引きに答えないため、取得先を別に指定する仕様とした
 
 検証: モックの範囲は、`e2e/phase14/scenarios.sh`の全シナリオ（A〜M、57項目）とWeb UIの16項目がPASS。実機（検証サーバ・実VPN・実AdGuard Home）は上記のとおり。既知の未検証事項: 複数NIC構成、Raspberry Pi実機。
 

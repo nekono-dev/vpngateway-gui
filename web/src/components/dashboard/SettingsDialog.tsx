@@ -62,6 +62,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
         explicitProxyAllowedCidrs: settings.explicitProxyAllowedCidrs.filter((cidr) => cidr.trim().length > 0),
         dnsUpstreamUrl: settings.dnsUpstreamUrl.trim(),
         dnsFallbackServers: settings.dnsFallbackServers.map((server) => server.trim()).filter((server) => server.length > 0),
+        dnsClientNameServers: settings.dnsClientNameServers.map((server) => server.trim()).filter((server) => server.length > 0),
         dnsRedirectExcludedCidrs: settings.dnsRedirectExcludedCidrs.map((cidr) => cidr.trim()).filter((cidr) => cidr.length > 0),
       });
       if (response.status !== 200) {
@@ -219,6 +220,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                 onChange={(dnsFallbackServers) => setSettings({ ...settings, dnsFallbackServers })}
                 disabled={!settings.dnsRelayEnabled || settings.dnsFailureMode !== "fallback"}
               />
+
+              <LineListEditor
+                label="クライアント名の取得先（DHCPサーバ・ルータのDNS、1行1アドレス、最大3件。空ならIPアドレスで記録）"
+                placeholder={"192.168.3.254"}
+                value={settings.dnsClientNameServers}
+                onChange={(dnsClientNameServers) => setSettings({ ...settings, dnsClientNameServers })}
+                disabled={!settings.dnsRelayEnabled}
+              />
+              <p className="hint">指定すると、自宅DNSサーバの履歴に、DHCPで配られた名前（例: macmini.lan → macmini-lan）でクライアントが記録されます。</p>
 
               <label>
                 <input

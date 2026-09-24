@@ -24,6 +24,7 @@ const BASE_SETTINGS = {
   dnsUpstreamCaPem: "",
   dnsFailureMode: "failClosed",
   dnsFallbackServers: [] as string[],
+  dnsClientNameServers: [] as string[],
   dnsRedirectEnabled: false,
   dnsRedirectExcludedCidrs: [] as string[],
 };
@@ -84,6 +85,7 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
       dnsUpstreamUrl: "  https://dns.home.example/dns-query ",
       dnsFailureMode: "fallback",
       dnsFallbackServers: ["1.1.1.1", "", " 9.9.9.9 "],
+      dnsClientNameServers: [" 192.168.3.254 ", ""],
       dnsRedirectEnabled: true,
       dnsRedirectExcludedCidrs: ["192.168.3.5/32", ""],
       excludedDomains: ["example.com", "  ", "*.example.com "],
@@ -94,6 +96,7 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
       excludedDomains: ["example.com", "*.example.com"],
       dnsUpstreamUrl: "https://dns.home.example/dns-query",
       dnsFallbackServers: ["1.1.1.1", "9.9.9.9"],
+      dnsClientNameServers: ["192.168.3.254"],
       dnsRedirectExcludedCidrs: ["192.168.3.5/32"],
       dnsFailureMode: "fallback",
     });

@@ -1,7 +1,6 @@
 // 責務: DNS中継の問い合わせ処理（relay.ts）の単体テスト。上流転送は差し替え、照合・登録・障害時の挙動を検証する。
 
 import { describe, expect, it, vi } from "vitest";
-import { ClientIdResolver } from "./client-id.js";
 import { parseAnswer } from "./dns-message.js";
 import { DnsRelay, type BypassAddress, type DnsRelayConfig } from "./relay.js";
 import { buildAnswer, buildQuery } from "./test-helpers.js";
@@ -12,6 +11,7 @@ const CONFIG: DnsRelayConfig = {
   upstreamCaPem: "",
   failureMode: "failClosed",
   fallbackServers: [],
+  clientNameServers: [],
 };
 
 function createRelay(overrides: { doh?: ReturnType<typeof vi.fn>; plain?: ReturnType<typeof vi.fn>; config?: Partial<DnsRelayConfig> } = {}) {
@@ -20,7 +20,6 @@ function createRelay(overrides: { doh?: ReturnType<typeof vi.fn>; plain?: Return
   const doh = overrides.doh ?? vi.fn(async (_url, _ca, query: Buffer) => buildAnswer("example.com", [{ address: "192.0.2.1", ttl: 60 }], 0, query.readUInt16BE(0)));
   const plain = overrides.plain ?? vi.fn(async (_servers, query: Buffer) => buildAnswer("example.com", [{ address: "198.51.100.1", ttl: 30 }], 0, query.readUInt16BE(0)));
   const relay = new DnsRelay({
-    clientIds: new ClientIdResolver(["127.0.0.1"], () => ""),
     registerBypass: (addresses) => {
       registered.push([...addresses]);
     },
@@ -83,10 +82,45 @@ describe("DnsRelay", () => {
     expect(registered).toEqual([]);
   });
 
+  it("クライアント名の取得先が未設定なら逆引きせず、IPベースのClientIDを渡す", async () => {
+    const { relay, doh, plain } = createRelay();
+    await relay.handle(buildQuery("example.com"), "192.168.3.121");
+    expect(doh.mock.calls[0][3]).toBe("192-168-3-121");
+    expect(plain).not.toHaveBeenCalled();
+  });
+
+  it("クライアント名の取得先が設定されていれば、逆引き（PTR）でDHCPが配る名前を得て、それをClientIDにする", async () => {
+    const plain = vi.fn(async (_servers: readonly string[], query: Buffer) => {
+      // PTR応答: 質問（PTR）と、`Macmini.lan`を指すPTRレコード1件
+      const name = Buffer.from([7, ...Buffer.from("Macmini"), 3, ...Buffer.from("lan"), 0]);
+      const header = Buffer.from(query.subarray(0, 12));
+      header.writeUInt16BE(0x8180, 2);
+      header.writeUInt16BE(1, 6);
+      const question = query.subarray(12);
+      const rr = Buffer.concat([Buffer.from([0xc0, 0x0c, 0, 12, 0, 1, 0, 0, 0, 60]), Buffer.from([0, name.length]), name]);
+      return Buffer.concat([header, question, rr]);
+    });
+    const { relay, doh } = createRelay({ plain, config: { clientNameServers: ["192.168.3.254"] } });
+    await relay.handle(buildQuery("example.com"), "192.168.3.121");
+    expect(plain.mock.calls[0][0]).toEqual(["192.168.3.254"]);
+    expect(doh.mock.calls[0][3]).toBe("macmini-lan");
+  });
+
+  it("逆引きで名前が得られない（NXDOMAIN）クライアントは、IPベースのClientIDにする", async () => {
+    const plain = vi.fn(async (_servers: readonly string[], query: Buffer) => {
+      const response = Buffer.from(query);
+      response.writeUInt16BE(0x8183, 2);
+      return response;
+    });
+    const { relay, doh } = createRelay({ plain, config: { clientNameServers: ["192.168.3.254"] } });
+    await relay.handle(buildQuery("example.com"), "192.168.3.58");
+    expect(doh.mock.calls[0][3]).toBe("192-168-3-58");
+  });
+
   it("上流へ、クライアントのIPから作ったClientIDを渡す", async () => {
     const { relay, doh } = createRelay();
     await relay.handle(buildQuery("example.com"), "192.168.3.25");
-    expect(doh.mock.calls[0][3]).toBe("ip-192-168-3-25");
+    expect(doh.mock.calls[0][3]).toBe("192-168-3-25");
     await relay.handle(buildQuery("example.com"), "127.0.0.1");
     expect(doh.mock.calls[1][3]).toBe("explicit-proxy");
   });

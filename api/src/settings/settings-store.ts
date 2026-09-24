@@ -23,6 +23,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   dnsUpstreamCaPem: "",
   dnsFailureMode: "failClosed",
   dnsFallbackServers: [],
+  dnsClientNameServers: [],
   dnsRedirectEnabled: false,
   dnsRedirectExcludedCidrs: [],
 };
@@ -32,6 +33,7 @@ const DEFAULT_SETTINGS: UserSettings = {
 const DOMAIN_PATTERN = "^(\\*\\.)?[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$";
 const MAX_EXCLUDED_DOMAINS = 200;
 const MAX_FALLBACK_SERVERS = 3;
+const MAX_CLIENT_NAME_SERVERS = 3;
 const MAX_CA_PEM_LENGTH = 16 * 1024;
 const CA_PEM_PATTERN = "^(-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\\r\\n ]+-----END CERTIFICATE-----\\s*)+$";
 
@@ -107,6 +109,16 @@ function validateDnsSettings(patch: UserSettingsPatch): void {
     for (const server of patch.dnsFallbackServers) {
       if (!isIpv4Address(server)) {
         throw new SettingsValidationError(`invalid IPv4 address in dnsFallbackServers: ${server}`);
+      }
+    }
+  }
+  if (patch.dnsClientNameServers !== undefined) {
+    if (patch.dnsClientNameServers.length > MAX_CLIENT_NAME_SERVERS) {
+      throw new SettingsValidationError(`too many dnsClientNameServers (max ${MAX_CLIENT_NAME_SERVERS})`);
+    }
+    for (const server of patch.dnsClientNameServers) {
+      if (!isIpv4Address(server)) {
+        throw new SettingsValidationError(`invalid IPv4 address in dnsClientNameServers: ${server}`);
       }
     }
   }

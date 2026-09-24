@@ -13,7 +13,7 @@ const LEGACY = {
 describe("parseSettingsRequest", () => {
   it("Phase 14より前の形状（DNS関連の項目なし）は、既定値（無効・空）で補って受理する", () => {
     const body = parseSettingsRequest(LEGACY);
-    expect(body).toMatchObject({ excludedDomains: [], dnsRelayEnabled: false, dnsUpstreamUrl: "", dnsFailureMode: "failClosed", dnsRedirectEnabled: false });
+    expect(body).toMatchObject({ dnsClientNameServers: [], excludedDomains: [], dnsRelayEnabled: false, dnsUpstreamUrl: "", dnsFailureMode: "failClosed", dnsRedirectEnabled: false });
   });
 
   it("必須項目の型が違う・オブジェクトでない入力は拒否する", () => {
@@ -27,6 +27,7 @@ describe("parseSettingsRequest", () => {
     expect(parseSettingsRequest({ ...LEGACY, excludedDomains: "example.com" })).toBeUndefined();
     expect(parseSettingsRequest({ ...LEGACY, dnsRelayEnabled: 1 })).toBeUndefined();
     expect(parseSettingsRequest({ ...LEGACY, dnsFallbackServers: [1] })).toBeUndefined();
+    expect(parseSettingsRequest({ ...LEGACY, dnsClientNameServers: "192.168.3.254" })).toBeUndefined();
   });
 });
 

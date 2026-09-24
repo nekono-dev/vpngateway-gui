@@ -441,6 +441,7 @@ Web UIから変更可能な運用設定（目的・意味は../requirements.md�
 | `dnsUpstreamCaPem` | string | 上流のサーバ証明書を検証するCA（PEM。任意。最大16KB）。空文字はシステムのCAのみ |
 | `dnsFailureMode` | `"failClosed"` \| `"fallback"` | 上流障害時の挙動（既定: `failClosed`） |
 | `dnsFallbackServers` | string[] | `fallback`時の転送先（IPv4アドレス。最大3件） |
+| `dnsClientNameServers` | string[] | クライアント名の取得先（DHCPサーバ・ルータのDNS。IPv4アドレス、最大3件）。クライアントIPの逆引きで得た名前を、上流のClientIDにする。空ならIPベースのClientID（既定: 空） |
 | `dnsRedirectEnabled` | boolean | 手動DNS指定のクライアントを含め、宛先ポート53の通信を中継リゾルバへ誘導する（既定: false） |
 | `dnsRedirectExcludedCidrs` | string[] | リダイレクトしない宛先のIPv4 CIDR（例: LAN内のDNSサーバ） |
 
@@ -521,6 +522,7 @@ AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッド�
   "dnsUpstreamCaPem": "",
   "dnsFailureMode": "failClosed",
   "dnsFallbackServers": [],
+  "dnsClientNameServers": [],
   "dnsRedirectEnabled": false,
   "dnsRedirectExcludedCidrs": []
 }

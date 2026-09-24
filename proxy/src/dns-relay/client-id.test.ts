@@ -1,63 +1,95 @@
 // 責務: ClientIDの生成（client-id.ts）の単体テスト。
 
-import { describe, expect, it } from "vitest";
-import { ClientIdResolver, LOCAL_CLIENT_ID, buildClientId, parseArpTable } from "./client-id.js";
+import { describe, expect, it, vi } from "vitest";
+import { ClientIdResolver, LOCAL_CLIENT_ID, buildClientId, sanitizeClientName } from "./client-id.js";
 
-const ARP = `IP address       HW type     Flags       HW address            Mask     Device
-192.168.3.25     0x1         0x2         AA:bb:cc:dd:ee:ff     *        eth0
-192.168.3.30     0x1         0x0         00:00:00:00:00:00     *        eth0
-192.168.3.31     0x1         0x2         00:00:00:00:00:00     *        eth0
-`;
+describe("sanitizeClientName", () => {
+  it("小文字化し、英数字以外の連続をハイフン1つにする（DHCPが配る名前を整える）", () => {
+    expect(sanitizeClientName("Macmini.lan.")).toBe("macmini-lan");
+    expect(sanitizeClientName("iPhone.lan")).toBe("iphone-lan");
+    expect(sanitizeClientName("Taro's  iPhone (2).lan")).toBe("taro-s-iphone-2-lan");
+  });
 
-describe("parseArpTable", () => {
-  it("完了したエントリのMACを小文字で取り出し、未完了のものは除く", () => {
-    const table = parseArpTable(ARP);
-    expect(table.get("192.168.3.25")).toBe("aa:bb:cc:dd:ee:ff");
-    expect(table.has("192.168.3.30")).toBe(false);
-    expect(table.has("192.168.3.31")).toBe(false);
+  it("63文字以内に切り、末尾のハイフンを残さない。使える文字が無ければundefined", () => {
+    const long = sanitizeClientName(`${"a".repeat(62)}.example.lan`)!;
+    expect(long.length).toBeLessThanOrEqual(63);
+    expect(long.endsWith("-")).toBe(false);
+    expect(sanitizeClientName("...")).toBeUndefined();
+    expect(sanitizeClientName("日本語")).toBeUndefined();
   });
 });
 
 describe("buildClientId", () => {
-  it("MACがあれば mac-…、なければ ip-…、IPも不正なら unknown-client", () => {
-    expect(buildClientId("192.168.3.25", "aa:bb:cc:dd:ee:ff")).toBe("mac-aa-bb-cc-dd-ee-ff");
-    expect(buildClientId("192.168.3.25", undefined)).toBe("ip-192-168-3-25");
+  it("名前があれば整えた名前、無ければIPベース（ip-…）、IPも不正ならunknown-client", () => {
+    expect(buildClientId("192.168.3.121", "Macmini.lan.")).toBe("macmini-lan");
+    expect(buildClientId("192.168.3.25", undefined)).toBe("192-168-3-25");
+    expect(buildClientId("192.168.3.25", "日本語")).toBe("192-168-3-25");
     expect(buildClientId("bad", undefined)).toBe("unknown-client");
-    expect(buildClientId("192.168.3.25", "zz")).toBe("ip-192-168-3-25");
   });
 
   it("ClientIDの制約（小文字英数字とハイフン、63文字以内）を満たす", () => {
-    expect(buildClientId("192.168.3.25", "aa:bb:cc:dd:ee:ff")).toMatch(/^[a-z0-9-]{1,63}$/);
+    expect(buildClientId("192.168.3.25", undefined)).toMatch(/^[a-z0-9-]{1,63}$/);
+    expect(buildClientId("192.168.3.121", "Macmini.lan.")).toMatch(/^[a-z0-9-]{1,63}$/);
   });
 });
 
 describe("ClientIdResolver", () => {
-  it("ゲートウェイ自身からの問い合わせは固定のIDにする", () => {
-    const resolver = new ClientIdResolver(["127.0.0.1"], () => ARP);
-    expect(resolver.resolve("127.0.0.1")).toBe(LOCAL_CLIENT_ID);
+  it("ゲートウェイ自身からの問い合わせは固定のIDにし、逆引きしない", async () => {
+    const lookup = vi.fn(async () => "x.lan");
+    const resolver = new ClientIdResolver(["127.0.0.1"], lookup);
+    expect(await resolver.resolve("127.0.0.1")).toBe(LOCAL_CLIENT_ID);
+    expect(lookup).not.toHaveBeenCalled();
   });
 
-  it("ARPを引いてMAC由来のIDを返し、キャッシュ期間内は再読込しない", () => {
-    let reads = 0;
+  it("逆引きで名前が得られればその名前、得られなければIPベース", async () => {
+    const names: Record<string, string> = { "192.168.3.121": "Macmini.lan." };
+    const resolver = new ClientIdResolver(["127.0.0.1"], async (ip) => names[ip]);
+    expect(await resolver.resolve("192.168.3.121")).toBe("macmini-lan");
+    expect(await resolver.resolve("192.168.3.58")).toBe("192-168-3-58");
+  });
+
+  it("逆引きは結果をキャッシュする（名前あり10分、なし2分）。期限後は取り直す", async () => {
     let time = 0;
-    const resolver = new ClientIdResolver(["127.0.0.1"], () => (reads += 1, ARP), () => time);
-    expect(resolver.resolve("192.168.3.25")).toBe("mac-aa-bb-cc-dd-ee-ff");
-    time = 10_000;
-    expect(resolver.resolve("192.168.3.25")).toBe("mac-aa-bb-cc-dd-ee-ff");
-    expect(reads).toBe(1);
+    const lookup = vi.fn(async () => undefined as string | undefined);
+    const resolver = new ClientIdResolver(["127.0.0.1"], lookup, () => time);
+    await resolver.resolve("192.168.3.58");
+    time = 60_000;
+    await resolver.resolve("192.168.3.58");
+    expect(lookup).toHaveBeenCalledTimes(1);
+    time = 121_000;
+    lookup.mockResolvedValue("Late.lan");
+    expect(await resolver.resolve("192.168.3.58")).toBe("late-lan");
+    time = 121_000 + 9 * 60_000;
+    await resolver.resolve("192.168.3.58");
+    expect(lookup).toHaveBeenCalledTimes(2);
   });
 
-  it("未知のIPはキャッシュ期間内でも読み直し、それでも無ければIP由来のID", () => {
-    let reads = 0;
-    const resolver = new ClientIdResolver(["127.0.0.1"], () => (reads += 1, ARP), () => 0);
-    expect(resolver.resolve("192.168.3.99")).toBe("ip-192-168-3-99");
-    expect(reads).toBe(1);
-  });
-
-  it("ARPの読み取りに失敗してもIP由来のIDを返す", () => {
-    const resolver = new ClientIdResolver(["127.0.0.1"], () => {
-      throw new Error("no arp");
+  it("並行した問い合わせで、逆引きを重複させない", async () => {
+    const lookup = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return "a.lan";
     });
-    expect(resolver.resolve("192.168.3.25")).toBe("ip-192-168-3-25");
+    const resolver = new ClientIdResolver(["127.0.0.1"], lookup);
+    const ids = await Promise.all([resolver.resolve("192.168.3.9"), resolver.resolve("192.168.3.9"), resolver.resolve("192.168.3.9")]);
+    expect(ids).toEqual(["a-lan", "a-lan", "a-lan"]);
+    expect(lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it("逆引きが遅い・失敗する場合は、待ち時間を超えたらIPベースで進める（問い合わせを止めない）", async () => {
+    const slow = new ClientIdResolver(["127.0.0.1"], () => new Promise(() => undefined), () => 0, 30);
+    expect(await slow.resolve("192.168.3.9")).toBe("192-168-3-9");
+    const failing = new ClientIdResolver(["127.0.0.1"], async () => {
+      throw new Error("down");
+    });
+    expect(await failing.resolve("192.168.3.9")).toBe("192-168-3-9");
+  });
+
+  it("clear()で保持を捨て、設定の変更後に取り直す", async () => {
+    const lookup = vi.fn(async () => undefined as string | undefined);
+    const resolver = new ClientIdResolver(["127.0.0.1"], lookup);
+    await resolver.resolve("192.168.3.9");
+    resolver.clear();
+    await resolver.resolve("192.168.3.9");
+    expect(lookup).toHaveBeenCalledTimes(2);
   });
 });

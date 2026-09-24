@@ -6,7 +6,7 @@
 #   B: VPN接続中、迂回ドメインは実回線（ゲートウェイ自身の送信元）、それ以外はVPN出口を経由する
 #   C: 表記規則（完全一致は自身のみ・ワイルドカードはサブドメインのみ）
 #   D: 稼働状況（GET /v1/connection/gateway）・ip rule・nft setの実体
-#   E: 上流（モックDNS）にクライアントがClientID（MAC由来）で区別されて渡る
+#   E: 上流（モックDNS）にクライアントがClientID（IP由来）で区別されて渡る
 #   F: 設定変更による再構成後も迂回対象が維持される
 #   G: 名前解決結果のIPの変化に追従し、期限（TTL＋猶予）を過ぎると迂回対象から外れる（約75秒かかる）
 #   H: VPN未接続・Kill Switch ONでも、迂回対象だけは疎通し、それ以外は遮断される
@@ -119,10 +119,9 @@ fi
 
 if run E; then
   echo "== E: ClientID"
-  MAC=$(cl cat /sys/class/net/eth0/address | tr ':' '-')
   dnsc curl -s http://127.0.0.1:9000/clear >/dev/null
   cl dig +short +time=3 +tries=1 a.example.test >/dev/null
-  check "上流（DoH）へ、クライアントのMAC由来のClientID(mac-$MAC)で問い合わせが届く" 'dnsc curl -s http://127.0.0.1:9000/log | grep -q "^doh mac-$MAC a.example.test"'
+  check "上流（DoH）へ、クライアントのIP由来のClientID(10-98-1-20)で問い合わせが届く" 'dnsc curl -s http://127.0.0.1:9000/log | grep -q "^doh 10-98-1-20 a.example.test"'
   check "ゲートウェイ自身からの問い合わせはClientIDが explicit-proxy 固定" 'gw dig +short +time=3 +tries=1 @127.0.0.1 b.example.test >/dev/null; dnsc curl -s http://127.0.0.1:9000/log | grep -q "^doh explicit-proxy b.example.test"'
 fi
 

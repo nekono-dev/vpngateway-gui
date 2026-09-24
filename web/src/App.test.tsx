@@ -331,6 +331,7 @@ describe("App", () => {
         dnsUpstreamCaPem: "",
         dnsFailureMode: "failClosed",
         dnsFallbackServers: [],
+        dnsClientNameServers: [],
         dnsRedirectEnabled: false,
         dnsRedirectExcludedCidrs: [],
       },

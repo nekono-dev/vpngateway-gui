@@ -21,6 +21,8 @@ export interface DnsQuestion {
   additionalCount: number;
 }
 
+const TYPE_PTR = 12;
+
 export interface DnsARecord {
   address: string;
   ttl: number;
@@ -30,6 +32,8 @@ export interface DnsAnswer {
   rcode: number;
   truncated: boolean;
   aRecords: DnsARecord[];
+  // PTRレコードの名前（小文字。末尾のドットなし）。逆引きの応答から、クライアントの名前を得るために使う。
+  ptrNames: string[];
 }
 
 interface NameResult {
@@ -95,7 +99,7 @@ export function parseAnswer(buffer: Buffer): DnsAnswer | undefined {
   const flags = buffer.readUInt16BE(2);
   const questionCount = buffer.readUInt16BE(4);
   const answerCount = buffer.readUInt16BE(6);
-  const result: DnsAnswer = { rcode: flags & 0x000f, truncated: (flags & FLAG_TC) !== 0, aRecords: [] };
+  const result: DnsAnswer = { rcode: flags & 0x000f, truncated: (flags & FLAG_TC) !== 0, aRecords: [], ptrNames: [] };
 
   let offset = HEADER_LENGTH;
   for (let index = 0; index < questionCount; index += 1) {
@@ -115,9 +119,34 @@ export function parseAnswer(buffer: Buffer): DnsAnswer | undefined {
       const octets = [...buffer.subarray(dataStart, dataStart + 4)];
       result.aRecords.push({ address: octets.join("."), ttl });
     }
+    if (type === TYPE_PTR) {
+      const target = readName(buffer, dataStart);
+      if (target !== undefined && target.name.length > 0) result.ptrNames.push(target.name);
+    }
     offset = dataStart + dataLength;
   }
   return result;
+}
+
+/**
+ * 目的: IPv4アドレスの逆引き（PTR）クエリを組み立てる。
+ * 入力: address(IPv4アドレス), id(クエリID)。
+ * 出力: `<逆順のアドレス>.in-addr.arpa`のPTRクエリ。IPv4アドレスとして不正ならundefined。
+ * 例: buildPtrQuery("192.168.3.25", 1) // 25.3.168.192.in-addr.arpa のPTRクエリ
+ */
+export function buildPtrQuery(address: string, id: number): Buffer | undefined {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(address);
+  if (match === null || match.slice(1).some((octet) => Number(octet) > 255)) return undefined;
+  const labels = [...match.slice(1).reverse(), "in-addr", "arpa"];
+  const name = Buffer.concat([...labels.map((label) => Buffer.concat([Buffer.from([label.length]), Buffer.from(label, "latin1")])), Buffer.from([0])]);
+  const header = Buffer.alloc(12);
+  header.writeUInt16BE(id & 0xffff, 0);
+  header.writeUInt16BE(FLAG_RD, 2);
+  header.writeUInt16BE(1, 4);
+  const tail = Buffer.alloc(4);
+  tail.writeUInt16BE(TYPE_PTR, 0);
+  tail.writeUInt16BE(1, 2);
+  return Buffer.concat([header, name, tail]);
 }
 
 /**
