@@ -297,7 +297,7 @@
 
 - **検証カード**: ダッシュボードに「動作検証」カードを追加する。［検証を実行］ボタンで`POST /v1/verifications`を呼び、`GET /v1/verifications/{id}`を1秒間隔でポーリングして、`state=completed`まで項目ごとの結果を表示する。実行中はボタンを無効にし、409（他で実行中）は通知で示す。
 - **結果の表示**: 項目ごとに、名前・結果（合格／不合格／未確認／対象外／確認中）、期待値と観測値、不合格・未確認のときのヒントを表示する。対象外の項目は折りたたむ。結果の名前・ヒントは`GET`の応答の内容を表示する（Web側で判定文言を持たない）。
-- **ブラウザ側の出口IP取得（`client-egress`）**: 検証開始後、`verifyBrowserEchoUrl`（`GET /v1/connection/config`から取得）へfetchし、IPv4の本文を`PUT /v1/verifications/{id}/client-observations/egress-ip`で提出する。fetchの失敗（CORS拒否・タイムアウト等）は、提出せず、その項目を未確認として表示し、IP確認サービスの設定を見直すよう案内する。結果は「この端末の経路」であることを明記する（VPN・LAN外からWeb UIを開いている場合は、ゲートウェイを通らない端末の結果になるため）。
+- **ブラウザ側の出口IP取得（`client-egress`）**: 検証開始後、`verifyEchoUrl`（`GET /v1/connection/config`から取得）へfetchし、IPv4の本文を`PUT /v1/verifications/{id}/client-observations/egress-ip`で提出する。fetchの失敗（CORS拒否・タイムアウト等）は、提出せず、その項目を未確認として表示し、IP確認サービスの設定を見直すよう案内する。結果は「この端末の経路」であることを明記する（VPN・LAN外からWeb UIを開いている場合は、ゲートウェイを通らない端末の結果になるため）。
 - **53番リダイレクトの案内（`dns-redirect-path`）**: 応答の`clientProbe.dnsRedirect.name`を、コピーできるコマンド（`nslookup <名前> 192.0.2.53`。宛先はドキュメント用の予約アドレス〔TEST-NET-1〕で、53番リダイレクトが効いていなければ応答が得られない。設定の`dnsRedirectExcludedCidrs`に含まれる場合は、含まれない別の予約アドレス〔198.51.100.53〕を表示する）とともに表示し、端末で実行するよう案内する。検証は期限（120秒）まで待ち、［この項目を飛ばす］で中断できる。
-- **設定ダイアログ**: 「動作検証」タブを追加し、`verifyServerEchoUrl`・`verifyBrowserEchoUrl`の入力欄と、ブラウザ側のURLにはCORSとIPv4応答が必要である旨の補足を置く。
+- **設定ダイアログ**: 「動作検証」タブを追加し、`verifyEchoUrl`の入力欄と、CORSの許可とIPv4での応答が必要である旨の補足を置く。
 - 検証の状態はメモリ上のみで保持し、再読み込みで失われてよい（結果はAPI側の直近5件から`GET`で再取得できる）。

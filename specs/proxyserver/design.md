@@ -271,7 +271,7 @@ volumes:
 
 ゲートウェイ制御チャネル（mTLS TCP）へ追加する。`api`だけが呼べる（既存の`/net/settings`と同じ認証）。
 
-- `POST /net/checks`: ボディ`{ "checks": ["<検証項目ID>", ...], "echoUrl": "<verifyServerEchoUrl>", "excludedDomains": [...] }`。指定された項目（L1・L2）を実行し、`{ "results": [{ "id", "status": "pass"|"fail"|"skip", "expected"?, "observed"?, "hint"?, "reason"? }] }`を返す。全体のタイムアウトは30秒。実行は同時に1件（`api`の排他に加えた保険）。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。
+- `POST /net/checks`: ボディ`{ "checks": ["<検証項目ID>", ...], "echoUrl": "<verifyEchoUrl>", "excludedDomains": [...] }`。指定された項目（L1・L2）を実行し、`{ "results": [{ "id", "status": "pass"|"fail"|"skip", "expected"?, "observed"?, "hint"?, "reason"? }] }`を返す。全体のタイムアウトは30秒。実行は同時に1件（`api`の排他に加えた保険）。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。
 - `POST /net/check-nonces`: `{ "name": "vpngw-<乱数>.invalid", "ttlSeconds": 120 }`で使い捨て名を登録する。`GET /net/check-nonces/{name}`で、受信の有無（受信時刻・受信したリゾルバのアドレスのみ）を返す。
 
 ## 実装

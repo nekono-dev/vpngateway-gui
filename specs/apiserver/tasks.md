@@ -169,7 +169,7 @@
 
 設計は`design.md`「設定の動作検証」。
 
-- [ ] `UserSettings`へ`verifyServerEchoUrl`・`verifyBrowserEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
+- [ ] `UserSettings`へ`verifyEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
 - [ ] 検証項目の定義と適用条件の導出（`api/src/verification/`）と単体テスト（設定の組み合わせごとの対象・対象外）
 - [ ] `proxy`への実行依頼（`POST /net/checks`）とL3の判定（`client-egress`・`dns-redirect-path`のnonce管理）
 - [ ] `POST /v1/verifications`・`GET /v1/verifications/{id}`・`PUT .../client-observations/egress-ip`、同時実行の排他、直近5件の保持、監査ログ

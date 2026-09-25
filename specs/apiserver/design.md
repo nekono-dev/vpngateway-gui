@@ -734,10 +734,9 @@ CN    China                Shanghai (Virtual)             59
 
 | 設定項目 | 型 | 説明 |
 |---|---|---|
-| `verifyServerEchoUrl` | string | ゲートウェイ（`proxy`）が出口IPを取得するIP確認サービスのURL（既定: `https://inet-ip.info`）。`https://`のURLのみ許可（認証情報・フラグメントは不可） |
-| `verifyBrowserEchoUrl` | string | ブラウザが出口IPを取得するIP確認サービスのURL（既定: `https://api.ipify.org`）。要件は下記 |
+| `verifyEchoUrl` | string | 出口IPを取得するIP確認サービスのURL（既定: `https://api.ipify.org`）。ゲートウェイ（`proxy`）とブラウザの双方が同じURLで取得する。`https://`のURLのみ許可（認証情報・フラグメントは不可）。空文字の更新は400で拒否する |
 
-IP確認サービスは、応答本文が**IPv4アドレスのみのテキスト**（改行は許容）でなければならない。`verifyBrowserEchoUrl`はさらに、ブラウザからのクロスオリジンのfetchが許可されている（`Access-Control-Allow-Origin`を返す）ことと、IPv4で応答することが必要（IPv6のみを返すサービスでは、IPv6を扱わないゲートウェイの検証にならない）。`verifyServerEchoUrl`はブラウザを介さないためCORSは不要（既定の`https://inet-ip.info`はCORSを許可しないため、ブラウザ側は別のURLにしている）。両項目とも、空文字の更新は400で拒否する。この2項目は`proxy`への設定反映（`POST /net/settings`）のボディへは含めない（検証の実行依頼で個別に渡す）。
+IP確認サービスは、次を満たさなければならない。(1) 応答本文が**IPv4アドレスのみのテキスト**（改行は許容）である。(2) ブラウザからのクロスオリジンのfetchが許可されている（`Access-Control-Allow-Origin`を返す）。(3) IPv4で応答する（IPv6を返すサービスでは、IPv6を扱わないゲートウェイの検証にならない）。(2)は、ブラウザ側の取得（`client-egress`）のために必要で、CORSを許可しないサービス（例: `https://inet-ip.info`）は使えない。この項目は`proxy`への設定反映（`POST /net/settings`）のボディへは含めない（検証の実行依頼で個別に渡す）。
 
 ## 検証項目（`api/src/verification/`）
 
