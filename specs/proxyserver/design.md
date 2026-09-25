@@ -262,3 +262,27 @@ services:
 volumes:
   ctl-socket:
 ```
+
+# 設定の動作検証（Phase 27）
+
+全体方針は`../design.md`「設定の動作検証の設計方針」、項目の一覧・判定は`../apiserver/design.md`「設定の動作検証」。以降は`proxy`の実装詳細（一次情報）。
+
+## 内部エンドポイント（`POST /net/checks`・`POST /net/check-nonces`）
+
+ゲートウェイ制御チャネル（mTLS TCP）へ追加する。`api`だけが呼べる（既存の`/net/settings`と同じ認証）。
+
+- `POST /net/checks`: ボディ`{ "checks": ["<検証項目ID>", ...], "echoUrl": "<verifyServerEchoUrl>", "excludedDomains": [...] }`。指定された項目（L1・L2）を実行し、`{ "results": [{ "id", "status": "pass"|"fail"|"skip", "expected"?, "observed"?, "hint"?, "reason"? }] }`を返す。全体のタイムアウトは30秒。実行は同時に1件（`api`の排他に加えた保険）。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。
+- `POST /net/check-nonces`: `{ "name": "vpngw-<乱数>.invalid", "ttlSeconds": 120 }`で使い捨て名を登録する。`GET /net/check-nonces/{name}`で、受信の有無（受信時刻・受信したリゾルバのアドレスのみ）を返す。
+
+## 実装
+
+- **L1**: `nft -j list table inet vpngwgui`の読み取り、`ip rule`・`ip route`・`/proc/sys`の参照、待受の確認（既存のコントローラの状態）を行う。ルールの有無は、ルールセット生成（`network/ruleset.ts`）が出力する構成と同じ判定関数で照合し、生成側と検証側で期待値を二重管理しない。
+- **L2の通信**: 出口IPの取得は、実行イメージへ追加する`curl`で、トンネルのインターフェース（`--interface <トンネルIF>`）へ束縛して行う。明示的プロキシは`--proxy socks5h://127.0.0.1:<SOCKSポート>`・`--proxy http://127.0.0.1:<HTTPポート>`で取得する。応答本文はIPv4のみを許可し、それ以外は`fail`（期待値: IPv4の本文）。
+- **L2のDNS**: 中継リゾルバへ（127.0.0.1の待受へ）UDPで問い合わせる。上流へは検証専用のClientID`vpngw-selfcheck`で転送する（ClientIDの生成規則に「検証用の固定値」を例外として置く。`dns-relay/client-id.ts`）。迂回のsetの確認は、`bypass-set.ts`の読み取りを使う。
+- **nonce**: リゾルバは、登録済みのnonce名の問い合わせを、上流へ転送せず**NXDOMAINでローカルに応答**し、受信を記録する（名前・クライアントの情報は、この登録名の受信時刻とリゾルバのアドレスのみ保持し、期限で破棄する）。登録の無い名前の扱いは変えない。
+- **副作用の抑制**: 迂回対象の名前の問い合わせは、通常の中継と同じくsetへIPを投入するが、これは通常運用の挙動そのもので、検証が追加の要素を残すのは`bypass4`の要素（期限で消える）のみ。
+- **`skip`にする条件**: VPN未接続でトンネルが検出できない、`dnsRelayEnabled`でもリゾルバが`active`でない（前提が崩れているのは`dns-relay-listening`が`fail`で示す）、明示的プロキシの許可元に127.0.0.1が含まれない、など。理由を`reason`に入れる。
+
+## 検証を実機で確認するときの未確定事項
+
+- `curl --interface`がトンネルへ確実に束縛されるか（ベンダーCLIのポリシールールとの組み合わせ）。束縛できない場合は、トンネルIFのアドレスへの送信元束縛へ切り替えて判定する。

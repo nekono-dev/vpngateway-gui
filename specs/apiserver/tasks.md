@@ -165,6 +165,16 @@
 
 検証: 単体テスト（設定の形式検証・項目間の整合・稼働状況の中継）と、検証サーバのLXDラボでの通しの動作（`e2e/phase14/scenarios.sh`。設定の保存→ゲートウェイへの反映→稼働状況の取得）で確認。
 
+## 設定の動作検証（Phase 27）
+
+設計は`design.md`「設定の動作検証」。
+
+- [ ] `UserSettings`へ`verifyServerEchoUrl`・`verifyBrowserEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
+- [ ] 検証項目の定義と適用条件の導出（`api/src/verification/`）と単体テスト（設定の組み合わせごとの対象・対象外）
+- [ ] `proxy`への実行依頼（`POST /net/checks`）とL3の判定（`client-egress`・`dns-redirect-path`のnonce管理）
+- [ ] `POST /v1/verifications`・`GET /v1/verifications/{id}`・`PUT .../client-observations/egress-ip`、同時実行の排他、直近5件の保持、監査ログ
+- [ ] OpenAPI・orval生成物の更新
+
 # 将来課題
 
 - レート制限の閾値のチューニング（Web UIログイン以外の操作系エンドポイントへの適用要否を含む）。

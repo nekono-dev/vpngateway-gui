@@ -38,6 +38,12 @@
 
 # 未着手の機能
 
+## 設定の動作検証（Phase 27）
+
+設定した機能が実際に動作していることを、Web UIから3層（構成監査・ゲートウェイ内プローブ・LAN端末からのクライアント検証）で確認する。設計は[design.md](design.md)「設定の動作検証の設計方針」、実装のタスクは[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「設定の動作検証」節。
+
+- [ ] 全アプリの実装完了後、E2E（`e2e/phase27/`。正常時のpassと、nftルール削除・`ip rule`撤去等で意図的に壊した場合のfailの両方向）と、README（利用者向け）への追記
+
 ## デプロイメント構成の分離（残作業）
 
 単一ホスト構成・3台分離構成とも主要な動作（利用者アカウント作成・ログイン・接続・稼働状況取得・mTLSの拒否確認）は実機検証済み（詳細は[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「デプロイメント構成の分離」節）。残る作業は以下。

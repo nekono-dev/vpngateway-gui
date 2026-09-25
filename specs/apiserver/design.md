@@ -725,3 +725,53 @@ CN    China                Shanghai (Virtual)             59
 - 手順: ①選択中のベンダーの保存済み接続情報を読む。無ければ何もしない（直前が切断中だった、または一度も接続していない）。②ランナーの起動を待つ（`checkRunnerHealth`を数回リトライ。ランナーは`api`の`depends_on`に含まれないため起動直後は間に合わないことがある）。起動しなければ警告を記録して終える。③現在の`status`を確認し、既に接続中なら何もしない（apiコンテナ単体の再起動等でトンネル自体は生きていた場合）。④保存済みの`locationId`があれば`applyConnectionChange`へ`{ connect: true, locationId }`を、無ければ（自動接続だった）`{ connect: true }`を渡して再接続する。
 - 失敗（ランナー起動待ちの超過、未ログイン、CLIの一時的な失敗等）はすべて警告としてログに記録し、例外を投げない。利用者は手動で接続し直せる。
 - 対象は選択中のベンダーのみ（複数ベンダー同時稼働は対象外。`specs/requirements.md`「システム要件」）。
+
+# 設定の動作検証（Phase 27）
+
+全体方針は`../design.md`「設定の動作検証の設計方針」。以降は`api`の実装詳細（一次情報）。
+
+## 設定項目（`UserSettings`への追加）
+
+| 設定項目 | 型 | 説明 |
+|---|---|---|
+| `verifyServerEchoUrl` | string | ゲートウェイ（`proxy`）が出口IPを取得するIP確認サービスのURL（既定: `https://inet-ip.info`）。`https://`のURLのみ許可（認証情報・フラグメントは不可） |
+| `verifyBrowserEchoUrl` | string | ブラウザが出口IPを取得するIP確認サービスのURL（既定: `https://api.ipify.org`）。要件は下記 |
+
+IP確認サービスは、応答本文が**IPv4アドレスのみのテキスト**（改行は許容）でなければならない。`verifyBrowserEchoUrl`はさらに、ブラウザからのクロスオリジンのfetchが許可されている（`Access-Control-Allow-Origin`を返す）ことと、IPv4で応答することが必要（IPv6のみを返すサービスでは、IPv6を扱わないゲートウェイの検証にならない）。`verifyServerEchoUrl`はブラウザを介さないためCORSは不要（既定の`https://inet-ip.info`はCORSを許可しないため、ブラウザ側は別のURLにしている）。両項目とも、空文字の更新は400で拒否する。この2項目は`proxy`への設定反映（`POST /net/settings`）のボディへは含めない（検証の実行依頼で個別に渡す）。
+
+## 検証項目（`api/src/verification/`）
+
+各項目は「ID・層・適用条件（設定と稼働状況から導出）・期待値・観測値・結果・ヒント」を持つ。結果は`pass`（合格）／`fail`（不合格）／`skip`（前提を満たさず実行できない。理由を付ける）／`notApplicable`（設定で無効のため対象外）／`pending`（L3の入力待ち）。
+
+| ID | 層 | 適用条件 | 合格の条件 |
+|---|---|---|---|
+| `tunnel-egress` | L2 | `transparentGatewayEnabled`または`explicitProxyEnabled`、かつVPN接続中 | トンネルのインターフェース経由でIP確認サービスから出口IPを取得できる |
+| `gateway-rules` | L1 | `transparentGatewayEnabled` | `inet vpngwgui`のnat・forward構成が設定（VPN接続の有無、Kill Switch、迂回）に対応した形で存在し、`ip_forward=1`である |
+| `kill-switch-rules` | L1 | `transparentGatewayEnabled`かつ`killSwitch` | forward末尾にLAN発のdropがあり、VPN切断時にLAN発をWAN側へ許すフォールバックが無い |
+| `client-egress` | L3 | `transparentGatewayEnabled`かつVPN接続中 | 操作中の端末の出口IPが`tunnel-egress`の出口IPと一致する（`pending`→ブラウザの結果で判定） |
+| `dns-relay-listening` | L1 | `dnsRelayEnabled` | リゾルバの状態が`active`で、UDP・TCPのLAN側アドレスと127.0.0.1に待受している |
+| `dns-relay-resolve` | L2 | `dnsRelayEnabled` | 中継リゾルバへ検証用の問い合わせを行い、応答（NOERRORまたは上流のNXDOMAIN）が得られる。検証専用のClientID（`vpngw-selfcheck`）で上流へ転送され、上流の状態が`ok`である |
+| `bypass-set` | L2 | `excludedDomains`が空でない（`dnsRelayEnabled`が前提） | 迂回対象の名前（完全一致はその名前、ワイルドカードは`www.`を付けた名前）を中継へ問い合わせ、応答のIPv4が`bypass4`へ投入される |
+| `bypass-routing` | L1・L2 | `excludedDomains`が空でない | 上記IPに対し`ip route get <IP> mark 0x100`の出力インターフェースが実回線側であり、迂回対象外の対照のIPは現在の経路（VPN接続中はトンネル）である |
+| `bypass-isolation` | L2 | `excludedDomains`が空でない | 迂回対象ではないドメイン（対象リストに含まれない固定の対照名）を問い合わせても、そのIPが`bypass4`へ投入されない |
+| `dns-redirect-rules` | L1 | `dnsRedirectEnabled` | nat preroutingにリダイレクトのルールが、除外CIDR・ゲートウェイ自身を除く形で存在する |
+| `dns-redirect-path` | L3 | `dnsRedirectEnabled` | 操作中の端末から、リゾルバ以外の宛先の53番へ送った、使い捨ての名前（nonce）の問い合わせが、`proxy`のリゾルバで受信される |
+| `explicit-proxy-listening` | L1 | `explicitProxyEnabled` | 3proxyが稼働し、SOCKS5・HTTPのポートが待受している |
+| `explicit-proxy-egress` | L2 | `explicitProxyEnabled`かつVPN接続中 | 127.0.0.1のSOCKS5・HTTPの両方経由で取得した出口IPが、`tunnel-egress`と一致する。許可元CIDRに127.0.0.1が含まれない場合は`skip`とする（許可リストは検証のために変更しない） |
+
+`client-egress`に加え、迂回対象のドメインが操作中の端末で実際に迂回されるかは、`bypass-set`・`bypass-routing`（IPと経路の構成）で確認する。L3で迂回の出口IPは取得しない（IP確認サービスのホスト名が迂回対象でないため）。
+
+## エンドポイント
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `POST` | `/v1/verifications` | 検証を開始する。適用条件を評価して対象項目を決め、`proxy`へL1・L2の実行を依頼する。202で`{ id, state }`を返す。実行中の検証があれば409。要operator認証 |
+| `GET` | `/v1/verifications/{id}` | 検証の進行・結果を取得する |
+| `PUT` | `/v1/verifications/{id}/client-observations/egress-ip` | ブラウザが取得した出口IP（`{ "ip": "a.b.c.d" }`）を提出する。`client-egress`を判定する。IPv4でなければ400 |
+
+`GET /v1/verifications/{id}`の応答は`{ id, state: "running"|"completed", startedAt, finishedAt?, checks: [{ id, layer, status, expected?, observed?, hint?, reason? }], clientProbe?: { dnsRedirect?: { name, expiresAt } } }`。`dns-redirect-path`の使い捨て名（`vpngw-<乱数>.invalid`）は検証開始時に発行して`proxy`へ登録し、`clientProbe.dnsRedirect.name`で返す（有効期間120秒。期限までに受信されなければ`fail`ではなく`skip`〔未確認〕とし、ヒントで確認手順を示す）。`state`は、`pending`の項目が残っていても、L1・L2が完了して入力待ちの間は`running`、すべて確定または期限切れで`completed`になる。
+
+- 結果はメモリ上に直近5件のみ保持し、永続化しない（出口IPを保存しない）。
+- 監査ログに`verification_run`（実行者・対象項目数・結果ごとの件数）を記録する。IP・名前・問い合わせ内容は記録しない。
+- 既存の操作系エンドポイントと同じレート制限・認証（`require-operator-session`）を適用する。
+- `proxy`への依頼は`POST /net/checks`（`../proxyserver/design.md`）。応答が得られない場合、その層の項目は`fail`ではなく`skip`とし、理由に到達不能を示す。
