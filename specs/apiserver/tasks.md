@@ -170,8 +170,9 @@
 設計は`design.md`「設定の動作検証」。
 
 - [ ] `UserSettings`へ`verifyEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
-- [ ] 検証項目の定義と適用条件の導出（`api/src/verification/`）と単体テスト（設定の組み合わせごとの対象・対象外）
-- [ ] `proxy`への実行依頼（`POST /net/checks`）とL3の判定（`client-egress`・`dns-redirect-path`のnonce管理）
+- [ ] 検証項目の定義（ID・タイトル・グループ・順序）と適用条件の導出（`api/src/verification/`）と単体テスト（設定の組み合わせごとの対象・対象外）
+- [ ] 項目の順次実行（`pending`→`running`→結果、最低400msの実行中表示、後続の続行）と、`proxy`への項目ごとの実行依頼（`POST /net/checks`）。依頼失敗は`unconfirmed`
+- [ ] L3の判定: `client-egress`（ブラウザの提出・15秒の待ち）、`dns-redirect-path`（検証用の名前の発行・登録・最大10秒の待ち・4区分の判定）
 - [ ] `POST /v1/verifications`・`GET /v1/verifications/{id}`・`PUT .../client-observations/egress-ip`、同時実行の排他、直近5件の保持、監査ログ
 - [ ] OpenAPI・orval生成物の更新
 

@@ -267,21 +267,31 @@ volumes:
 
 全体方針は`../design.md`「設定の動作検証の設計方針」、項目の一覧・判定は`../apiserver/design.md`「設定の動作検証」。以降は`proxy`の実装詳細（一次情報）。
 
-## 内部エンドポイント（`POST /net/checks`・`POST /net/check-nonces`）
+## 内部エンドポイント
 
 ゲートウェイ制御チャネル（mTLS TCP）へ追加する。`api`だけが呼べる（既存の`/net/settings`と同じ認証）。
 
-- `POST /net/checks`: ボディ`{ "checks": ["<検証項目ID>", ...], "echoUrl": "<verifyEchoUrl>", "excludedDomains": [...] }`。指定された項目（L1・L2）を実行し、`{ "results": [{ "id", "status": "pass"|"fail"|"skip", "expected"?, "observed"?, "hint"?, "reason"? }] }`を返す。全体のタイムアウトは30秒。実行は同時に1件（`api`の排他に加えた保険）。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。
-- `POST /net/check-nonces`: `{ "name": "vpngw-<乱数>.invalid", "ttlSeconds": 120 }`で使い捨て名を登録する。`GET /net/check-nonces/{name}`で、受信の有無（受信時刻・受信したリゾルバのアドレスのみ）を返す。
+- `POST /net/checks`: ボディ`{ "check": "<検証項目ID>", "echoUrl": "<verifyEchoUrl>", "excludedDomains": [...] }`。指定された**1項目**（L1・L2）を実行し、`{ "id", "status": "pass"|"fail"|"unconfirmed", "expected"?, "observed"?, "hint"?, "reason"? }`を返す。1項目のタイムアウトは15秒。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。
+- `POST /net/check-nonces`: `{ "name": "vpngw-<乱数>.example.com", "ttlSeconds": 60 }`で使い捨て名を登録する（メモリ上のみ）。
+- `GET /net/check-nonces/{name}`: `{ "received": boolean, "redirected": boolean, "recentRedirectedClients": number }`を返す。`received`は登録名を受信したか、`redirected`は**その受信が53番リダイレクトで誘導されたものか**、`recentRedirectedClients`は現在の誘導済みset（下記）の要素数。
+
+## 53番リダイレクトで誘導した送信元の記録
+
+`inet vpngwgui`へ、次を追加する（既存の53番リダイレクトの節と同じく、ルールセットの原子的な置換の対象。置換でsetの要素は失われるが、実績は10分以内の通信で再び蓄積される）。
+
+| 要素 | 内容 |
+|---|---|
+| set `redirected4` | `type ipv4_addr; flags dynamic,timeout; timeout 10m;`。53番リダイレクトで誘導された送信元IPを記録する |
+| リダイレクトのルール | 既存のDNAT（宛先を中継リゾルバへ変更）の前に、`update @redirected4 { ip saddr timeout 10m }`を置く。`update`は、要素が既にあれば期限を更新する（実機で確認）ため、要素の残り時間（`expires`）が`10m − 数秒`以上であることが「直前に誘導された」ことの判定になる |
 
 ## 実装
 
+- **検証名の受信記録**: リゾルバは、登録済みの名前の問い合わせを、上流へ転送せず**NXDOMAINでローカルに応答**し、受信を記録する。受信の時点で、`nft -j list set inet vpngwgui redirected4`を読み、問い合わせの送信元IPの要素が存在し、`expires`が`600 − 5`秒以上であれば`redirected=true`とする（DNATの直後に届くため、直前の更新でなければ誘導されていない）。記録するのは、登録名・受信時刻・`redirected`のみ（送信元のIP・クライアント名は保持しない）。期限（60秒）で破棄する。登録の無い名前の扱いは変えない。
 - **L1**: `nft -j list table inet vpngwgui`の読み取り、`ip rule`・`ip route`・`/proc/sys`の参照、待受の確認（既存のコントローラの状態）を行う。ルールの有無は、ルールセット生成（`network/ruleset.ts`）が出力する構成と同じ判定関数で照合し、生成側と検証側で期待値を二重管理しない。
 - **L2の通信**: 出口IPの取得は、実行イメージへ追加する`curl`で、トンネルのインターフェース（`--interface <トンネルIF>`）へ束縛して行う。明示的プロキシは`--proxy socks5h://127.0.0.1:<SOCKSポート>`・`--proxy http://127.0.0.1:<HTTPポート>`で取得する。応答本文はIPv4のみを許可し、それ以外は`fail`（期待値: IPv4の本文）。
 - **L2のDNS**: 中継リゾルバへ（127.0.0.1の待受へ）UDPで問い合わせる。上流へは検証専用のClientID`vpngw-selfcheck`で転送する（ClientIDの生成規則に「検証用の固定値」を例外として置く。`dns-relay/client-id.ts`）。迂回のsetの確認は、`bypass-set.ts`の読み取りを使う。
-- **nonce**: リゾルバは、登録済みのnonce名の問い合わせを、上流へ転送せず**NXDOMAINでローカルに応答**し、受信を記録する（名前・クライアントの情報は、この登録名の受信時刻とリゾルバのアドレスのみ保持し、期限で破棄する）。登録の無い名前の扱いは変えない。
 - **副作用の抑制**: 迂回対象の名前の問い合わせは、通常の中継と同じくsetへIPを投入するが、これは通常運用の挙動そのもので、検証が追加の要素を残すのは`bypass4`の要素（期限で消える）のみ。
-- **`skip`にする条件**: VPN未接続でトンネルが検出できない、`dnsRelayEnabled`でもリゾルバが`active`でない（前提が崩れているのは`dns-relay-listening`が`fail`で示す）、明示的プロキシの許可元に127.0.0.1が含まれない、など。理由を`reason`に入れる。
+- **`unconfirmed`にする条件**: VPN未接続でトンネルが検出できない、リゾルバが`active`でなく問い合わせができない（前提が崩れているのは`dns-relay-listening`が`fail`で示す）、明示的プロキシの許可元に127.0.0.1が含まれない、など。理由を`reason`に入れる。
 
 ## 検証を実機で確認するときの未確定事項
 
