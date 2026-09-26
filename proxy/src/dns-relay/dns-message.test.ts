@@ -1,7 +1,7 @@
 // 責務: DNSメッセージの解析・組み立て（dns-message.ts）の単体テスト。
 
 import { describe, expect, it } from "vitest";
-import { buildPtrQuery, buildServfail, parseAnswer, parseQuery, truncateForUdp, udpLimitFor } from "./dns-message.js";
+import { buildAQuery, buildNxdomain, buildPtrQuery, buildServfail, parseAnswer, parseQuery, truncateForUdp, udpLimitFor } from "./dns-message.js";
 import { buildAnswer, buildQuery } from "./test-helpers.js";
 
 describe("parseQuery", () => {
@@ -109,5 +109,26 @@ describe("buildPtrQuery / PTR応答の解析", () => {
     const name = Buffer.from([7, ...Buffer.from("Macmini"), 3, ...Buffer.from("lan"), 0]);
     const record = Buffer.concat([Buffer.from([0xc0, 0x0c, 0, 12, 0, 1, 0, 0, 0, 60, 0, name.length]), name]);
     expect(parseAnswer(Buffer.concat([response, record]))?.ptrNames).toEqual(["macmini.lan"]);
+  });
+});
+
+describe("buildAQuery・buildNxdomain", () => {
+  it("Aクエリは、テスト用の組み立てと同じバイト列になる（末尾のドットは無視する）", () => {
+    expect(buildAQuery("www.example.com.", 0x1234)).toEqual(buildQuery("www.example.com"));
+  });
+
+  it("空ラベル・64バイト以上のラベルはundefined", () => {
+    expect(buildAQuery("a..com", 1)).toBeUndefined();
+    expect(buildAQuery(`${"a".repeat(64)}.com`, 1)).toBeUndefined();
+  });
+
+  it("NXDOMAIN応答は、IDと質問を引き継ぎ、RCODE=3・応答なしになる", () => {
+    const query = buildQuery("vpngw-abc.example.com", 0x4321);
+    const question = parseQuery(query);
+    if (question === undefined) throw new Error("parse failed");
+    const answer = parseAnswer(buildNxdomain(query, question));
+    expect(answer?.rcode).toBe(3);
+    expect(answer?.aRecords).toEqual([]);
+    expect(buildNxdomain(query, question).readUInt16BE(0)).toBe(0x4321);
   });
 });

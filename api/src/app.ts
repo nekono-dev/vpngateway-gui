@@ -14,6 +14,7 @@ import { registerProvidersRoute } from "./routes/providers.js";
 import { registerSessionRoute } from "./routes/session.js";
 import { registerOperatorRoute } from "./routes/operator.js";
 import { registerOperatorSessionRoute } from "./routes/operator-session.js";
+import { registerVerificationsRoute } from "./routes/verifications.js";
 import { requireOperatorSession } from "./auth/require-operator-session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
@@ -29,6 +30,7 @@ import {
   OperatorAlreadyConfiguredError,
   OperatorValidationError,
   RateLimitedError,
+  VerificationRunningError,
 } from "./errors.js";
 
 /**
@@ -116,6 +118,11 @@ export function buildApp(options: BuildAppOptions = {}) {
       reply.code(501).send({ error: "operation_unsupported", message: error.message });
       return;
     }
+    // 【Phase 27】設定の動作検証の実行中に、別の検証の開始が要求された。
+    if (error instanceof VerificationRunningError) {
+      reply.code(409).send({ error: "verification_running", message: error.message });
+      return;
+    }
     if (error instanceof ProviderSwitchingError) {
       reply.code(409).send({ error: "provider_switching", message: error.message });
       return;
@@ -144,6 +151,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(registerProvidersRoute);
   app.register(registerOperatorRoute);
   app.register(registerOperatorSessionRoute);
+  app.register(registerVerificationsRoute);
 
   return app;
 }

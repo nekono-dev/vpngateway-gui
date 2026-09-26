@@ -15,3 +15,28 @@ export function isIpv4Cidr(value: string): boolean {
   const prefixLength = Number(match[5]);
   return octets.every((octet) => octet <= 255) && prefixLength <= 32;
 }
+
+function toUint32(address: string): number | undefined {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(address);
+  if (match === null) return undefined;
+  const octets = match.slice(1).map((octet) => Number(octet));
+  if (octets.some((octet) => octet > 255)) return undefined;
+  return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+}
+
+/**
+ * 目的: IPv4アドレスがIPv4 CIDRの範囲に含まれるかを判定する。
+ * 入力: address(IPv4アドレス), cidr(IPv4 CIDR)。
+ * 出力: 含まれればtrue。どちらかの形式が不正ならfalse。
+ * 例: isIpv4InCidr("192.168.3.240", "192.168.3.0/24") // => true
+ */
+export function isIpv4InCidr(address: string, cidr: string): boolean {
+  if (!isIpv4Cidr(cidr)) return false;
+  const [network, prefix] = cidr.split("/");
+  const target = toUint32(address);
+  const base = toUint32(network);
+  if (target === undefined || base === undefined) return false;
+  const prefixLength = Number(prefix);
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
+  return ((target & mask) >>> 0) === ((base & mask) >>> 0);
+}

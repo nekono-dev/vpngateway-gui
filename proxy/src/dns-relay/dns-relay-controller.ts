@@ -30,6 +30,8 @@ export interface DnsRelayControllerOptions {
   registerBypass: (addresses: readonly BypassAddress[]) => Promise<void> | void;
   bypassEntryCount: () => number;
   onEvent?: (event: Record<string, unknown>) => void;
+  // 設定の動作検証用の名前の問い合わせを横取りする（relay.tsの`interceptQuery`）。
+  interceptQuery?: (name: string, clientIp: string) => Promise<boolean> | boolean;
   // テスト用フック。
   listener?: Pick<DnsListener, "start" | "stop">;
   relay?: DnsRelay;
@@ -71,6 +73,7 @@ export class DnsRelayController {
           if (state === "ok") this.fallbackReported = false;
           options.onEvent?.({ event: state === "ok" ? "dns_relay_upstream_recovered" : "dns_relay_upstream_failing", message: detail });
         },
+        interceptQuery: options.interceptQuery,
         onFallback: () => {
           // 障害の間、問い合わせのたびに記録しないよう、障害ごとに1回だけ記録する。
           if (this.fallbackReported) return;
@@ -94,6 +97,11 @@ export class DnsRelayController {
     this.settings = normalized;
     this.queue = this.queue.then(() => this.reconcile());
     return this.queue;
+  }
+
+  /** 目的: 反映済みの設定を返す（設定の動作検証が、迂回ドメイン・上流の設定を参照するため）。 */
+  getSettings(): DnsRelaySettings {
+    return this.settings;
   }
 
   getStatus(): DnsRelayStatus {

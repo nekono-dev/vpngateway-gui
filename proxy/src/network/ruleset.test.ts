@@ -144,8 +144,10 @@ describe("buildGatewayRuleset: ドメイン迂回・DNSリダイレクト", () =
     });
     expect(script).toContain(`add chain inet ${T} dns_redirect { type nat hook prerouting priority -100 ; }`);
     expect(script).toContain(
-      `dns_redirect iifname "eth0" meta l4proto { udp, tcp } th dport 53 ip daddr != { 192.168.3.240, 192.168.3.5/32, 10.0.0.0/8 } dnat ip to 192.168.3.240:53`,
+      `dns_redirect iifname "eth0" meta l4proto { udp, tcp } th dport 53 ip daddr != { 192.168.3.240, 192.168.3.5/32, 10.0.0.0/8 } update @redirected4 { ip saddr timeout 600s } dnat ip to 192.168.3.240:53`,
     );
+    // 誘導した送信元の記録用set（設定の動作検証が使う）。
+    expect(script).toContain(`add set inet ${T} redirected4 { type ipv4_addr ; flags dynamic,timeout ; timeout 600s ; }`);
   });
 
   it("不正な値（アドレス・期限・CIDR・UID・ポート）は、ルール文字列へ埋め込まず例外にする", () => {

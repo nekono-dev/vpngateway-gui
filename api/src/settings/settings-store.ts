@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS: UserSettings = {
   dnsClientNameServers: [],
   dnsRedirectEnabled: false,
   dnsRedirectExcludedCidrs: [],
+  verifyEchoUrl: "https://api.ipify.org",
 };
 
 // ホスト名として妥当な形式のみを許可する（RFC 1123の簡略版）。先頭に`*.`を付けたワイルドカード表記
@@ -132,6 +133,36 @@ function validateDnsSettings(patch: UserSettingsPatch): void {
 }
 
 /**
+ * 目的: 設定の動作検証で使うIP確認サービスのURL（`verifyEchoUrl`）の形式を検証する。
+ * 入力: url(検証対象。undefinedなら検証しない)。
+ * 出力: なし。`https://`でない、認証情報・フラグメントを含む、空文字の場合はSettingsValidationErrorを投げる。
+ * 理由: ゲートウェイがcurlへそのまま渡し、ブラウザがfetchするため（Web UIのHTTPS配信で混在コンテンツにしない）。
+ */
+function validateVerifyEchoUrl(url: string | undefined): void {
+  if (url === undefined) return;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new SettingsValidationError(`invalid verifyEchoUrl: ${url}`);
+  }
+  if (url.length > 2048 || parsed.protocol !== "https:" || parsed.hostname === "" || parsed.username !== "" || parsed.password !== "" || parsed.hash !== "") {
+    throw new SettingsValidationError("verifyEchoUrl must be an https URL without credentials or fragment");
+  }
+}
+
+/**
+ * 目的: ゲートウェイへ反映する設定（`POST /net/settings`のボディ）を、ユーザ向け設定から取り出す。
+ * 入力: settings(ユーザ向け設定全体)。
+ * 出力: 設定の動作検証の項目（`verifyEchoUrl`。検証の実行依頼で個別に渡す）を除いた設定。
+ */
+export function toGatewaySettings(settings: UserSettings): Omit<UserSettings, "verifyEchoUrl"> {
+  const gatewaySettings: Partial<UserSettings> = { ...settings };
+  delete gatewaySettings.verifyEchoUrl;
+  return gatewaySettings as Omit<UserSettings, "verifyEchoUrl">;
+}
+
+/**
  * 目的: 永続化済みのユーザ向け設定を取得する。未作成の場合はデフォルト値を返す。
  * 入力: なし。
  * 出力: UserSettings。保存ファイルに現行スキーマに無い項目（Phase 8で廃止した`defaultCountry`等）が
@@ -164,6 +195,7 @@ export function updateSettings(patch: UserSettingsPatch): UserSettings {
     validateAllowedCidrs(patch.explicitProxyAllowedCidrs);
   }
   validateDnsSettings(patch);
+  validateVerifyEchoUrl(patch.verifyEchoUrl);
   const next: UserSettings = { ...getSettings(), ...patch };
   if (!next.transparentGatewayEnabled && !next.explicitProxyEnabled) {
     throw new SettingsValidationError("transparentGatewayEnabled or explicitProxyEnabled must be enabled");

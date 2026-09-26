@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 const file = join(mkdtempSync(join(tmpdir(), "vpngwgui-settings-")), "settings.json");
 process.env.SETTINGS_FILE = file;
 
-const { getSettings, updateSettings, SettingsValidationError } = await import("./settings-store.js");
+const { getSettings, updateSettings, toGatewaySettings, SettingsValidationError } = await import("./settings-store.js");
 
 describe("settings-store", () => {
   it("Phase 8で廃止したdefaultCountryが保存ファイルに残っていても、読み込みで無視する", () => {
@@ -151,6 +151,28 @@ describe("settings-store", () => {
       updateSettings({ ...valid });
       expect(() => updateSettings({ dnsUpstreamUrl: "" })).toThrow(SettingsValidationError);
       expect(getSettings().dnsUpstreamUrl).toBe(valid.dnsUpstreamUrl);
+    });
+  });
+
+  describe("IP確認サービスのURL（Phase 27）", () => {
+    it("既定値は https://api.ipify.org（CORSを許可し、IPv4で応答するサービス）", () => {
+      writeFileSync(file, JSON.stringify({ killSwitch: true }));
+      expect(getSettings().verifyEchoUrl).toBe("https://api.ipify.org");
+    });
+
+    it("httpsのURLは保存でき、http・空・認証情報付き・フラグメント付きは拒否する", () => {
+      writeFileSync(file, JSON.stringify({ killSwitch: true }));
+      expect(updateSettings({ verifyEchoUrl: "https://ipinfo.io/ip" }).verifyEchoUrl).toBe("https://ipinfo.io/ip");
+      for (const invalid of ["http://api.ipify.org", "", "https://u:p@api.ipify.org", "https://api.ipify.org/#x", "not a url"]) {
+        expect(() => updateSettings({ verifyEchoUrl: invalid })).toThrow(SettingsValidationError);
+      }
+      expect(getSettings().verifyEchoUrl).toBe("https://ipinfo.io/ip");
+    });
+
+    it("ゲートウェイへ反映する設定には含めない", () => {
+      const gatewaySettings = toGatewaySettings(getSettings());
+      expect(gatewaySettings).not.toHaveProperty("verifyEchoUrl");
+      expect(gatewaySettings).toHaveProperty("killSwitch");
     });
   });
 });

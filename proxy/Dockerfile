@@ -36,7 +36,8 @@ FROM node:22-alpine
 # 動的検出用（Alpine標準の busybox ip では出力形式が異なりうるため明示的に導入）。
 # sudo: nft/ipをvpngwguiから実行するため（cap_add: NET_ADMINを付与していても非root実行では昇格が必要）。
 # libcap-utils: nodeに特権ポート（DNS中継の53番）のbind権限だけを与えるため（下のsetcap）。
-RUN apk add --no-cache sudo nftables iproute2 libcap-utils \
+# curl: 設定の動作検証で、経路（VPNトンネルへの束縛・明示的プロキシ経由）を指定して出口IPを取得するため。
+RUN apk add --no-cache sudo nftables iproute2 libcap-utils curl \
   && addgroup -g 10001 vpngwgui && adduser -D -u 10001 -G vpngwgui vpngwgui \
   && echo "vpngwgui ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vpngwgui \
   && chmod 0440 /etc/sudoers.d/vpngwgui

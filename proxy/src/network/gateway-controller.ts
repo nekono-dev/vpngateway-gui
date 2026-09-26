@@ -61,6 +61,14 @@ export interface GatewayStatus {
 
 const DEFAULT_SETTINGS: GatewaySettings = { transparentGatewayEnabled: false, killSwitch: true };
 
+// 設定の動作検証が参照する、ゲートウェイの現在の状態（インターフェース・設定）。
+export interface GatewayVerificationState {
+  lanIface: string | undefined;
+  wanIface: string | undefined;
+  vpnIface: string | undefined;
+  settings: GatewaySettings;
+}
+
 export class GatewayController {
   private settings: GatewaySettings = DEFAULT_SETTINGS;
   private vpnIface: string | undefined;
@@ -162,6 +170,11 @@ export class GatewayController {
       ...wanInterface,
       killSwitchBlocking,
     };
+  }
+
+  /** 目的: 設定の動作検証のために、現在のインターフェースと設定を返す（読み取りのみ）。 */
+  getVerificationState(): GatewayVerificationState {
+    return { lanIface: this.lanIface, wanIface: this.wanIface ?? this.lanIface, vpnIface: this.vpnIface, settings: this.settings };
   }
 
   /**

@@ -14,7 +14,14 @@ const CONFIG: DnsRelayConfig = {
   clientNameServers: [],
 };
 
-function createRelay(overrides: { doh?: ReturnType<typeof vi.fn>; plain?: ReturnType<typeof vi.fn>; config?: Partial<DnsRelayConfig> } = {}) {
+function createRelay(
+  overrides: {
+    doh?: ReturnType<typeof vi.fn>;
+    plain?: ReturnType<typeof vi.fn>;
+    config?: Partial<DnsRelayConfig>;
+    interceptQuery?: (name: string, clientIp: string) => boolean;
+  } = {},
+) {
   const registered: BypassAddress[][] = [];
   const events: string[] = [];
   const doh = overrides.doh ?? vi.fn(async (_url, _ca, query: Buffer) => buildAnswer("example.com", [{ address: "192.0.2.1", ttl: 60 }], 0, query.readUInt16BE(0)));
@@ -25,6 +32,7 @@ function createRelay(overrides: { doh?: ReturnType<typeof vi.fn>; plain?: Return
     },
     onUpstreamStateChange: (state) => events.push(state),
     onFallback: () => events.push("fallback"),
+    interceptQuery: overrides.interceptQuery,
     doh: doh as never,
     plain: plain as never,
   });
@@ -176,5 +184,21 @@ describe("DnsRelay", () => {
   it("形式が不正なクエリには応答しない", async () => {
     const { relay } = createRelay();
     expect(await relay.handle(Buffer.alloc(3), "192.168.3.25")).toBeUndefined();
+  });
+
+  it("横取りした（検証用の名前の）問い合わせは、上流へ転送せずNXDOMAINで応答する。それ以外は通常どおり転送する", async () => {
+    const seen: string[] = [];
+    const { relay, doh } = createRelay({
+      interceptQuery: (name, clientIp) => {
+        seen.push(`${name}@${clientIp}`);
+        return name === "vpngw-abcd1234.example.com";
+      },
+    });
+    const intercepted = parseAnswer((await relay.handle(buildQuery("vpngw-abcd1234.example.com"), "192.168.3.20")) as Buffer);
+    expect(intercepted?.rcode).toBe(3);
+    expect(doh).not.toHaveBeenCalled();
+    await relay.handle(buildQuery("example.com"), "192.168.3.20");
+    expect(doh).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(["vpngw-abcd1234.example.com@192.168.3.20", "example.com@192.168.3.20"]);
   });
 });

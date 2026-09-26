@@ -20,6 +20,8 @@ export const UserSettingsSchema = Type.Object({
   dnsClientNameServers: Type.Array(Type.String()),
   dnsRedirectEnabled: Type.Boolean(),
   dnsRedirectExcludedCidrs: Type.Array(Type.String()),
+  // 設定の動作検証（Phase 27）で出口IPを取得するIP確認サービスのURL（ゲートウェイとブラウザの双方が使う）。
+  verifyEchoUrl: Type.String(),
 });
 export type UserSettings = Static<typeof UserSettingsSchema>;
 

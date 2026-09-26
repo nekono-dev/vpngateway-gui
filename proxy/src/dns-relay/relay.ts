@@ -2,7 +2,7 @@
 // ③一致していれば応答のIPv4アドレスを迂回のsetへ登録 → ④応答を返す。上流の障害時は設定に従い
 // フェイルクローズ（SERVFAIL）またはフォールバック。proxyserver/design.md「DNS中継リゾルバ」に対応する。
 
-import { buildPtrQuery, buildServfail, parseAnswer, parseQuery } from "./dns-message.js";
+import { buildNxdomain, buildPtrQuery, buildServfail, parseAnswer, parseQuery } from "./dns-message.js";
 import { createDomainMatcher, type DomainMatcher } from "./domain-matcher.js";
 import { ClientIdResolver } from "./client-id.js";
 import { forwardDoh, forwardPlain } from "./upstream.js";
@@ -31,6 +31,9 @@ export interface RelayDependencies {
   // 上流の疎通状態が変わったときの通知（監査ログ用）。
   onUpstreamStateChange: (state: "ok" | "failing", detail?: string) => void;
   onFallback: () => void;
+  // 設定の動作検証用の名前の問い合わせを横取りする。trueを返した問い合わせは、上流へ転送せずNXDOMAINで応答する
+  // （登録済みの使い捨て名の受信を記録するため。proxyserver/design.md「設定の動作検証」）。
+  interceptQuery?: (name: string, clientIp: string) => Promise<boolean> | boolean;
   // テスト用フック（既定は実際の転送）。
   doh?: typeof forwardDoh;
   plain?: typeof forwardPlain;
@@ -95,6 +98,10 @@ export class DnsRelay {
   async handle(query: Buffer, clientIp: string): Promise<Buffer | undefined> {
     const question = parseQuery(query);
     if (question === undefined) return undefined;
+    // 検証用の名前は、クライアント名の逆引き・上流への転送より前に処理する（上流の履歴に残さない）。
+    if (this.deps.interceptQuery !== undefined && (await this.deps.interceptQuery(question.name, clientIp))) {
+      return buildNxdomain(query, question);
+    }
     const clientId = await this.clientIds.resolve(clientIp);
 
     let response: Buffer;

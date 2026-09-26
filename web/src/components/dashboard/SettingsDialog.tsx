@@ -2,8 +2,9 @@
 // ページ遷移は行わず、保存はダイアログ内の保存ボタン押下時に一括でPUTする
 // （webserver/requirements.md「設定ダイアログ」「設定ダイアログの入力項目」参照）。
 // 入力項目はタブで切り替えて表示する（同「設定ダイアログのタブ化」）。設定値・保存は全タブで1つ。
+// 「動作検証」タブで、保存済みの設定が実際に動作しているかを検証する（webserver/design.md「設定の動作検証の実装方針」）。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getV1ConnectionConfig, putV1ConnectionConfig } from "../../generated/api/default/default";
 import type { GetV1ConnectionConfig200 } from "../../generated/api/endpoints.schemas";
 import { useDialogOpen } from "../../hooks/useDialogOpen";
@@ -11,6 +12,8 @@ import { describeApiError, describeThrownError } from "../../notifications/descr
 import { isIpv4Cidr } from "../../lib/ipv4-cidr";
 import { LineListEditor } from "./LineListEditor";
 import { AccountSettingsDialog } from "./AccountSettingsDialog";
+import { VerificationPanel } from "./verification/VerificationPanel";
+import { useVerification } from "../../hooks/useVerification";
 
 interface Props {
   open: boolean;
@@ -20,24 +23,33 @@ interface Props {
   defaultExplicitProxyAllowedCidr?: string;
 }
 
-type SettingsTab = "control" | "gateway" | "dnsResolver" | "dnsDetail";
+type SettingsTab = "control" | "gateway" | "dnsResolver" | "dnsDetail" | "verify";
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   control: "通信制御",
   gateway: "ゲートウェイ",
   dnsResolver: "上位DNSリゾルバ",
   dnsDetail: "DNS詳細",
+  verify: "動作検証",
 };
 const TAB_KEYS = Object.keys(TAB_LABELS) as SettingsTab[];
 
 export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr }: Props) {
   const dialogRef = useDialogOpen(open);
   const [settings, setSettings] = useState<GetV1ConnectionConfig200>();
+  // 読み込んだ時点の設定（未保存の変更の有無の判定と、動作検証が使う保存済みのIP確認サービスのURL）。
+  const [loadedSettings, setLoadedSettings] = useState<GetV1ConnectionConfig200>();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [tab, setTab] = useState<SettingsTab>("control");
+  const verification = useVerification(open, loadedSettings?.verifyEchoUrl);
+  // 許可CIDRの初期値は、ダイアログを開いた時点の値を使う。ダッシュボードの定期取得で値が変わる（取得の失敗で一時的に
+  // 消える等）たびに設定を読み直すと、開いているダイアログのタブ・未保存の入力・動作検証の表示が初期化されてしまうため、
+  // 読み込みの契機（useEffectの依存）には含めない。
+  const defaultCidrRef = useRef(defaultExplicitProxyAllowedCidr);
+  defaultCidrRef.current = defaultExplicitProxyAllowedCidr;
 
   useEffect(() => {
     if (!open) return;
@@ -52,17 +64,17 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
         }
         // 許可CIDRが未設定のときだけ、ゲートウェイ機のLANサブネットを初期値として提示する
         // （既に値がある場合は上書きしない）。
+        const defaultCidr = defaultCidrRef.current;
         const explicitProxyAllowedCidrs =
-          response.data.explicitProxyAllowedCidrs.length === 0 && defaultExplicitProxyAllowedCidr
-            ? [defaultExplicitProxyAllowedCidr]
-            : response.data.explicitProxyAllowedCidrs;
+          response.data.explicitProxyAllowedCidrs.length === 0 && defaultCidr ? [defaultCidr] : response.data.explicitProxyAllowedCidrs;
         setSettings({ ...response.data, explicitProxyAllowedCidrs });
+        setLoadedSettings({ ...response.data, explicitProxyAllowedCidrs });
       })
       .catch((caughtError: unknown) => {
         setError(describeThrownError(caughtError, "設定の取得に失敗しました").summary);
       })
       .finally(() => setIsLoading(false));
-  }, [open, defaultExplicitProxyAllowedCidr]);
+  }, [open]);
 
   async function handleSave(): Promise<void> {
     if (!settings) return;
@@ -77,6 +89,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
         dnsFallbackServers: settings.dnsFallbackServers.map((server) => server.trim()).filter((server) => server.length > 0),
         dnsClientNameServers: settings.dnsClientNameServers.map((server) => server.trim()).filter((server) => server.length > 0),
         dnsRedirectExcludedCidrs: settings.dnsRedirectExcludedCidrs.map((cidr) => cidr.trim()).filter((cidr) => cidr.length > 0),
+        verifyEchoUrl: settings.verifyEchoUrl.trim(),
       });
       if (response.status !== 200) {
         setError(describeApiError(response.status, response.data, "設定の保存に失敗しました").summary);
@@ -105,12 +118,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
   const dnsFallbackNeedsServers =
     settings?.dnsRelayEnabled === true && settings.dnsFailureMode === "fallback" && dnsFallbackCount === 0;
   const hasIncompleteDnsSettings = dnsRelayNeedsUpstream || dnsFallbackNeedsServers;
+  const verifyEchoUrlMissing = settings !== undefined && settings.verifyEchoUrl.trim().length === 0;
   const tabHasIncompleteInput: Record<SettingsTab, boolean> = {
     control: false,
     gateway: explicitProxyNeedsCidr,
     dnsResolver: dnsRelayNeedsUpstream,
     dnsDetail: dnsFallbackNeedsServers,
+    verify: verifyEchoUrlMissing,
   };
+  const hasUnsavedChanges = JSON.stringify(settings) !== JSON.stringify(loadedSettings);
   const visibleTabKeys = TAB_KEYS.filter((key) => key !== "dnsDetail" || settings?.dnsRelayEnabled === true);
   // 表示中の「DNS詳細」タブが、DNS中継を無効にして消えた場合は「上位DNSリゾルバ」へ戻す。
   const activeTab: SettingsTab = visibleTabKeys.includes(tab) ? tab : "dnsResolver";
@@ -204,6 +220,19 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                   {explicitProxyNeedsCidr ? (
                     <p className="restriction">明示的プロキシモードを使うには、有効な許可CIDRを1つ以上入力してください。</p>
                   ) : null}
+                </>
+              ) : activeTab === "verify" ? (
+                <>
+                  <VerificationPanel
+                    verification={verification.verification}
+                    isStarting={verification.isStarting}
+                    error={verification.error}
+                    onStart={() => void verification.start()}
+                    hasUnsavedChanges={hasUnsavedChanges}
+                    echoUrl={settings.verifyEchoUrl}
+                    onEchoUrlChange={(verifyEchoUrl) => setSettings({ ...settings, verifyEchoUrl })}
+                  />
+                  {verifyEchoUrlMissing ? <p className="restriction">IP確認サービスのURLを入力してください。</p> : null}
                 </>
               ) : activeTab === "dnsResolver" ? (
                 <>
@@ -308,7 +337,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
               </button>
               {/* 保存・キャンセルは常に横並びのまま折り返す（狭い幅ではアカウント情報ボタンと分かれて次の行へ回る） */}
               <div className="dialog-actions-group">
-                <button type="submit" disabled={isSaving || explicitProxyNeedsCidr || hasIncompleteDnsSettings}>
+                <button type="submit" disabled={isSaving || explicitProxyNeedsCidr || hasIncompleteDnsSettings || verifyEchoUrlMissing}>
                   {isSaving ? "保存中..." : "保存"}
                 </button>
                 <button type="button" disabled={isSaving} onClick={onClose}>

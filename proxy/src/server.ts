@@ -7,6 +7,9 @@
 //   POST /net/settings         : ユーザ向け設定の反映
 //   GET  /net/status           : 稼働状況の取得
 //   POST /net/connection-checks: 接続状態の即時再確認（接続・切断・ベンダー切替の直後にAPIが呼ぶ）
+//   POST /net/checks           : 設定の動作検証の1項目を実行（L1・L2。proxyserver/design.md「設定の動作検証」）
+//   POST /net/check-nonces     : 設定の動作検証で使う検証名の登録
+//   GET  /net/check-nonces/<名前>: 検証名の受信の記録と、53番リダイレクトで誘導した送信元の数
 //   /runners/<ベンダーID>/*    : 対応するランナーのUDS（runner-<ベンダーID>.sock）へ転送（gateway-channel/runner-forward.ts）
 
 import { createServer as createHttpsServer } from "node:https";
@@ -23,6 +26,12 @@ import { PolicyRouting } from "./network/policy-routing.js";
 import { DnsRelayController } from "./dns-relay/dns-relay-controller.js";
 import { parseSettingsRequest, toDnsRelaySettings, toGatewayDnsSettings } from "./settings-request.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
+import { REDIRECTED_SET_NAME } from "./network/ruleset.js";
+import { CheckNonceRegistry } from "./verification/check-nonces.js";
+import { parseCheckNonceRequest, parseGatewayCheckRequest } from "./verification/check-request.js";
+import { runGatewayCheck } from "./verification/gateway-checks.js";
+import { wasJustRedirected } from "./verification/redirect-record.js";
+import { createVerificationRuntime, readSetElements } from "./verification/runtime.js";
 
 const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
 // ゲートウェイ機のファイアウォールでAPIサーバのIPへ絞ることを推奨する（多層防御。proxyserver/design.md）。
@@ -50,6 +59,9 @@ const EXPLICIT_HTTP_PORT = Number(process.env.EXPLICIT_HTTP_PORT ?? 3128);
 // DNS中継リゾルバの待受ポート（ホストのDNSと衝突する場合に変更する）。LAN側アドレスと127.0.0.1（3proxy用）で待ち受ける。
 const DNS_RELAY_PORT = Number(process.env.DNS_RELAY_PORT ?? 53);
 const lanAddress = await getLanIpv4Address(LAN_IFACE);
+const dnsRelayListenAddresses = [...(lanAddress !== undefined ? [lanAddress] : []), "127.0.0.1"];
+// 設定の動作検証の検証名（Web UIの端末のブラウザが解決する使い捨ての名前）の登録と受信の記録。
+const checkNonces = new CheckNonceRegistry();
 
 const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE, undefined, {
   policyRouting: new PolicyRouting(LAN_IFACE),
@@ -59,11 +71,18 @@ const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE, undefined,
 });
 const dnsRelayController = new DnsRelayController({
   port: DNS_RELAY_PORT,
-  listenAddresses: [...(lanAddress !== undefined ? [lanAddress] : []), "127.0.0.1"],
+  listenAddresses: dnsRelayListenAddresses,
   // nftのsetへの反映が終わってから、中継リゾルバがクライアントへ応答を返す。
   registerBypass: (addresses) => gatewayController.addBypass(addresses),
   bypassEntryCount: () => gatewayController.bypassEntryCount(),
   onEvent: (event) => logAuditEvent(event),
+  // 登録済みの検証名は、上流へ転送せずに応答し、受信と「53番リダイレクトで誘導されたか」を記録する。
+  interceptQuery: async (name, clientIp) => {
+    if (!checkNonces.has(name)) return false;
+    const redirected = wasJustRedirected((await readSetElements(REDIRECTED_SET_NAME)) ?? [], clientIp);
+    checkNonces.markReceived(name, redirected);
+    return true;
+  },
 });
 const explicitProxyController = new ExplicitProxyController({
   binaryPath: process.env.EXPLICIT_PROXY_BINARY ?? "/usr/local/bin/3proxy",
@@ -91,6 +110,74 @@ async function handleConnectionCheck(res: ServerResponse): Promise<void> {
     });
     sendJson(res, 200, { checked: false });
   }
+}
+
+const verificationRuntime = createVerificationRuntime({
+  gatewayController,
+  dnsRelayController,
+  explicitProxyController,
+  dnsRelayPort: DNS_RELAY_PORT,
+  dnsRelayListenAddresses,
+  lanAddress,
+});
+// 設定の動作検証は同時に1項目だけ実行する（APIサーバ側の排他に加えた保険）。
+let checkRunning = false;
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  try {
+    return JSON.parse(await readRequestBody(req));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 目的: `POST /net/checks`を処理する。設定の動作検証の1項目（L1・L2）を実行して結果を返す。
+ * 入力: req(ボディ: 項目ID・IP確認サービスのURL等), res(応答)。
+ * 出力: なし。`200 { id, status, expected?, observed?, hint?, reason?, value? }`、形式不正は400、実行中は409。
+ * 副作用: ゲートウェイの設定・状態は変更しない（読み取りと、検証用の問い合わせ・通信のみ）。
+ */
+async function handleCheck(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const request = parseGatewayCheckRequest(await readJsonBody(req));
+  if (request === undefined) {
+    sendJson(res, 400, { error: "invalid_request_shape" });
+    return;
+  }
+  if (checkRunning) {
+    sendJson(res, 409, { error: "check_running" });
+    return;
+  }
+  checkRunning = true;
+  try {
+    const outcome = await runGatewayCheck(request, verificationRuntime);
+    sendJson(res, 200, { id: request.check, ...outcome });
+  } finally {
+    checkRunning = false;
+  }
+}
+
+async function handleCheckNonceRegistration(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const request = parseCheckNonceRequest(await readJsonBody(req));
+  if (request === undefined) {
+    sendJson(res, 400, { error: "invalid_request_shape" });
+    return;
+  }
+  checkNonces.register(request.name, request.ttlSeconds);
+  sendJson(res, 200, { registered: true });
+}
+
+/**
+ * 目的: `GET /net/check-nonces/<名前>`を処理する。検証名の受信の記録と、53番リダイレクトで誘導した送信元の数を返す。
+ * 出力: `200 { received, redirected, recentRedirectedClients }`。未登録・期限切れの名前は404。
+ */
+async function handleCheckNonceRecord(name: string, res: ServerResponse): Promise<void> {
+  const record = checkNonces.get(name);
+  if (record === undefined) {
+    sendJson(res, 404, { error: "not_found" });
+    return;
+  }
+  const redirectedClients = (await readSetElements(REDIRECTED_SET_NAME)) ?? [];
+  sendJson(res, 200, { ...record, recentRedirectedClients: redirectedClients.length });
 }
 
 async function handleSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -164,6 +251,22 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
       logAuditEvent({ event: "settings_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });
+    return;
+  }
+  if (req.method === "POST" && req.url === "/net/checks") {
+    handleCheck(req, res).catch((error: unknown) => {
+      logAuditEvent({ event: "check_error", message: error instanceof Error ? error.message : String(error) });
+      sendJson(res, 500, { error: "internal_error" });
+    });
+    return;
+  }
+  if (req.method === "POST" && req.url === "/net/check-nonces") {
+    handleCheckNonceRegistration(req, res).catch(() => sendJson(res, 500, { error: "internal_error" }));
+    return;
+  }
+  const nonceMatch = req.method === "GET" ? /^\/net\/check-nonces\/([a-z0-9.-]{1,253})$/.exec(req.url ?? "") : null;
+  if (nonceMatch !== null) {
+    handleCheckNonceRecord(nonceMatch[1], res).catch(() => sendJson(res, 500, { error: "internal_error" }));
     return;
   }
   const runnerTarget = matchRunnerPath(req.url);

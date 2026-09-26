@@ -62,3 +62,18 @@ describe("runNftScript", () => {
     expect(result.exitCode).toBe(-1);
   });
 });
+
+describe("runNftCommand", () => {
+  it("引数をそのまま`sudo nft`へ渡し、標準出力を返す", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+    process.env.SUDO_BIN = stubSudoPassthrough(dir);
+    process.env.NFT_BIN = stubNftScript(dir, 'echo "$@"\nexit 0');
+
+    vi.resetModules();
+    const { runNftCommand } = await import("./nft-client.js");
+    const result = await runNftCommand(["-j", "list", "set", "inet", "vpngwgui", "redirected4"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("-j list set inet vpngwgui redirected4\n");
+  });
+});

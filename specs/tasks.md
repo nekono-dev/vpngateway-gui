@@ -33,16 +33,17 @@
 | ログインボタンの配置・枠線色の調整 | web | |
 | ドメイン迂回（split-tunnel）とDNS中継 | proxy, api, web | 複数NIC構成・Raspberry Pi実機は未検証 |
 | デプロイメント構成の分離（ロール別配置・認証・mTLS） | api, proxy, web | 未着手の残作業は下記「デプロイメント構成の分離」参照 |
+| 設定の動作検証（構成監査・ゲートウェイ内の通信確認・この端末からの確認） | proxy, api, web | 下記「設定の動作検証の検証結果」参照 |
 
 未着手の機能は「未着手の機能」を参照。
 
+## 設定の動作検証の検証結果（Phase 27）
+
+- LXDラボ（`e2e/phase14/lab.sh`＋`e2e/phase27/prepare.sh`。モックVPN・モックDNS）: `e2e/phase27/scenarios.sh`の全シナリオ（A〜I、66項目）がPASS（全項目OK、対象外、VPN未接続、故障の注入〔forward末尾の遮断ルール・迂回の印のルールの削除、上流の停止〕でのNG検出、ゲートウェイを経由しない端末、53番リダイレクトの4区分、409・監査ログ・404・400）。LAN端末役のブラウザ（`e2e/phase27/webgui-phase27.mjs`）で、全項目OK・NGの表示・スマートフォン幅（390px）を確認。
+- 実機（検証サーバ・AdGuard VPN・実AdGuard Home）: 迂回ドメイン・53番リダイレクト・明示的プロキシを一時的に有効にし、実LAN端末（開発ホスト上のmacvlanコンテナ、デフォルトゲートウェイ＝検証サーバ）のブラウザで全13項目OK。トンネルへの束縛（`tun0`）、自宅DNSサーバへの`vpngw-selfcheck`での転送、ブラウザの名前解決の誘導を確認。検証後、設定を元に戻した。
+- 既知の制約: 「この端末の出口IP」は出口IPの一致で判定するため、同じVPNの出口IPを共有する別の経路（別のVPNゲートウェイ等）を通る端末は区別できない（実機で、別ゲートウェイ経由の開発ホストの出口IPが一致することを確認）。
+
 # 未着手の機能
-
-## 設定の動作検証（Phase 27）
-
-設定した機能が実際に動作していることを、Web UIから3層（構成監査・ゲートウェイ内プローブ・LAN端末からのクライアント検証）で確認する。設計は[design.md](design.md)「設定の動作検証の設計方針」、実装のタスクは[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「設定の動作検証」節。
-
-- [ ] 全アプリの実装完了後、E2E（`e2e/phase27/`。正常時のpassと、nftルール削除・`ip rule`撤去等で意図的に壊した場合のfailの両方向）と、README（利用者向け）への追記
 
 ## デプロイメント構成の分離（残作業）
 

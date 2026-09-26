@@ -25,10 +25,24 @@ export interface NftResult {
  * 例: await runNftScript("add table inet vpngwgui\n")
  */
 export function runNftScript(script: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<NftResult> {
+  return runNft(["-f", "-"], script, timeoutMs);
+}
+
+/**
+ * 目的: nftの読み取り系コマンド（`list table`・`list set`等）を`sudo nft <args>`で実行する（設定の動作検証が、
+ *      適用中のルール・setの要素を読むために使う）。
+ * 入力: args(nftへの引数。例: ["-j", "list", "set", "inet", "vpngwgui", "redirected4"]), timeoutMs(省略時5000ms)。
+ * 出力: exitCode/stdout/stderr。失敗時の方針はrunNftScriptと同じ。
+ */
+export function runNftCommand(args: readonly string[], timeoutMs = DEFAULT_TIMEOUT_MS): Promise<NftResult> {
+  return runNft(args, undefined, timeoutMs);
+}
+
+function runNft(args: readonly string[], stdin: string | undefined, timeoutMs: number): Promise<NftResult> {
   return new Promise((resolve) => {
     // シェルを経由せずspawnするため、script内容がシェルメタ文字を含んでも解釈されない
     // （nft自身の文法として解釈されるのみ）。
-    const child = spawn(SUDO_BIN, [NFT_BIN, "-f", "-"], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(SUDO_BIN, [NFT_BIN, ...args], { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"] });
 
     let stdout = "";
     let stderr = "";
@@ -41,10 +55,10 @@ export function runNftScript(script: string, timeoutMs = DEFAULT_TIMEOUT_MS): Pr
       resolve({ exitCode: -1, stdout, stderr });
     }, timeoutMs);
 
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
 
@@ -62,7 +76,9 @@ export function runNftScript(script: string, timeoutMs = DEFAULT_TIMEOUT_MS): Pr
       resolve({ exitCode: -1, stdout, stderr });
     });
 
-    child.stdin.write(script);
-    child.stdin.end();
+    if (stdin !== undefined && child.stdin !== null) {
+      child.stdin.write(stdin);
+      child.stdin.end();
+    }
   });
 }

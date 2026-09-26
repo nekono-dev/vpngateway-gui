@@ -108,6 +108,7 @@
 - 設定ダイアログのタブ列（`dialog .location-tabs`）は`flex-wrap: nowrap`・`overflow-x: auto`・`min-width: 0`とし、タブ列だけを横スクロールさせる（`.location-tabs`の共通定義は`flex-wrap`を持たないため、折り返しを戻すとダイアログ全体が横に溢れる）。
 - ボタンの折り返しは、`styles.css`の`button`に`white-space: nowrap`・`flex: none`を与え（文字を折り返さず大きさを保つ）、ボタンを並べる親（`.app-header`・`.header-actions`・`.dialog-actions`・`.location-tabs`・`.session-action`・`.connect-row`・`.location-toolbar(-actions)`）に`flex-wrap: wrap`を与えて、ボタンごと折り返す。新しくボタンを並べる親を追加するときも`flex-wrap: wrap`を付ける。
 - 高さは、タブの内容で最も高いものに合わせ固定せず、選択中のタブの内容に従う。
+- 設定の読み込み（`GET /v1/connection/config`）とタブの初期化は、ダイアログを開いたときだけ行う。明示的プロキシの許可CIDRの初期値（ダッシュボードの稼働状況の`lanCidr`）は開いた時点の値を使い、読み込みの契機にしない（定期取得の失敗等で値が変わるたびに読み直すと、開いているダイアログのタブ・未保存の入力・動作検証の表示が初期化されるため。Phase 27の実機検証で発見）。
 
 # ベンダーの選択の実装方針（Phase 8）
 
@@ -306,7 +307,7 @@
 5. 対象外の項目（折りたたみ）
 6. IP確認サービスのURL（`verifyEchoUrl`）の入力欄。CORSの許可とIPv4での応答が必要である旨の補足を添える
 
-- **設定値と保存**: `verifyEchoUrl`は、他のタブと同じくダイアログ全体の保存ボタンで保存する（タブごとに状態・保存処理を分けない）。検証は保存済みの設定に対して行うため、未保存の変更があるときは、実行ボタンの近くに「保存済みの設定で検証します」と表示する。
+- **設定値と保存**: `verifyEchoUrl`は、他のタブと同じくダイアログ全体の保存ボタンで保存する（タブごとに状態・保存処理を分けない）。空の間は保存できず、タブのラベル末尾に`!`を付ける。検証は保存済みの設定に対して行うため、未保存の変更があるときは、実行ボタンの近くに「保存済みの設定で検証します」と表示する。
 - **状態はダイアログを閉じると破棄する**。検証の実行中にダイアログを閉じた場合、検証はAPI側で最後まで進むが、ブラウザ側の観測（出口IPの提出）は行われないため、`client-egress`は`unconfirmed`になる。
 
 ## 実行ボタンと全体の状態
@@ -317,7 +318,7 @@
 | 実行中 | 無効（円形の回転表示と「実行中 n/N」） | 進捗バーが伸びる |
 | 完了 | 「もう一度実行」 | 結果の要約（OK n件・NG n件・未確認 n件） |
 
-他の操作者が検証を実行中で409になった場合は、通知で示す。`POST /v1/verifications`の後、`GET /v1/verifications/{id}`を500ms間隔でポーリングし、`state=completed`まで進行を表示する。
+実行前は、各グループに「未実行」とだけ表示する（対象の項目は検証を開始するまで決まらないため、件数バッジも出さない）。他の操作者が検証を実行中で409になった場合は、タブ内のエラー表示（設定ダイアログの他のエラーと同じ`role="alert"`）で示す。`POST /v1/verifications`の後、`GET /v1/verifications/{id}`を500ms間隔でポーリングし、`state=completed`まで進行を表示する。検証の操作と状態は`hooks/useVerification.ts`が持ち、設定ダイアログ（`SettingsDialog`）で呼ぶ（タブを切り替えても結果を保つため）。表示は`components/dashboard/verification/`（`VerificationPanel.tsx`・`StatusIcon.tsx`、表示規則の純粋関数`verification-view.ts`）。
 
 ## 項目の状態の表示
 
@@ -344,6 +345,8 @@
 
 | グループの状態 | 見える行 |
 |---|---|
+| 未実行（検証の開始前） | 「未実行」の1行 |
+| 対象の項目が無い | 「対象の項目はありません」の1行 |
 | 待機中 | 「待機中（n項目）」の1行 |
 | 実行中 | 実行中の項目のみ |
 | 完了・不合格あり | グループ内で最初に不合格になった項目 |
@@ -358,7 +361,7 @@
 
 検証の開始（`POST`の応答）の直後に、次の2つを**利用者の操作なしで**先行して行う。
 
-- **出口IP**: `verifyEchoUrl`へfetchし、IPv4の本文を`PUT /v1/verifications/{id}/client-observations/egress-ip`で提出する。失敗（CORS拒否・タイムアウト・IPv4以外の本文）は`{ "ip": null }`で提出し、その項目は未確認になる。結果は「この端末の経路」であり、VPN・LAN外からWeb UIを開いている場合はゲートウェイを通らない端末の結果になる。
+- **出口IP**: `client-egress`が対象のときだけ、保存済みの`verifyEchoUrl`へfetchし（8秒で打ち切る）、IPv4の本文を`PUT /v1/verifications/{id}/client-observations/egress-ip`で提出する。失敗（CORS拒否・タイムアウト・IPv4以外の本文）は`{ "ip": null }`で提出し、その項目は未確認になる。結果は「この端末の経路」であり、VPN・LAN外からWeb UIを開いている場合はゲートウェイを通らない端末の結果になる。
 - **検証用の名前の解決**: 応答の`clientProbe.dnsName`へ`fetch("https://<名前>/", { mode: "no-cors", cache: "no-store" })`を発行して名前解決を起こす（成否・応答は使わない。名前は解決できず失敗するのが正常）。`https`にするのは、Web UIがHTTPSで配信される場合の混在コンテンツの遮断を避けるため。
 
 `dns-redirect-path`の実行中の表示は、他の項目と同じ「確認中…」とする（利用者の操作を求める表示・案内は設けない）。

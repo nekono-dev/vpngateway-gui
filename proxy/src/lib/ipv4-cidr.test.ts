@@ -1,7 +1,7 @@
-// 責務: isIpv4Cidr（IPv4 CIDR表記の妥当性判定）の単体テスト。
+// 責務: isIpv4Cidr（IPv4 CIDR表記の妥当性判定）・isIpv4InCidr（範囲の包含判定）の単体テスト。
 
 import { describe, expect, it } from "vitest";
-import { isIpv4Cidr } from "./ipv4-cidr.js";
+import { isIpv4Cidr, isIpv4InCidr } from "./ipv4-cidr.js";
 
 describe("isIpv4Cidr", () => {
   it.each(["192.168.3.0/24", "10.0.0.0/8", "0.0.0.0/0", "192.168.3.10/32"])("%s は妥当", (value) => {
@@ -20,5 +20,21 @@ describe("isIpv4Cidr", () => {
     "",
   ])("%j は不正", (value) => {
     expect(isIpv4Cidr(value)).toBe(false);
+  });
+});
+
+describe("isIpv4InCidr", () => {
+  it("範囲内ならtrue、範囲外ならfalse（/0・/32を含む）", () => {
+    expect(isIpv4InCidr("192.168.3.240", "192.168.3.0/24")).toBe(true);
+    expect(isIpv4InCidr("192.168.4.1", "192.168.3.0/24")).toBe(false);
+    expect(isIpv4InCidr("10.1.2.3", "0.0.0.0/0")).toBe(true);
+    expect(isIpv4InCidr("10.0.0.5", "10.0.0.5/32")).toBe(true);
+    expect(isIpv4InCidr("10.0.0.6", "10.0.0.5/32")).toBe(false);
+    expect(isIpv4InCidr("200.1.1.1", "128.0.0.0/1")).toBe(true);
+  });
+
+  it("形式が不正ならfalse", () => {
+    expect(isIpv4InCidr("192.168.3.999", "192.168.3.0/24")).toBe(false);
+    expect(isIpv4InCidr("192.168.3.1", "192.168.3.0")).toBe(false);
   });
 });

@@ -165,16 +165,18 @@
 
 検証: 単体テスト（設定の形式検証・項目間の整合・稼働状況の中継）と、検証サーバのLXDラボでの通しの動作（`e2e/phase14/scenarios.sh`。設定の保存→ゲートウェイへの反映→稼働状況の取得）で確認。
 
-## 設定の動作検証（Phase 27）
+## 設定の動作検証（Phase 27、実装完了・検証完了）
 
 設計は`design.md`「設定の動作検証」。
 
-- [ ] `UserSettings`へ`verifyEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
-- [ ] 検証項目の定義（ID・タイトル・グループ・順序）と適用条件の導出（`api/src/verification/`）と単体テスト（設定の組み合わせごとの対象・対象外）
-- [ ] 項目の順次実行（`pending`→`running`→結果、最低400msの実行中表示、後続の続行）と、`proxy`への項目ごとの実行依頼（`POST /net/checks`）。依頼失敗は`unconfirmed`
-- [ ] L3の判定: `client-egress`（ブラウザの提出・15秒の待ち）、`dns-redirect-path`（検証用の名前の発行・登録・最大10秒の待ち・4区分の判定）
-- [ ] `POST /v1/verifications`・`GET /v1/verifications/{id}`・`PUT .../client-observations/egress-ip`、同時実行の排他、直近5件の保持、監査ログ
-- [ ] OpenAPI・orval生成物の更新
+- [x] `UserSettings`へ`verifyEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
+- [x] 検証項目の定義（ID・項目名・グループ・順序）と適用条件の導出（`api/src/verification/check-catalog.ts`）
+- [x] 項目の順次実行（`pending`→`running`→結果、最低400msの実行中表示、後続の続行）と、`proxy`への項目ごとの実行依頼（`POST /net/checks`）。依頼失敗は`unconfirmed`
+- [x] L3の判定: `client-egress`（ブラウザの提出・15秒の待ち）、`dns-redirect-path`（検証名の発行・登録・最大10秒の待ち・4区分の判定）
+- [x] `POST /v1/verifications`・`GET /v1/verifications/{id}`・`PUT .../client-observations/egress-ip`、同時実行の排他、直近5件の保持、監査ログ
+- [x] OpenAPI・orval生成物の更新
+
+検証: 単体・結合テスト（api 345件。`verification-service.test.ts`・`client-judgements.test.ts`・`routes/verifications.test.ts`）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
 
 # 将来課題
 

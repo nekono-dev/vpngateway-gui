@@ -35,6 +35,9 @@
 | `phase14/scenarios.sh` | Phase14完了基準（モックの範囲）を通しで自動検証（シナリオA〜M）。検証サーバ上で実行する |
 | `phase14/webgui-phase14.mjs` | Phase14のWeb UI側のPlaywright検証（設定ダイアログのDNS中継の入力・保存前チェック・保持、稼働状況の「DNS中継」欄） |
 | `phase14/remote.sh` | 開発ホストから検証サーバのラボを操作する（`sync`: 資材の転送とゲートウェイ役の再ビルド、`run`: scenarios.shの実行、`lab`: lab.shの実行） |
+| `phase27/prepare.sh` | Phase27（設定の動作検証）用に、Phase14のラボへ追加の準備をする（宛先サーバ側にHTTPSのIP確認サービス`echo-server.py`〔203.0.113.20:8443、CORS許可〕を起動、proxyコンテナにそのCAを信頼させる、LAN端末役にNode・Playwright〔Chromium〕を導入） |
+| `phase27/scenarios.sh` | Phase27の完了基準を、Phase14のラボで通しで自動検証（シナリオA〜I。ブラウザの動作はLAN端末役のcurl・digで代行し、nftルールの削除・上流の停止等の故障を注入してNGの検出も確認する）。検証サーバ上で実行する |
+| `phase27/webgui-phase27.mjs` | Phase27のWeb UIを、LAN端末役のブラウザでPlaywright検証（`ok`: 全項目OK・折りたたみと代表行・開閉・タブ切替後の保持、`ng`: 故障を注入した状態でのNGの代表行）。実行: `node e2e/phase27/webgui-phase27.mjs <baseUrl> <ok|ng> [スクリーンショットの出力先] [画面幅]` |
 | `phase26/webgui-settings-tabs.mjs` | Phase26（設定ダイアログのタブ化）のPlaywright検証（タブ表示・切替・未保存入力の保持・保存・保存不可時の警告印）。実行: `node e2e/phase26/webgui-settings-tabs.mjs <baseUrl>` |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
@@ -150,3 +153,20 @@ bash e2e/phase14/remote.sh lab destroy         # ラボの削除
 
 - 各シナリオは、開始時にDNS中継・迂回ドメインの設定を初期化し、終了時に無効へ戻す。終了時にWeb UI利用者アカウントも削除する（インストール直後の未設定状態へ戻る）。
 - Web UIの検証は、`p14-gw`のWeb UIのポートを検証サーバへ公開（`lxc config device add p14-gw web14 proxy listen=tcp:0.0.0.0:18443 connect=tcp:127.0.0.1:8080`）してから、`node e2e/phase14/webgui-phase14.mjs https://<検証サーバ>:18443 <モックDNSのCA証明書（既定の出力先: 検証サーバの/tmp/p14-doh-ca.pem）>`で実行する。
+
+## Phase 27の実行手順
+
+Phase 14のラボを使う（検証サーバ上。ディスクを多く使うため、終わったら`lab.sh destroy`で削除する）。
+
+```sh
+bash e2e/phase14/remote.sh lab create          # ラボの作成（開発ホストから。資材は~/p14へ転送しておく）
+# p14-gwへ資材を置き、インストールする: lxc exec p14-gw -- sh -c "cd /opt/vpngwgui && sh install/install.sh --providers adguardvpn --web-port 8080"
+bash e2e/phase27/prepare.sh                     # 検証サーバ上で。IP確認サービス・CAの信頼・LAN端末役のブラウザ
+bash e2e/phase27/scenarios.sh                   # 検証サーバ上で。APIレベルの全シナリオ（A〜I）
+lxc exec p14-client --env PATH=/opt/node/bin:/usr/bin:/bin --cwd <e2eを置いた場所> -- node e2e/phase27/webgui-phase27.mjs https://10.98.1.10:8080 ok
+```
+
+- proxyコンテナを再作成した場合は、`prepare.sh trust`をやり直す（コンテナ内の信頼済みCAに、IP確認サービスのCAを追記しているため）。
+- `ng`モードは、実行前にforwardチェーン末尾の遮断ルール（`iifname "eth0" drop`）を`nft delete rule`で消しておく。終了後は設定を変更して保存すると再構成される。
+- 実機（`GW_MODE=ssh`相当）でLAN端末役のブラウザを使う場合は、検証サーバ自身ではなく別のホスト（開発ホスト）上に、デフォルトゲートウェイを検証サーバにしたmacvlanのコンテナを作る（macvlanの子は親ホストと通信できないため）。
+

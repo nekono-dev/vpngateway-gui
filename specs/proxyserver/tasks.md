@@ -146,17 +146,19 @@
 
 - [ ] インストーラ完了メッセージのWeb UIのポート表示が不正（`install/install.sh`の`summary_port=${WEB_PORT_ARG:-$WEB_PORT_DEFAULT}`が、`--web-port`を省略した再実行で、`.env`に保存済みのポート（`WEB_PORT`）ではなく既定の80を表示する。実際のWeb UIは`.env`のポートで動いている。修正案: 表示には`setup_web_port`が確定したグローバル変数`WEB_PORT`を使う。`install/tests/`へ、`--web-port`省略時の再実行で保存済みのポートが表示されるテストを追加する）。Phase 14の実機検証中（2026-09-24、検証サーバで`WEB_PORT=443`のまま再実行して発見）。
 
-## 設定の動作検証（Phase 27）
+## 設定の動作検証（Phase 27、実装完了・検証完了）
 
 設計は`design.md`「設定の動作検証」。
 
-- [ ] `proxy/Dockerfile`の実行イメージへ`curl`を追加
-- [ ] 53番リダイレクトへ、誘導した送信元を記録するset`redirected4`と`update`文を追加（`network/ruleset.ts`）と単体テスト
-- [ ] L1（構成監査）の実装。ルールセット生成と同じ判定関数での照合、`ip rule`・sysctl・待受の確認、と単体テスト
-- [ ] L2（出口IP取得・中継リゾルバへの問い合わせ・迂回のset/経路の確認・明示的プロキシ経由の出口IP）と単体テスト
-- [ ] 検証専用ClientID（`vpngw-selfcheck`）と、検証名のローカル応答（NXDOMAIN）・受信記録・誘導の判定（`dns-relay/`）
-- [ ] `POST /net/checks`（1項目、15秒のタイムアウト）・`POST /net/check-nonces`・`GET /net/check-nonces/{name}`
-- [ ] 実機（検証サーバのLXDラボ）で、`curl --interface`のトンネル束縛と、実際のLAN側インターフェースからの53番リダイレクトの誘導記録を確認
+- [x] `proxy/Dockerfile`の実行イメージへ`curl`を追加
+- [x] 53番リダイレクトへ、誘導した送信元を記録するset`redirected4`と`update`文を追加（`network/ruleset.ts`）と単体テスト
+- [x] L1（構成監査）の実装。nftの一覧の解析とルールの特徴での照合（`verification/nft-listing.ts`・`rule-audit.ts`。実機のnft 1.0.9の出力形式でテスト）、`ip_forward`・待受の確認
+- [x] L2（出口IP取得・中継リゾルバへの問い合わせ・迂回のset/経路の確認・明示的プロキシ経由の出口IP）と単体テスト（`gateway-checks.test.ts`）
+- [x] 検証専用ClientID（送信元127.0.0.2→`vpngw-selfcheck`）と、検証名のローカル応答（NXDOMAIN）・受信記録・誘導の判定（`dns-relay/`・`verification/check-nonces.ts`・`redirect-record.ts`）
+- [x] `POST /net/checks`・`POST /net/check-nonces`・`GET /net/check-nonces/{name}`
+- [x] 実機で、`curl --interface <トンネルIF>`がトンネルへ束縛されること（ラボの模擬トンネル`eth1`、実機のAdGuard VPNの`tun0`＝ベンダーCLIのポリシールーティング下）と、実際のLAN側インターフェースから誘導した送信元がredirected4へ記録されることを確認
+
+検証: 単体テスト（proxy 290件）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
 
 # 将来課題
 

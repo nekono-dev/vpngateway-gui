@@ -334,6 +334,7 @@ describe("App", () => {
         dnsClientNameServers: [],
         dnsRedirectEnabled: false,
         dnsRedirectExcludedCidrs: [],
+        verifyEchoUrl: "https://api.ipify.org",
       },
     });
     renderApp();

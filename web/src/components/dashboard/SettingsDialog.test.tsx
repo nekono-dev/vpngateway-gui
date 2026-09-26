@@ -27,6 +27,7 @@ const BASE_SETTINGS = {
   dnsClientNameServers: [] as string[],
   dnsRedirectEnabled: false,
   dnsRedirectExcludedCidrs: [] as string[],
+  verifyEchoUrl: "https://api.ipify.org",
 };
 
 async function renderDialog(overrides: Partial<typeof BASE_SETTINGS> = {}) {
@@ -46,9 +47,20 @@ describe("SettingsDialog: タブ", () => {
     api.putV1ConnectionConfig.mockResolvedValue({ status: 200, data: BASE_SETTINGS });
   });
 
+  it("開いている間に許可CIDRの初期値（ダッシュボードの定期取得の値）が変わっても、設定を読み直さず、タブも戻さない", async () => {
+    api.getV1ConnectionConfig.mockResolvedValue({ status: 200, data: BASE_SETTINGS });
+    const { rerender } = render(<SettingsDialog open onClose={() => undefined} defaultExplicitProxyAllowedCidr={undefined} />);
+    await screen.findByRole("tab", { name: "ゲートウェイ" });
+    await openTab("ゲートウェイ");
+    rerender(<SettingsDialog open onClose={() => undefined} defaultExplicitProxyAllowedCidr="192.168.3.0/24" />);
+    rerender(<SettingsDialog open onClose={() => undefined} defaultExplicitProxyAllowedCidr={undefined} />);
+    expect(screen.getByRole("tab", { name: "ゲートウェイ" })).toHaveAttribute("aria-selected", "true");
+    expect(api.getV1ConnectionConfig).toHaveBeenCalledTimes(1);
+  });
+
   it("先頭の「通信制御」タブを表示し、タブで項目を切り替えられる", async () => {
     await renderDialog();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ", "動作検証"]);
     expect(screen.getByRole("tab", { name: "通信制御" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("checkbox", { name: /Kill Switch/ })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /明示的プロキシモード/ })).not.toBeInTheDocument();
@@ -71,7 +83,7 @@ describe("SettingsDialog: タブ", () => {
 
     await openTab("上位DNSリゾルバ");
     await userEvent.click(screen.getByLabelText(/DNS中継を有効にする/));
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ !", "DNS詳細"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ !", "DNS詳細", "動作検証"]);
 
     await openTab("DNS詳細");
     expect(screen.getByLabelText(/名前解決を止める/)).toBeInTheDocument();

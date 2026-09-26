@@ -192,6 +192,11 @@ export class ExplicitProxyController {
     };
   }
 
+  /** 目的: 現在の許可元CIDRを返す（設定の動作検証が、ゲートウェイ自身から明示的プロキシを使えるかを判定するため）。 */
+  getAllowedCidrs(): readonly string[] {
+    return this.settings.allowedCidrs;
+  }
+
   private isRunnable(): boolean {
     return this.settings.enabled && this.settings.allowedCidrs.length > 0;
   }

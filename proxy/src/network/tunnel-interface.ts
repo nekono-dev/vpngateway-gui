@@ -34,6 +34,28 @@ export function parseRouteGetInterface(output: string): string | undefined {
 }
 
 /**
+ * 目的: 指定宛先への通信が出ていくインターフェース名を、カーネルの経路選択結果から得る（`ip -4 route get <宛先> [mark <値>]`。
+ *      パケットは送らない）。設定の動作検証が、迂回の印（fwmark）を付けた通信の経路を確かめるために使う。
+ * 入力: address(宛先のIPv4アドレス), fwmark(省略可。付けた場合の経路を問い合わせる)。
+ * 出力: インターフェース名。取得できない場合はundefined。
+ * 例: await getRouteInterface("203.0.113.5", 0x100) // => "eth0"
+ */
+export function getRouteInterface(address: string, fwmark?: number): Promise<string | undefined> {
+  const args = ["-4", "route", "get", address, ...(fwmark === undefined ? [] : ["mark", `0x${fwmark.toString(16)}`])];
+  return new Promise((resolve) => {
+    const child = spawn(IP_BIN, args, { stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.on("error", () => resolve(undefined));
+    child.on("exit", (code) => {
+      resolve(code === 0 ? parseRouteGetInterface(stdout) : undefined);
+    });
+  });
+}
+
+/**
  * 目的: 公開インターネット宛の通信が現在出ていくインターフェース名を取得する（`ip route get`を実行）。
  * 入力: なし。
  * 出力: インターフェース名。取得できない場合（コマンド失敗・経路無し等）はundefined。

@@ -1,7 +1,7 @@
 // 責務: ClientIDの生成（client-id.ts）の単体テスト。
 
 import { describe, expect, it, vi } from "vitest";
-import { ClientIdResolver, LOCAL_CLIENT_ID, buildClientId, sanitizeClientName } from "./client-id.js";
+import { ClientIdResolver, LOCAL_CLIENT_ID, SELF_CHECK_CLIENT_ID, SELF_CHECK_SOURCE_ADDRESS, buildClientId, sanitizeClientName } from "./client-id.js";
 
 describe("sanitizeClientName", () => {
   it("小文字化し、英数字以外の連続をハイフン1つにする（DHCPが配る名前を整える）", () => {
@@ -38,6 +38,14 @@ describe("ClientIdResolver", () => {
     const lookup = vi.fn(async () => "x.lan");
     const resolver = new ClientIdResolver(["127.0.0.1"], lookup);
     expect(await resolver.resolve("127.0.0.1")).toBe(LOCAL_CLIENT_ID);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("設定の動作検証の送信元（127.0.0.2）からの問い合わせは、検証専用の固定IDにし、逆引きしない", async () => {
+    const lookup = vi.fn(async () => "x.lan");
+    const resolver = new ClientIdResolver(["127.0.0.1"], lookup);
+    expect(await resolver.resolve(SELF_CHECK_SOURCE_ADDRESS)).toBe(SELF_CHECK_CLIENT_ID);
+    expect(SELF_CHECK_CLIENT_ID).toBe("vpngw-selfcheck");
     expect(lookup).not.toHaveBeenCalled();
   });
 

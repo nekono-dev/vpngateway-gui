@@ -17,6 +17,17 @@ export const BYPASS_SET_NAME = "bypass4";
 export const BYPASS_FWMARK = 0x100;
 export const BYPASS_ROUTE_TABLE = 100;
 
+// 53番リダイレクトで誘導した送信元IPv4アドレスを記録するsetの名前と、要素の保持期間（秒）。設定の動作検証が、
+// 端末の問い合わせが実際に誘導されたかを判定するために使う（proxyserver/design.md「設定の動作検証」）。
+export const REDIRECTED_SET_NAME = "redirected4";
+export const REDIRECTED_RECORD_SECONDS = 600;
+
+// チェーン名（ルールセットの生成と、設定の動作検証による構成の照合で共有する）。
+export const CHAIN_FORWARD = "forward";
+export const CHAIN_POSTROUTING = "postrouting";
+export const CHAIN_BYPASS_MARK = "bypass_mark";
+export const CHAIN_DNS_REDIRECT = "dns_redirect";
+
 export interface BypassEntry {
   address: string;
   // setの要素の残り期限（秒）。
@@ -168,10 +179,16 @@ export function buildGatewayRuleset(input: GatewayRulesetInput): string {
   if (dnsRedirect !== undefined) {
     // 宛先ポート53のLAN発の通信を、中継リゾルバへ誘導する（手動でDNSを指定した端末も対象にする）。
     // ゲートウェイ自身宛と、利用者が除外したCIDR宛は誘導しない。
-    lines.push(`add chain inet ${GATEWAY_TABLE_NAME} dns_redirect { type nat hook prerouting priority -100 ; }`);
+    // 誘導した送信元を`redirected4`へ記録する（`update`は既存の要素の期限も更新する）。設定の動作検証が、要素の残り
+    // 期限から「直前に誘導された」ことを判定する。
+    lines.push(
+      `add set inet ${GATEWAY_TABLE_NAME} ${REDIRECTED_SET_NAME} { type ipv4_addr ; flags dynamic,timeout ; timeout ${REDIRECTED_RECORD_SECONDS}s ; }`,
+    );
+    lines.push(`add chain inet ${GATEWAY_TABLE_NAME} ${CHAIN_DNS_REDIRECT} { type nat hook prerouting priority -100 ; }`);
     const excluded = [dnsRedirect.listenAddress, ...dnsRedirect.excludedCidrs].join(", ");
     rule(
-      `dns_redirect iifname "${lanIface}" meta l4proto { udp, tcp } th dport 53 ip daddr != { ${excluded} } ` +
+      `${CHAIN_DNS_REDIRECT} iifname "${lanIface}" meta l4proto { udp, tcp } th dport 53 ip daddr != { ${excluded} } ` +
+        `update @${REDIRECTED_SET_NAME} { ip saddr timeout ${REDIRECTED_RECORD_SECONDS}s } ` +
         `dnat ip to ${dnsRedirect.listenAddress}:${dnsRedirect.port}`,
     );
   }

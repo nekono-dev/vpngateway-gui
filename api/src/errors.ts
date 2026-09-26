@@ -46,3 +46,6 @@ export class OperatorAlreadyConfiguredError extends Error {}
 
 // ログイン試行・パスワード変更の失敗回数が、送信元IPごとの制限を超えた場合のエラー。429で通知する（Phase 25）。
 export class RateLimitedError extends Error {}
+
+// 設定の動作検証の実行中に、別の検証の開始が要求された場合のエラー。409で通知する（Phase 27）。
+export class VerificationRunningError extends Error {}

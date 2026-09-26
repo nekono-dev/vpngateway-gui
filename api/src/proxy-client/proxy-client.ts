@@ -7,7 +7,7 @@
 // HTTP/1.1 keep-alive接続プールを共有し、ベンダーごとの個別プールは持たない（パスでランナーを識別する）。
 
 import { Agent } from "undici";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
 import { ProxyUnavailableError, ProxyTimeoutError } from "../errors.js";
@@ -201,6 +201,113 @@ export async function requestConnectionCheck(): Promise<boolean> {
     return typeof body === "object" && body !== null && (body as Record<string, unknown>).checked === true;
   } catch {
     return false;
+  }
+}
+
+// 設定の動作検証（Phase 27）: ゲートウェイで実行する1項目の結果（proxyserver/design.md「設定の動作検証」の内部エンドポイント）。
+const GatewayCheckResultSchema = Type.Object({
+  id: Type.String(),
+  status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("unconfirmed")]),
+  expected: Type.Optional(Type.String()),
+  observed: Type.Optional(Type.String()),
+  hint: Type.Optional(Type.String()),
+  reason: Type.Optional(Type.String()),
+  value: Type.Optional(Type.String()),
+});
+export type GatewayCheckResult = Static<typeof GatewayCheckResultSchema>;
+
+export interface GatewayCheckInput {
+  check: string;
+  echoUrl: string;
+  expectedEgressIp?: string;
+  bypassProbeIp?: string;
+}
+
+/**
+ * 目的: 設定の動作検証の1項目（L1・L2）を、ゲートウェイの`/net/checks`で実行する。
+ * 入力: input(項目ID・IP確認サービスのURL・前の項目の結果)。
+ * 出力: 項目の結果（形状を実行時に検証する）。
+ * 失敗時の方針: 他の内部通信と同じ分類でProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる。項目の実行はゲートウェイ側で
+ *              最長15秒程度かかるため、待ち時間を長めにする。
+ */
+export async function runGatewayCheck(input: GatewayCheckInput): Promise<GatewayCheckResult> {
+  try {
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: "/net/checks",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+      bodyTimeout: 20_000,
+      headersTimeout: 20_000,
+    });
+    const body: unknown = await response.body.json();
+    if (!Value.Check(GatewayCheckResultSchema, body)) {
+      throw new Error(`unexpected response shape from proxy: status ${response.statusCode}`);
+    }
+    return body;
+  } catch (error) {
+    throw toProxyClientError(error);
+  }
+}
+
+/**
+ * 目的: 設定の動作検証で使う検証名を、ゲートウェイの中継リゾルバへ登録する（`/net/check-nonces`）。
+ * 入力: name(検証名), ttlSeconds(有効期間)。
+ * 出力: なし。
+ * 失敗時の方針: 通信失敗はProxyUnavailableError/ProxyTimeoutError、登録の拒否は例外にする。
+ */
+export async function registerCheckNonce(name: string, ttlSeconds: number): Promise<void> {
+  try {
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: "/net/check-nonces",
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, ttlSeconds }),
+      bodyTimeout: 5000,
+      headersTimeout: 5000,
+    });
+    await response.body.dump();
+    if (response.statusCode !== 200) throw new Error(`check nonce was rejected: status ${response.statusCode}`);
+  } catch (error) {
+    throw toProxyClientError(error);
+  }
+}
+
+const CheckNonceRecordSchema = Type.Object({
+  received: Type.Boolean(),
+  redirected: Type.Boolean(),
+  recentRedirectedClients: Type.Integer(),
+});
+export type CheckNonceRecord = Static<typeof CheckNonceRecordSchema>;
+
+/**
+ * 目的: 検証名の受信の記録と、53番リダイレクトで誘導した送信元の数を取得する（`/net/check-nonces/<名前>`）。
+ * 入力: name(登録済みの検証名)。
+ * 出力: 記録。未登録・期限切れ（404）はundefined。
+ * 失敗時の方針: 通信失敗はProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる。
+ */
+export async function fetchCheckNonce(name: string): Promise<CheckNonceRecord | undefined> {
+  try {
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: `/net/check-nonces/${encodeURIComponent(name)}`,
+      method: "GET",
+      bodyTimeout: 5000,
+      headersTimeout: 5000,
+    });
+    if (response.statusCode === 404) {
+      await response.body.dump();
+      return undefined;
+    }
+    const body: unknown = await response.body.json();
+    if (!Value.Check(CheckNonceRecordSchema, body)) {
+      throw new Error(`unexpected response shape from proxy: status ${response.statusCode}`);
+    }
+    return body;
+  } catch (error) {
+    throw toProxyClientError(error);
   }
 }
 

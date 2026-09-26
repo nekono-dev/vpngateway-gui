@@ -973,3 +973,337 @@ dialog [role="alert"] {
   padding: 6px 10px;
   border-radius: 6px;
 }
+
+/* 設定の動作検証（Phase 27。設定ダイアログの「動作検証」タブ）。状態は文字色・円形のアイコン（実行中は回転表示）・
+   状態の文字で示す（webserver/design.md「設定の動作検証の実装方針」）。項目は3つのグループにまとめ、既定では折りたたむ。 */
+.verify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.verify-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.verify-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.verify-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.verify-summary-pass {
+  color: var(--ok);
+}
+
+.verify-summary-fail {
+  color: var(--danger);
+}
+
+.verify-summary-unconfirmed {
+  color: var(--warn);
+}
+
+.verify-progress {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted-bg);
+  overflow: hidden;
+}
+
+.verify-progress i {
+  display: block;
+  height: 100%;
+  transition: width 0.3s;
+}
+
+.verify-progress-pass {
+  background: var(--ok);
+}
+
+.verify-progress-fail {
+  background: var(--danger);
+}
+
+.verify-progress-unconfirmed {
+  background: var(--warn);
+}
+
+.verify-progress-caption {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.verify-group {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* グループのヘッダ全体が開閉ボタン。共通のbuttonの見た目（枠・余白・折り返さない）を打ち消す。 */
+.verify-group-header {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 0;
+  background: #f6f8fa;
+  color: inherit;
+  text-align: left;
+  white-space: normal;
+}
+
+.verify-group-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.verify-group.verify-state-wait .verify-group-name {
+  color: var(--muted);
+}
+
+.verify-group.verify-state-running .verify-group-name {
+  color: var(--accent);
+}
+
+.verify-group.verify-state-fail .verify-group-name {
+  color: var(--danger);
+}
+
+.verify-group.verify-state-unconfirmed .verify-group-name {
+  color: var(--warn);
+}
+
+.verify-chevron {
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.verify-group-header[aria-expanded="true"] .verify-chevron {
+  transform: rotate(90deg);
+}
+
+.verify-badges {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.verify-badge {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--muted-bg);
+  color: var(--muted);
+}
+
+.verify-badge-fail {
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.verify-badge-unconfirmed {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.verify-group-body {
+  border-top: 1px solid var(--border);
+}
+
+.verify-group-note {
+  margin: 0;
+  padding: 7px 12px 7px 42px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.verify-group-note-pass {
+  color: var(--ok);
+}
+
+.verify-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verify-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 10px;
+  padding: 7px 12px;
+}
+
+.verify-row + .verify-row {
+  border-top: 1px solid var(--border);
+}
+
+.verify-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.verify-name {
+  font-size: 14px;
+}
+
+.verify-label {
+  padding-top: 1px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.verify-row.verify-state-wait .verify-name,
+.verify-row.verify-state-wait .verify-label {
+  color: var(--muted);
+}
+
+.verify-row.verify-state-running .verify-name,
+.verify-row.verify-state-running .verify-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.verify-row.verify-state-pass .verify-label {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.verify-row.verify-state-fail .verify-name,
+.verify-row.verify-state-fail .verify-label {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.verify-row.verify-state-unconfirmed .verify-name,
+.verify-row.verify-state-unconfirmed .verify-label {
+  color: var(--warn);
+}
+
+.verify-observed {
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.verify-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1f2328;
+  overflow-wrap: anywhere;
+}
+
+.verify-detail-fail {
+  background: var(--danger-bg);
+}
+
+.verify-detail-unconfirmed {
+  background: var(--warn-bg);
+}
+
+.verify-not-applicable {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.verify-not-applicable ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.verify-icon {
+  display: block;
+  flex: none;
+}
+
+.verify-icon-wait circle {
+  stroke: var(--border);
+}
+
+.verify-icon-pass circle {
+  fill: var(--ok);
+}
+
+.verify-icon-fail circle {
+  fill: var(--danger);
+}
+
+.verify-icon-pass path,
+.verify-icon-fail path {
+  stroke: #fff;
+}
+
+.verify-icon-unconfirmed circle,
+.verify-icon-unconfirmed path {
+  stroke: var(--warn);
+}
+
+/* 実行中: 円形に並んだ8つの点が、順に光る（各点の開始をずらした明滅）。 */
+.verify-icon-running circle {
+  fill: var(--accent);
+  animation: verify-dot 0.8s linear infinite;
+}
+
+.verify-run .verify-icon-running circle {
+  fill: currentColor;
+}
+
+@keyframes verify-dot {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.15;
+  }
+}
+
+/* 動きを減らす設定では、回転させず、点の濃淡だけの静止表示にする。 */
+@media (prefers-reduced-motion: reduce) {
+  .verify-icon-running circle {
+    animation: none;
+  }
+  .verify-icon-running circle:nth-child(1) { opacity: 1; }
+  .verify-icon-running circle:nth-child(2) { opacity: 0.85; }
+  .verify-icon-running circle:nth-child(3) { opacity: 0.7; }
+  .verify-icon-running circle:nth-child(4) { opacity: 0.6; }
+  .verify-icon-running circle:nth-child(5) { opacity: 0.45; }
+  .verify-icon-running circle:nth-child(6) { opacity: 0.35; }
+  .verify-icon-running circle:nth-child(7) { opacity: 0.25; }
+  .verify-icon-running circle:nth-child(8) { opacity: 0.15; }
+}

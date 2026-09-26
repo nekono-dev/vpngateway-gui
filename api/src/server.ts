@@ -3,7 +3,7 @@
 
 import { buildApp } from "./app.js";
 import { loadApiServerTlsOptions } from "./tls-options.js";
-import { getSettings } from "./settings/settings-store.js";
+import { getSettings, toGatewaySettings } from "./settings/settings-store.js";
 import { notifySettings } from "./proxy-client/proxy-client.js";
 import { getProviders } from "./providers/provider-registry.js";
 import { restoreConnectionOnStartup } from "./connection-state/restore-connection.js";
@@ -32,7 +32,7 @@ async function pushCurrentSettingsToProxy(): Promise<void> {
   const retryDelaysMs = [500, 1000, 2000];
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
     try {
-      await notifySettings(settings);
+      await notifySettings(toGatewaySettings(settings));
       return;
     } catch (error) {
       if (attempt === retryDelaysMs.length) {
@@ -56,7 +56,7 @@ void restoreConnectionOnStartup(app.log);
 // 設定を変更するまでKill Switchのnftルールが再構成されない（実機検証で確認）。
 const SETTINGS_RESYNC_INTERVAL_MS = Number(process.env.SETTINGS_RESYNC_INTERVAL_MS ?? 10_000);
 setInterval(() => {
-  notifySettings(getSettings()).catch(() => {
+  notifySettings(toGatewaySettings(getSettings())).catch(() => {
     // proxy再起動中などの一時的な失敗。次周期で再試行する。
   });
 }, SETTINGS_RESYNC_INTERVAL_MS).unref();

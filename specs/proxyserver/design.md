@@ -271,9 +271,9 @@ volumes:
 
 ゲートウェイ制御チャネル（mTLS TCP）へ追加する。`api`だけが呼べる（既存の`/net/settings`と同じ認証）。
 
-- `POST /net/checks`: ボディ`{ "check": "<検証項目ID>", "echoUrl": "<verifyEchoUrl>", "excludedDomains": [...] }`。指定された**1項目**（L1・L2）を実行し、`{ "id", "status": "pass"|"fail"|"unconfirmed", "expected"?, "observed"?, "hint"?, "reason"? }`を返す。1項目のタイムアウトは15秒。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。
+- `POST /net/checks`: ボディ`{ "check": "<検証項目ID>", "echoUrl": "<verifyEchoUrl>", "expectedEgressIp"?: "a.b.c.d", "bypassProbeIp"?: "a.b.c.d" }`。指定された**1項目**（L1・L2）を実行し、`{ "id", "status": "pass"|"fail"|"unconfirmed", "expected"?, "observed"?, "hint"?, "reason"?, "value"? }`を返す（`value`は後続の項目が使う値。`tunnel-egress`の出口IP、`bypass-set`の迂回対象のIP）。迂回ドメイン・上流等の設定は、`proxy`が反映済みの設定（`POST /net/settings`）を使う。項目内の各操作に上限時間を置く（curl 8秒、中継リゾルバへの問い合わせ 8秒、nft 5秒、TCP接続 2秒）。実行中に次の依頼が来れば409。形式不正は400。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。実行中の例外は`unconfirmed`（理由に例外の内容）として返す。
 - `POST /net/check-nonces`: `{ "name": "vpngw-<乱数>.example.com", "ttlSeconds": 60 }`で使い捨て名を登録する（メモリ上のみ）。
-- `GET /net/check-nonces/{name}`: `{ "received": boolean, "redirected": boolean, "recentRedirectedClients": number }`を返す。`received`は登録名を受信したか、`redirected`は**その受信が53番リダイレクトで誘導されたものか**、`recentRedirectedClients`は現在の誘導済みset（下記）の要素数。
+- `GET /net/check-nonces/{name}`: `{ "received": boolean, "redirected": boolean, "recentRedirectedClients": number }`を返す（未登録・期限切れは404）。`received`は登録名を受信したか、`redirected`は**その受信が53番リダイレクトで誘導されたものか**、`recentRedirectedClients`は現在の誘導済みset（下記）の要素数。
 
 ## 53番リダイレクトで誘導した送信元の記録
 
@@ -287,12 +287,10 @@ volumes:
 ## 実装
 
 - **検証名の受信記録**: リゾルバは、登録済みの名前の問い合わせを、上流へ転送せず**NXDOMAINでローカルに応答**し、受信を記録する。受信の時点で、`nft -j list set inet vpngwgui redirected4`を読み、問い合わせの送信元IPの要素が存在し、`expires`が`600 − 5`秒以上であれば`redirected=true`とする（DNATの直後に届くため、直前の更新でなければ誘導されていない）。記録するのは、登録名・受信時刻・`redirected`のみ（送信元のIP・クライアント名は保持しない）。期限（60秒）で破棄する。登録の無い名前の扱いは変えない。
-- **L1**: `nft -j list table inet vpngwgui`の読み取り、`ip rule`・`ip route`・`/proc/sys`の参照、待受の確認（既存のコントローラの状態）を行う。ルールの有無は、ルールセット生成（`network/ruleset.ts`）が出力する構成と同じ判定関数で照合し、生成側と検証側で期待値を二重管理しない。
-- **L2の通信**: 出口IPの取得は、実行イメージへ追加する`curl`で、トンネルのインターフェース（`--interface <トンネルIF>`）へ束縛して行う。明示的プロキシは`--proxy socks5h://127.0.0.1:<SOCKSポート>`・`--proxy http://127.0.0.1:<HTTPポート>`で取得する。応答本文はIPv4のみを許可し、それ以外は`fail`（期待値: IPv4の本文）。
-- **L2のDNS**: 中継リゾルバへ（127.0.0.1の待受へ）UDPで問い合わせる。上流へは検証専用のClientID`vpngw-selfcheck`で転送する（ClientIDの生成規則に「検証用の固定値」を例外として置く。`dns-relay/client-id.ts`）。迂回のsetの確認は、`bypass-set.ts`の読み取りを使う。
+- **L1**: `sudo nft list table inet vpngwgui`（テキスト）をチェーンごとのルール行へ分解し（`verification/nft-listing.ts`）、ゲートウェイの現在の状態（インターフェース・設定。`GatewayController.getVerificationState()`）に対応するルールがあるかを照合する（`verification/rule-audit.ts`）。nftは数値・集合の順序・CIDRの表記を正規化して出力するため（`256`→`0x00000100`、`/32`の省略等。実機で確認）、ルール文字列の完全一致ではなく、ルールの特徴（インターフェース・動作・set名）で照合する。チェーン名・set名・fwmarkはルールセットの生成（`network/ruleset.ts`）と定数を共有する。あわせて`/proc/sys/net/ipv4/ip_forward`、待受（各コントローラの状態と、明示的プロキシのポートへのTCP接続）を確認する。
+- **L2の通信**: 出口IPの取得は、実行イメージへ追加する`curl`で、トンネルのインターフェース（`--interface <トンネルIF>`）へ束縛して行う（`verification/egress-probe.ts`）。明示的プロキシは`--proxy socks5h://<LAN側アドレス>:<SOCKSポート>`・`--proxy http://<LAN側アドレス>:<HTTPポート>`で取得する。応答本文はIPv4のみを許可し、それ以外は`fail`。迂回の経路は`ip -4 route get <IP> [mark 0x100]`で確かめる（`network/tunnel-interface.ts`の`getRouteInterface`）。
+- **L2のDNS**: 中継リゾルバへ（127.0.0.1の待受へ）、送信元を`127.0.0.2`にしてUDPで問い合わせる（`verification/relay-probe.ts`）。中継リゾルバは送信元`127.0.0.2`の問い合わせを、検証専用のClientID`vpngw-selfcheck`で上流へ転送する（`dns-relay/client-id.ts`）。迂回のsetの確認は、`sudo nft -j list set inet vpngwgui bypass4`の読み取りで行う。
 - **副作用の抑制**: 迂回対象の名前の問い合わせは、通常の中継と同じくsetへIPを投入するが、これは通常運用の挙動そのもので、検証が追加の要素を残すのは`bypass4`の要素（期限で消える）のみ。
 - **`unconfirmed`にする条件**: VPN未接続でトンネルが検出できない、リゾルバが`active`でなく問い合わせができない（前提が崩れているのは`dns-relay-listening`が`fail`で示す）、明示的プロキシの許可元に127.0.0.1が含まれない、など。理由を`reason`に入れる。
 
-## 検証を実機で確認するときの未確定事項
-
-- `curl --interface`がトンネルへ確実に束縛されるか（ベンダーCLIのポリシールールとの組み合わせ）。束縛できない場合は、トンネルIFのアドレスへの送信元束縛へ切り替えて判定する。
+- **配置**: `proxy/src/verification/`（項目の実行: `gateway-checks.ts`、実行環境の組み立て: `runtime.ts`、検証名: `check-nonces.ts`、誘導の判定: `redirect-record.ts`、リクエストの検証: `check-request.ts`）。

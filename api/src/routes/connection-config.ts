@@ -6,7 +6,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { UserSettingsSchema, UserSettingsPatchSchema } from "../schemas/settings.js";
 import { ErrorResponseSchema } from "../schemas/connection.js";
-import { getSettings, updateSettings } from "../settings/settings-store.js";
+import { getSettings, toGatewaySettings, updateSettings } from "../settings/settings-store.js";
 import { notifySettings } from "../proxy-client/proxy-client.js";
 
 export const registerConnectionConfigRoute: FastifyPluginAsyncTypebox = async (fastify) => {
@@ -30,7 +30,7 @@ export const registerConnectionConfigRoute: FastifyPluginAsyncTypebox = async (f
       // （設定は保存されており、プロキシ復旧後の次回通知・監視ループで追従できるため）。
       // 失敗はログにのみ残し、ユーザには更新後の設定をそのまま返す。
       try {
-        await notifySettings(next);
+        await notifySettings(toGatewaySettings(next));
       } catch (error) {
         request.log.warn({ error }, "failed to notify settings to proxy");
       }

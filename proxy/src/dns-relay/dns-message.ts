@@ -8,6 +8,7 @@ const FLAG_TC = 0x0200;
 const FLAG_RD = 0x0100;
 const FLAG_RA = 0x0080;
 export const RCODE_SERVFAIL = 2;
+export const RCODE_NXDOMAIN = 3;
 // 圧縮ポインタのループ等、不正なメッセージでの無限ループを防ぐための上限。
 const MAX_NAME_JUMPS = 32;
 
@@ -150,15 +151,48 @@ export function buildPtrQuery(address: string, id: number): Buffer | undefined {
 }
 
 /**
+ * 目的: 名前のAレコードを問い合わせるクエリを組み立てる（設定の動作検証が中継リゾルバへ問い合わせるために使う）。
+ * 入力: name(問い合わせ名。ラベルは63バイト以内), id(クエリID)。
+ * 出力: A・INのクエリ。名前として不正（空ラベル・長すぎるラベル）ならundefined。
+ * 例: buildAQuery("example.com", 1)
+ */
+export function buildAQuery(name: string, id: number): Buffer | undefined {
+  const labels = name.replace(/\.$/, "").split(".");
+  if (labels.some((label) => label.length === 0 || label.length > 63)) return undefined;
+  const encoded = Buffer.concat([...labels.map((label) => Buffer.concat([Buffer.from([label.length]), Buffer.from(label, "latin1")])), Buffer.from([0])]);
+  const header = Buffer.alloc(12);
+  header.writeUInt16BE(id & 0xffff, 0);
+  header.writeUInt16BE(FLAG_RD, 2);
+  header.writeUInt16BE(1, 4);
+  const tail = Buffer.alloc(4);
+  tail.writeUInt16BE(TYPE_A, 0);
+  tail.writeUInt16BE(1, 2);
+  return Buffer.concat([header, encoded, tail]);
+}
+
+/**
  * 目的: クエリに対するSERVFAIL応答を組み立てる（上流障害時のフェイルクローズ用）。
  * 入力: query(元のクエリ), question(parseQueryの結果)。
  * 出力: IDと質問を引き継いだSERVFAIL応答。
  */
 export function buildServfail(query: Buffer, question: DnsQuestion): Buffer {
+  return buildErrorResponse(query, question, RCODE_SERVFAIL);
+}
+
+/**
+ * 目的: クエリに対するNXDOMAIN応答を組み立てる（設定の動作検証用の名前へ、上流へ転送せずに応答するため）。
+ * 入力: query(元のクエリ), question(parseQueryの結果)。
+ * 出力: IDと質問を引き継いだNXDOMAIN応答。
+ */
+export function buildNxdomain(query: Buffer, question: DnsQuestion): Buffer {
+  return buildErrorResponse(query, question, RCODE_NXDOMAIN);
+}
+
+function buildErrorResponse(query: Buffer, question: DnsQuestion, rcode: number): Buffer {
   const response = Buffer.alloc(question.questionEnd);
   query.copy(response, 0, 0, question.questionEnd);
   const recursionDesired = query.readUInt16BE(2) & FLAG_RD;
-  response.writeUInt16BE(FLAG_QR | recursionDesired | FLAG_RA | RCODE_SERVFAIL, 2);
+  response.writeUInt16BE(FLAG_QR | recursionDesired | FLAG_RA | rcode, 2);
   response.writeUInt16BE(1, 4);
   response.writeUInt16BE(0, 6);
   response.writeUInt16BE(0, 8);

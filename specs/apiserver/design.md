@@ -742,23 +742,23 @@ IP確認サービスは、次を満たさなければならない。(1) 応答�
 
 各項目は「ID・タイトル・グループ・層・適用条件（設定と稼働状況から導出）・期待値・観測値・状態・ヒント」を持つ。**グループ**は`config`（L1）・`gateway`（L2）・`client`（L3）の3つで、項目はこの順、グループ内は下表の順に並べる（＝実行順）。
 
-状態は`pending`（待機中）／`running`（実行中）／`pass`（合格）／`fail`（不合格）／`unconfirmed`（未確認。前提を満たさない、または端末側の事情で判定できない。理由を付ける）／`notApplicable`（設定で無効のため対象外。実行しない）。
+状態は`pending`（待機中）／`running`（実行中）／`pass`（合格）／`fail`（不合格）／`unconfirmed`（未確認。前提を満たさない、または端末側の事情で判定できない。理由を付ける）／`notApplicable`（設定で無効のため対象外。実行しない。理由を付ける）。適用条件は**設定のみ**から導く（VPNの接続状態は適用条件にしない。VPN未接続で確認できない項目は`unconfirmed`とする）。項目の一覧・適用条件の一次情報は`api/src/verification/check-catalog.ts`。
 
 | ID | グループ | 適用条件 | 合格の条件 |
 |---|---|---|---|
 | `gateway-rules` | config | `transparentGatewayEnabled` | `inet vpngwgui`のnat・forward構成が設定（VPN接続の有無、Kill Switch、迂回）に対応した形で存在し、`ip_forward=1`である |
 | `kill-switch-rules` | config | `transparentGatewayEnabled`かつ`killSwitch` | forward末尾にLAN発のdropがあり、VPN切断時にLAN発をWAN側へ許すフォールバックが無い |
 | `dns-relay-listening` | config | `dnsRelayEnabled` | リゾルバの状態が`active`で、UDP・TCPのLAN側アドレスと127.0.0.1に待受している |
-| `dns-redirect-rules` | config | `dnsRedirectEnabled` | nat preroutingにリダイレクトのルール（誘導した送信元を記録するsetへの追記を含む）が、除外CIDR・ゲートウェイ自身を除く形で存在する |
+| `dns-redirect-rules` | config | `dnsRelayEnabled`かつ`dnsRedirectEnabled` | nat preroutingにリダイレクトのルール（誘導した送信元を記録するsetへの追記を含む）が、除外CIDR・ゲートウェイ自身を除く形で存在する |
 | `explicit-proxy-listening` | config | `explicitProxyEnabled` | 3proxyが稼働し、SOCKS5・HTTPのポートが待受している |
-| `tunnel-egress` | gateway | `transparentGatewayEnabled`または`explicitProxyEnabled`、かつVPN接続中 | トンネルのインターフェース経由でIP確認サービスから出口IPを取得できる |
-| `dns-relay-resolve` | gateway | `dnsRelayEnabled` | 中継リゾルバへ検証用の問い合わせを行い、応答（NOERRORまたは上流のNXDOMAIN）が得られる。検証専用のClientID（`vpngw-selfcheck`）で上流へ転送され、上流の状態が`ok`である |
-| `bypass-set` | gateway | `excludedDomains`が空でない（`dnsRelayEnabled`が前提） | 迂回対象の名前（完全一致はその名前、ワイルドカードは`www.`を付けた名前）を中継へ問い合わせ、応答のIPv4が`bypass4`へ投入される |
-| `bypass-routing` | gateway | `excludedDomains`が空でない | 上記IPに対し`ip route get <IP> mark 0x100`の出力インターフェースが実回線側であり、迂回対象外の対照のIPは現在の経路（VPN接続中はトンネル）である |
-| `bypass-isolation` | gateway | `excludedDomains`が空でない | 迂回対象ではないドメイン（対象リストに含まれない固定の対照名）を問い合わせても、そのIPが`bypass4`へ投入されない |
-| `explicit-proxy-egress` | gateway | `explicitProxyEnabled`かつVPN接続中 | 127.0.0.1のSOCKS5・HTTPの両方経由で取得した出口IPが、`tunnel-egress`と一致する。許可元CIDRに127.0.0.1が含まれない場合は`unconfirmed`とする（許可リストは検証のために変更しない） |
-| `client-egress` | client | `transparentGatewayEnabled`かつVPN接続中 | 操作中の端末の出口IPが`tunnel-egress`の出口IPと一致する |
-| `dns-redirect-path` | client | `dnsRedirectEnabled` | 下記の判定に従い、リダイレクトが動作している |
+| `tunnel-egress` | gateway | `transparentGatewayEnabled`または`explicitProxyEnabled` | トンネルのインターフェース経由でIP確認サービスから出口IPを取得できる（VPN未接続は`unconfirmed`） |
+| `dns-relay-resolve` | gateway | `dnsRelayEnabled` | 中継リゾルバへ、IP確認サービスのホスト名（IPアドレスで指定されていれば`example.com`）を問い合わせ、応答（NOERRORまたは上流のNXDOMAIN）が得られる。検証専用のClientID（`vpngw-selfcheck`）で上流へ転送され、上流の状態が`ok`である（上流が未設定でフォールバック先のみの場合は応答だけで判定する） |
+| `bypass-set` | gateway | `dnsRelayEnabled`かつ`excludedDomains`が空でない | 迂回対象の名前（完全一致はその名前、ワイルドカードは`www.`を付けた名前。先頭から最大3件を順に試す）を中継へ問い合わせ、応答のIPv4が`bypass4`へ投入される。どの名前も解決できなければ`unconfirmed` |
+| `bypass-routing` | gateway | 同上 | 迂回対象の宛先に印を付けるルールがあり、上記IPに対し`ip route get <IP> mark 0x100`の出力インターフェースが実回線側であり、印の無い同じIPはVPN接続中ならトンネルである |
+| `bypass-isolation` | gateway | 同上 | 迂回対象ではないドメイン（`example.com`・`example.net`・`example.org`のうち、迂回ドメインに含まれない先頭のもの）を問い合わせても、そのIPが`bypass4`へ新たに投入されない。そのIPが問い合わせ前から`bypass4`にある（迂回ドメインとIPを共有している）場合は`unconfirmed` |
+| `explicit-proxy-egress` | gateway | `explicitProxyEnabled` | ゲートウェイのLAN側アドレスから、SOCKS5・HTTPの両方を経由して取得した出口IPが、`tunnel-egress`と一致する。LAN側アドレスが許可元CIDRに含まれない場合は`unconfirmed`とする（許可元CIDRは通常LANの範囲であるため、127.0.0.1ではなくLAN側アドレスから接続する。許可リストは検証のために変更しない） |
+| `client-egress` | client | `transparentGatewayEnabled` | 操作中の端末の出口IPが`tunnel-egress`の出口IPと一致する（異なれば`fail`。ブラウザが取得できない・トンネルの出口IPが無い場合は`unconfirmed`） |
+| `dns-redirect-path` | client | `dnsRelayEnabled`かつ`dnsRedirectEnabled` | 下記の判定に従い、リダイレクトが動作している |
 
 `client-egress`に加え、迂回対象のドメインが操作中の端末で実際に迂回されるかは、`bypass-set`・`bypass-routing`（IPと経路の構成）で確認する。L3で迂回の出口IPは取得しない（IP確認サービスのホスト名が迂回対象でないため）。
 
@@ -769,9 +769,11 @@ IP確認サービスは、次を満たさなければならない。(1) 応答�
 | 記録の内容 | 状態 |
 |---|---|
 | 受信し、その問い合わせが誘導されたものである | `pass`（この端末の問い合わせが誘導されたことを確認） |
-| 受信していない、または誘導されたものでないが、直近10分に他の端末（1台以上）の問い合わせが誘導された実績がある | `pass`（実績によりリダイレクトの動作を確認。観測値に「実績あり」と記す） |
+| 受信していない、または誘導されたものでないが、直近10分に端末（この端末を含め1台以上）の問い合わせが誘導された実績がある | `pass`（実績によりリダイレクトの動作を確認。観測値に「実績あり」と記す） |
 | 受信したが誘導されたものでなく、実績もない | `unconfirmed`（この端末はゲートウェイをDNSサーバに直接指定しており、リダイレクトを通らない。中継リゾルバへの到達は確認できている） |
 | 受信しておらず、実績もない | `unconfirmed`（暗号化DNS〔DoH・DoT・プライベートDNS〕の利用、除外CIDR宛のDNS、ブラウザが名前解決を行わなかった、等でこの端末の問い合わせが53番を通らなかった可能性。ヒントで確認事項を示す） |
+
+`client-egress`は出口IPの一致で判定するため、同じVPNの出口IPを共有する別の経路（別のVPNゲートウェイ等）を通る端末は区別できない（既知の制約）。
 
 不合格（`fail`）にしないのは、リダイレクトの故障と端末側の事情を、ブラウザからは区別できないため（構成の故障は`dns-redirect-rules`が検出する）。
 
@@ -779,18 +781,19 @@ IP確認サービスは、次を満たさなければならない。(1) 応答�
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| `POST` | `/v1/verifications` | 検証を開始する。適用条件を評価して対象項目を決め、順に実行する。202で`{ id, state }`を返す。実行中の検証があれば409。要operator認証 |
-| `GET` | `/v1/verifications/{id}` | 検証の進行・結果を取得する |
-| `PUT` | `/v1/verifications/{id}/client-observations/egress-ip` | ブラウザが取得した出口IPを提出する。ボディは`{ "ip": "a.b.c.d" }`、取得に失敗した場合は`{ "ip": null }`（`client-egress`は`unconfirmed`）。IPv4以外の文字列は400 |
+| `POST` | `/v1/verifications` | 検証を開始する。適用条件を評価して対象項目を決め、順に実行する。202で、開始直後の検証（`GET`と同じ形状。全項目が待機中または対象外）を返す。実行中の検証があれば409（`verification_running`）。要operator認証 |
+| `GET` | `/v1/verifications/{id}` | 検証の進行・結果を取得する。保持していないIDは404 |
+| `PUT` | `/v1/verifications/{id}/client-observations/egress-ip` | ブラウザが取得した出口IPを提出する。ボディは`{ "ip": "a.b.c.d" }`、取得に失敗した場合は`{ "ip": null }`（`client-egress`は`unconfirmed`）。最初の提出のみ採用し、`200 { "accepted": boolean }`を返す。IPv4以外の文字列は400、保持していないIDは404 |
 
-`GET /v1/verifications/{id}`の応答は`{ id, state: "running"|"completed", startedAt, finishedAt?, checks: [{ id, title, group, status, expected?, observed?, hint?, reason? }], clientProbe?: { dnsName } }`。`checks`は実行順に並ぶ。`clientProbe.dnsName`は、ブラウザが名前解決を起こす検証用の名前（開始の応答〔`POST`の202〕と`GET`のどちらでも返す）。
+`GET /v1/verifications/{id}`の応答は`{ id, state: "running"|"completed", startedAt, finishedAt?, checks: [{ id, title, group, status, expected?, observed?, hint?, reason? }], clientProbe?: { dnsName } }`。`checks`は実行順に並ぶ。`clientProbe.dnsName`は、ブラウザが名前解決を起こす検証用の名前（開始の応答〔`POST`の202〕と`GET`のどちらでも返す。ゲートウェイへの登録に失敗した場合は含めず、`dns-redirect-path`は`unconfirmed`になる）。スキーマの一次情報は`api/src/schemas/verification.ts`。
 
 ## 実行
 
 - 項目は、上表の順に**1項目ずつ**実行する。実行中の項目は`running`にし、確定したら結果にする。前の項目が`fail`・`unconfirmed`でも、後続の項目は続行する（不具合の全体像を一度に把握するため）。
-- L1・L2の項目は、`proxy`へ項目ごとに実行を依頼する（`POST /net/checks`）。依頼が失敗した（到達不能・タイムアウト）項目は、`fail`ではなく`unconfirmed`とし、理由に到達不能を示す。
+- L1・L2の項目は、`proxy`へ項目ごとに実行を依頼する（`POST /net/checks`。応答は最大20秒待つ）。`tunnel-egress`の出口IP・`bypass-set`の迂回対象のIP（応答の`value`）を保持し、後続の項目の依頼（`expectedEgressIp`・`bypassProbeIp`）へ渡す。依頼が失敗した（到達不能・タイムアウト）項目は、`fail`ではなく`unconfirmed`とし、理由に到達不能を示す。
 - 短時間で終わる項目でも、画面で進行が分かるよう、各項目は最低400ms`running`を保ってから結果にする（検証の内容は待たせず、結果の公開だけを遅らせる）。
 - L3の`client-egress`は、ブラウザから提出された出口IP（提出が先に届いていれば保持しておく）で判定する。順番が来てから最大15秒待っても提出がなければ`unconfirmed`（理由: ブラウザから結果が届かなかった）とする。
 - 結果はメモリ上に直近5件のみ保持し、永続化しない（出口IPを保存しない）。
-- 監査ログに`verification_run`（実行者・対象項目数・結果ごとの件数）を記録する。IP・名前・問い合わせ内容は記録しない。
-- 既存の操作系エンドポイントと同じレート制限・認証（`require-operator-session`）を適用する。
+- 監査ログに`verification_run`（`input`: 対象項目数・結果ごとの件数）を記録する。IP・名前・問い合わせ内容は記録しない。
+- 認証は他の`/v1/*`と同じ（`require-operator-session`）。実行は同時に1件までに制限する（操作系エンドポイントのレート制限は無い。`tasks.md`「将来課題」）。
+- 実装は`api/src/verification/`（項目の一覧: `check-catalog.ts`、L3の判定: `client-judgements.ts`、実行と保持: `verification-service.ts`）、ルートは`api/src/routes/verifications.ts`。
