@@ -32,9 +32,9 @@ services:
       - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
     environment:
       VENDORS_DIR: /etc/vpngwgui/vendors
-      # 有効なベンダー（カンマ区切り）。既定は無い。install/install.shが.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なベンダーの
+      # 有効なベンダー（カンマ区切り）。既定は無い。install/setup.shが.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なベンダーの
       # compose fragment）を書く。
-      ENABLED_PROVIDERS: ${VPN_PROVIDERS:?VPN_PROVIDERSが未設定です。install/install.sh --providers <ベンダーID>,... で有効にするベンダーを指定してください}
+      ENABLED_PROVIDERS: ${VPN_PROVIDERS:?VPN_PROVIDERSが未設定です。install/setup.sh --providers <ベンダーID>,... で有効にするベンダーを指定してください}
       # ゲートウェイ制御チャネル（mTLS TCP）の接続先。単一ホスト構成の既定はhost.docker.internal:8443
       # （上のextra_hosts参照）。分離構成ではinstall.shが.envのGATEWAY_HOST・GATEWAY_PORTを書く。
       GATEWAY_HOST: ${GATEWAY_HOST:-host.docker.internal}

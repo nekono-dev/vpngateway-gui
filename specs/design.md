@@ -80,7 +80,7 @@ flowchart LR
 
 - **責務の分離**: ネットワークコンテナ（`proxy`）は、透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出（`ip route get`。ベンダー非依存）・接続監視に加え、**ゲートウェイ制御チャネル（APIからのmTLS TCP接続の受信と、ランナーへのUDS転送。Phase 25）**を担い、ベンダーCLIそのものは実行しない。ランナー（`runner-<ベンダー>`。**別アプリケーションとして`runner/`に要件・設計・タスクを切り出している**）は、ベンダーCLIを実行する（許可リストの検証と`POST /exec`）だけを担い、ネットワーク制御をしない。これにより、nftables・3proxyの所有者が1つに保たれ（ベンダーごとにproxyを起動すると競合する）、ベンダーCLIごとの重い実行環境（Proton VPNのNetworkManager等）がランナーに閉じる。
 - **APIサーバ**は、有効化された全ベンダーのプロファイルを読み込み、**選択中のベンダー**（永続化。既定は有効化された先頭のベンダー）のプロファイルで全ての操作を解決し、そのベンダーのランナーのUDSへ送る。ログイン状態・プランの判定キャッシュ・学習した制限・お気に入り・最後の接続先・保存した接続先は、ベンダーごとに独立に保持する。ベンダーの切替（`PUT /v1/providers/active`）は、接続中なら現在のベンダーを切断してから切り替える（確認はWeb UI）。
-- **有効化**: 管理者は、インストーラの`--providers`（例 `--providers adguardvpn,protonvpn`。`install/install.sh`が`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`へ書く）で有効なベンダーを指定する。**省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする**（`specs/requirements.md`「インストール」）。APIは`VPN_PROVIDERS`を`ENABLED_PROVIDERS`として受け取り、有効なベンダーのバンドル（`vendors/<ベンダーID>/`。下記「ベンダー非依存の設計原則」）のcompose fragmentだけが`COMPOSE_FILE`に載り、そのランナーだけが起動する。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
+- **有効化**: 管理者は、インストーラの`--providers`（例 `--providers adguardvpn,protonvpn`。`install/setup.sh`が`.env`の`VPN_PROVIDERS`・`COMPOSE_FILE`へ書く）で有効なベンダーを指定する。**省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする**（`specs/requirements.md`「インストール」）。APIは`VPN_PROVIDERS`を`ENABLED_PROVIDERS`として受け取り、有効なベンダーのバンドル（`vendors/<ベンダーID>/`。下記「ベンダー非依存の設計原則」）のcompose fragmentだけが`COMPOSE_FILE`に載り、そのランナーだけが起動する。ランナーが起動していない・応答しないベンダーは、選択肢には出るが「利用不可」と表示し、選択できない。
 - **ランナーの許可リスト**: ランナーは、自分のベンダーのバイナリ1つだけを実行対象とする（イメージにビルド時に焼き込む`RUNNER_ALLOWED_BINARY`）。APIコンテナが侵害されても、別ベンダーのランナー経由で任意のバイナリを実行できず、許可リストによる「最後の防波堤」は従来どおり働く。
 - **切替時のネットワーク**: 切断から新ベンダーへの接続までの間、トンネルは存在しない。Kill Switch ONならLAN機器の通信は遮断、OFFなら直接インターネットへ抜ける（従来の切断時と同じ。トンネル検出はベンダー非依存のため、新ベンダーに接続すればそのインターフェースへ自動的に追従する）。
 
@@ -151,7 +151,7 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 
 ## オーケストレーション型インストーラ
 
-`install/install.sh`は、**利用者が実行する1回の呼び出しだけで、web・api・gatewayの3ロールすべての配置を完結させる**（各ホストへ個別にログインしてそれぞれ`install.sh`を実行する運用は要求しない）。
+`install/setup.sh`は、**利用者が実行する1回の呼び出しだけで、web・api・gatewayの3ロールすべての配置を完結させる**（各ホストへ個別にログインしてそれぞれ`install.sh`を実行する運用は要求しない）。
 
 ### 引数によるトポロジーの指定
 
@@ -163,7 +163,7 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 
 - **`--api`・`--web`・`--gateway`をいずれも指定しない場合は単一ホスト構成**（全ロールをローカルへ配置）とみなす。1つでも指定すれば分離構成となり、**指定しなかったロールはインストーラを実行したホスト（ローカル）へ配置する**（例: `--gateway 192.168.x.y`だけ指定した場合、`web`・`api`はローカルへ、`gateway`だけ`192.168.x.y`へ配置する）。
 - ロールを配置するリモートホストへの到達は、**インストーラを実行したユーザーと同じユーザー名でのSSH/SCPアクセスが確立済みであること**を前提とする（鍵・エージェント・`~/.ssh/config`の用意は運用者側の責任とし、インストーラはユーザー名・秘密鍵・ポートを指定する引数を持たない。ホスト別の設定が要る場合は`~/.ssh/config`側で吸収する）。SSH/SCPには`-o StrictHostKeyChecking=no`を付与し、未知のホスト鍵の確認プロンプトで停止しないようにする（新規構築インフラで`known_hosts`が空であることを前提とした割り切りであり、能動的なMITMへの耐性は持たない。自己署名証明書と同じ「新規構築を1コマンドで通す」という設計判断に合わせた）。
-  - `install/install.sh`自体は`root`権限での実行を要求する（`sudo`）ため、`sudo`実行時の実効ユーザーはrootになり、鍵の探索元も`root`の`$HOME`になってしまう。これを避けるため、SSH/SCPの接続先ユーザー名・鍵の探索元とも、`sudo`を呼び出した元のユーザー（`$SUDO_USER`。`sudo`を経由しない場合は現在のユーザー）を使う（`sudo -u $SUDO_USER ssh ...`でssh/scpプロセス自体もそのユーザーとして実行する）。
+  - `install/setup.sh`自体は`root`権限での実行を要求する（`sudo`）ため、`sudo`実行時の実効ユーザーはrootになり、鍵の探索元も`root`の`$HOME`になってしまう。これを避けるため、SSH/SCPの接続先ユーザー名・鍵の探索元とも、`sudo`を呼び出した元のユーザー（`$SUDO_USER`。`sudo`を経由しない場合は現在のユーザー）を使う（`sudo -u $SUDO_USER ssh ...`でssh/scpプロセス自体もそのユーザーとして実行する）。
 
 ### 事前検証（接続性チェック）
 
@@ -171,11 +171,11 @@ Proton VPN公式CLIはNetworkManager・gnome-keyring（Secret Service）に依�
 
 ### ロールごとの実行
 
-各ロール（web・api・gateway）について、配置先がローカルなら`install/install.sh`自身の処理（下記「本体インストーラ」の処理の順序）をそのまま実行し、リモートなら次の手順を踏む。
+各ロール（web・api・gateway）について、配置先がローカルなら`install/setup.sh`自身の処理（下記「本体インストーラ」の処理の順序）をそのまま実行し、リモートなら次の手順を踏む。
 
-1. **ソースの転送**: `git archive`（現在チェックアウトしているコミット）を`ssh`経由でリモートホストへ展開する（`git archive HEAD | ssh <host> 'mkdir -p <VPNGW_DIR> && tar -x -C <VPNGW_DIR>'`）。リモートホストにDocker・Node.js等の事前導入を要求しない（既存のブートストラップと同様、`install/install.sh`自体が導入する）。
+1. **ソースの転送**: `git archive`（現在チェックアウトしているコミット）を`ssh`経由でリモートホストへ展開する（`git archive HEAD | ssh <host> 'mkdir -p <VPNGW_DIR> && tar -x -C <VPNGW_DIR>'`）。リモートホストにDocker・Node.js等の事前導入を要求しない（既存のブートストラップと同様、`install/setup.sh`自体が導入する）。
 2. **証明書の配布**: 下記「証明書の生成・配布」の手順で、オーケストレーターが生成した証明書一式を`scp`で配置する。
-3. **リモート実行**: `ssh <host> 'cd <VPNGW_DIR> && sh install/install.sh ...'`で、そのロール1つに限定した処理（下記「本体インストーラ」の処理の順序）を実行させる。ロールを1つに限定する指定は、利用者が直接指定する引数ではなく、オーケストレーターがリモート実行時にのみ内部的に用いる（本ファイルでは公開インターフェースとして扱わない）。
+3. **リモート実行**: `ssh <host> 'cd <VPNGW_DIR> && sh install/setup.sh ...'`で、そのロール1つに限定した処理（下記「本体インストーラ」の処理の順序）を実行させる。ロールを1つに限定する指定は、利用者が直接指定する引数ではなく、オーケストレーターがリモート実行時にのみ内部的に用いる（本ファイルでは公開インターフェースとして扱わない）。
 
 **複数のリモートホストを処理する順序**: `gateway→api→web`の順に導入する（この順に依存関係があるため）。webロール自身の起動確認は、web→apiの疎通（`/api/v1/operator`への応答）を待つため、apiロールの配置先が別ホストの場合はそのホストが先に導入・起動済みでなければ、webの起動確認がタイムアウトして失敗する。ホストのIPアドレスの文字列順（ソート順）など、ロールの依存関係と無関係な基準で処理すると、この順序が偶然にしか満たされない（3台分離構成の実機検証で発見）。
 
@@ -220,18 +220,19 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
      ▼
   ① git・curl等を導入 → ② COMMITを/opt/vpngwguiへ取得（取得後にHEADがCOMMITと一致することを確認）
      ▼
-  install/install.sh  ← 本体。リポジトリ内にあり、手動でcloneした場合はこれを直接実行してもよい
+  install/setup.sh  ← 本体。リポジトリ内にあり、手動でcloneした場合はこれを直接実行してもよい
      ▼
   Docker（公式リポジトリ）導入 → ホストの最小限の設定 → .env → ベンダーのホスト側手順 → docker compose up
 ```
 
-## ブートストラップ（`install/bootstrap.sh`。頒布物`install.sh`の雛形）
+## ブートストラップ（`install/install.sh.tmpl`。頒布物`install.sh`の雛形）
 
-- 雛形には`@@REF@@`（タグ名またはブランチ名。表示用）・`@@COMMIT@@`（取得するコミットの完全なSHA）・`@@REPO_URL@@`が入る。CIが`install/build-bootstrap.sh <REF> <COMMIT> <REPO_URL>`で置換して`install.sh`を作る（置換漏れがあれば失敗する）。
-- 動作: root確認 → `git`・`ca-certificates`が無ければ`apt-get`で導入 → 取得先（既定`/opt/vpngwgui`。環境変数`VPNGW_DIR`で変更可）へ`COMMIT`を取得（`git init`・`git fetch --depth 1 origin <COMMIT>`・`git checkout --detach`。既にある場合は同じ手順で更新する。作業ツリーに未コミットの変更があれば中止する）→ `HEAD`が`COMMIT`と一致することを確認 → `install/install.sh`へ引数をそのまま渡して実行する。
+- 雛形には`@@REF@@`（タグ名またはブランチ名。表示用）・`@@COMMIT@@`（取得するコミットの完全なSHA）・`@@REPO_URL@@`が入る。CIが`install/build-install.sh <REF> <COMMIT> <REPO_URL>`で置換して`install.sh`を作る（置換漏れがあれば失敗する）。
+- 動作: root確認 → `git`・`ca-certificates`が無ければ`apt-get`で導入 → 取得先（既定`/opt/vpngwgui`。環境変数`VPNGW_DIR`で変更可）へ`COMMIT`を取得（`git init`・`git fetch --depth 1 origin <COMMIT>`・`git checkout --detach`。既にある場合は同じ手順で更新する。作業ツリーに未コミットの変更があれば中止する）→ `HEAD`が`COMMIT`と一致することを確認 → `install/setup.sh`へ引数をそのまま渡して実行する。
 - **ブランチ・タグへの紐付け**: 頒布物は、そのCI実行時のコミットに固定される。ブランチのブートストラップは、そのブランチの最新（CI実行時点）を取得する。
+- **`--uninstall`（真のアンインストール）**: 引数に`--uninstall`が含まれる場合は、上記の依存導入・ソース取得を行わず、取得先（既にあれば）の`install/setup.sh --uninstall`（と、渡された他の引数）を実行してから、取得先ディレクトリ（`DIR`）自体を`rm -rf`で削除する。**取得先ディレクトリ自体の削除はこのブートストラップの責務であり、`install/setup.sh`側は行わない**（役割の分離。`install/setup.sh`は自身が作成したホスト設定の後始末だけを担う）。
 
-## 本体インストーラ（`install/install.sh`）
+## 本体インストーラ（`install/setup.sh`）
 
 既存の`install/`の4本（`setup-sysctl.sh`・`detect-lan-interface.sh`・`setup-boot-guard.sh`・`select-providers.sh`）を、この1本へ統合する（従来の各スクリプトは削除する）。POSIX `sh`で書く。**冪等**で、再実行は更新・ベンダーの変更・修復を兼ねる。
 
@@ -266,14 +267,14 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 
 **`install-host.sh`の契約**（ベンダーバンドルの任意ファイル）: rootで`sh`により実行される。冪等で、非対話であること。実行時の環境変数`VPNGW_ROOT`（取得先）・`VPNGW_VENDOR_ID`が与えられ、カレントディレクトリはバンドルのディレクトリ。ホスト（ベアメタル）へ導入・設定するのはこのファイルだけで、共通インストーラはその内容を知らない。非ゼロ終了はインストールの中止を意味する。現在のバンドル（AdGuard VPN・Proton VPN）は、ホストの追加導入が不要なため、このファイルを持たない（実行環境は全てランナーのコンテナに閉じている）。
 
-**アンインストール（`install/install.sh --uninstall [--keep-data]`。Phase 18・Phase 20）**: 通常のインストール処理は行わず、代わりにこのインストーラ自身が作成したホスト設定を後始末する。処理の順序: (1) `docker compose down --remove-orphans`（コンテナ・ネットワークの削除。既定では`--volumes`も付け、ベンダーのログイン情報も削除する。再導入時にログインを維持したい場合は`--keep-data`を指定し、ボリュームを保持する）。`docker-compose.yml`が無い、またはDockerが使えないホストでは何もしない（未導入・再実行でも安全）。 (2) 起動時のKill Switchガード（`vpngwgui-boot-guard.service`）を`disable --now`してユニットファイルを削除する。 (3) `/etc/sysctl.d/99-vpngwgui.conf`を削除し、稼働中の`net.ipv4.ip_forward`も0へ戻す。 (4) `vendors/`配下の全バンドル（有効・無効を問わない。アンインストール時点で`.env`が古い・無い場合があるため）の`uninstall-host.sh`（あるベンダーだけ）を実行する。**`uninstall-host.sh`の契約**は`install-host.sh`と同じ（環境変数・カレントディレクトリ）だが、非ゼロ終了で全体を中止せず、後始末を最後まで続ける（可能な範囲で後始末する方を優先する）。 (5) **ソース一式の取得先ディレクトリ（`REPO_ROOT`。既定`/opt/vpngwgui`）自体を`rm -rf`で削除する（Phase 20）**。実行中のスクリプト自身を含むディレクトリを削除する形になるが、Linuxでは既に開いているファイル記述子はunlink後も有効なままであるため、`sh`が最後まで読み進めて完走できる（`install/tests/run.sh`のセルフデリートの実機検証で確認）。誤って無関係なディレクトリを削除しないよう、`REPO_ROOT`が空・`/`・`install/install.sh`を含まない場合は中止する安全対策を設ける。削除の直前にカレントディレクトリを`REPO_ROOT`の外（`/tmp`）へ移す。**これにより、頒布されたブートストラップ（`curl -fsSL <頒布URL>/install.sh | sudo sh -s -- --uninstall`）だけでアンインストールが完結する**（ブートストラップが一時的にソースを取得先へ`git clone`してから本体インストーラを呼ぶため、事前にソースを取得しておく必要が無い。未導入のホストで実行した場合は、取得したソースに対して手順(1)〜(4)が実質的に何もせず、(5)で取得したソースを削除するだけになる）。**対象外（意図的に自動化しない。手動で削除する。理由: 他の用途と共有されうる）**: Docker本体・依存パッケージ、Dockerの公式リポジトリ設定（`/etc/apt/keyrings/docker.asc`・`/etc/apt/sources.list.d/docker.list`）。
+**アンインストール（`install/setup.sh --uninstall [--keep-data]`。Phase 18・Phase 20）**: 通常のインストール処理は行わず、代わりにこのインストーラ自身が作成したホスト設定を後始末する。処理の順序: (1) `docker compose down --remove-orphans`（コンテナ・ネットワークの削除。既定では`--volumes`も付け、ベンダーのログイン情報も削除する。再導入時にログインを維持したい場合は`--keep-data`を指定し、ボリュームを保持する）。`docker-compose.yml`が無い、またはDockerが使えないホストでは何もしない（未導入・再実行でも安全）。 (2) 起動時のKill Switchガード（`vpngwgui-boot-guard.service`）を`disable --now`してユニットファイルを削除する。 (3) `/etc/sysctl.d/99-vpngwgui.conf`を削除し、稼働中の`net.ipv4.ip_forward`も0へ戻す。 (4) `vendors/`配下の全バンドル（有効・無効を問わない。アンインストール時点で`.env`が古い・無い場合があるため）の`uninstall-host.sh`（あるベンダーだけ）を実行する。**`uninstall-host.sh`の契約**は`install-host.sh`と同じ（環境変数・カレントディレクトリ）だが、非ゼロ終了で全体を中止せず、後始末を最後まで続ける（可能な範囲で後始末する方を優先する）。**ソース一式の取得先ディレクトリ（`REPO_ROOT`。既定`/opt/vpngwgui`）自体の削除はこのコマンドの対象外**（上記「ブートストラップ」参照。頒布されたブートストラップ（`curl -fsSL <頒布URL>/install.sh | sudo sh -s -- --uninstall`）を使えば、`install/setup.sh --uninstall`（1)〜(4)の実行後にブートストラップ側がDIRごと削除するため、これだけでアンインストールが完結する）。**対象外（意図的に自動化しない。手動で削除する。理由: 他の用途と共有されうる）**: Docker本体・依存パッケージ、Dockerの公式リポジトリ設定（`/etc/apt/keyrings/docker.asc`・`/etc/apt/sources.list.d/docker.list`）。
 
 **分離構成のアンインストール（Phase 25新設）**: `--uninstall`は`--api`・`--web`・`--gateway`を受け付けない（指定された場合はエラーで停止する）。アンインストールの範囲は、常にローカルの`.env`に記録されたトポロジーから決定する。
 
-- **オーケストレーター（トポロジー記録がローカルにある。単一ホスト構成も含む）で実行した場合**: 記録済みの各ロールについて、配置先がローカルなら上記(1)〜(5)をそのまま実行する。配置先がリモートなら、同じ(1)〜(5)相当の後始末コマンドを`ssh`で送って実行させる。リモートの`rm -rf`等は、実行前に対象の存在有無で分岐しない（`docker-compose.yml`が無い場合に何もしない、といった事前分岐はローカルと同様に保つが、それ以外の削除操作自体は無条件に試みる）。**成功判定は、後始末の完了後にあるべき最終状態（例: `REPO_ROOT`が存在しないこと）を確認することで行い、削除前の状態を確認しない。** 一部のホストで後始末に失敗しても、可能な範囲で他のホストの後始末を続ける（既存の`uninstall-host.sh`と同じ「後始末は最後まで続ける」方針に合わせる）。最終的に、どのホストの後始末が成功・失敗したかを一覧表示する。
-- **トポロジー記録がローカルに無い場合（このホストがオーケストレーターではない。例: ゲートウェイ役として`scp`で構成されただけのホストで直接`--uninstall`を実行した場合）**: **警告を表示し、ローカルの後始末（そのホストに実際に配置されているロール分の(1)〜(5)）のみを行う。** 他のホストへは一切アクセスしない（そのホストの認証情報・到達性を前提にできないため）。
+- **オーケストレーター（トポロジー記録がローカルにある。単一ホスト構成も含む）で実行した場合**: 記録済みの各ロールについて、配置先がローカルなら上記(1)〜(4)をそのまま実行する。配置先がリモートなら、同じ(1)〜(4)相当の後始末コマンドに続けて取得先ディレクトリ（`REMOTE_INSTALL_DIR`）自体の削除も`ssh`で送って実行させる（リモートホストは頒布されたブートストラップを経由しないため、この削除はオーケストレーターが明示的に行う。ローカルのブートストラップが担う役割と同じ）。リモートの`rm -rf`等は、実行前に対象の存在有無で分岐しない（`docker-compose.yml`が無い場合に何もしない、といった事前分岐はローカルと同様に保つが、それ以外の削除操作自体は無条件に試みる）。一部のホストで後始末に失敗しても、可能な範囲で他のホストの後始末を続ける（既存の`uninstall-host.sh`と同じ「後始末は最後まで続ける」方針に合わせる）。最終的に、どのホストの後始末が成功・失敗したかを一覧表示する。
+- **トポロジー記録がローカルに無い場合（このホストがオーケストレーターではない。例: ゲートウェイ役として`scp`で構成されただけのホストで直接`--uninstall`を実行した場合）**: **警告を表示し、ローカルの後始末（そのホストに実際に配置されているロール分の(1)〜(4)）のみを行う。** 他のホストへは一切アクセスしない（そのホストの認証情報・到達性を前提にできないため）。
 
-**ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
+**ホストへの変更（全て）**: 取得先ディレクトリ（既定`/opt/vpngwgui`。削除は上記の通りブートストラップ側の責務）、`/etc/sysctl.d/99-vpngwgui.conf`、`/etc/systemd/system/vpngwgui-boot-guard.service`、Dockerの公式リポジトリ設定（上記2ファイル）とDocker・依存パッケージ、有効なベンダーの`install-host.sh`が行うもの。
 
 **nftables.serviceとの順序**: `nftables.service`（`/etc/nftables.conf`を読み込み`flush ruleset`する）は、Debian 12では`nftables`パッケージを導入しても既定で無効だが、**Raspberry Pi OS（trixie）では既定で有効**である。有効な環境では起動時のルールが消去されうるため、起動ガードのユニットに`After=nftables.service`を付けて、その後に適用する（順序だけで、`nftables.service`が無い・無効な環境でも害はない）。利用者の設定は書き換えない。ホスト再起動後もガードがproxyの適用まで維持されることは、実機arm64ハードウェア（Debian 13）でのKill Switch実通信（フェイルクローズ・フェイルオープン）により確認済み。**既知の制約**: Raspberry Pi OSの32bit（armhf・`ID=raspbian`）、実際のRaspberry Pi機（GPIO・Pi用カーネル等）は未検証。IPv6は対象外。
 

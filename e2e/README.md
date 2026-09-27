@@ -9,7 +9,7 @@
 | `lxc/env.sh` | 検証環境の名前・パスの定義 |
 | `lxc/setup.sh` | LXCコンテナ2台（ゲートウェイ役・LAN端末役）の作成、Docker導入、LAN端末のGW設定（冪等） |
 | `lxc/sync.sh` | リポジトリをゲートウェイ役へ転送し、`docker compose build/up`まで実施（`--no-build`で転送のみ） |
-| `lxc/setup-roles.sh` | デプロイメント構成の分離（3台分離構成）の検証環境を構築（冪等）。web役・api役・gateway役のLXCコンテナ3台（`install.sh`のオーケストレーター実行に必要なSSH鍵認証・パスワード無しsudoを設定済み）と、gateway役をデフォルトゲートウェイとするLAN端末役コンテナ（`role-lanclient`）を作成する。実行後、`ROLE_IP_<role>=<IP>`を標準出力へ表示するので、それを引数に`install/install.sh --web <IP> --api <IP> --gateway <IP> --providers <ID>`を実行して3台分離構成を導入する |
+| `lxc/setup-roles.sh` | デプロイメント構成の分離（3台分離構成）の検証環境を構築（冪等）。web役・api役・gateway役のLXCコンテナ3台（`install.sh`のオーケストレーター実行に必要なSSH鍵認証・パスワード無しsudoを設定済み）と、gateway役をデフォルトゲートウェイとするLAN端末役コンテナ（`role-lanclient`）を作成する。実行後、`ROLE_IP_<role>=<IP>`を標準出力へ表示するので、それを引数に`install/setup.sh --web <IP> --api <IP> --gateway <IP> --providers <ID>`を実行して3台分離構成を導入する |
 | `lib/playwright.mjs` | グローバルインストールのPlaywright読み込み、ブラウザ起動、アサーション。Phase25以降は`launch()`がE2E共通アカウント（`E2E_USERNAME`/`E2E_PASSWORD`）で初期設定・ログインを自動的に済ませる。`launchWithoutSignIn()`（Phase28）はこれを行わず、認証フロー自体を検証するE2E専用 |
 | `lib/api-auth.sh` | Phase25以降、シェルスクリプトが直接curlでAPIを呼ぶ際の認証。`e2e_api_login`（ローカルからのcurl用）・`gw_api_login`（`gw`経由でゲートウェイ役自身の上から叩く場合用）・`reset_operator_account`（検証後、Web UI利用者アカウントを削除しインストール直後の未設定状態へ戻す） |
 | `phase3/webgui-login.mjs` | Web UIの「VPNベンダーへログイン」ボタン→認証URL表示の確認 |
@@ -65,7 +65,7 @@ APIサーバが全`/v1/*`にセッションCookie認証を要求するため、�
 ```sh
 bash e2e/lxc/setup.sh                     # 環境構築（初回のみ。GW_IPが表示される）
 bash e2e/lxc/sync.sh --no-build           # リポジトリ転送
-lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/install.sh --providers adguardvpn --no-start   # LAN側IF検出・sysctl・起動ガード・.env（Docker導入済みなら何もしない）
+lxc exec vpngw-gw --cwd /opt/vpngwgui -- sh install/setup.sh --providers adguardvpn --no-start   # LAN側IF検出・sysctl・起動ガード・.env（Docker導入済みなら何もしない）
 bash e2e/lxc/sync.sh                      # ビルド・起動
 node e2e/phase3/webgui-login.mjs https://<GW_IP>:8080   # 認証URLを表示 → 人手でブラウザ認証
 bash e2e/phase3/gateway-scenarios.sh      # 全シナリオ（A〜H）。個別実行: ... A B
@@ -147,7 +147,7 @@ GW_MODE=ssh bash e2e/phase5/locations-scenarios.sh        # 全シナリオ
 ```sh
 bash e2e/phase14/remote.sh lab create          # ラボの作成（初回のみ。コンテナ6台・ネットワーク3つ）
 # ゲートウェイ役（p14-gw）へ本体を導入する（初回のみ。VPNベンダーは任意）
-#   資材を転送してから、p14-gw内の/opt/vpngwgui で: sh install/install.sh --providers <ベンダーID> --web-port 8080
+#   資材を転送してから、p14-gw内の/opt/vpngwgui で: sh install/setup.sh --providers <ベンダーID> --web-port 8080
 bash e2e/phase14/remote.sh sync                # 資材の転送・再ビルド・再起動
 bash e2e/phase14/remote.sh run                 # 全シナリオ。個別実行: run A B（Gには約70秒の待ちを含む）
 bash e2e/phase14/remote.sh lab destroy         # ラボの削除
@@ -162,7 +162,7 @@ Phase 14のラボを使う（検証サーバ上。ディスクを多く使うた
 
 ```sh
 bash e2e/phase14/remote.sh lab create          # ラボの作成（開発ホストから。資材は~/p14へ転送しておく）
-# p14-gwへ資材を置き、インストールする: lxc exec p14-gw -- sh -c "cd /opt/vpngwgui && sh install/install.sh --providers adguardvpn --web-port 8080"
+# p14-gwへ資材を置き、インストールする: lxc exec p14-gw -- sh -c "cd /opt/vpngwgui && sh install/setup.sh --providers adguardvpn --web-port 8080"
 bash e2e/phase27/prepare.sh                     # 検証サーバ上で。IP確認サービス・CAの信頼・LAN端末役のブラウザ
 bash e2e/phase27/scenarios.sh                   # 検証サーバ上で。APIレベルの全シナリオ（A〜I）
 lxc exec p14-client --env PATH=/opt/node/bin:/usr/bin:/bin --cwd <e2eを置いた場所> -- node e2e/phase27/webgui-phase27.mjs https://10.98.1.10:8080 ok

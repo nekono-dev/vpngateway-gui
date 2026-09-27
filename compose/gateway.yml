@@ -1,7 +1,7 @@
 # 責務: gatewayロール（透過ゲートウェイ・Kill Switch・明示的プロキシ・ランナー群）のcompose fragment。
 # specs/design.md「デプロイメント構成の分離とロール別インストール」参照。パスの解決についてはcompose/web.yml冒頭の注記を参照。
 # ベンダーバンドルのcompose.yml（vendors/<ID>/compose.yml）は、従来どおりこのファイルの後ろに合成する
-# （install/install.shが.envのCOMPOSE_FILEへ並べる）。
+# （install/setup.shが.envのCOMPOSE_FILEへ並べる）。
 services:
   # ネットワークコンテナ: 透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出・接続監視。
   # ベンダーCLIは実行しない（Phase 8でランナーへ分離。specs/proxyserver/design.md「コンテナ構成（Phase 8）」）。
@@ -31,7 +31,7 @@ services:
       GATEWAY_PORT: ${GATEWAY_PORT:-8443}
       # DNS中継リゾルバの待受ポート（既定53。ホストの他のDNSサーバと衝突する場合に変更する）。
       DNS_RELAY_PORT: ${DNS_RELAY_PORT:-53}
-      # install/install.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
+      # install/setup.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
       # （docker composeが.envを自動読み込みし、ここで変数展開する）。未設定（未インストール環境）の
       # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
       LAN_IFACE: ${LAN_IFACE:-}

@@ -1,5 +1,5 @@
 # 責務: このベンダーのランナー（`runner-adguardvpn`）のcompose fragment。`.env`の`COMPOSE_FILE`へ、docker-compose.yml（本体）の
-# 後ろに並べて合成する（install/install.shが書く）。有効にしないベンダーのfragmentは並べないため、そのランナーは起動もビルドもされない。
+# 後ろに並べて合成する（install/setup.shが書く）。有効にしないベンダーのfragmentは並べないため、そのランナーは起動もビルドもされない。
 # 規約（specs/design.md「ベンダーバンドル」）: サービス名は`runner-<ベンダーID>`、ソケットは`runner-<ベンダーID>.sock`、
 # ビルドのパスは（本体のcomposeの位置が基準になるため）リポジトリルート基準で書く。`profiles`は使わない。
 services:

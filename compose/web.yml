@@ -1,5 +1,5 @@
 # 責務: webロール（SPA配信・APIへのリバースプロキシ）のcompose fragment。
-# specs/design.md「デプロイメント構成の分離とロール別インストール」: install/install.shが、このロールを
+# specs/design.md「デプロイメント構成の分離とロール別インストール」: install/setup.shが、このロールを
 # 配置したホストの.envのCOMPOSE_FILEへ、ルートのdocker-compose.yml（アンカー、下記注記）に続けて並べる。
 # パスはリポジトリルート基準の相対（docker-compose.ymlが常にCOMPOSE_FILEの先頭に来るため、
 # docker composeのproject directoryは常にリポジトリルートになる。compose/配下に置くこと自体は
@@ -11,7 +11,7 @@ services:
       context: .
       dockerfile: web/Dockerfile
     ports:
-      # ホスト側のポートはinstall/install.shの--web-port（既定80）が.envのWEB_PORTへ書く。コンテナ内は常に8080（web/Dockerfile）。
+      # ホスト側のポートはinstall/setup.shの--web-port（既定80）が.envのWEB_PORTへ書く。コンテナ内は常に8080（web/Dockerfile）。
       - "${WEB_PORT:-80}:8080"
     networks:
       - app-net

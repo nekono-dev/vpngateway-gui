@@ -1,9 +1,9 @@
 # 責務: docker composeの起点（アンカー）ファイル。実際のサービス定義は compose/web.yml・compose/api.yml・
 # compose/gateway.yml（specs/design.md「デプロイメント構成の分離とロール別インストール」）へ分割されている。
 #
-# このファイル自体はサービスを定義しない。install/install.shが`.env`の`COMPOSE_FILE`へ、常にこのファイルを
+# このファイル自体はサービスを定義しない。install/setup.shが`.env`の`COMPOSE_FILE`へ、常にこのファイルを
 # 先頭に置いた上で、配置対象のロールのcompose/*.yml（・有効なベンダーのvendors/<ID>/compose.yml）を並べる
-# （ベンダーバンドルと同じ、追加的compose fragmentの合成方式。install/install.shのsetup_providers等を参照）。
+# （ベンダーバンドルと同じ、追加的compose fragmentの合成方式。install/setup.shのsetup_providers等を参照）。
 #
 # 【設計判断】docker composeの`include:`はincludeされたファイル自身の相対パス（build.context等）を
 # 「そのファイル自身の場所」基準で解決する（`.env`の`COMPOSE_FILE`によるファイル結合とは異なる）。

@@ -49,7 +49,7 @@ t_web_has_adguard() { web_login; web_ok | grep -q adguardvpn; }
 COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 git -C "$ROOT" diff --quiet HEAD -- install vendors compose docker-compose.yml || echo "注意: install/・vendors/・compose/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
 git clone -q --bare "file://$(git -C "$ROOT" rev-parse --absolute-git-dir)" "$WORK/vpngw.git" || exit 1
-sh "$ROOT/install/build-bootstrap.sh" e2e "$COMMIT" file:///srv/vpngw.git > "$WORK/install.sh" || exit 1
+sh "$ROOT/install/build-install.sh" e2e "$COMMIT" file:///srv/vpngw.git > "$WORK/install.sh" || exit 1
 
 echo "== 準備: クリーンなコンテナ（$IMAGE）"
 lxc delete -f "$NAME" >/dev/null 2>&1

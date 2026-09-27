@@ -4,7 +4,7 @@
 #   - ゲートウェイ役（p14-gw）のproxyコンテナに、そのサービスの証明書を発行したCAを信頼させる（コンテナの再作成のたびに必要）
 #   - LAN端末役（p14-client）に、Node・Playwright（Chromium）を入れる（Web UIを、LAN端末のブラウザとして操作するため）
 # 実行: 検証サーバ上で `bash e2e/phase27/prepare.sh [echo|trust|browser ...]`（省略時はすべて）。先に lab.sh create と、
-#       p14-gwへのインストール（`sh install/install.sh --providers <ID> --web-port 8080`）を済ませておくこと。
+#       p14-gwへのインストール（`sh install/setup.sh --providers <ID> --web-port 8080`）を済ませておくこと。
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 ECHO_IP=203.0.113.20

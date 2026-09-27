@@ -24,7 +24,7 @@ Phase 9までは、1つのproxyコンテナがネットワーク制御とベン�
 
 ## composeの構成（Phase 8）
 
-- サービス: **Phase 24までは**composeの本体（`docker-compose.yml`）が`web`・`api`・`proxy`だけを持ち、`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べていた（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。**Phase 25で**、`web`・`api`・`proxy`は`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`proxy`を含む）へ分割し、`install/install.sh`（`--api`・`--web`・`--gateway`引数によるオーケストレーション型インストール）が、各ホストに配置したロールのファイルだけを、そのホストの`.env`の`COMPOSE_FILE`へ並べる（`specs/design.md`「デプロイメント構成の分離とロール別インストール」「オーケストレーション型インストーラ」）。ベンダーバンドルのcompose fragmentは、引き続き`compose/gateway.yml`と合成する。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`install/install.sh`が書く。
+- サービス: **Phase 24までは**composeの本体（`docker-compose.yml`）が`web`・`api`・`proxy`だけを持ち、`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べていた（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。**Phase 25で**、`web`・`api`・`proxy`は`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`proxy`を含む）へ分割し、`install/setup.sh`（`--api`・`--web`・`--gateway`引数によるオーケストレーション型インストール）が、各ホストに配置したロールのファイルだけを、そのホストの`.env`の`COMPOSE_FILE`へ並べる（`specs/design.md`「デプロイメント構成の分離とロール別インストール」「オーケストレーション型インストーラ」）。ベンダーバンドルのcompose fragmentは、引き続き`compose/gateway.yml`と合成する。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`install/setup.sh`が書く。
 - `api`は、`./vendors`を`/etc/vpngwgui/vendors:ro`へマウントし、`ENABLED_PROVIDERS: ${VPN_PROVIDERS:?...}`（必須。既定なし）を受け取る。**Phase 25で`ctl-socket`（UDS）を経由しなくなったため、`api`側はマウントしない**（ゲートウェイとの通信はmTLS TCP。`GATEWAY_HOST`・`GATEWAY_PORT`環境変数で接続先を指定する）。
 - ボリューム: ネットワークコンテナは`ctl-socket`（`proxy`⇄`runner-<ベンダー>`間、Phase 25以降も維持）のみ。ベンダーごとのログイン情報のボリュームはランナーの仕様（`specs/runner/design.md`）。
 
@@ -81,7 +81,7 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 
 `network_mode: host` のプロキシコンテナは、ホストのネットワーク名前空間を共有するため、コンテナ内から `/proc/sys/net/ipv4/ip_forward` へ書き込む操作はホストのカーネル設定を直接変更する操作と等価である。
 
-- **インストールスクリプトが、ホスト上に永続設定ファイル（例 `/etc/sysctl.d/99-vpngwgui.conf` に `net.ipv4.ip_forward=1`）を1つ作成し、その設定だけを`sysctl -p`で反映する（`install/install.sh`。Phase 11）。** これは「ホストの変更を最小限に抑える（＝変更するファイル数を最小限にする）」という方針に沿った、必要最小限の永続的ホスト変更である。プロキシコンテナが `restart: always` で永続稼働するデーモンである以上、この設定はコンテナ起動のたびに動的に行うのではなく、インストール時に一度だけ永続化するのが妥当である。
+- **インストールスクリプトが、ホスト上に永続設定ファイル（例 `/etc/sysctl.d/99-vpngwgui.conf` に `net.ipv4.ip_forward=1`）を1つ作成し、その設定だけを`sysctl -p`で反映する（`install/setup.sh`。Phase 11）。** これは「ホストの変更を最小限に抑える（＝変更するファイル数を最小限にする）」という方針に沿った、必要最小限の永続的ホスト変更である。プロキシコンテナが `restart: always` で永続稼働するデーモンである以上、この設定はコンテナ起動のたびに動的に行うのではなく、インストール時に一度だけ永続化するのが妥当である。
 - プロキシコンテナの起動時にも念のため `/proc/sys/net/ipv4/ip_forward` の値を確認し、0であれば1に設定を試みる（コンテナが再作成された環境でインストールスクリプトを再実行していないケースへのフォールバック）。**ただしDockerはコンテナの`/proc/sys`を読み取り専用でマウントするため、`NET_ADMIN`を付与していても書き込みは`Read-only file system`で失敗し、このフォールバックは実際には機能しない（実機検証で確認）。** 補正できなかった場合は監査ログへ`ip_forward_disabled`イベントを記録して警告する（無音にしない）。実質的な解決手段はインストールスクリプト（`install/setup-sysctl.sh`）の実行のみである。
 
 ## NAT/FORWARDルール
@@ -103,7 +103,7 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 - **ルールセットの置換は原子的に行う。** 組み立てたスクリプトの先頭を「`add table`→`delete table`→`add table`」とし、`nft -f`の1トランザクションで旧ルールの撤去と新ルールの適用を同時に行う（既存テーブルの有無に関わらずエラーにならない）。撤去と適用を別呼び出しにすると、その間フィルタが存在せずLAN機器の通信が漏れる一瞬ができるため。あわせて、APIの定期再通知（後述）で設定・VPN接続状態が前回成功した適用と同じ場合は再構成自体を行わない（`GatewayController.applySettings()`）。
 - **VPNトンネルのインターフェース名（`<vpn_iface>`）は動的に検出する。** ベンダー・バージョンにより `tun0`・`nordlynx` 等固定できないため、VPN接続完了後に `ip route get 1.1.1.1`（公開IP宛の経路選択結果。パケットは送信しない）の出力インターフェースを取得し、それを用いてルールを再適用する。`ip route show default`（メインテーブルのみ参照）を使わない理由: 実機検証で、AdGuard VPN CLI（TUNモード）はメインテーブルのデフォルトルートを書き換えず、ポリシールーティング（`ip rule`の優先度30801で専用テーブル880を優先参照し、テーブル880に全IPv4を`dev tun0`向けで投入）で通信を切り替えることが判明したため。`ip route get`はポリシールーティングを含めたカーネルの実際の経路選択結果を返すため、default置換型・ポリシールーティング型のどちらのベンダーにも対応できる。再接続・国変更のたびに旧ルールを撤去し、新インターフェース名で再適用する。
 - `<lan_iface>`（LAN側インターフェース名）は、インストールスクリプト実行時に検出し設定ファイルへ書き出し、プロキシコンテナ起動時に環境変数/設定ファイル経由で読み込む（ハードコードしない）。
-  - **実装（Phase 3）**: `install/install.sh`（Phase 11で従来の`detect-lan-interface.sh`を統合）がデフォルトゲートウェイの逆引きで検出し、リポジトリルートの`.env`ファイル（docker composeが自動読み込みしvariable substitutionに使う、コンテナに直接マウントするファイルではない）へ`LAN_IFACE=<検出結果>`を書き出す。`docker-compose.yml`のproxyサービスが`LAN_IFACE: ${LAN_IFACE:-}`として環境変数に渡す（当初検討していた`/etc/vpngwgui/network.env`のvolumeマウント案は、ファイル未作成時のbind mount失敗を避けるため見送った）。未設定（未インストール環境）の場合、プロキシは透過ゲートウェイを構成せず撤去のみ行う（安全側）。
+  - **実装（Phase 3）**: `install/setup.sh`（Phase 11で従来の`detect-lan-interface.sh`を統合）がデフォルトゲートウェイの逆引きで検出し、リポジトリルートの`.env`ファイル（docker composeが自動読み込みしvariable substitutionに使う、コンテナに直接マウントするファイルではない）へ`LAN_IFACE=<検出結果>`を書き出す。`docker-compose.yml`のproxyサービスが`LAN_IFACE: ${LAN_IFACE:-}`として環境変数に渡す（当初検討していた`/etc/vpngwgui/network.env`のvolumeマウント案は、ファイル未作成時のbind mount失敗を避けるため見送った）。未設定（未インストール環境）の場合、プロキシは透過ゲートウェイを構成せず撤去のみ行う（安全側）。
   - `<wan_iface>`（フェイルオープン時の送出インターフェース名）は`WAN_IFACE`環境変数で個別指定可能だが、対象ターゲット（Raspberry Pi等の単一NIC構成、../design.md参照）では未設定時`<lan_iface>`をそのまま流用する。
 - nft自体の実行はプロキシコンテナ内で非root（`vpngwgui`）ユーザーが行うため、`sudo nft -f -`（標準入力からルールセットを一括投入）の形で実行する。実VPNベンダーCLIのTUN設定と同じパスワードなしsudo（`proxy/Dockerfile`）を流用し、Dockerイメージへの追加変更は不要。ルールセット全体を1回の`nft -f -`呼び出しで投入することで、複数回の`nft add ...`呼び出しに比べ、途中失敗時のルール半端適用を避けられる。
 
@@ -114,7 +114,7 @@ APIサーバからゲートウェイへの経路。設計判断の背景は`spec
 - `killSwitch` の切替はユーザ向け設定としてAPIサーバから通知され、プロキシコンテナがnftルールを再構成することで即時反映する。
 - **VPN接続状態の検出方式（実装）**: ベンダー固有のCLI出力解釈をプロキシ側に持ち込まず、`connect`/`disconnect`等のコマンド実行直後および10秒間隔の監視ループの両方で`ip route get 1.1.1.1`を再評価し、その出力インターフェースが`<lan_iface>`と異なればVPN接続中とみなす（`proxy/src/network/connection-monitor.ts`）。これにより、APIサーバ経由の明示的な切断だけでなく、ネットワーク瞬断等によるベンダーCLI側の予期しない切断にも、次回ポーリング（最大10秒）で追従する。
 
-- **起動ガード（ホスト起動時のリーク防止）**: `ip_forward=1`は`install/install.sh`（従来の`setup-sysctl.sh`）により起動直後から有効だが、`inet vpngwgui`テーブルはDocker→proxy→APIの設定通知を経て初めて作られる。実機の再起動検証で、この間（KS ONでも）LAN機器の通信がVPNを迂回してリークすることを確認した。これを防ぐため、`install/install.sh`（従来の`setup-boot-guard.sh`）がsystemd oneshotユニット`vpngwgui-boot-guard.service`（`network-pre.target`・`docker.service`より前に実行）を作成し、同名テーブルへ「LAN側から入る転送はdrop（DNAT済みのみ許可）」だけを載せる。proxyは最初の`POST /settings`受信時にこのテーブルを原子的に置換する（透過ゲートウェイ無効の設定なら撤去される）。ホストへの永続変更はsysctl設定に加えこのユニット1ファイルのみ。
+- **起動ガード（ホスト起動時のリーク防止）**: `ip_forward=1`は`install/setup.sh`（従来の`setup-sysctl.sh`）により起動直後から有効だが、`inet vpngwgui`テーブルはDocker→proxy→APIの設定通知を経て初めて作られる。実機の再起動検証で、この間（KS ONでも）LAN機器の通信がVPNを迂回してリークすることを確認した。これを防ぐため、`install/setup.sh`（従来の`setup-boot-guard.sh`）がsystemd oneshotユニット`vpngwgui-boot-guard.service`（`network-pre.target`・`docker.service`より前に実行）を作成し、同名テーブルへ「LAN側から入る転送はdrop（DNAT済みのみ許可）」だけを載せる。proxyは最初の`POST /settings`受信時にこのテーブルを原子的に置換する（透過ゲートウェイ無効の設定なら撤去される）。ホストへの永続変更はsysctl設定に加えこのユニット1ファイルのみ。
 - **IPv6は対象外（既知の制約）**: 透過ゲートウェイはIPv4のみを転送・遮断する。LAN機器がルータのRAでIPv6のデフォルトゲートウェイをルータ自身から得ている場合、その通信はゲートウェイを経由せず、Kill Switch・VPNのいずれも迂回してルータ直で外部へ出る（実機検証で、IPv4が遮断／VPN経由の状態でもLAN機器のIPv6が実アドレスで通信できることを確認）。対処は運用側で行う（LAN側ルータでIPv6のRA配布を止める、LAN機器のIPv6を無効化する等）。ゲートウェイ側でのIPv6転送・NAT66は行わない。
 
 # 明示的プロキシモードの実現方式
@@ -254,7 +254,7 @@ services:
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
     environment:
-      # install/install.shがリポジトリルートの.envへ書き出し、docker composeが
+      # install/setup.shがリポジトリルートの.envへ書き出し、docker composeが
       # variable substitutionで読み込む（コンテナへのファイルマウントではない。実装済み、docker-compose.yml参照）。
       LAN_IFACE: ${LAN_IFACE:-}
     restart: always

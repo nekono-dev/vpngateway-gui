@@ -31,7 +31,7 @@ curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download
 `--api`・`--web`・`--gateway`を指定すると、Webサーバ・APIサーバ・ゲートウェイをそれぞれ別のホストへ分離して配置できる（いずれも省略した場合は、全体を1台へまとめる単一ホスト構成になる）。指定しなかったロールは、このコマンドを実行したホスト（オーケストレーター）へ配置される。
 
 ```sh
-sudo sh install/install.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers adguardvpn
+sudo sh install/setup.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers adguardvpn
 ```
 
 - 配置先に指定するリモートホストへは、このコマンドを実行するユーザーと同じユーザー名でのSSH鍵認証によるアクセスが、事前に確立できていること（`ssh <ホスト>`がパスワード入力なしで通ること）。ユーザー名・秘密鍵・ポートを個別に指定する引数は無いため、ホストごとに設定が要る場合は`~/.ssh/config`側で吸収する。
@@ -46,7 +46,7 @@ sudo sh install/install.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.1
 インストール時と同じコマンドを対象ホスト上で再実行する（冪等なので、既存の設定・ログイン情報は保持される）。
 
 ```sh
-sudo sh /opt/vpngwgui/install/install.sh --providers adguardvpn
+sudo sh /opt/vpngwgui/install/setup.sh --providers adguardvpn
 ```
 
 | 目的 | コマンド |

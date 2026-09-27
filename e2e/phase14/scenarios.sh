@@ -1,7 +1,7 @@
 #!/bin/bash
 # 責務: Phase 14（ドメイン迂回とDNS中継）の完了基準を、lab.shで作ったLXDラボ（検証サーバ上）で自動検証する（モックVPN・モックDNS）。
 # 実行: 検証サーバ上で `bash e2e/phase14/scenarios.sh [A|B|... ...]`（省略時は全シナリオ）。先に `lab.sh create` と、p14-gwへの
-#       インストール（`sh install/install.sh --providers <ID> --web-port 8080`）を済ませておくこと。
+#       インストール（`sh install/setup.sh --providers <ID> --web-port 8080`）を済ませておくこと。
 #   A: 迂回対象外の名前解決（中継の疎通）と、VPN未接続時の中継
 #   B: VPN接続中、迂回ドメインは実回線（ゲートウェイ自身の送信元）、それ以外はVPN出口を経由する
 #   C: 表記規則（完全一致は自身のみ・ワイルドカードはサブドメインのみ）

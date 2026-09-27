@@ -1,7 +1,7 @@
 #!/bin/sh
 # 責務: クリーンなDebian系ベアメタル（Debian・Raspberry Pi OS・Ubuntu）へ、プラットフォーム（web・api・proxy）と、有効にしたVPNベンダーの
 # ランナーを導入・起動する本体インストーラ。1本で完結し、冪等（再実行は更新・ベンダーの変更・修復を兼ねる）。
-# 通常は頒布されるブートストラップ（install/bootstrap.sh）が、ソースの取得後にこのスクリプトを呼ぶ。手動でcloneした場合は直接実行してよい。
+# 通常は頒布されるブートストラップ（install/install.sh.tmpl）が、ソースの取得後にこのスクリプトを呼ぶ。手動でcloneした場合は直接実行してよい。
 # 設計: specs/design.md「インストーラと頒布（Phase 13）」「デプロイメント構成の分離とロール別インストール（Phase 25）」、
 #       要件: specs/requirements.md「インストール」「デプロイメント構成の分離」「通信路の保護」。
 #
@@ -18,7 +18,7 @@
 # （下記「--uninstall」参照）。
 #
 # 使い方（root権限で）:
-#   sh install/install.sh --providers <ID>[,<ID>...] [--web-port <番号>] [--lan-iface <名前>] [--redetect-lan-iface]
+#   sh install/setup.sh --providers <ID>[,<ID>...] [--web-port <番号>] [--lan-iface <名前>] [--redetect-lan-iface]
 #                          [--api <ホスト名/IP>] [--web <ホスト名/IP>] [--gateway <ホスト名/IP>] [--rotate-pairing] [--no-start]
 #   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
 #                           （新しい版で追加されたベンダーも、再実行のたびに自動的に有効化される）。gatewayロールが配置されたホストでのみ意味を持つ。
@@ -35,20 +35,20 @@
 #                           再実行時、記録済みのトポロジーと異なる指定はエラーで停止する（構成変更は--uninstall後の再インストールで行う）。
 #   --rotate-pairing        既存の証明書一式を破棄し、再生成・再配布する（相手ホストを作り直した場合等）。
 #   --no-start             起動（docker compose up）をしない。
-# 例（単一ホスト）:     sudo sh install/install.sh --providers vendora,vendorb
-# 例（3ホストへ分離）: sudo sh install/install.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers vendora
+# 例（単一ホスト）:     sudo sh install/setup.sh --providers vendora,vendorb
+# 例（3ホストへ分離）: sudo sh install/setup.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers vendora
 #
-# 使い方（アンインストール、root権限で）: sh install/install.sh --uninstall [--keep-data]
+# 使い方（アンインストール、root権限で）: sh install/setup.sh --uninstall [--keep-data]
 #   --uninstall            記録済みのトポロジーに基づいて後始末する。--api・--web・--gatewayとは併用できない
 #                           （分離構成では、このコマンドを実行したホスト＝オーケストレーターで実行すること。記録が無いホストで
 #                           実行した場合は警告のうえ、そのホスト自身の後始末のみ行う）。docker composeスタックの停止・削除
 #                           （既定でボリューム＝ベンダーのログイン情報も削除）、証明書一式、IPフォワーディング設定、起動時の
-#                           Kill Switchガード、有効なベンダーのホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）、
-#                           ソース一式の取得先ディレクトリ（自分自身）の削除を行う。Docker本体・apt依存パッケージは対象外
-#                           （手動で削除すること。README.md参照）。
+#                           Kill Switchガード、有効なベンダーのホスト側の後始末（vendors/<ID>/uninstall-host.sh。あるベンダーだけ）を
+#                           行う。ソース一式の取得先ディレクトリ（自分自身）とDocker本体・apt依存パッケージは対象外
+#                           （前者は頒布されたブートストラップ install.sh --uninstall が削除する。後者は手動で削除すること。README.md参照）。
 #   --keep-data             --uninstall と併用。ベンダーのログイン情報（Dockerボリューム）を削除せず残す（再導入時にログイン状態を維持したい場合）。
-# 例（頒布されたブートストラップ経由。ソースの取得先が無くても実行できる）: curl -fsSL <頒布URL>/install.sh | sudo sh -s -- --uninstall
-# 例（取得済みのソースから直接実行）: sudo sh install/install.sh --uninstall
+# 例（頒布されたブートストラップ経由。ソースの取得先ディレクトリ自体も削除される）: curl -fsSL <頒布URL>/install.sh | sudo sh -s -- --uninstall
+# 例（取得済みのソースから直接実行。ソース一式は削除されず残る）: sudo sh install/setup.sh --uninstall
 
 set -eu
 
@@ -261,7 +261,7 @@ install_docker() {
 setup_sysctl() {
   cat > "$SYSCTL_FILE" <<EOSYSCTL
 # vpngateway-gui: LAN機器への透過ゲートウェイ提供に必要なIPフォワーディング設定。
-# install/install.shにより作成された。手動で削除・変更しないこと。
+# install/setup.shにより作成された。手動で削除・変更しないこと。
 net.ipv4.ip_forward=1
 net.ipv4.conf.all.send_redirects=0
 net.ipv4.conf.default.send_redirects=0
@@ -324,7 +324,7 @@ setup_web_port() {
 setup_boot_guard() {
   nft_bin=$(command -v nft) || die "nft コマンドが見つかりません"
   cat > "$GUARD_UNIT" <<EOGUARD
-# vpngateway-gui: 起動直後のKill Switch用フェイルクローズガード。install/install.shにより作成された。
+# vpngateway-gui: 起動直後のKill Switch用フェイルクローズガード。install/setup.shにより作成された。
 [Unit]
 Description=vpngateway-gui boot-time fail-closed guard
 DefaultDependencies=no
@@ -615,7 +615,7 @@ start_stack() {
 }
 
 # 目的: このホストへ配置された1つ以上のロールを導入する。ローカル配置ならオーケストレーター（orchestrate_main）から
-#      直接呼ばれ、リモート配置ならssh経由で「sh install/install.sh --only-roles <roles> ...」として呼ばれる
+#      直接呼ばれ、リモート配置ならssh経由で「sh install/setup.sh --only-roles <roles> ...」として呼ばれる
 #      （どちらも同じこの関数を実行する。specs/design.md「ロールごとの実行」）。
 # 入力: roles(このホストへ配置するロールのカンマ区切り。例"web,api"・"gateway")。
 #      グローバル変数 GATEWAY_HOST_OVERRIDE_ARG（apiロールを含む場合、gatewayの接続先を上書き。空ならcomposeの既定）、
@@ -666,7 +666,7 @@ install_roles() {
 # 目的: リモートホストへ、ソース一式の転送とロールの導入を行う（specs/design.md「ロールごとの実行」）。
 # 入力: host(配置先)、roles(そのホストへ配置するロールのカンマ区切り)。
 # 副作用: `git archive`によるソース転送（リモートにDocker・Node.js等の事前導入は要求しない）、
-#         リモートでの「sh install/install.sh --only-roles ...」実行。
+#         リモートでの「sh install/setup.sh --only-roles ...」実行。
 # 失敗時: 転送・リモート実行のいずれかが失敗すれば終了する。
 # 呼び出し順序: 呼び出し元（orchestrate_main）はdistinct_remote_hostsの順（gateway→api→web）で
 #   このホストを処理する。webロールのstart_stackはこのホスト自身のweb→api疎通確認（api/v1/operator）を
@@ -698,7 +698,7 @@ remote_install_role() {
   case ",$roles," in *,api,*|*,gateway,*) [ -z "$PROVIDERS_ARG" ] || provider_arg="--providers $PROVIDERS_ARG" ;; esac
 
   # shellcheck disable=SC2086
-  $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/install.sh --only-roles $roles $provider_arg $extra" \
+  $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/setup.sh --only-roles $roles $provider_arg $extra" \
     || die "リモートホスト $host でのロール導入に失敗しました"
 }
 
@@ -717,7 +717,7 @@ finish_summary() {
   echo "  Web UI:        https://$web_addr:$summary_port（自己署名証明書のため、初回アクセス時にブラウザの警告を許可する）"
   echo "  配置:          web=${ROLE_HOST_web:-ローカル} api=${ROLE_HOST_api:-ローカル} gateway=${ROLE_HOST_gateway:-ローカル}"
   echo "  次の操作:      Web UIを開き、初回はアカウントを作成してログインする。ベンダーごとにログインし、LAN機器のデフォルトゲートウェイをゲートウェイ役のホストへ向ける。"
-  echo "  設定の変更:    sudo sh $REPO_ROOT/install/install.sh --providers <ID>,...（同じトポロジーでの再実行で、有効なベンダーを変更できる。トポロジー自体の変更は--uninstall後に行う）"
+  echo "  設定の変更:    sudo sh $REPO_ROOT/install/setup.sh --providers <ID>,...（同じトポロジーでの再実行で、有効なベンダーを変更できる。トポロジー自体の変更は--uninstall後に行う）"
 }
 
 # 目的: インストールの全体（オーケストレーター側）。トポロジーの決定・証明書の生成配布・ロールごとの実行をまとめる
@@ -836,17 +836,6 @@ uninstall_host_hooks() {
   done
 }
 
-# 目的: ソース一式の取得先（REPO_ROOT）を削除する。アンインストールの最後に呼ばれる。
-# 安全対策: REPO_ROOTが空・ルート（/）・install/install.sh自身を含まない場合は、取得先ではない別のディレクトリを誤って
-#           削除しないよう中止する。削除前にカレントディレクトリをREPO_ROOTの外（/tmp）へ移す（削除後もシェルが継続できるように。
-#           Linuxでは実行中のスクリプト自身を含むディレクトリを削除しても、開いたファイル記述子は無効にならないため安全に完走する）。
-remove_repo_root() {
-  [ -n "$REPO_ROOT" ] && [ "$REPO_ROOT" != "/" ] && [ -f "$REPO_ROOT/install/install.sh" ] || die "取得先（$REPO_ROOT）が想定と異なるため、削除を中止します"
-  cd /tmp
-  rm -rf "$REPO_ROOT"
-  log "ソース一式を削除しました（$REPO_ROOT）"
-}
-
 # 目的: アンインストールの全体。記録済みのトポロジーに基づき、このホストがオーケストレーターであれば
 #      リモートホストの後始末も行ってから、このホスト自身の後始末を行う（specs/design.md「アンインストール（分離構成）」）。
 # 挙動: トポロジー記録（.envのTOPOLOGY_RECORDED）が無いホストで実行した場合は、警告のうえローカルの後始末のみ行う
@@ -862,8 +851,10 @@ uninstall_main() {
     [ "$KEEP_DATA" -eq 0 ] || keep_flag=" --keep-data"
     for host in $(distinct_remote_hosts); do
       log "リモートホスト $host の後始末を実行"
+      # リモートホストは頒布されたブートストラップ（install.sh）を経由しないため、取得先ディレクトリ自体の削除も
+      # ここでオーケストレーターが明示的に行う（ローカルのブートストラップが行うのと同じ役割）。
       # shellcheck disable=SC2086
-      $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/install.sh --uninstall$keep_flag" \
+      $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/setup.sh --uninstall$keep_flag && cd / && sudo rm -rf $REMOTE_INSTALL_DIR" \
         || log "リモートホスト $host の後始末に失敗しました（続行します）"
     done
   else
@@ -880,7 +871,7 @@ uninstall_main() {
   echo "  残っているもの（対象外。手動で削除する場合はREADME.md「アンインストール」参照）:"
   echo "    - Docker本体・依存パッケージ、Dockerの公式リポジトリ設定"
   [ "$KEEP_DATA" -eq 0 ] || echo "    - ベンダーのログイン情報（Dockerボリューム。--keep-data により保持）"
-  remove_repo_root
+  echo "    - ソース一式（$REPO_ROOT）。頒布されたブートストラップ（install.sh --uninstall）経由なら、これも自動的に削除される"
 }
 
 # 目的: エントリポイント。
