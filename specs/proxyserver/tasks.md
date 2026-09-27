@@ -140,7 +140,7 @@
 - [x] インストーラの証明書生成・配布（`install/install.sh`の`generate_role_pki`・`distribute_pki_local`・`distribute_pki_remote`。別スクリプトへの分離はせず`install.sh`内の関数として実装）
 - [x] 単体・結合テスト（証明書検証失敗時の拒否: クライアント証明書無し・別CA署名のいずれも接続確立せず正しい証明書のみ確立することを実TLSサーバ・クライアントで確認。パスルーティングの単体テスト）
 - [x] 実機検証: 単一ホスト構成で`proxy`が`gatewayPort: 8443`でmTLS TCPをlistenし、`GET /v1/providers`・`GET /v1/connection/gateway`・設定変更が正しく中継されることをcurlで確認。クライアント証明書無し接続がTLSアラートで拒否されることを確認。3台に分離した構成でも同様に到達性を確認
-- [ ] 透過ゲートウェイ・明示的プロキシの実VPN接続を伴うシナリオ（gateway-scenariosのC以降）の、mTLS化後・3台分離構成での網羅的な再実行は未実施
+- [x] 透過ゲートウェイ・明示的プロキシの実VPN接続を伴うシナリオ（gateway-scenariosのC以降）の、mTLS化後・3台分離構成での網羅的な再実行: `e2e/lxc/env.sh`・`e2e/lib/gw.sh`へ`GW_MODE=roles`（デプロイメント構成の分離・3台分離構成向け。web役・api役・gateway役が別ホストにある場合の`api_role`/`web_role`によるコマンド実行、web役の実際のURL`WEB_BASE`）を追加し、既存の`e2e/phase3/gateway-scenarios.sh`をそのまま`GW_MODE=roles`で実行できるようにした（`BASE`・`reset_vpn`・`gw_api_login`・`reset_operator_account`をweb役・api役の実際の配置先に対応させた。シナリオ自体のロジックは変更していない）。検証サーバの3台分離構成（`e2e/lxc/setup-roles.sh`）で`GW_MODE=roles bash e2e/phase3/gateway-scenarios.sh C D E F G H`を実行し、C・D・Eは全項目PASS（G・Hは実機専用のため既存の仕様通りスキップ）。Fの「IPv6はGWを経由せずルータ直で通信できる」はIPv6非対応という既知の制約によるもので、単一ホスト構成でも同様の結果になる（3台分離構成固有ではない）。検証中に見つけたPhase26（設定ダイアログのタブ化）への未追従の不具合を修正: `e2e/phase3/webgui-settings.mjs`が透過ゲートウェイモード・Kill Switchのチェックボックスをタブ切替無しで探しており、必ずタイムアウトしていた（「ゲートウェイ」「通信制御」の各タブを切り替えてから操作するよう修正）
 
 # 積み残し（作業スコープ外で見つかった不具合）
 

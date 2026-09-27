@@ -28,7 +28,10 @@ LAN_IF=$GW_LAN_IF
 GW_IP=$(gw_lan_ip)
 CLIENT_IP=$(lxc exec "$CLIENT_NAME" -- ip -4 -o addr show eth0 | awk '{sub("/.*","",$4); print $4}')
 # Phase25 Stage3でWebサーバが自己署名証明書のHTTPSになったため、curl呼び出し側では-k（証明書検証省略）を付ける。
-BASE="https://$GW_IP:8080"
+# デプロイメント構成の分離（3台分離構成、GW_MODE=roles）ではweb役がgateway役と別ホストのため、
+# lxc/env.shが組み立てたWEB_BASE（web役の実際のURL）を使う。それ以外のモードでは従来どおりgateway役
+# 自身（$GW_IP）の8080番を指す。
+BASE="${WEB_BASE:-https://$GW_IP:8080}"
 FAILS=0
 # Phase25でAPIが認証必須になったため、ゲートウェイ役自身の上で叩くreset_vpn用にログインしておく。
 gw_api_login
@@ -50,7 +53,7 @@ gw_ip()     { gw curl -s -m 8 https://api.ipify.org 2>/dev/null; }
 # 条件が真になるまで最大N秒ポーリングする（例: wait_for 20 'cmd'）
 wait_for()  { local n=$1; shift; for _ in $(seq "$n"); do if eval "$1"; then return 0; fi; sleep 1; done; return 1; }
 # 前のシナリオから接続状態が持ち越されないよう、APIで切断状態に揃える（Web UIの検証対象は本操作ではない）
-reset_vpn() { gw curl -sk -b "$GW_COOKIE_JAR" -X PUT https://localhost:8080/api/v1/connection -H 'Content-Type: application/json' -d '{"connect":false}' >/dev/null; sleep 2; }
+reset_vpn() { gw curl -sk -b "$GW_COOKIE_JAR" -X PUT "$BASE/api/v1/connection" -H 'Content-Type: application/json' -d '{"connect":false}' >/dev/null; sleep 2; }
 # nftのforwardチェーンにVPN経由acceptがあるか
 has_vpn_rule() { gw nft list table inet vpngwgui 2>/dev/null | grep -q 'oifname "tun[0-9]*" accept'; }
 

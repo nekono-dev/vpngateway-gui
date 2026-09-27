@@ -43,7 +43,7 @@
 | `phase28/webgui-operator-auth.mjs` | Phase28（Web UI利用者認証の専用E2E）のPlaywright検証。`launchWithoutSignIn()`を使い、初回アクセス時の初期設定画面・パスワード確認不一致・正誤ログイン・ログアウト・セッション切れ・アカウント変更の成功/失敗を確認する。実行前提: Web UI利用者アカウントが未作成の状態（`reset_operator_account`等で戻した直後）。実行: `node e2e/phase28/webgui-operator-auth.mjs <baseUrl>` |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
-| `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
+| `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ）。`GW_MODE=roles`（デプロイメント構成の分離・3台分離構成、`e2e/lxc/setup-roles.sh`で構築）でも実行できる |
 
 ## 前提
 

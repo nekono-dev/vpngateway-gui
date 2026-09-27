@@ -9,16 +9,24 @@ const [baseUrl, transparentArg, killSwitchArg] = process.argv.slice(2);
 const wantTransparent = transparentArg === "on";
 const wantKillSwitch = killSwitchArg === "on";
 
+// Phase26で設定ダイアログがタブ化され、Kill Switchは「通信制御」タブ、透過ゲートウェイモードは
+// 「ゲートウェイ」タブへ分かれた。チェック状態の変更は、それぞれの項目があるタブへ切り替えてから行う。
+async function setCheckboxes(dialogLocator) {
+  await dialogLocator.getByRole("tab", { name: "通信制御" }).click();
+  await dialogLocator.getByRole("checkbox", { name: /Kill Switch/ }).setChecked(wantKillSwitch);
+  await dialogLocator.getByRole("tab", { name: /ゲートウェイ/ }).click();
+  await dialogLocator.getByRole("checkbox", { name: /透過ゲートウェイモード/ }).setChecked(wantTransparent);
+}
+
 const { browser, page } = await launch(baseUrl);
 try {
   await page.goto("/");
   await page.getByRole("button", { name: "設定" }).click();
   const dialog = page.getByRole("dialog", { name: "設定" });
-  await dialog.getByRole("checkbox", { name: /透過ゲートウェイモード/ }).waitFor();
+  await dialog.getByRole("tab", { name: "通信制御" }).waitFor();
 
   // 現在値と異なる場合のみチェック状態を変更する（setCheckedは冪等）
-  await dialog.getByRole("checkbox", { name: /透過ゲートウェイモード/ }).setChecked(wantTransparent);
-  await dialog.getByRole("checkbox", { name: /Kill Switch/ }).setChecked(wantKillSwitch);
+  await setCheckboxes(dialog);
   await dialog.getByRole("button", { name: "保存" }).click();
   await dialog.waitFor({ state: "hidden", timeout: 15000 });
   assert(true, `設定ダイアログの保存が成功して閉じる (transparent=${wantTransparent}, killSwitch=${wantKillSwitch})`);
@@ -27,14 +35,15 @@ try {
   await page.reload();
   await page.getByRole("button", { name: "設定" }).click();
   const reopened = page.getByRole("dialog", { name: "設定" });
-  await reopened.getByRole("checkbox", { name: /透過ゲートウェイモード/ }).waitFor();
-  assert(
-    (await reopened.getByRole("checkbox", { name: /透過ゲートウェイモード/ }).isChecked()) === wantTransparent,
-    "再読込後も透過ゲートウェイモードの値が保持されている",
-  );
+  await reopened.getByRole("tab", { name: "通信制御" }).waitFor();
   assert(
     (await reopened.getByRole("checkbox", { name: /Kill Switch/ }).isChecked()) === wantKillSwitch,
     "再読込後もKill Switchの値が保持されている",
+  );
+  await reopened.getByRole("tab", { name: /ゲートウェイ/ }).click();
+  assert(
+    (await reopened.getByRole("checkbox", { name: /透過ゲートウェイモード/ }).isChecked()) === wantTransparent,
+    "再読込後も透過ゲートウェイモードの値が保持されている",
   );
 } finally {
   await browser.close();

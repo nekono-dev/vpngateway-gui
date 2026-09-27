@@ -31,17 +31,22 @@ e2e_api_login() {
     -d "{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}" "$base/api/v1/operator/session" >/dev/null
 }
 
-# 目的: ゲートウェイ役自身の上（`gw`経由）でcurlがAPIへ到達する際の認証。
+# 目的: ゲートウェイ役自身の上（`gw`経由）でcurlがAPIへ到達する際の認証。Web UI（api経由の制御含む）の
+#      ベースURLは、web・api・gatewayが同居する構成では`https://localhost:8080`、デプロイメント構成の
+#      分離（3台分離構成、GW_MODE=roles）ではweb役の実際のURL（`lxc/env.sh`が組み立てる`$WEB_BASE`）を使う。
 # 副作用: ゲートウェイ役の$GW_COOKIE_JARへセッションCookieを保存する。
 gw_api_login() {
-  gw sh -c "curl -sk -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' https://localhost:8080/api/v1/operator >/dev/null; curl -sk -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' https://localhost:8080/api/v1/operator/session >/dev/null"
+  local base=${WEB_BASE:-https://localhost:8080}
+  gw sh -c "curl -sk -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' $base/api/v1/operator >/dev/null; curl -sk -c $GW_COOKIE_JAR -X POST -H 'content-type: application/json' -d '{\"username\":\"$E2E_API_USERNAME\",\"password\":\"$E2E_API_PASSWORD\"}' $base/api/v1/operator/session >/dev/null"
 }
 
-# 目的: ゲートウェイ役の永続環境から、E2Eで作成したWeb UI利用者アカウントを消し、
+# 目的: 永続環境から、E2Eで作成したWeb UI利用者アカウントを消し、
 #      「インストール直後の未設定状態」（初期設定画面が出る状態）へ戻す。
-# 副作用: ゲートウェイ役の`$STATE_DIR/operator-account.json`・Cookie一時ファイルを削除する。
+#      apiロールの配置先は、GW_MODE=rolesではgateway役と別ホストのため`api_role`経由で実行する
+#      （それ以外のモードでは`api_role`は`gw`へ委譲するため、従来と同じ挙動になる）。
+# 副作用: apiロール配置先の`$STATE_DIR/operator-account.json`、ゲートウェイ役のCookie一時ファイルを削除する。
 reset_operator_account() {
-  gw docker compose exec -T api rm -f /var/lib/vpngwgui/operator-account.json
+  api_role docker compose exec -T api rm -f /var/lib/vpngwgui/operator-account.json
   gw rm -f "$GW_COOKIE_JAR"
 }
 
