@@ -9,6 +9,7 @@
 | `lxc/env.sh` | 検証環境の名前・パスの定義 |
 | `lxc/setup.sh` | LXCコンテナ2台（ゲートウェイ役・LAN端末役）の作成、Docker導入、LAN端末のGW設定（冪等） |
 | `lxc/sync.sh` | リポジトリをゲートウェイ役へ転送し、`docker compose build/up`まで実施（`--no-build`で転送のみ） |
+| `lxc/setup-roles.sh` | デプロイメント構成の分離（3台分離構成）の検証環境を構築（冪等）。web役・api役・gateway役のLXCコンテナ3台（`install.sh`のオーケストレーター実行に必要なSSH鍵認証・パスワード無しsudoを設定済み）と、gateway役をデフォルトゲートウェイとするLAN端末役コンテナ（`role-lanclient`）を作成する。実行後、`ROLE_IP_<role>=<IP>`を標準出力へ表示するので、それを引数に`install/install.sh --web <IP> --api <IP> --gateway <IP> --providers <ID>`を実行して3台分離構成を導入する |
 | `lib/playwright.mjs` | グローバルインストールのPlaywright読み込み、ブラウザ起動、アサーション。Phase25以降は`launch()`がE2E共通アカウント（`E2E_USERNAME`/`E2E_PASSWORD`）で初期設定・ログインを自動的に済ませる。`launchWithoutSignIn()`（Phase28）はこれを行わず、認証フロー自体を検証するE2E専用 |
 | `lib/api-auth.sh` | Phase25以降、シェルスクリプトが直接curlでAPIを呼ぶ際の認証。`e2e_api_login`（ローカルからのcurl用）・`gw_api_login`（`gw`経由でゲートウェイ役自身の上から叩く場合用）・`reset_operator_account`（検証後、Web UI利用者アカウントを削除しインストール直後の未設定状態へ戻す） |
 | `phase3/webgui-login.mjs` | Web UIの「VPNベンダーへログイン」ボタン→認証URL表示の確認 |

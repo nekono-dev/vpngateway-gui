@@ -152,7 +152,7 @@
 - [x] 単体・結合テスト（api 294件。証明書検証失敗時の拒否、`/v1/operator`系ルート、mTLSクライアント設定）
 - [x] 実機検証: 単一ホスト構成で、curlによる初期設定→未認証401→Cookie付き200→ログアウト→旧Cookieで401→正しいパスワードでログイン200→誤ったパスワードで401を確認。3台に分離した構成で、Web UI利用者アカウント作成→ログイン→`GET /v1/providers`→`GET /v1/connection/gateway`（web→api→gatewayの3ホップがTLS/mTLSで疎通）をcurlで確認
 - [x] Web UI利用者認証の専用E2E（`e2e/phase28/webgui-operator-auth.mjs`。初回アクセス時の設定画面、パスワード確認不一致、正誤ログイン、ログアウト、セッション切れ〔セッションCookie無効化からの再ログイン導線〕、アカウント変更の成功・失敗）。単一ホスト構成の実機（検証サーバ）で全項目PASSを確認
-- [ ] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証
+- [x] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証: `e2e/lxc/setup-roles.sh`（新規、web役・api役・gateway役のLXCコンテナ3台とLAN端末役コンテナを冪等に構築し、install.shのオーケストレーター実行に必要なSSH鍵認証・パスワード無しsudoを設定する）で構築した3台分離構成に対し、`PUT /v1/connection`（web役経由）でAdGuard VPNへ接続（`kr-seoul`）→LAN端末役の出口IPが実回線と異なるVPN経由のIPになることを確認→切断→gateway役のnftのtun向けルールが撤去されKill Switchで遮断されることを確認→別国（`us-dallas`）へ再接続→出口IPが変わり、masqueradeルールが重複しない（1件のまま）ことを確認
 - [x] `--rotate-pairing`の実機での再配布確認: 3台分離構成で`--rotate-pairing`付き再実行後、各ホストの証明書（フィンガープリント）が入れ替わり、mTLS通信（ログイン→`GET /v1/providers`・`GET /v1/connection/gateway`）が継続することを確認。検証中に見つけた2件の不具合を修正済み: (1)オーケストレーターを`sudo`経由で実行した場合、証明書生成の作業用ディレクトリがroot所有・700のままだとリモートホストへの`scp`配布が`Permission denied`で必ず失敗する不具合（`generate_role_pki`の末尾で`$SSH_USER`へ`chown`するよう修正）。(2)複数リモートホストの導入順序がIPアドレスの文字列順（`sort -u`）になっており、webロールの配置先がapiロールより先に処理されるとwebの起動確認（web→api疎通）がタイムアウトして失敗する不具合（`distinct_remote_hosts`をgateway→api→webの優先順に修正）。詳細は`specs/design.md`「証明書の生成・配布」「オーケストレーション型インストーラ」、単体テストは`install/tests/run.sh`
 
 ## ドメイン迂回とDNS中継の設定（Phase 14）
