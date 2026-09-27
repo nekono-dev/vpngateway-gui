@@ -143,6 +143,14 @@ check "determine_topology: 記録済みトポロジーと異なれば変更前�
   "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/install.sh; WEB_HOST_ARG=other.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
 rm -f "$FAKE/.env"
 
+# 目的: distinct_remote_hostsが、ホストのIPアドレス等の文字列順ではなく、ロールの依存関係の順（gateway→api→web）で
+#      返すことを検証する（webの起動確認がapiロールの疎通を要するため、apiが先に導入済みでなければならない。
+#      3台分離構成の実機検証で見つけた不具合の再発防止）。
+check "distinct_remote_hosts: IPが若い順ではなくgateway→api→webの順で返す（webのIPが最も若い場合）" test \
+  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=10.0.0.2; ROLE_HOST_gateway=10.0.0.3; distinct_remote_hosts" | tr '\n' ,)" = "10.0.0.3,10.0.0.2,10.0.0.1,"
+check "distinct_remote_hosts: 同じホストに複数ロールがあっても重複せず1回だけ返す" test \
+  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/install.sh; ROLE_HOST_web=10.0.0.9; ROLE_HOST_api=10.0.0.9; ROLE_HOST_gateway=10.0.0.3; distinct_remote_hosts" | tr '\n' ,)" = "10.0.0.3,10.0.0.9,"
+
 check "install.sh: --uninstall は --api と併用できない" sh -c \
   "! sh '$INSTALL_DIR/install.sh' --uninstall --api example.internal >/dev/null 2>&1"
 
@@ -158,6 +166,28 @@ rm -f "$FAKE/.env"
 check "install_roles: web+apiロールの場合、両方のcompose fragmentを並べる" test \
   "$(install_roles_compose_file_with web,api)" = "docker-compose.yml:compose/web.yml:compose/api.yml"
 rm -f "$FAKE/.env"
+
+# --- --rotate-pairingの核（証明書の再生成）: generate_role_pkiはroot権限・ネットワーク不要（opensslのみ）で
+# 完結するため、ここで「2回呼べば鍵材料が入れ替わる」という再生成の保証を検証する。distribute_pki_local/remote
+# （root権限・SSHを要する配布そのもの）はこのテストの対象外とし、実機検証（tasks.md参照）に委ねる。
+regenerate_pki_fingerprints() {
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c "
+    . $FAKE/install/install.sh
+    ROLE_HOST_web=''; ROLE_HOST_api=''; ROLE_HOST_gateway=''
+    generate_role_pki >/dev/null 2>&1
+    fp1=\$(openssl x509 -noout -fingerprint -sha256 -in \"\$PKI_STAGING/web-server.crt\")
+    rm -rf \"\$PKI_STAGING\"
+    generate_role_pki >/dev/null 2>&1
+    fp2=\$(openssl x509 -noout -fingerprint -sha256 -in \"\$PKI_STAGING/web-server.crt\")
+    rm -rf \"\$PKI_STAGING\"
+    printf '%s\n%s\n' \"\$fp1\" \"\$fp2\"
+  "
+}
+PKI_FINGERPRINTS=$(regenerate_pki_fingerprints)
+PKI_FP1=$(printf '%s\n' "$PKI_FINGERPRINTS" | sed -n 1p)
+PKI_FP2=$(printf '%s\n' "$PKI_FINGERPRINTS" | sed -n 2p)
+check "generate_role_pki: 2回連続で呼ぶと証明書（web-server.crt）のフィンガープリントが変わる（再生成保証）" \
+  sh -c "[ -n '$PKI_FP1' ] && [ -n '$PKI_FP2' ] && [ '$PKI_FP1' != '$PKI_FP2' ]"
 
 echo "== 結果: FAIL $FAILS 件"
 exit "$FAILS"

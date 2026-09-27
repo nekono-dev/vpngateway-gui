@@ -434,6 +434,11 @@ generate_role_pki() {
 
   # CA秘密鍵・署名要求・拡張ファイル・シリアル番号ファイルはこの関数の中だけで使い、配布物には含めない。
   rm -f "$PKI_STAGING/gateway-ca.key" "$PKI_STAGING/api-ca.key" "$PKI_STAGING"/*.csr "$PKI_STAGING"/*.ext "$PKI_STAGING"/*.srl
+  # rootで実行中（sudo経由）の場合、mktemp -dは常にroot所有・700で作るため、このままでは
+  # distribute_pki_remoteが$SSH_AS（$SUDO_USER）で読めない（配布先が1つでもリモートだと失敗する）。
+  # 配布物（*.crt・*.key。CA秘密鍵は既に削除済み）の所有者を$SSH_USERへ合わせて、リモート配布時のscpを
+  # 成功させる（distribute_pki_localはroot自身が読むため、この所有者変更があっても影響しない）。
+  [ "$(id -u)" -ne 0 ] || chown -R "$SSH_USER" "$PKI_STAGING"
   log "証明書一式を生成しました（作業用ディレクトリ: $PKI_STAGING）"
 }
 
@@ -501,11 +506,14 @@ get_role_host() {
 }
 
 # 目的: 現在のトポロジーで指定されているリモートホスト（ローカルを除く）を、重複を除いて一覧する。
+# 出力の順序: gateway→api→webの順（この順で並べる理由はremote_install_role・orchestrate_mainのコメント参照）。
+# 同じホストに複数ロールを指定した場合は最初に現れた1回だけを返す（sort -uだとIPの文字列順に並び替わり、
+# この優先順位が崩れるため使わない）。
 distinct_remote_hosts() {
-  { [ -z "$ROLE_HOST_web" ] || printf '%s\n' "$ROLE_HOST_web"
+  { [ -z "$ROLE_HOST_gateway" ] || printf '%s\n' "$ROLE_HOST_gateway"
     [ -z "$ROLE_HOST_api" ] || printf '%s\n' "$ROLE_HOST_api"
-    [ -z "$ROLE_HOST_gateway" ] || printf '%s\n' "$ROLE_HOST_gateway"
-  } | sort -u
+    [ -z "$ROLE_HOST_web" ] || printf '%s\n' "$ROLE_HOST_web"
+  } | awk '!seen[$0]++'
 }
 
 # 目的: 指定したホストへ配置されているロールを、カンマ区切りで返す（1ホストへ複数ロールを指定した場合に対応）。
@@ -660,6 +668,11 @@ install_roles() {
 # 副作用: `git archive`によるソース転送（リモートにDocker・Node.js等の事前導入は要求しない）、
 #         リモートでの「sh install/install.sh --only-roles ...」実行。
 # 失敗時: 転送・リモート実行のいずれかが失敗すれば終了する。
+# 呼び出し順序: 呼び出し元（orchestrate_main）はdistinct_remote_hostsの順（gateway→api→web）で
+#   このホストを処理する。webロールのstart_stackはこのホスト自身のweb→api疎通確認（api/v1/operator）を
+#   行うため、apiロールの配置先が別ホストの場合はそのホストが先に導入・起動済みでなければならない
+#   （webがapiより先に配置先ホストのIPが若い等の理由で先に処理されると、apiがまだ起動しておらず
+#   ヘルスチェックがタイムアウトして失敗する。実機の3台分離構成で確認した不具合）。
 remote_install_role() {
   host=$1
   roles=$2

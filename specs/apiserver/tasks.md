@@ -153,6 +153,7 @@
 - [x] 実機検証: 単一ホスト構成で、curlによる初期設定→未認証401→Cookie付き200→ログアウト→旧Cookieで401→正しいパスワードでログイン200→誤ったパスワードで401を確認。3台に分離した構成で、Web UI利用者アカウント作成→ログイン→`GET /v1/providers`→`GET /v1/connection/gateway`（web→api→gatewayの3ホップがTLS/mTLSで疎通）をcurlで確認
 - [ ] Web UI利用者認証の専用E2E（初回アクセス時の設定画面、正誤ログイン、ログアウト、セッション切れ、アカウント変更）は未作成（手動でのcurl・ブラウザ確認は実施済み）
 - [ ] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証
+- [x] `--rotate-pairing`の実機での再配布確認: 3台分離構成で`--rotate-pairing`付き再実行後、各ホストの証明書（フィンガープリント）が入れ替わり、mTLS通信（ログイン→`GET /v1/providers`・`GET /v1/connection/gateway`）が継続することを確認。検証中に見つけた2件の不具合を修正済み: (1)オーケストレーターを`sudo`経由で実行した場合、証明書生成の作業用ディレクトリがroot所有・700のままだとリモートホストへの`scp`配布が`Permission denied`で必ず失敗する不具合（`generate_role_pki`の末尾で`$SSH_USER`へ`chown`するよう修正）。(2)複数リモートホストの導入順序がIPアドレスの文字列順（`sort -u`）になっており、webロールの配置先がapiロールより先に処理されるとwebの起動確認（web→api疎通）がタイムアウトして失敗する不具合（`distinct_remote_hosts`をgateway→api→webの優先順に修正）。詳細は`specs/design.md`「証明書の生成・配布」「オーケストレーション型インストーラ」、単体テストは`install/tests/run.sh`
 
 ## ドメイン迂回とDNS中継の設定（Phase 14）
 
