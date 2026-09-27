@@ -49,7 +49,7 @@
 
 単一ホスト構成・3台分離構成とも主要な動作（利用者アカウント作成・ログイン・接続・稼働状況取得・mTLSの拒否確認）は実機検証済み（詳細は[apiserver/tasks.md](apiserver/tasks.md)・[proxyserver/tasks.md](proxyserver/tasks.md)・[webserver/tasks.md](webserver/tasks.md)の「デプロイメント構成の分離」節）。残る作業は以下。
 
-- [ ] Web UI利用者認証の専用E2E（初回設定画面、正誤ログイン、ログアウト、セッション切れ、アカウント変更）
+- [x] Web UI利用者認証の専用E2E（初回設定画面、正誤ログイン、ログアウト、セッション切れ、アカウント変更）
 - [ ] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証
 - [x] `--rotate-pairing`の実機での再配布確認
 - [ ] 既存E2E（phase1〜24相当）の網羅的な再実行によるリグレッション確認

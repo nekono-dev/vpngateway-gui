@@ -173,8 +173,8 @@
 - [x] `API_ORIGIN`のHTTPS対応（CA証明書の検証設定。`web/server/tls-options.ts`の`loadApiCaCertificate()`）
 - [x] Webサーバ自身のHTTPS化（Fastifyの`https`オプション。`web/server/tls-options.ts`）
 - [x] 実機検証: 単一ホスト構成で、既存の実ブラウザE2E（phase21・phase22）が認証ゲートを自動突破してPASSすることを確認（Playwrightの共通ヘルパーが初期設定・ログインを自動で済ませる）。分離構成でも、Web UI（`https://<webのIP>`）からのアカウント作成・ログイン・ベンダー一覧取得・ゲートウェイ稼働状況取得をcurlで確認
-- [ ] Web UI利用者認証専用のE2Eシナリオ（未ログイン時の遷移、ログイン・ログアウト、セッション切れ、アカウント変更）は未作成（手動でのブラウザ確認は実施済み）
-- [ ] 既存E2E（phase1〜24相当）の網羅的な再実行によるリグレッション確認は未実施
+- [x] Web UI利用者認証専用のE2Eシナリオ（`e2e/phase28/webgui-operator-auth.mjs`。未ログイン時の遷移、ログイン・ログアウト、セッション切れ、アカウント変更）。既存の`launch()`（E2E共通アカウントで認証を自動突破）とは別に、認証を素通りしない`launchWithoutSignIn()`（`e2e/lib/playwright.mjs`）を追加した
+- [ ] 既存E2E（phase1〜24相当）の網羅的な再実行によるリグレッション確認は未実施（mTLS化・3台分離構成の影響範囲〔`gateway-scenarios`のC以降〕は`specs/proxyserver/tasks.md`参照）
 
 ## ドメイン迂回とDNS中継の設定UI（Phase 14）
 

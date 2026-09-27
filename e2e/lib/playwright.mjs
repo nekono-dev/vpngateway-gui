@@ -64,6 +64,22 @@ export async function launch(baseUrl) {
 }
 
 /**
+ * 目的: launch()と異なり、初期設定・ログイン画面をE2E共通アカウントで自動突破しない。
+ *      認証フロー自体（初回アクセス時の画面表示・正誤ログイン・ログアウト・セッション切れ・
+ *      アカウント変更）を検証するE2E専用（Phase 28「Web UI利用者認証の専用E2E」）。
+ * Input: baseUrl（例: "https://10.231.5.23:8080"）
+ * Output: { browser, page }（呼び出し側がbrowser.close()する責務を持つ。ページは"/"へ遷移済み、
+ *          未ログイン状態を前提とするため、呼び出し側で事前にreset_operator_account相当の後始末を行うこと）
+ * Example: const { browser, page } = await launchWithoutSignIn("https://10.231.5.23:8080");
+ */
+export async function launchWithoutSignIn(baseUrl) {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ baseURL: baseUrl, ignoreHTTPSErrors: true });
+  await page.goto("/");
+  return { browser, page };
+}
+
+/**
  * 条件が偽なら例外を投げる。成功時は「PASS: 説明」を標準出力へ出す。
  * Input: condition（真偽値）, description（検証内容）
  * Output: なし（失敗時は例外でスクリプトを異常終了させ、E2E失敗として検知させる）

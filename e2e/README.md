@@ -9,7 +9,7 @@
 | `lxc/env.sh` | 検証環境の名前・パスの定義 |
 | `lxc/setup.sh` | LXCコンテナ2台（ゲートウェイ役・LAN端末役）の作成、Docker導入、LAN端末のGW設定（冪等） |
 | `lxc/sync.sh` | リポジトリをゲートウェイ役へ転送し、`docker compose build/up`まで実施（`--no-build`で転送のみ） |
-| `lib/playwright.mjs` | グローバルインストールのPlaywright読み込み、ブラウザ起動、アサーション。Phase25以降は`launch()`がE2E共通アカウント（`E2E_USERNAME`/`E2E_PASSWORD`）で初期設定・ログインを自動的に済ませる |
+| `lib/playwright.mjs` | グローバルインストールのPlaywright読み込み、ブラウザ起動、アサーション。Phase25以降は`launch()`がE2E共通アカウント（`E2E_USERNAME`/`E2E_PASSWORD`）で初期設定・ログインを自動的に済ませる。`launchWithoutSignIn()`（Phase28）はこれを行わず、認証フロー自体を検証するE2E専用 |
 | `lib/api-auth.sh` | Phase25以降、シェルスクリプトが直接curlでAPIを呼ぶ際の認証。`e2e_api_login`（ローカルからのcurl用）・`gw_api_login`（`gw`経由でゲートウェイ役自身の上から叩く場合用）・`reset_operator_account`（検証後、Web UI利用者アカウントを削除しインストール直後の未設定状態へ戻す） |
 | `phase3/webgui-login.mjs` | Web UIの「VPNベンダーへログイン」ボタン→認証URL表示の確認 |
 | `phase3/webgui-settings.mjs` | 設定ダイアログで透過ゲートウェイ・Kill Switchを切り替え、保存・再読込後の保持を確認 |
@@ -39,6 +39,7 @@
 | `phase27/scenarios.sh` | Phase27の完了基準を、Phase14のラボで通しで自動検証（シナリオA〜I。ブラウザの動作はLAN端末役のcurl・digで代行し、nftルールの削除・上流の停止等の故障を注入してNGの検出も確認する）。検証サーバ上で実行する |
 | `phase27/webgui-phase27.mjs` | Phase27のWeb UIを、LAN端末役のブラウザでPlaywright検証（`ok`: 全項目OK・折りたたみと代表行・開閉・タブ切替後の保持、`ng`: 故障を注入した状態でのNGの代表行）。実行: `node e2e/phase27/webgui-phase27.mjs <baseUrl> <ok|ng> [スクリーンショットの出力先] [画面幅]` |
 | `phase26/webgui-settings-tabs.mjs` | Phase26（設定ダイアログのタブ化）のPlaywright検証（タブ表示・切替・未保存入力の保持・保存・保存不可時の警告印）。実行: `node e2e/phase26/webgui-settings-tabs.mjs <baseUrl>` |
+| `phase28/webgui-operator-auth.mjs` | Phase28（Web UI利用者認証の専用E2E）のPlaywright検証。`launchWithoutSignIn()`を使い、初回アクセス時の初期設定画面・パスワード確認不一致・正誤ログイン・ログアウト・セッション切れ・アカウント変更の成功/失敗を確認する。実行前提: Web UI利用者アカウントが未作成の状態（`reset_operator_account`等で戻した直後）。実行: `node e2e/phase28/webgui-operator-auth.mjs <baseUrl>` |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ） |
