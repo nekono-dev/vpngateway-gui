@@ -22,8 +22,8 @@
 #                          [--api <ホスト名/IP>] [--web <ホスト名/IP>] [--gateway <ホスト名/IP>] [--rotate-pairing] [--no-start]
 #   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
 #                           （新しい版で追加されたベンダーも、再実行のたびに自動的に有効化される）。gatewayロールが配置されたホストでのみ意味を持つ。
-#   --web-port             Web UIを配信するホスト側のポート番号（1〜65535）。省略時は、.envの既存値（無ければ80）を使う。webロールが配置された
-#                           ホストでのみ意味を持つ。
+#   --web-port             Web UIを配信するホスト側のポート番号（1〜65535）。省略時は、webロールの配置先の.envの既存値（無ければ80）を使う。
+#                           webロールの配置先ホストに設定される（リモートの場合も同じ値が渡る）。
 #   --lan-iface            LAN側インターフェース名を指定する（自動検出できない・複数NICの場合）。gatewayロールが配置されたホストでのみ意味を持つ。
 #   --redetect-lan-iface   保存済みのLAN側インターフェース名を捨てて再検出する。
 #   --api <ホスト名/IP>    APIサーバの配置先。省略時はこのコマンドを実行したホスト（ローカル）。
@@ -681,30 +681,57 @@ remote_install_role() {
   git -C "$REPO_ROOT" archive HEAD | $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "sudo mkdir -p $REMOTE_INSTALL_DIR && sudo tar -x -C $REMOTE_INSTALL_DIR" \
     || die "リモートホスト $host へのソース転送に失敗しました"
 
-  extra=""
+  # shellcheck disable=SC2086
+  $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/setup.sh --only-roles $roles $(remote_role_args "$roles")" \
+    || die "リモートホスト $host でのロール導入に失敗しました"
+}
+
+# 目的: リモートホストでの「setup.sh --only-roles <roles>」へ渡す追加の引数を組み立てる。
+# 入力: roles(そのホストへ配置するロールのカンマ区切り)。グローバル変数 ROLE_HOST_*・PROVIDERS_ARG・WEB_PORT_ARG。
+# 出力: 空白区切りの引数列（例" --gateway-host 10.0.0.3 --web-port 8443"。不要なら空文字列）。
+# 挙動: 利用者が指定した引数（--providers・--web-port）は、そのロールを受け持つホストへだけ転送する。
+#       省略時は転送しない（リモート側の.envの既存値・既定値をそのまま使わせるため）。
+# 例: remote_role_args web   → " --api-origin https://10.0.0.2:3000 --web-port 8443"（--api 10.0.0.2 --web-port 8443 の場合）
+remote_role_args() {
+  roles=$1
+  args=""
   case ",$roles," in
     *,api,*)
       gw=$(get_role_host gateway)
-      [ -z "$gw" ] || extra="$extra --gateway-host $gw"
+      [ -z "$gw" ] || args="$args --gateway-host $gw"
       ;;
   esac
   case ",$roles," in
     *,web,*)
       api=$(get_role_host api)
-      [ -z "$api" ] || extra="$extra --api-origin https://$api:3000"
+      [ -z "$api" ] || args="$args --api-origin https://$api:3000"
+      [ -z "$WEB_PORT_ARG" ] || args="$args --web-port $WEB_PORT_ARG"
       ;;
   esac
-  provider_arg=""
-  case ",$roles," in *,api,*|*,gateway,*) [ -z "$PROVIDERS_ARG" ] || provider_arg="--providers $PROVIDERS_ARG" ;; esac
+  case ",$roles," in *,api,*|*,gateway,*) [ -z "$PROVIDERS_ARG" ] || args="$args --providers $PROVIDERS_ARG" ;; esac
+  printf '%s' "$args"
+}
 
-  # shellcheck disable=SC2086
-  $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/setup.sh --only-roles $roles $provider_arg $extra" \
-    || die "リモートホスト $host でのロール導入に失敗しました"
+# 目的: 完了の表示に使う、Web UIのホスト側のポート番号を返す。
+# 入力: グローバル変数 ROLE_HOST_web・WEB_PORT（webロールをローカルへ導入した場合にsetup_web_portが確定した値）・WEB_PORT_ARG。
+# 出力: ポート番号。webロールの導入先で確定した値（--web-port ＞ そのホストの.envの既存値 ＞ 既定）を返す。
+# 挙動: webロールがリモートの場合は、そのホストの.envのWEB_PORTをsshで読む（--web-port省略時の再実行でも、
+#       リモート側に保存済みの値を表示するため）。読めなければ、--web-portの値（無ければ既定）を返す。
+# 例: --web-port 8443で導入済みのホストで、--web-portを省略して再実行した場合 → 8443
+summary_web_port() {
+  if [ -z "$ROLE_HOST_web" ]; then
+    port=${WEB_PORT:-$(env_get WEB_PORT)}
+  else
+    # shellcheck disable=SC2086
+    port=$($SSH_AS ssh $SSH_OPTS "$SSH_USER@$ROLE_HOST_web" "sudo sh -c 'grep ^WEB_PORT= $REMOTE_INSTALL_DIR/.env | tail -n 1 | cut -d= -f2-'" 2>/dev/null) || port=""
+  fi
+  [ -n "$port" ] || port=${WEB_PORT_ARG:-$WEB_PORT_DEFAULT}
+  printf '%s' "$port"
 }
 
 # 目的: 完了を表示し、次の操作を案内する（トポロジー全体のサマリ。ロールがリモートに配置されていても表示する）。
 finish_summary() {
-  summary_port=${WEB_PORT_ARG:-$WEB_PORT_DEFAULT}
+  summary_port=$(summary_web_port)
   if [ -n "$ROLE_HOST_web" ]; then
     web_addr=$ROLE_HOST_web
   else

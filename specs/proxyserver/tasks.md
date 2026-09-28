@@ -144,7 +144,11 @@
 
 # 積み残し（作業スコープ外で見つかった不具合）
 
-- [ ] インストーラ完了メッセージのWeb UIのポート表示が不正（`install/install.sh`の`summary_port=${WEB_PORT_ARG:-$WEB_PORT_DEFAULT}`が、`--web-port`を省略した再実行で、`.env`に保存済みのポート（`WEB_PORT`）ではなく既定の80を表示する。実際のWeb UIは`.env`のポートで動いている。修正案: 表示には`setup_web_port`が確定したグローバル変数`WEB_PORT`を使う。`install/tests/`へ、`--web-port`省略時の再実行で保存済みのポートが表示されるテストを追加する）。Phase 14の実機検証中（2026-09-24、検証サーバで`WEB_PORT=443`のまま再実行して発見）。
+- [x] インストーラ完了メッセージのWeb UIのポート表示が不正（`--web-port`を省略した再実行で、`.env`に保存済みのポートではなく既定の80を表示していた。Phase 14の実機検証中に発見）。あわせて、分離構成でwebロールがリモートの場合に`--web-port`がそのホストへ転送されていなかった関連不具合も修正した（確定した仕様は`../design.md`「本体インストーラ」の`--web-port`・ステップ9）
+  - 実装: `install/setup.sh`の`summary_web_port`（ローカルは`setup_web_port`が確定した`WEB_PORT`、リモートはそのホストの`.env`をsshで読む）・`remote_role_args`（リモートの`--only-roles`実行へ渡す引数の組み立て。`--web-port`はwebロールのホストへだけ、指定時のみ転送）
+  - 単体テスト（`install/tests/run.sh`）: 完了の表示（ローカルの再実行・指定時・既定、リモートの`.env`の読み取り）と`remote_role_args`の9項目を追加。修正前のコードでは7項目がFAILすることを確認。shellcheck（検証サーバ）もOK
+  - E2E（`e2e/phase11/install-scenarios.sh`、検証サーバのLXC・Ubuntu 24.04）: 初回導入を`--web-port 8080`とし、完了の表示が8080であること、`--web-port`を省略した再実行でも.envが変わらず完了の表示が8080であることを追加。あわせて、Phase 17（`--providers`省略時は全ベンダー）へ未追従だった既存の検査（引数なしの再実行で.envが不変・ベンダーを決められず失敗）と、裸リポジトリの取得元パス（`--absolute-git-dir`へ）を修正。29項目FAIL 0
+  - 3台分離構成（`e2e/lxc/setup-roles.sh`）: 検証サーバで、web・api・gatewayを別コンテナへ分離して`--web-port 8443`で導入し、完了の表示・web役の`.env`・実際の応答（HTTP 200）がいずれも8443であること、`--web-port`を省略した再実行でも同様に8443が維持・表示されることを確認（2026-09-28）
 
 ## 設定の動作検証（Phase 27、実装完了・検証完了）
 

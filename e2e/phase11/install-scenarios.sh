@@ -42,7 +42,9 @@ trap cleanup EXIT
 
 # --- 検査の関数（checkへ渡す）
 t_no_docker() { ! ct sh -c 'command -v docker' >/dev/null 2>&1; }
-t_bootstrap_ok() { run_bootstrap "$WORK/install.sh" "$@" >>"$WORK/install.log" 2>&1; }
+t_bootstrap_ok() { run_bootstrap "$WORK/install.sh" "$@" >"$WORK/last.log" 2>&1; local rc=$?; cat "$WORK/last.log" >>"$WORK/install.log"; return "$rc"; }
+# 直前に成功したブートストラップの完了の表示（Web UIの行）が、指定したポートを示すか。 入力: ポート番号。
+t_summary_port_is() { grep 'Web UI:' "$WORK/last.log" | grep -q "https://[^ ]*:$1（"; }
 t_bootstrap_fails_with() { # <ログに含まれる文字列> <引数...>
   local expect=$1; shift
   ! run_bootstrap "${BOOT:-$WORK/install.sh}" "$@" >"$WORK/fail.log" 2>&1 && grep -q -- "$expect" "$WORK/fail.log"
@@ -55,14 +57,15 @@ t_env_initial() { test "$(env_val VPN_PROVIDERS)" = adguardvpn && test "$(env_va
 t_web_has() { web_login; web_ok | grep -q "$1"; }
 t_web_lacks() { web_login; web_ok >/dev/null && ! web_ok | grep -q "$1"; }
 t_services_are() { test "$(running_services)" = "$1 "; }
-t_env_unchanged() { test "$(ct cat $DIR/.env)" = "$BEFORE_ENV"; }
+# 不一致のときは、原因を追えるよう差分を表示する。
+t_env_unchanged() { local after; after=$(ct cat $DIR/.env); [ "$after" = "$BEFORE_ENV" ] || { diff <(printf '%s\n' "$BEFORE_ENV") <(printf '%s\n' "$after") | sed 's/^/    | /'; return 1; }; }
 t_hook_contract() { test "$(ct cat /tmp/hook-ran)" = "hooktest $DIR $DIR/vendors/hooktest"; }
 t_added() { test "$(env_val VPN_PROVIDERS)" = adguardvpn,hooktest && running_services | grep -q runner-hooktest && t_web_has hooktest; }
 t_orphan_removed() { ! ct sh -c 'docker ps -a --format {{.Names}}' | grep -q hooktest; }
 
 COMMIT=$(git -C "$ROOT" rev-parse HEAD)
 git -C "$ROOT" diff --quiet HEAD -- install vendors compose docker-compose.yml || echo "注意: install/・vendors/・compose/・docker-compose.yml に未コミットの変更があります（検証されるのはコミット済みの内容です）"
-git clone -q --bare "file://$(git -C "$ROOT" rev-parse --git-common-dir)" "$WORK/vpngw.git" || exit 1
+git clone -q --bare "file://$(git -C "$ROOT" rev-parse --absolute-git-dir)" "$WORK/vpngw.git" || exit 1
 sh "$ROOT/install/build-install.sh" e2e "$COMMIT" file:///srv/vpngw.git > "$WORK/install.sh" || exit 1
 sh "$ROOT/install/build-install.sh" e2e 0000000000000000000000000000000000000000 file:///srv/vpngw.git > "$WORK/install-bad.sh" || exit 1
 
@@ -75,7 +78,9 @@ lxc file push -r "$WORK/vpngw.git" "$NAME/srv/" >/dev/null && ct chown -R root:r
 check "クリーンな状態（dockerが無い）" t_no_docker
 
 echo "== install: 1コマンド（標準入力のパイプ）で導入・起動する"
-check "ブートストラップが成功する（--providers指定）" t_bootstrap_ok --providers adguardvpn
+# Web UIのポートは既定（80）以外（8080）を指定し、以降の再実行（--web-port省略）で維持・表示されることを確かめる。
+check "ブートストラップが成功する（--providers・--web-port指定）" t_bootstrap_ok --providers adguardvpn --web-port 8080
+check "完了の表示のWeb UIのURLが、指定したポート（8080）を示す" t_summary_port_is 8080
 tail -5 "$WORK/install.log" | sed 's/^/    | /'
 check "取得したソースが、埋め込まれたコミットと一致する" t_head_is "$COMMIT"
 check "Docker（公式リポジトリ）とcompose v2が導入されている" t_docker_official
@@ -85,10 +90,13 @@ check ".envにLAN_IFACE・VPN_PROVIDERS・COMPOSE_FILEが書かれている" t_e
 check "Web UIが応答し、有効なベンダーが現れる" t_web_has adguardvpn
 check "有効なベンダーのランナーだけが起動している（web・api・proxy・runner-adguardvpn）" t_services_are "api proxy runner-adguardvpn web"
 
-echo "== rerun: 引数なしの再実行は冪等で、既存の設定を維持する"
+# --providersを省略すると全ベンダーが有効になる（Phase 17。下の「all」で検証する）ため、ここでは同じベンダーを指定し、
+# それ以外（--web-port・--lan-iface）を省略した再実行で、保存済みの設定が維持されることを確かめる。
+echo "== rerun: --web-port等を省略した再実行は冪等で、既存の設定を維持する"
 BEFORE_ENV=$(ct cat "$DIR/.env")
-check "引数なしの再実行（更新）が成功する" t_bootstrap_ok
-check ".envが変わらない（LAN_IFACE・有効なベンダー・composeの合成を維持）" t_env_unchanged
+check "--web-port等を省略した再実行（更新）が成功する" t_bootstrap_ok --providers adguardvpn
+check ".envが変わらない（LAN_IFACE・WEB_PORT・有効なベンダー・composeの合成を維持）" t_env_unchanged
+check "--web-port省略の再実行でも、完了の表示は保存済みのポート（8080）を示す（既定の80ではない）" t_summary_port_is 8080
 check "再実行後もWeb UIが応答する" t_web_has adguardvpn
 
 echo "== providers: ベンダーの追加・削除とホスト側フック"
@@ -109,10 +117,13 @@ ct rm -rf "$DIR/vendors/hooktest"
 check "存在しないベンダーIDは、選べるものを示して失敗する" t_bootstrap_fails_with "ベンダーバンドルがありません" --providers nosuchvendor
 check "不正なベンダーID（パス注入）は失敗する" t_bootstrap_fails_with "不正なベンダーID" --providers ../etc
 
-echo "== fail: ベンダーが決められない・取得の食い違い・作業ツリーの変更"
+echo "== all: --providers省略時は、その時点のvendors/にある全ベンダーを有効にする（Phase 17）"
 ct sh -c "sed -i '/^VPN_PROVIDERS=/d; /^COMPOSE_FILE=/d' $DIR/.env"
-check "指定も既存値も端末も無ければ、既定のベンダーを持たないため失敗する" t_bootstrap_fails_with "--providers" --no-start
+check "--providers省略・.envにVPN_PROVIDERSが無くても成功する" t_bootstrap_ok --no-start
+check "全ベンダー（adguardvpn,protonvpn）が.envに書かれる" test "$(env_val VPN_PROVIDERS)" = adguardvpn,protonvpn
 t_bootstrap_ok --providers adguardvpn --no-start
+
+echo "== fail: 取得の食い違い・作業ツリーの変更"
 BOOT="$WORK/install-bad.sh"
 check "存在しないコミットを埋め込んだ頒布物は、取得に失敗して何も実行しない" t_bootstrap_fails_with fatal --providers adguardvpn
 BOOT=""

@@ -91,6 +91,48 @@ check "--web-port: 範囲外（0）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1
 check "--web-port: 範囲外（65536）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_PORT_ARG=65536; setup_web_port' >/dev/null 2>&1"
 check "--web-port: 数字以外は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_PORT_ARG=abc; setup_web_port' >/dev/null 2>&1"
 
+# 目的: 文字列に部分文字列が含まれるか判定する。 入力: 対象の文字列, 探す文字列。
+contains() { printf '%s' "$1" | grep -q -- "$2"; }
+
+# 目的: 完了の表示（finish_summary）のWeb UIのURLが、webロールの配置先で確定したポートを示すことを検査する。
+#      ローカル配置は setup_web_port → finish_summary の順に呼ぶ（install_roles→finish_summaryと同じ順）。
+# 入力: WEB_PORT_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。 出力: 完了の表示のうちWeb UIの行。
+summary_line_local_with() {
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; WEB_PORT_ARG='$1'; ROLE_HOST_web=''; ROLE_HOST_api=''; ROLE_HOST_gateway=''; setup_web_port >/dev/null; finish_summary" | grep 'Web UI:'
+}
+printf 'WEB_PORT=8443\n' > "$FAKE/.env"
+check "完了の表示: --web-port省略時の再実行で、.envに保存済みのポートを表示する" contains "$(summary_line_local_with '')" ':8443（'
+check "完了の表示: --web-port指定時は指定したポートを表示する" contains "$(summary_line_local_with 9443)" ':9443（'
+rm -f "$FAKE/.env"
+check "完了の表示: --web-port省略・.env未設定なら既定（80）を表示する" contains "$(summary_line_local_with '')" ':80（'
+rm -f "$FAKE/.env"
+
+# 目的: webロールがリモートの場合、完了の表示がそのホストの.envのWEB_PORTを（sshで）読むことを検査する。
+#      sshは偽物（SSH_ASの位置に置いたスクリプト。受け取ったコマンド文字列を記録し、固定の値を返す）で置き換える。
+cat > "$TMP/fake-ssh" <<'EOSCRIPT'
+#!/bin/sh
+# 最後の引数（リモートで実行させるコマンド文字列）を記録し、リモートの.envに保存済みの値として7443を返す。
+for last in "$@"; do :; done
+printf '%s\n' "$last" >> "$FAKE_SSH_LOG"
+printf '7443\n'
+EOSCRIPT
+chmod +x "$TMP/fake-ssh"
+FAKE_SSH_LOG="$TMP/fake-ssh.log"
+: > "$FAKE_SSH_LOG"
+REMOTE_SUMMARY=$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE FAKE_SSH_LOG=$FAKE_SSH_LOG sh -c ". $FAKE/install/setup.sh; SSH_AS='$TMP/fake-ssh'; WEB_PORT_ARG=''; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=''; ROLE_HOST_gateway=''; finish_summary" | grep 'Web UI:')
+check "完了の表示: webロールがリモートなら、そのホストの.envのWEB_PORTを表示する" contains "$REMOTE_SUMMARY" 'https://10.0.0.1:7443（'
+check "完了の表示: リモートの.envのWEB_PORTを読むコマンドを実行する" grep -q "WEB_PORT=.*/opt/vpngwgui/.env" "$FAKE_SSH_LOG"
+
+# 目的: remote_role_argsが、--web-portをwebロールの配置先へだけ転送し、省略時は転送しないことを検査する。
+# 入力: roles, WEB_PORT_ARGに設定する値。 出力: 組み立てた引数列。
+remote_role_args_with() {
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=10.0.0.2; ROLE_HOST_gateway=10.0.0.3; PROVIDERS_ARG=vendora; WEB_PORT_ARG='$2'; remote_role_args '$1'"
+}
+check "remote_role_args: webロールには--web-portを転送する" test "$(remote_role_args_with web 8443)" = " --api-origin https://10.0.0.2:3000 --web-port 8443"
+check "remote_role_args: --web-port省略時は転送しない（リモートの.envの既存値を使わせる）" test "$(remote_role_args_with web '')" = " --api-origin https://10.0.0.2:3000"
+check "remote_role_args: webロールを含まないホストへは--web-portを転送しない" test "$(remote_role_args_with gateway 8443)" = " --providers vendora"
+check "remote_role_args: apiロールにはgatewayの接続先とベンダーを渡す" test "$(remote_role_args_with api '')" = " --gateway-host 10.0.0.3 --providers vendora"
+
 # --- アンインストール（root・Docker・systemdが要らない範囲。ホスト設定の実際の削除はE2Eで検証する）
 check "uninstall_stack: docker-compose.ymlが無ければ何もしない（root不要）" sh -c "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; uninstall_stack' | grep -q '対象なし'"
 
