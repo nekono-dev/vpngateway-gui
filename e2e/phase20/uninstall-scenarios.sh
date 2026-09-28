@@ -30,8 +30,8 @@ WEB_COOKIE=/tmp/e2e-cookie.txt
 # 導入・再導入のたびapiコンテナが（再）作成されセッション（プロセスメモリ）がリセットされるため、
 # web_ok()を呼ぶ前に毎回ログインし直す。
 # Phase25 Stage3でwebサーバが自己署名証明書のHTTPSになったため、-k（証明書検証省略）を付ける。
-web_login() { ct sh -c "curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1/api/v1/operator >/dev/null; curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1/api/v1/operator/session >/dev/null"; }
-web_ok() { ct curl -fsSk -b "$WEB_COOKIE" -m 5 https://127.0.0.1/api/v1/providers; }
+web_login() { ct sh -c "curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:80/api/v1/operator >/dev/null; curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:80/api/v1/operator/session >/dev/null"; }
+web_ok() { ct curl -fsSk -b "$WEB_COOKIE" -m 5 https://127.0.0.1:80/api/v1/providers; }
 cleanup() {
   [ "${E2E_KEEP:-0}" = 1 ] || lxc delete -f "$NAME" >/dev/null 2>&1
   rm -rf "$WORK"
