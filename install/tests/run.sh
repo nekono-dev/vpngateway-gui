@@ -82,7 +82,7 @@ rm -f "$FAKE/.env"
 setup_web_port_with() {
   VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; WEB_PORT_ARG='$1'; setup_web_port >/dev/null; printf '%s' \"\$WEB_PORT\""
 }
-check "--web-port省略時・.env未設定: 既定（80）になる" test "$(setup_web_port_with '')" = "80"
+check "--web-port省略時・.env未設定: 既定（443）になる" test "$(setup_web_port_with '')" = "443"
 check "--web-port指定時: 指定した値になる" test "$(setup_web_port_with '8080')" = "8080"
 printf 'WEB_PORT=8443\n' > "$FAKE/.env"
 check "--web-port省略時: .envの既存値を使う" test "$(setup_web_port_with '')" = "8443"
@@ -104,7 +104,7 @@ printf 'WEB_PORT=8443\n' > "$FAKE/.env"
 check "完了の表示: --web-port省略時の再実行で、.envに保存済みのポートを表示する" contains "$(summary_line_local_with '')" ':8443（'
 check "完了の表示: --web-port指定時は指定したポートを表示する" contains "$(summary_line_local_with 9443)" ':9443（'
 rm -f "$FAKE/.env"
-check "完了の表示: --web-port省略・.env未設定なら既定（80）を表示する" contains "$(summary_line_local_with '')" ':80（'
+check "完了の表示: --web-port省略・.env未設定なら既定（443）を表示する" contains "$(summary_line_local_with '')" ':443（'
 rm -f "$FAKE/.env"
 
 # 目的: webロールがリモートの場合、完了の表示がそのホストの.envのWEB_PORTを（sshで）読むことを検査する。

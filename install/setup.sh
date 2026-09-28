@@ -22,7 +22,7 @@
 #                          [--api <ホスト名/IP>] [--web <ホスト名/IP>] [--gateway <ホスト名/IP>] [--rotate-pairing] [--no-start]
 #   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
 #                           （新しい版で追加されたベンダーも、再実行のたびに自動的に有効化される）。gatewayロールが配置されたホストでのみ意味を持つ。
-#   --web-port             Web UIを配信するホスト側のポート番号（1〜65535）。省略時は、webロールの配置先の.envの既存値（無ければ80）を使う。
+#   --web-port             Web UIを配信するホスト側のポート番号（1〜65535）。省略時は、webロールの配置先の.envの既存値（無ければ443）を使う。
 #                           webロールの配置先ホストに設定される（リモートの場合も同じ値が渡る）。
 #   --lan-iface            LAN側インターフェース名を指定する（自動検出できない・複数NICの場合）。gatewayロールが配置されたホストでのみ意味を持つ。
 #   --redetect-lan-iface   保存済みのLAN側インターフェース名を捨てて再検出する。
@@ -59,7 +59,7 @@ ENV_FILE="$REPO_ROOT/.env"
 VENDORS_DIR="$REPO_ROOT/vendors"
 SYSCTL_FILE="/etc/sysctl.d/99-vpngwgui.conf"
 GUARD_UNIT="/etc/systemd/system/vpngwgui-boot-guard.service"
-WEB_PORT_DEFAULT=80
+WEB_PORT_DEFAULT=443
 # 通信路の保護に使う証明書一式の置き場（specs/design.md「証明書の生成・配布」）。
 # ゲートウェイ制御チャネル（api⇄gateway、mTLS）・web⇄api（片方向TLS）・ブラウザ⇄web（片方向TLS）のいずれも、
 # 同じ置き場へまとめて配置する（各サーバは自分に必要なファイル名だけを読む）。
@@ -297,8 +297,8 @@ setup_lan_iface() {
 
 # 目的: Web UIを配信するホスト側のポート番号を決めて.envへ書く。
 # 入力: グローバル変数 WEB_PORT_ARG。
-# 出力: グローバル変数 WEB_PORT（docker composeの.envとしても読まれる。ports: "${WEB_PORT:-80}:8080"）。
-# 優先順: --web-port ＞ .envの既存値 ＞ 既定（80）。
+# 出力: グローバル変数 WEB_PORT（docker composeの.envとしても読まれる。ports: "${WEB_PORT:-443}:8080"）。
+# 優先順: --web-port ＞ .envの既存値 ＞ 既定（443）。
 # 失敗時: 1〜65535の整数でなければ終了する。
 setup_web_port() {
   if [ -n "$WEB_PORT_ARG" ]; then

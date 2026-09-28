@@ -26,7 +26,7 @@ elif [ "$GW_MODE" = roles ]; then
   WEB_NAME=${WEB_NAME:-role-web}
   CLIENT_NAME=${CLIENT_NAME:-role-lanclient}
   GW_LAN_IF=${GW_LAN_IF:-eth0}
-  WEB_PORT=${WEB_PORT:-80}
+  WEB_PORT=${WEB_PORT:-443}
   # web役コンテナの実際のIPv4アドレスから、Web UI（api経由の制御も含む）のベースURLを組み立てる。
   WEB_IP=$(lxc exec "$WEB_NAME" -- sh -c "ip -4 -o addr show eth0 | awk '{sub(\"/.*\",\"\",\$4); print \$4}'" | head -n1)
   WEB_BASE="https://$WEB_IP:$WEB_PORT"

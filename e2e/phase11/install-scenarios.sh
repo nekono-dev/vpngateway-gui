@@ -78,7 +78,7 @@ lxc file push -r "$WORK/vpngw.git" "$NAME/srv/" >/dev/null && ct chown -R root:r
 check "クリーンな状態（dockerが無い）" t_no_docker
 
 echo "== install: 1コマンド（標準入力のパイプ）で導入・起動する"
-# Web UIのポートは既定（80）以外（8080）を指定し、以降の再実行（--web-port省略）で維持・表示されることを確かめる。
+# Web UIのポートは既定（443）以外（8080）を指定し、以降の再実行（--web-port省略）で維持・表示されることを確かめる。
 check "ブートストラップが成功する（--providers・--web-port指定）" t_bootstrap_ok --providers adguardvpn --web-port 8080
 check "完了の表示のWeb UIのURLが、指定したポート（8080）を示す" t_summary_port_is 8080
 tail -5 "$WORK/install.log" | sed 's/^/    | /'
@@ -96,7 +96,7 @@ echo "== rerun: --web-port等を省略した再実行は冪等で、既存の設
 BEFORE_ENV=$(ct cat "$DIR/.env")
 check "--web-port等を省略した再実行（更新）が成功する" t_bootstrap_ok --providers adguardvpn
 check ".envが変わらない（LAN_IFACE・WEB_PORT・有効なベンダー・composeの合成を維持）" t_env_unchanged
-check "--web-port省略の再実行でも、完了の表示は保存済みのポート（8080）を示す（既定の80ではない）" t_summary_port_is 8080
+check "--web-port省略の再実行でも、完了の表示は保存済みのポート（8080）を示す（既定の443ではない）" t_summary_port_is 8080
 check "再実行後もWeb UIが応答する" t_web_has adguardvpn
 
 echo "== providers: ベンダーの追加・削除とホスト側フック"

@@ -241,7 +241,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 | `--providers <ID>[,<ID>...]` | 有効にするベンダー。`vendors/<ID>/`が無ければ失敗する。省略時は、その時点の全ベンダー（all）を有効にする（Phase 17）。gatewayロールを含まない場合は無視する |
 | `--lan-iface <名前>` | LAN側インターフェース名を手動で指定する（検出できない・複数NICの場合）。gatewayロールを含む場合のみ |
 | `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を捨てて再検出する |
-| `--web-port <ポート番号>` | Web UIを配信するホスト側のポート（既定80）。webロールの実行時のみ（Phase 19）。webロールがリモートの場合、指定したときだけそのホストへ転送する（省略時はそのホストの`.env`の既存値を使う） |
+| `--web-port <ポート番号>` | Web UIを配信するホスト側のポート（既定443）。webロールの実行時のみ（Phase 19）。webロールがリモートの場合、指定したときだけそのホストへ転送する（省略時はそのホストの`.env`の既存値を使う） |
 | `--no-start` | 起動（`docker compose up`）をしない |
 | `--api <ホスト名/IP>`（Phase 25） | APIサーバの配置先。省略時はローカル。`specs/design.md`「オーケストレーション型インストーラ」参照 |
 | `--web <ホスト名/IP>`（Phase 25） | Webサーバの配置先。省略時はローカル |
@@ -259,7 +259,7 @@ GitHub Release（タグ）／CIのartifact（ブランチ）
 3. **共通の依存**: `ca-certificates curl gnupg git iproute2 nftables`（`apt-get`。導入済みは何もしない）。**Docker**: `docker compose version`が動けば何もしない。動かなければ、`/etc/docker/daemon.json`が無い場合に`{"ip-forward-no-drop": true}`を先に作成した上で（下記）、Dockerの公式リポジトリ（`/etc/apt/keyrings/docker.asc`と`/etc/apt/sources.list.d/docker.list`）を追加し、`docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`を導入する（`ID`が`ubuntu`はubuntu、`debian`・`raspbian`はdebianのリポジトリ）。
    - **`ip-forward-no-drop`が必要な理由**: Docker Engine 28以降は、IPフォワーディングを自ら有効化した際にiptables/nftablesのFORWARDチェーンの既定ポリシーを`DROP`へ変更する。本製品は独自のnftablesテーブル（`inet vpngwgui`）でLAN機器の転送を制御するため、この既定ポリシー変更があると、同じフックの別テーブル（Dockerが追加する`ip filter`テーブル）でパケットが最終的に破棄され、透過ゲートウェイ・Kill Switchのフェイルオープン（KS OFF時の直接インターネット転送）が機能しなくなる（実機で発見・修正済み）。この設定でDocker自身にFORWARD既定ポリシーを変更させないようにする。導入済みのDockerが既に`daemon.json`を持つ場合は上書きしない。
 4. **ホストの設定**: gatewayロールの実行時のみ、`/etc/sysctl.d/99-vpngwgui.conf`（IPフォワーディング。**このファイルだけを`sysctl -p`で反映**する。`sysctl --system`は、無関係な他のファイルの権限エラー（コンテナ等）で失敗しうるため使わない）と、起動時のKill Switchガード（`vpngwgui-boot-guard.service`。内容は従来の`setup-boot-guard.sh`と同じ）。
-5. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（gatewayロールの実行時のみ。`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`WEB_PORT`（webロールの実行時のみ。Web UIを配信するホスト側のポート。優先順は`--web-port` ＞ `.env`の既存値 ＞ 既定80。`docker-compose.yml`の`services.web.ports`が`"${WEB_PORT:-80}:8080"`で参照する。コンテナ内は常に8080固定）、`VPN_PROVIDERS`、`API_ORIGIN`（webロールの実行時のみ）、`GATEWAY_HOST`・`GATEWAY_PORT`（apiロールの実行時のみ）、`COMPOSE_FILE`（そのロールのcomposeファイルを並べる）。オーケストレーター自身の`.env`には、加えてステップ0で決定したトポロジー（`TOPOLOGY_API_HOST`等）を記録する。
+5. **`.env`の作成・更新**（他の行は保持）: `LAN_IFACE`（gatewayロールの実行時のみ。`.env`に無いときだけ、デフォルトゲートウェイの逆引きで検出する。`--lan-iface`・`--redetect-lan-iface`で上書き）、`WEB_PORT`（webロールの実行時のみ。Web UIを配信するホスト側のポート。優先順は`--web-port` ＞ `.env`の既存値 ＞ 既定443。`docker-compose.yml`の`services.web.ports`が`"${WEB_PORT:-443}:8080"`で参照する。コンテナ内は常に8080固定）、`VPN_PROVIDERS`、`API_ORIGIN`（webロールの実行時のみ）、`GATEWAY_HOST`・`GATEWAY_PORT`（apiロールの実行時のみ）、`COMPOSE_FILE`（そのロールのcomposeファイルを並べる）。オーケストレーター自身の`.env`には、加えてステップ0で決定したトポロジー（`TOPOLOGY_API_HOST`等）を記録する。
 6. **ベンダーの決定（Phase 17改訂）**: gatewayロールの実行時のみ。`--providers`があればそれを使う。無ければ、その時点で`vendors/`にある全ベンダー（all）を使う。対話選択は行わない（`.env`の既存の`VPN_PROVIDERS`は、引数なしの実行では参照しない。initial installでもupdateでも常に「指定 ＞ 全ベンダー」の2択に統一し、新しく`vendors/`へ追加されたベンダーが次回の`--providers`省略時の再実行で自動的に有効化されるようにする）。
 7. **ベンダーのホスト側手順**: gatewayロールの実行時のみ。有効なベンダーの`install-host.sh`があれば実行する（下記の契約）。1つでも失敗したら、起動の前に中止する。
 8. **起動**: `docker compose up -d --build --remove-orphans`（無効にしたベンダーのランナーは、`--remove-orphans`で停止・削除される。ログイン情報のボリュームは残す）。webロールの実行時は、Web UIが応答するまで待つ（最大約3分）。
