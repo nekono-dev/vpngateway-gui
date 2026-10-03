@@ -2,10 +2,14 @@
 // webserver/design.md「ゲートウェイ機の再起動の実装方針」参照。エラーはダイアログ内に表示する
 // （モーダル表示中はダイアログ外のトーストが操作不能になるため）。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { postV1GatewayReboot } from "../../generated/api/default/default";
+import { useCurrentUsername } from "../../contexts/AuthContext";
 import { useDialogOpen } from "../../hooks/useDialogOpen";
-import { describeApiError, describeThrownError } from "../../notifications/describe-api-error";
+import {
+  describeApiError,
+  describeThrownError,
+} from "../../notifications/describe-api-error";
 
 interface Props {
   open: boolean;
@@ -13,8 +17,11 @@ interface Props {
 }
 
 export function RebootDialog({ open, onClose }: Props) {
-  const dialogRef = useDialogOpen(open);
-  const [password, setPassword] = useState("");
+  const currentUsername = useCurrentUsername();
+  const dialogRef = useDialogOpen(open, false);
+  // パスワードは非制御入力（ref）で読む。パスワードマネージャが`value`を直接書き換えた値を、Reactの再描画で
+  // stateの値（空）へ戻されないようにするため。
+  const passwordRef = useRef<HTMLInputElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string>();
   const [requested, setRequested] = useState(false);
@@ -22,18 +29,22 @@ export function RebootDialog({ open, onClose }: Props) {
   // 開くたびに、前回の入力・結果を引き継がない（パスワードを保持しない）。
   useEffect(() => {
     if (open) {
-      setPassword("");
+      if (passwordRef.current) passwordRef.current.value = "";
       setError(undefined);
       setRequested(false);
     }
   }, [open]);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     event.preventDefault();
     setIsSubmitting(true);
     setError(undefined);
     try {
-      const response = await postV1GatewayReboot({ password });
+      const response = await postV1GatewayReboot({
+        password: passwordRef.current?.value ?? "",
+      });
       if (response.status === 202) {
         setRequested(true);
         return;
@@ -43,28 +54,47 @@ export function RebootDialog({ open, onClose }: Props) {
         return;
       }
       if (response.status === 503) {
-        setError("ゲートウェイ機に再起動の仕組みが導入されていません（インストーラの再実行が必要です）");
+        setError(
+          "ゲートウェイ機に再起動の仕組みが導入されていません（インストーラの再実行が必要です）",
+        );
         return;
       }
       if (response.status === 409) {
         setError("すでに再起動を依頼済みです。しばらくお待ちください");
         return;
       }
-      setError(describeApiError(response.status, response.data, "再起動の依頼に失敗しました").summary);
+      setError(
+        describeApiError(
+          response.status,
+          response.data,
+          "再起動の依頼に失敗しました",
+        ).summary,
+      );
     } catch (caughtError) {
-      setError(describeThrownError(caughtError, "再起動の依頼に失敗しました").summary);
+      setError(
+        describeThrownError(caughtError, "再起動の依頼に失敗しました").summary,
+      );
     } finally {
-      setPassword("");
+      if (passwordRef.current) passwordRef.current.value = "";
       setIsSubmitting(false);
     }
   }
 
   return (
-    <dialog ref={dialogRef} onClose={onClose} aria-label="ゲートウェイ再起動">
+    <dialog
+      ref={dialogRef}
+      className="non-modal"
+      onClose={onClose}
+      onKeyDown={(event) => event.key === "Escape" && onClose()}
+      aria-label="ゲートウェイ再起動"
+    >
       <h2>ゲートウェイ再起動</h2>
-      {requested ? (
+      {/* 閉じている間はフォームを描画しない（パスワードマネージャは、開いたときに追加された要素を確実に検出するため） */}
+      {!open ? null : requested ? (
         <>
-          <p role="status">再起動を依頼しました。ゲートウェイ機が再起動する間、VPN・LAN機器の通信と、この画面への接続ができなくなります。</p>
+          <p role="status">
+            再起動を依頼しました。ゲートウェイ機が再起動する間、VPN・LAN機器の通信と、この画面への接続ができなくなります。
+          </p>
           <div className="dialog-actions">
             <button type="button" onClick={onClose}>
               閉じる
@@ -73,16 +103,27 @@ export function RebootDialog({ open, onClose }: Props) {
         </>
       ) : (
         <form onSubmit={(event) => void handleSubmit(event)}>
-          <p>ゲートウェイ機（ベンダーが動作しているサーバ）のOSを再起動します。再起動が完了するまでの間、VPN・LAN機器の通信が止まります。</p>
+          <p>
+            ゲートウェイ機（ベンダーが動作しているサーバ）のOSを再起動します。再起動が完了するまでの間、VPN・LAN機器の通信が止まります。
+          </p>
           <label>
-            パスワード（確認のため再入力）
+            ログイン中のユーザー名
+            <input
+              type="text"
+              name="username"
+              autoComplete="username"
+              defaultValue={currentUsername}
+            />
+          </label>
+          <label>
+            ログインパスワード
             <input
               type="password"
-              autoComplete="off"
+              name="current-password"
+              autoComplete="current-password"
               required
-              value={password}
+              ref={passwordRef}
               disabled={isSubmitting}
-              onChange={(event) => setPassword(event.target.value)}
             />
           </label>
           {error ? <p role="alert">{error}</p> : null}

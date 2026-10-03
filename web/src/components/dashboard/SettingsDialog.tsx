@@ -5,10 +5,16 @@
 // 「動作検証」タブで、保存済みの設定が実際に動作しているかを検証する（webserver/design.md「設定の動作検証の実装方針」）。
 
 import { useEffect, useRef, useState } from "react";
-import { getV1ConnectionConfig, putV1ConnectionConfig } from "../../generated/api/default/default";
+import {
+  getV1ConnectionConfig,
+  putV1ConnectionConfig,
+} from "../../generated/api/default/default";
 import type { GetV1ConnectionConfig200 } from "../../generated/api/endpoints.schemas";
 import { useDialogOpen } from "../../hooks/useDialogOpen";
-import { describeApiError, describeThrownError } from "../../notifications/describe-api-error";
+import {
+  describeApiError,
+  describeThrownError,
+} from "../../notifications/describe-api-error";
 import { isIpv4Cidr } from "../../lib/ipv4-cidr";
 import { LineListEditor } from "./LineListEditor";
 import { AccountSettingsDialog } from "./AccountSettingsDialog";
@@ -24,7 +30,13 @@ interface Props {
   defaultExplicitProxyAllowedCidr?: string;
 }
 
-type SettingsTab = "control" | "gateway" | "dnsResolver" | "dnsDetail" | "verify" | "maintenance";
+type SettingsTab =
+  | "control"
+  | "gateway"
+  | "dnsResolver"
+  | "dnsDetail"
+  | "verify"
+  | "maintenance";
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   control: "通信制御",
@@ -36,16 +48,24 @@ const TAB_LABELS: Record<SettingsTab, string> = {
 };
 const TAB_KEYS = Object.keys(TAB_LABELS) as SettingsTab[];
 
-export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr }: Props) {
-  const dialogRef = useDialogOpen(open);
+export function SettingsDialog({
+  open,
+  onClose,
+  defaultExplicitProxyAllowedCidr,
+}: Props) {
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isRebootOpen, setIsRebootOpen] = useState(false);
+  // パスワード入力のダイアログ（非モーダル）を開いている間は、トップレイヤーのこのダイアログがそれらを覆い、
+  // パスワードマネージャの候補表示も隠すため、このダイアログの表示だけを一時的に閉じる（状態は保持する）。
+  const isSubDialogOpen = isAccountOpen || isRebootOpen;
+  const dialogRef = useDialogOpen(open && !isSubDialogOpen);
   const [settings, setSettings] = useState<GetV1ConnectionConfig200>();
   // 読み込んだ時点の設定（未保存の変更の有無の判定と、動作検証が使う保存済みのIP確認サービスのURL）。
-  const [loadedSettings, setLoadedSettings] = useState<GetV1ConnectionConfig200>();
+  const [loadedSettings, setLoadedSettings] =
+    useState<GetV1ConnectionConfig200>();
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const [isAccountOpen, setIsAccountOpen] = useState(false);
-  const [isRebootOpen, setIsRebootOpen] = useState(false);
   const [tab, setTab] = useState<SettingsTab>("control");
   const verification = useVerification(open, loadedSettings?.verifyEchoUrl);
   // 許可CIDRの初期値は、ダイアログを開いた時点の値を使う。ダッシュボードの定期取得で値が変わる（取得の失敗で一時的に
@@ -62,19 +82,29 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
     getV1ConnectionConfig()
       .then((response) => {
         if (response.status !== 200) {
-          setError(describeApiError(response.status, response.data, "設定の取得に失敗しました").summary);
+          setError(
+            describeApiError(
+              response.status,
+              response.data,
+              "設定の取得に失敗しました",
+            ).summary,
+          );
           return;
         }
         // 許可CIDRが未設定のときだけ、ゲートウェイ機のLANサブネットを初期値として提示する
         // （既に値がある場合は上書きしない）。
         const defaultCidr = defaultCidrRef.current;
         const explicitProxyAllowedCidrs =
-          response.data.explicitProxyAllowedCidrs.length === 0 && defaultCidr ? [defaultCidr] : response.data.explicitProxyAllowedCidrs;
+          response.data.explicitProxyAllowedCidrs.length === 0 && defaultCidr
+            ? [defaultCidr]
+            : response.data.explicitProxyAllowedCidrs;
         setSettings({ ...response.data, explicitProxyAllowedCidrs });
         setLoadedSettings({ ...response.data, explicitProxyAllowedCidrs });
       })
       .catch((caughtError: unknown) => {
-        setError(describeThrownError(caughtError, "設定の取得に失敗しました").summary);
+        setError(
+          describeThrownError(caughtError, "設定の取得に失敗しました").summary,
+        );
       })
       .finally(() => setIsLoading(false));
   }, [open]);
@@ -86,21 +116,39 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
     try {
       const response = await putV1ConnectionConfig({
         ...settings,
-        excludedDomains: settings.excludedDomains.map((domain) => domain.trim()).filter((domain) => domain.length > 0),
-        explicitProxyAllowedCidrs: settings.explicitProxyAllowedCidrs.filter((cidr) => cidr.trim().length > 0),
+        excludedDomains: settings.excludedDomains
+          .map((domain) => domain.trim())
+          .filter((domain) => domain.length > 0),
+        explicitProxyAllowedCidrs: settings.explicitProxyAllowedCidrs.filter(
+          (cidr) => cidr.trim().length > 0,
+        ),
         dnsUpstreamUrl: settings.dnsUpstreamUrl.trim(),
-        dnsFallbackServers: settings.dnsFallbackServers.map((server) => server.trim()).filter((server) => server.length > 0),
-        dnsClientNameServers: settings.dnsClientNameServers.map((server) => server.trim()).filter((server) => server.length > 0),
-        dnsRedirectExcludedCidrs: settings.dnsRedirectExcludedCidrs.map((cidr) => cidr.trim()).filter((cidr) => cidr.length > 0),
+        dnsFallbackServers: settings.dnsFallbackServers
+          .map((server) => server.trim())
+          .filter((server) => server.length > 0),
+        dnsClientNameServers: settings.dnsClientNameServers
+          .map((server) => server.trim())
+          .filter((server) => server.length > 0),
+        dnsRedirectExcludedCidrs: settings.dnsRedirectExcludedCidrs
+          .map((cidr) => cidr.trim())
+          .filter((cidr) => cidr.length > 0),
         verifyEchoUrl: settings.verifyEchoUrl.trim(),
       });
       if (response.status !== 200) {
-        setError(describeApiError(response.status, response.data, "設定の保存に失敗しました").summary);
+        setError(
+          describeApiError(
+            response.status,
+            response.data,
+            "設定の保存に失敗しました",
+          ).summary,
+        );
         return;
       }
       onClose();
     } catch (caughtError) {
-      setError(describeThrownError(caughtError, "設定の保存に失敗しました").summary);
+      setError(
+        describeThrownError(caughtError, "設定の保存に失敗しました").summary,
+      );
     } finally {
       setIsSaving(false);
     }
@@ -109,19 +157,32 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
   // 明示的プロキシが有効なのに、有効な（IPv4 CIDR形式の）許可CIDRが1つも無い場合は保存できない
   // （APIサーバ側でも許可CIDR自体の形式検証は行うが、ここでは「1件も無い」状態を保存前に防ぐ。
   // webserver/requirements.md「明示的プロキシの許可CIDRが無い場合の保存禁止」）。
-  const hasValidExplicitProxyAllowedCidr = settings?.explicitProxyAllowedCidrs.some((cidr) => isIpv4Cidr(cidr.trim())) ?? false;
-  const explicitProxyNeedsCidr = settings?.explicitProxyEnabled === true && !hasValidExplicitProxyAllowedCidr;
+  const hasValidExplicitProxyAllowedCidr =
+    settings?.explicitProxyAllowedCidrs.some((cidr) =>
+      isIpv4Cidr(cidr.trim()),
+    ) ?? false;
+  const explicitProxyNeedsCidr =
+    settings?.explicitProxyEnabled === true &&
+    !hasValidExplicitProxyAllowedCidr;
 
   // DNS中継の保存前チェック（APIサーバ側でも検証する。ここでは、保存できない組み合わせを保存前に示す）。
-  const dnsFallbackCount = settings?.dnsFallbackServers.filter((server) => server.trim().length > 0).length ?? 0;
+  const dnsFallbackCount =
+    settings?.dnsFallbackServers.filter((server) => server.trim().length > 0)
+      .length ?? 0;
   const dnsRelayNeedsUpstream =
-    settings?.dnsRelayEnabled === true && settings.dnsUpstreamUrl.trim().length === 0 && dnsFallbackCount === 0;
+    settings?.dnsRelayEnabled === true &&
+    settings.dnsUpstreamUrl.trim().length === 0 &&
+    dnsFallbackCount === 0;
   // 「DNS詳細」タブはDNS中継が有効なときだけ表示するため、無効の間は切り替え先の入力を保存の条件にしない
   // （表示されないタブの入力不備で保存できなくならないようにする）。
   const dnsFallbackNeedsServers =
-    settings?.dnsRelayEnabled === true && settings.dnsFailureMode === "fallback" && dnsFallbackCount === 0;
-  const hasIncompleteDnsSettings = dnsRelayNeedsUpstream || dnsFallbackNeedsServers;
-  const verifyEchoUrlMissing = settings !== undefined && settings.verifyEchoUrl.trim().length === 0;
+    settings?.dnsRelayEnabled === true &&
+    settings.dnsFailureMode === "fallback" &&
+    dnsFallbackCount === 0;
+  const hasIncompleteDnsSettings =
+    dnsRelayNeedsUpstream || dnsFallbackNeedsServers;
+  const verifyEchoUrlMissing =
+    settings !== undefined && settings.verifyEchoUrl.trim().length === 0;
   const tabHasIncompleteInput: Record<SettingsTab, boolean> = {
     control: false,
     gateway: explicitProxyNeedsCidr,
@@ -130,17 +191,30 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
     verify: verifyEchoUrlMissing,
     maintenance: false,
   };
-  const hasUnsavedChanges = JSON.stringify(settings) !== JSON.stringify(loadedSettings);
-  const visibleTabKeys = TAB_KEYS.filter((key) => key !== "dnsDetail" || settings?.dnsRelayEnabled === true);
+  const hasUnsavedChanges =
+    JSON.stringify(settings) !== JSON.stringify(loadedSettings);
+  const visibleTabKeys = TAB_KEYS.filter(
+    (key) => key !== "dnsDetail" || settings?.dnsRelayEnabled === true,
+  );
   // 表示中の「DNS詳細」タブが、DNS中継を無効にして消えた場合は「上位DNSリゾルバ」へ戻す。
-  const activeTab: SettingsTab = visibleTabKeys.includes(tab) ? tab : "dnsResolver";
-  const hasExcludedDomains = settings?.excludedDomains.some((domain) => domain.trim().length > 0) ?? false;
+  const activeTab: SettingsTab = visibleTabKeys.includes(tab)
+    ? tab
+    : "dnsResolver";
+  const hasExcludedDomains =
+    settings?.excludedDomains.some((domain) => domain.trim().length > 0) ??
+    false;
 
   return (
     // アカウント設定ダイアログ（AccountSettingsDialog）・再起動ダイアログ（RebootDialog）は、この<dialog>の子要素にせず兄弟要素にする
     // （<dialog>同士を入れ子にすると、内側を閉じたときに外側までブラウザによって閉じられてしまうため）。
     <>
-      <dialog ref={dialogRef} onClose={onClose} aria-label="設定">
+      <dialog
+        ref={dialogRef}
+        onClose={() => {
+          if (!isSubDialogOpen) onClose();
+        }}
+        aria-label="設定"
+      >
         <h2>設定</h2>
         {isLoading || !settings ? (
           <p>読み込み中...</p>
@@ -152,7 +226,11 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
               void handleSave();
             }}
           >
-            <div role="tablist" aria-label="設定の項目" className="location-tabs">
+            <div
+              role="tablist"
+              aria-label="設定の項目"
+              className="location-tabs"
+            >
               {visibleTabKeys.map((key) => (
                 <button
                   key={key}
@@ -175,20 +253,34 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     <input
                       type="checkbox"
                       checked={settings.killSwitch}
-                      onChange={(event) => setSettings({ ...settings, killSwitch: event.target.checked })}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          killSwitch: event.target.checked,
+                        })
+                      }
                     />
                     Kill Switch（VPN切断検知時にLAN側通信を遮断する）
                   </label>
 
                   <LineListEditor
                     label="迂回ドメイン（split-tunnel、1行1ドメイン）"
-                    placeholder={"VPNを経由せず直接通信するドメイン\nexample.com ← example.com自身のみ\n*.example.com ← サブドメインのみ（example.com自身は含まない）"}
+                    placeholder={
+                      "VPNを経由せず直接通信するドメイン\nexample.com ← example.com自身のみ\n*.example.com ← サブドメインのみ（example.com自身は含まない）"
+                    }
                     value={settings.excludedDomains}
-                    onChange={(excludedDomains) => setSettings({ ...settings, excludedDomains })}
+                    onChange={(excludedDomains) =>
+                      setSettings({ ...settings, excludedDomains })
+                    }
                   />
-                  <p className="hint">ドメインとそのサブドメインの両方を迂回するには、example.com と *.example.com の両方を登録してください。</p>
+                  <p className="hint">
+                    ドメインとそのサブドメインの両方を迂回するには、example.com
+                    と *.example.com の両方を登録してください。
+                  </p>
                   {hasExcludedDomains && !settings.dnsRelayEnabled ? (
-                    <p className="restriction">DNS中継が無効なため、迂回ドメインは反映されません。</p>
+                    <p className="restriction">
+                      DNS中継が無効なため、迂回ドメインは反映されません。
+                    </p>
                   ) : null}
                 </>
               ) : activeTab === "gateway" ? (
@@ -197,8 +289,16 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     <input
                       type="checkbox"
                       checked={settings.transparentGatewayEnabled}
-                      disabled={settings.transparentGatewayEnabled && !settings.explicitProxyEnabled}
-                      onChange={(event) => setSettings({ ...settings, transparentGatewayEnabled: event.target.checked })}
+                      disabled={
+                        settings.transparentGatewayEnabled &&
+                        !settings.explicitProxyEnabled
+                      }
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          transparentGatewayEnabled: event.target.checked,
+                        })
+                      }
                     />
                     透過ゲートウェイモード
                   </label>
@@ -207,22 +307,38 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     <input
                       type="checkbox"
                       checked={settings.explicitProxyEnabled}
-                      disabled={settings.explicitProxyEnabled && !settings.transparentGatewayEnabled}
-                      onChange={(event) => setSettings({ ...settings, explicitProxyEnabled: event.target.checked })}
+                      disabled={
+                        settings.explicitProxyEnabled &&
+                        !settings.transparentGatewayEnabled
+                      }
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          explicitProxyEnabled: event.target.checked,
+                        })
+                      }
                     />
                     明示的プロキシモード（SOCKS5/HTTP）
                   </label>
-                  <p className="hint">透過ゲートウェイ・明示的プロキシは少なくとも一方を有効にする必要があります。</p>
+                  <p className="hint">
+                    透過ゲートウェイ・明示的プロキシは少なくとも一方を有効にする必要があります。
+                  </p>
 
                   <LineListEditor
                     label="明示的プロキシの許可CIDR"
-                    placeholder={"接続元IPがこの範囲内のみプロキシ利用を許可（他は拒否）\n192.168.3.0/24 ← 192.168.3.1〜254のLAN全体を許可\n10.0.0.5/32 ← 10.0.0.5の1台のみ許可"}
+                    placeholder={
+                      "接続元IPがこの範囲内のみプロキシ利用を許可（他は拒否）\n192.168.3.0/24 ← 192.168.3.1〜254のLAN全体を許可\n10.0.0.5/32 ← 10.0.0.5の1台のみ許可"
+                    }
                     value={settings.explicitProxyAllowedCidrs}
-                    onChange={(explicitProxyAllowedCidrs) => setSettings({ ...settings, explicitProxyAllowedCidrs })}
+                    onChange={(explicitProxyAllowedCidrs) =>
+                      setSettings({ ...settings, explicitProxyAllowedCidrs })
+                    }
                     disabled={!settings.explicitProxyEnabled}
                   />
                   {explicitProxyNeedsCidr ? (
-                    <p className="restriction">明示的プロキシモードを使うには、有効な許可CIDRを1つ以上入力してください。</p>
+                    <p className="restriction">
+                      明示的プロキシモードを使うには、有効な許可CIDRを1つ以上入力してください。
+                    </p>
                   ) : null}
                 </>
               ) : activeTab === "verify" ? (
@@ -234,9 +350,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     onStart={() => void verification.start()}
                     hasUnsavedChanges={hasUnsavedChanges}
                     echoUrl={settings.verifyEchoUrl}
-                    onEchoUrlChange={(verifyEchoUrl) => setSettings({ ...settings, verifyEchoUrl })}
+                    onEchoUrlChange={(verifyEchoUrl) =>
+                      setSettings({ ...settings, verifyEchoUrl })
+                    }
                   />
-                  {verifyEchoUrlMissing ? <p className="restriction">IP確認サービスのURLを入力してください。</p> : null}
+                  {verifyEchoUrlMissing ? (
+                    <p className="restriction">
+                      IP確認サービスのURLを入力してください。
+                    </p>
+                  ) : null}
                 </>
               ) : activeTab === "maintenance" ? (
                 <div className="maintenance-actions">
@@ -253,11 +375,18 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     <input
                       type="checkbox"
                       checked={settings.dnsRelayEnabled}
-                      onChange={(event) => setSettings({ ...settings, dnsRelayEnabled: event.target.checked })}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          dnsRelayEnabled: event.target.checked,
+                        })
+                      }
                     />
                     DNS中継を有効にする（迂回ドメインの判定と、自宅DNSサーバでの名前解決）
                   </label>
-                  <p className="hint">暗号化DNS（DoH・DoT）を使うクライアントは中継できないため、迂回ドメインが効きません。</p>
+                  <p className="hint">
+                    暗号化DNS（DoH・DoT）を使うクライアントは中継できないため、迂回ドメインが効きません。
+                  </p>
 
                   <label>
                     自宅DNSサーバ（DoHのURL）
@@ -266,7 +395,12 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                       placeholder="https://dns.home.example/dns-query"
                       disabled={!settings.dnsRelayEnabled}
                       value={settings.dnsUpstreamUrl}
-                      onChange={(event) => setSettings({ ...settings, dnsUpstreamUrl: event.target.value })}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          dnsUpstreamUrl: event.target.value,
+                        })
+                      }
                     />
                   </label>
                   <label>
@@ -275,22 +409,37 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                       rows={4}
                       disabled={!settings.dnsRelayEnabled}
                       value={settings.dnsUpstreamCaPem}
-                      onChange={(event) => setSettings({ ...settings, dnsUpstreamCaPem: event.target.value })}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          dnsUpstreamCaPem: event.target.value,
+                        })
+                      }
                     />
                   </label>
                   {dnsRelayNeedsUpstream ? (
-                    <p className="restriction">DNS中継を使うには、自宅DNSサーバのURLか、切り替え先の公開DNSを入力してください。</p>
+                    <p className="restriction">
+                      DNS中継を使うには、自宅DNSサーバのURLか、切り替え先の公開DNSを入力してください。
+                    </p>
                   ) : null}
                 </>
               ) : (
                 <>
-                  <div role="radiogroup" aria-label="自宅DNSサーバが応答しないとき">
+                  <div
+                    role="radiogroup"
+                    aria-label="自宅DNSサーバが応答しないとき"
+                  >
                     <label>
                       <input
                         type="radio"
                         name="dnsFailureMode"
                         checked={settings.dnsFailureMode === "failClosed"}
-                        onChange={() => setSettings({ ...settings, dnsFailureMode: "failClosed" })}
+                        onChange={() =>
+                          setSettings({
+                            ...settings,
+                            dnsFailureMode: "failClosed",
+                          })
+                        }
                       />
                       名前解決を止める（フィルタと履歴を優先）
                     </label>
@@ -299,7 +448,12 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                         type="radio"
                         name="dnsFailureMode"
                         checked={settings.dnsFailureMode === "fallback"}
-                        onChange={() => setSettings({ ...settings, dnsFailureMode: "fallback" })}
+                        onChange={() =>
+                          setSettings({
+                            ...settings,
+                            dnsFailureMode: "fallback",
+                          })
+                        }
                       />
                       公開DNSへ切り替える（フィルタと履歴は効かなくなる）
                     </label>
@@ -308,7 +462,9 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     label="切り替え先の公開DNS（1行1アドレス、最大3件）"
                     placeholder={"1.1.1.1"}
                     value={settings.dnsFallbackServers}
-                    onChange={(dnsFallbackServers) => setSettings({ ...settings, dnsFallbackServers })}
+                    onChange={(dnsFallbackServers) =>
+                      setSettings({ ...settings, dnsFallbackServers })
+                    }
                     disabled={settings.dnsFailureMode !== "fallback"}
                   />
 
@@ -316,15 +472,25 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     label="クライアント名の取得先（DHCPサーバ・ルータのDNS、1行1アドレス、最大3件。空ならIPアドレスで記録）"
                     placeholder={"192.168.3.254"}
                     value={settings.dnsClientNameServers}
-                    onChange={(dnsClientNameServers) => setSettings({ ...settings, dnsClientNameServers })}
+                    onChange={(dnsClientNameServers) =>
+                      setSettings({ ...settings, dnsClientNameServers })
+                    }
                   />
-                  <p className="hint">指定すると、自宅DNSサーバの履歴に、DHCPで配られた名前（例: macmini.lan → macmini-lan）でクライアントが記録されます。</p>
+                  <p className="hint">
+                    指定すると、自宅DNSサーバの履歴に、DHCPで配られた名前（例:
+                    macmini.lan → macmini-lan）でクライアントが記録されます。
+                  </p>
 
                   <label>
                     <input
                       type="checkbox"
                       checked={settings.dnsRedirectEnabled}
-                        onChange={(event) => setSettings({ ...settings, dnsRedirectEnabled: event.target.checked })}
+                      onChange={(event) =>
+                        setSettings({
+                          ...settings,
+                          dnsRedirectEnabled: event.target.checked,
+                        })
+                      }
                     />
                     手動でDNSを指定した端末の問い合わせも中継する
                   </label>
@@ -332,11 +498,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                     label="中継しない宛先（LAN内のDNSサーバ等、1行1CIDR）"
                     placeholder={"192.168.3.5/32"}
                     value={settings.dnsRedirectExcludedCidrs}
-                    onChange={(dnsRedirectExcludedCidrs) => setSettings({ ...settings, dnsRedirectExcludedCidrs })}
+                    onChange={(dnsRedirectExcludedCidrs) =>
+                      setSettings({ ...settings, dnsRedirectExcludedCidrs })
+                    }
                     disabled={!settings.dnsRedirectEnabled}
                   />
                   {dnsFallbackNeedsServers ? (
-                    <p className="restriction">公開DNSへ切り替えるには、切り替え先の公開DNSを1つ以上入力してください。</p>
+                    <p className="restriction">
+                      公開DNSへ切り替えるには、切り替え先の公開DNSを1つ以上入力してください。
+                    </p>
                   ) : null}
                 </>
               )}
@@ -346,7 +516,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
 
             <div className="dialog-actions">
               <div className="dialog-actions-group">
-                <button type="submit" disabled={isSaving || explicitProxyNeedsCidr || hasIncompleteDnsSettings || verifyEchoUrlMissing}>
+                <button
+                  type="submit"
+                  disabled={
+                    isSaving ||
+                    explicitProxyNeedsCidr ||
+                    hasIncompleteDnsSettings ||
+                    verifyEchoUrlMissing
+                  }
+                >
                   {isSaving ? "保存中..." : "保存"}
                 </button>
                 <button type="button" disabled={isSaving} onClick={onClose}>
@@ -357,8 +535,14 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
           </form>
         )}
       </dialog>
-      <AccountSettingsDialog open={isAccountOpen} onClose={() => setIsAccountOpen(false)} />
-      <RebootDialog open={isRebootOpen} onClose={() => setIsRebootOpen(false)} />
+      <AccountSettingsDialog
+        open={isAccountOpen}
+        onClose={() => setIsAccountOpen(false)}
+      />
+      <RebootDialog
+        open={isRebootOpen}
+        onClose={() => setIsRebootOpen(false)}
+      />
     </>
   );
 }

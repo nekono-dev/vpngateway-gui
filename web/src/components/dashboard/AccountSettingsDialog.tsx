@@ -11,11 +11,18 @@ interface Props {
 }
 
 export function AccountSettingsDialog({ open, onClose }: Props) {
-  const dialogRef = useDialogOpen(open);
+  const dialogRef = useDialogOpen(open, false);
 
   return (
-    <dialog ref={dialogRef} onClose={onClose} aria-label="アカウント設定">
-      <AccountSettingsForm />
+    <dialog
+      ref={dialogRef}
+      className="non-modal"
+      onClose={onClose}
+      onKeyDown={(event) => event.key === "Escape" && onClose()}
+      aria-label="アカウント設定"
+    >
+      {/* 閉じている間はフォームを描画しない（パスワードマネージャは、開いたときに追加された要素を確実に検出するため） */}
+      {open ? <AccountSettingsForm /> : null}
       <div className="dialog-actions">
         <button type="button" onClick={onClose}>
           閉じる

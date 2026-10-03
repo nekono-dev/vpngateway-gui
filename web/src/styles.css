@@ -618,6 +618,19 @@ dialog::-webkit-scrollbar {
   display: none;
 }
 
+/* 非モーダルのダイアログ（パスワードマネージャの候補表示がトップレイヤーに隠れないよう、showModal()を使わない）。
+   モーダルの::backdropの代わりに、巨大なbox-shadowで背面を暗くし、画面中央へ固定する。 */
+dialog.non-modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  max-height: calc(100dvh - 2 * var(--page-gutter));
+  overflow-y: auto;
+  z-index: 1000;
+  box-shadow: 0 0 0 100vmax rgba(31, 35, 40, 0.4);
+}
+
 dialog::backdrop {
   background: rgba(31, 35, 40, 0.4);
 }

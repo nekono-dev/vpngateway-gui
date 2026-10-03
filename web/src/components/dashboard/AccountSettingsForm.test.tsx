@@ -36,7 +36,7 @@ describe("AccountSettingsForm", () => {
     api.putV1Operator.mockResolvedValue({ status: 401, data: { error: "unauthenticated" } });
     render(<AccountSettingsForm />);
     await userEvent.type(screen.getByLabelText("現在のパスワード"), "wrong-password");
-    await userEvent.type(screen.getByLabelText(/新しいユーザー名/), "renamed");
+    await userEvent.type(screen.getByLabelText(/ユーザー名/), "renamed");
     await userEvent.click(screen.getByRole("button", { name: "アカウントを変更" }));
     expect(screen.getByRole("alert")).toHaveTextContent("現在のパスワードが正しくありません");
   });

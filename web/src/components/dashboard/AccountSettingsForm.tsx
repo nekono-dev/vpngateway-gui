@@ -3,20 +3,31 @@
 // （`PUT /v1/operator`）のため、保存・エラー状態を分離した独立フォームとする。
 
 import { useState } from "react";
+import { useCurrentUsername } from "../../contexts/AuthContext";
 import { putV1Operator } from "../../generated/api/default/default";
-import { describeApiError, describeThrownError } from "../../notifications/describe-api-error";
+import {
+  describeApiError,
+  describeThrownError,
+} from "../../notifications/describe-api-error";
 
 export function AccountSettingsForm() {
+  const currentUsername = useCurrentUsername();
   const [currentPassword, setCurrentPassword] = useState("");
-  const [username, setUsername] = useState("");
+  // ユーザー名欄は現在のユーザー名を初期値とし、書き換えた場合のみ変更として送る。
+  // 「新しいユーザー名」の別欄を置くと、パスワードマネージャが現在のパスワード欄へ新パスワードを入れてしまうため。
+  const [savedUsername, setSavedUsername] = useState(currentUsername);
+  const [username, setUsername] = useState(currentUsername);
   const [newPassword, setNewPassword] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [done, setDone] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+  async function handleSubmit(
+    event: React.FormEvent<HTMLFormElement>,
+  ): Promise<void> {
     event.preventDefault();
-    if (!username && !newPassword) {
+    const usernameChanged = username !== "" && username !== savedUsername;
+    if (!usernameChanged && !newPassword) {
       setError("ユーザー名または新しいパスワードを入力してください");
       return;
     }
@@ -26,7 +37,7 @@ export function AccountSettingsForm() {
     try {
       const response = await putV1Operator({
         currentPassword,
-        ...(username ? { username } : {}),
+        ...(usernameChanged ? { username } : {}),
         ...(newPassword ? { newPassword } : {}),
       });
       if (response.status === 401) {
@@ -34,14 +45,23 @@ export function AccountSettingsForm() {
         return;
       }
       if (response.status !== 200) {
-        setError(describeApiError(response.status, response.data, "アカウントの変更に失敗しました").summary);
+        setError(
+          describeApiError(
+            response.status,
+            response.data,
+            "アカウントの変更に失敗しました",
+          ).summary,
+        );
         return;
       }
       setDone(true);
-      setUsername("");
+      if (usernameChanged) setSavedUsername(username);
       setNewPassword("");
     } catch (caughtError) {
-      setError(describeThrownError(caughtError, "アカウントの変更に失敗しました").summary);
+      setError(
+        describeThrownError(caughtError, "アカウントの変更に失敗しました")
+          .summary,
+      );
     } finally {
       setCurrentPassword("");
       setIsSaving(false);
@@ -49,13 +69,28 @@ export function AccountSettingsForm() {
   }
 
   return (
-    <form className="account-settings-form" onSubmit={(event) => void handleSubmit(event)}>
+    <form
+      className="account-settings-form"
+      onSubmit={(event) => void handleSubmit(event)}
+    >
       <h2>アカウント</h2>
+      <label>
+        ユーザー名（変更する場合は書き換える）
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          value={username}
+          disabled={isSaving}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+      </label>
       <label>
         現在のパスワード
         <input
           type="password"
-          autoComplete="off"
+          name="current-password"
+          autoComplete="current-password"
           required
           value={currentPassword}
           disabled={isSaving}
@@ -63,14 +98,11 @@ export function AccountSettingsForm() {
         />
       </label>
       <label>
-        新しいユーザー名（変更する場合のみ）
-        <input type="text" autoComplete="off" value={username} disabled={isSaving} onChange={(event) => setUsername(event.target.value)} />
-      </label>
-      <label>
         新しいパスワード（変更する場合のみ、4文字以上）
         <input
           type="password"
-          autoComplete="off"
+          name="new-password"
+          autoComplete="new-password"
           minLength={4}
           value={newPassword}
           disabled={isSaving}

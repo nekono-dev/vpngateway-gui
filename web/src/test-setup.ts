@@ -8,10 +8,13 @@ afterEach(() => {
   cleanup();
 });
 
-// jsdomは`<dialog>`の`showModal()`/`close()`を実装していないため、`open`属性の切替のみを再現する。
+// jsdomは`<dialog>`の`showModal()`/`show()`/`close()`を実装していないため、`open`属性の切替のみを再現する。
 // `close()`では実ブラウザ同様に`close`イベントを発火する（`onClose`ハンドラの検証用）。
 if (typeof HTMLDialogElement !== "undefined") {
   HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.show = function show(this: HTMLDialogElement) {
     this.setAttribute("open", "");
   };
   HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {

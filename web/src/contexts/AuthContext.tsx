@@ -2,8 +2,18 @@
 // ログイン画面への強制遷移。webserver/design.md「利用者認証の実装方針」参照。
 // API呼び出しは生成クライアント以外を使わない。
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { deleteV1OperatorSession, getV1Operator, getV1OperatorSession } from "../generated/api/default/default";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  deleteV1OperatorSession,
+  getV1Operator,
+  getV1OperatorSession,
+} from "../generated/api/default/default";
 
 export type AuthState =
   | { status: "loading" }
@@ -81,7 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value: AuthContextValue = {
     auth,
-    setAuthenticated: (username) => setAuth({ status: "authenticated", username }),
+    setAuthenticated: (username) =>
+      setAuth({ status: "authenticated", username }),
     async logout() {
       await deleteV1OperatorSession();
       setAuth({ status: "login" });
@@ -101,4 +112,13 @@ export function useAuth(): AuthContextValue {
     throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
+}
+
+/**
+ * 目的: ログイン中のユーザー名を取得する（パスワードマネージャ向けの非表示入力欄用）。
+ * 出力: ユーザー名。AuthProviderの外・未ログインでは空文字（例外を投げない）。
+ */
+export function useCurrentUsername(): string {
+  const context = useContext(AuthContext);
+  return context?.auth.status === "authenticated" ? context.auth.username : "";
 }

@@ -53,7 +53,8 @@ export function SetupPage() {
           ユーザー名
           <input
             type="text"
-            autoComplete="off"
+            name="username"
+            autoComplete="username"
             required
             value={username}
             disabled={isSubmitting}
@@ -64,7 +65,8 @@ export function SetupPage() {
           パスワード（4文字以上）
           <input
             type="password"
-            autoComplete="off"
+            name="new-password"
+            autoComplete="new-password"
             required
             minLength={4}
             value={password}
@@ -76,7 +78,8 @@ export function SetupPage() {
           パスワード（確認）
           <input
             type="password"
-            autoComplete="off"
+            name="new-password-confirm"
+            autoComplete="new-password"
             required
             minLength={4}
             value={passwordConfirm}

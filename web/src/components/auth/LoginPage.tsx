@@ -44,7 +44,8 @@ export function LoginPage() {
           ユーザー名
           <input
             type="text"
-            autoComplete="off"
+            name="username"
+            autoComplete="username"
             required
             value={username}
             disabled={isSubmitting}
@@ -55,7 +56,8 @@ export function LoginPage() {
           パスワード
           <input
             type="password"
-            autoComplete="off"
+            name="password"
+            autoComplete="current-password"
             required
             value={password}
             disabled={isSubmitting}
