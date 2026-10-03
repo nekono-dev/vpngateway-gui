@@ -42,6 +42,13 @@
 - 実機での検証は、機能単位内の個々のタスクごとに行わず、その機能単位の主要タスクの実装がすべて完了した最後にまとめて実施する。実装の合間に都度実機確認を挟まない（手戻りが分かった時点でまとめて直せるようにするため）。
 - ここでいう「実機」とは、開発者が用意する検証用環境（検証用サーバ等）を指す。Raspberry Pi等の実運用相当ハードウェアを意味するものではなく、実運用相当ハードウェアでの検証は別途明記された場合にのみ行う。
 
+# 検証サーバへの反映
+
+- 実機検証（検証用サーバ）への反映は、手作業で転送・ビルドせず`scripts/deploy-verify.sh`で行う。検証サーバのIPアドレス等は、リポジトリ直下の`.env`（git管理外。雛形は`.env.example`）の`VERIFY_HOST`・`VERIFY_USER`・`VERIFY_SSH_PASSWORD`・`VERIFY_INSTALL_DIR`で指定する。
+- 実行: `scripts/deploy-verify.sh [composeのサービス名...]`（省略時は全サービスを再ビルド・再起動。例: Web UIのみの変更は`scripts/deploy-verify.sh web`）。作業ツリーを検証サーバの`~/vpngateway-gui`と`VERIFY_INSTALL_DIR`へ転送し、`docker compose build`・`up -d`する。検証サーバの`.env`（インストーラ生成）は上書きしない。
+- 機能の追加・実装作業が完了したら、実機検証の前に必ずこのスクリプトを実行して、検証サーバへ最新の状態を反映する。反映せずに実機検証したと報告しない。
+- ホスト設定（sysctl等）の変更を伴う場合は、スクリプトではなくインストーラ（`install.sh`）を再実行して反映する。
+
 # ベンダー非依存（VPNプロバイダに依存しない）
 
 - 本システムはVPNベンダーに依存しない（`specs/requirements.md`「ベンダー非依存性」）。本番のソースコード（`api/src`・`proxy/src`・`web/src`・`web/server`・`install/`・composeの本体・共通のDockerfile）に、ベンダーのID・名称・CLIの書式・エラー文言を書かない。**コメントやエラーメッセージの例にも書かない。**
