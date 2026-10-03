@@ -59,6 +59,10 @@ ENV_FILE="$REPO_ROOT/.env"
 VENDORS_DIR="$REPO_ROOT/vendors"
 SYSCTL_FILE="/etc/sysctl.d/99-vpngwgui.conf"
 GUARD_UNIT="/etc/systemd/system/vpngwgui-boot-guard.service"
+# ホスト再起動の依頼用ディレクトリと、依頼ファイルを検知して再起動するsystemdユニット（specs/proxyserver/design.md「ホストの再起動依頼」）。
+HOST_CTL_DIR="/var/lib/vpngwgui-host-ctl"
+REBOOT_PATH_UNIT="/etc/systemd/system/vpngwgui-reboot.path"
+REBOOT_SERVICE_UNIT="/etc/systemd/system/vpngwgui-reboot.service"
 WEB_PORT_DEFAULT=443
 # 通信路の保護に使う証明書一式の置き場（specs/design.md「証明書の生成・配布」）。
 # ゲートウェイ制御チャネル（api⇄gateway、mTLS）・web⇄api（片方向TLS）・ブラウザ⇄web（片方向TLS）のいずれも、
@@ -351,6 +355,40 @@ EOGUARD
   fi
 }
 
+# 目的: ゲートウェイ機の再起動の仕組み（依頼用ディレクトリ＋systemdのpath・serviceユニット）を作成・有効化する。
+# 背景: proxyコンテナへホストの特権を与えず、proxyは依頼ファイルを置くだけにする。ホスト側のpathユニットが依頼ファイルを検知し、
+#       serviceが依頼ファイルを削除（再起動後に依頼が残って再起動を繰り返さないため）してから`systemctl reboot`を実行する。
+# 副作用: $HOST_CTL_DIR（所有者10001＝proxyの実行ユーザー、権限0700）と、$REBOOT_PATH_UNIT・$REBOOT_SERVICE_UNITを作成し、pathユニットを有効化して今すぐ起動する。
+setup_host_reboot() {
+  mkdir -p "$HOST_CTL_DIR"
+  chown 10001:10001 "$HOST_CTL_DIR"
+  chmod 0700 "$HOST_CTL_DIR"
+  cat > "$REBOOT_SERVICE_UNIT" <<EOREBOOTSVC
+# vpngateway-gui: Web UIからの再起動依頼を実行する。install/setup.shにより作成された。
+[Unit]
+Description=vpngateway-gui host reboot (requested from the Web UI)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'rm -f $HOST_CTL_DIR/reboot-request && exec systemctl reboot'
+EOREBOOTSVC
+  cat > "$REBOOT_PATH_UNIT" <<EOREBOOTPATH
+# vpngateway-gui: 再起動の依頼ファイルを監視する。install/setup.shにより作成された。
+[Unit]
+Description=vpngateway-gui host reboot request watcher
+
+[Path]
+PathExists=$HOST_CTL_DIR/reboot-request
+Unit=vpngwgui-reboot.service
+
+[Install]
+WantedBy=multi-user.target
+EOREBOOTPATH
+  systemctl daemon-reload
+  systemctl enable --now vpngwgui-reboot.path >/dev/null 2>&1
+  log "ゲートウェイ機の再起動の仕組み: 有効（$HOST_CTL_DIR）"
+}
+
 # 目的: vendors/ 配下の有効なバンドルのID（ディレクトリ名）を一覧する。
 # 出力: 1行1ID（profile.jsonとcompose.ymlを持つもの）。
 list_bundles() {
@@ -628,7 +666,7 @@ install_roles() {
   preflight
   install_packages
   install_docker
-  case ",$roles," in *,gateway,*) setup_lan_iface; setup_sysctl; setup_boot_guard ;; esac
+  case ",$roles," in *,gateway,*) setup_lan_iface; setup_sysctl; setup_boot_guard; setup_host_reboot ;; esac
   case ",$roles," in *,web,*) setup_web_port ;; esac
 
   # apiは自身がロードするベンダープロファイル（ENABLED_PROVIDERS）を知る必要があるため、gatewayが
@@ -823,6 +861,19 @@ uninstall_boot_guard() {
   fi
 }
 
+# 目的: ゲートウェイ機の再起動の仕組み（setup_host_rebootが作成したもの）を無効化・削除する。
+uninstall_host_reboot() {
+  if [ -f "$REBOOT_PATH_UNIT" ] || [ -f "$REBOOT_SERVICE_UNIT" ] || [ -d "$HOST_CTL_DIR" ]; then
+    systemctl disable --now vpngwgui-reboot.path >/dev/null 2>&1 || true
+    rm -f "$REBOOT_PATH_UNIT" "$REBOOT_SERVICE_UNIT"
+    rm -rf "$HOST_CTL_DIR"
+    systemctl daemon-reload
+    log "ゲートウェイ機の再起動の仕組み: 削除しました"
+  else
+    log "ゲートウェイ機の再起動の仕組み: 対象なし"
+  fi
+}
+
 # 目的: IPフォワーディングの永続設定（setup_sysctlが作成したもの）を削除し、稼働中の値も戻す。
 uninstall_sysctl() {
   if [ -f "$SYSCTL_FILE" ]; then
@@ -890,6 +941,7 @@ uninstall_main() {
 
   uninstall_stack
   uninstall_boot_guard
+  uninstall_host_reboot
   uninstall_sysctl
   uninstall_gateway_pki
   uninstall_host_hooks

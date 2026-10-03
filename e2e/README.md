@@ -41,6 +41,7 @@
 | `phase27/webgui-phase27.mjs` | Phase27のWeb UIを、LAN端末役のブラウザでPlaywright検証（`ok`: 全項目OK・折りたたみと代表行・開閉・タブ切替後の保持、`ng`: 故障を注入した状態でのNGの代表行）。実行: `node e2e/phase27/webgui-phase27.mjs <baseUrl> <ok|ng> [スクリーンショットの出力先] [画面幅]` |
 | `phase26/webgui-settings-tabs.mjs` | Phase26（設定ダイアログのタブ化）のPlaywright検証（タブ表示・切替・未保存入力の保持・保存・保存不可時の警告印）。実行: `node e2e/phase26/webgui-settings-tabs.mjs <baseUrl>` |
 | `phase28/webgui-operator-auth.mjs` | Phase28（Web UI利用者認証の専用E2E）のPlaywright検証。`launchWithoutSignIn()`を使い、初回アクセス時の初期設定画面・パスワード確認不一致・正誤ログイン・ログアウト・セッション切れ・アカウント変更の成功/失敗を確認する。実行前提: Web UI利用者アカウントが未作成の状態（`reset_operator_account`等で戻した直後）。実行: `node e2e/phase28/webgui-operator-auth.mjs <baseUrl>` |
+| `phase29/webgui-phase29.mjs`・`phase29/reboot-scenarios.sh` | Phase29（ゲートウェイ機の再起動）。`reboot-scenarios.sh`は検証サーバ（実機）を実際に再起動し、誤パスワードで再起動されないこと・正しいパスワードで再起動し復旧すること（スタック・nftテーブル・依頼ファイルの除去）・監査ログを自動検証する。利用者アカウントは再起動で消えない場所（ホストの`~/`）へ退避し、終了時に復元する。`webgui-phase29.mjs`はそのWeb UI側（ボタンの配置・確認ダイアログ・エラー表示）。実行: `SSHPASS=<パスワード> bash e2e/phase29/reboot-scenarios.sh` |
 | `lib/e2e-vendors.sh` | モックのベンダーバンドル（`e2e/vendors/mockproton/`）を使うE2E用に、有効なベンダーのプロファイルを集めた一時ディレクトリ（`E2E_VENDORS_DIR`）と`VPN_PROVIDERS`、composeの`-f`引数（本体・override・各バンドルのfragment）を用意する |
 | `lib/gw.sh` | ゲートウェイ役へのコマンド実行・ファイル転送（`GW_MODE`のlxc/ssh差を吸収） |
 | `phase3/gateway-scenarios.sh` | Phase3完了基準のシナリオ（A〜H）を通しで自動検証（G・Hは実機のみ）。`GW_MODE=roles`（デプロイメント構成の分離・3台分離構成、`e2e/lxc/setup-roles.sh`で構築）でも実行できる |

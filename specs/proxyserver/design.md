@@ -294,3 +294,10 @@ volumes:
 - **`unconfirmed`にする条件**: VPN未接続でトンネルが検出できない、リゾルバが`active`でなく問い合わせができない（前提が崩れているのは`dns-relay-listening`が`fail`で示す）、明示的プロキシの許可元に127.0.0.1が含まれない、など。理由を`reason`に入れる。
 
 - **配置**: `proxy/src/verification/`（項目の実行: `gateway-checks.ts`、実行環境の組み立て: `runtime.ts`、検証名: `check-nonces.ts`、誘導の判定: `redirect-record.ts`、リクエストの検証: `check-request.ts`）。
+
+# ホストの再起動依頼
+
+- **エンドポイント**: `POST /net/host-reboot`（ボディなし）。依頼用ディレクトリ（コンテナ内`/var/run/vpngw-host-ctl`、ホストの`/var/lib/vpngwgui-host-ctl`。`HOST_CTL_DIR`で変更可）へ`reboot-request`を排他的に作成して`202 { "requested": true }`を返す。すでに依頼が残っていれば`409`、ディレクトリが無い・書き込めない（ホスト側の仕組みが未導入）場合は`503 { "error": "host_control_unavailable" }`。監査ログに`host_reboot_requested`を記録する。
+- **ホスト側**（`install/setup.sh`がgatewayロールのホストへ作成）: ディレクトリ（所有者は`proxy`の実行ユーザー10001、権限0700）、`vpngwgui-reboot.path`（`PathExists`で依頼ファイルを監視）、`vpngwgui-reboot.service`（依頼ファイルを削除してから`systemctl reboot`。削除を先にするのは、再起動後に依頼が残って再起動を繰り返さないため）。ファイルの内容は読まない。
+- `proxy`のcomposeは依頼用ディレクトリをバインドマウントする（`compose/gateway.yml`）。
+- 実装は`proxy/src/host-control/host-reboot.ts`。

@@ -30,8 +30,8 @@ WEB_COOKIE=/tmp/e2e-cookie.txt
 # 導入・再導入のたびapiコンテナが（再）作成されセッション（プロセスメモリ）がリセットされるため、
 # web_ok()を呼ぶ前に毎回ログインし直す。
 # Phase25 Stage3でwebサーバが自己署名証明書のHTTPSになったため、-k（証明書検証省略）を付ける。
-web_login() { ct sh -c "curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:80/api/v1/operator >/dev/null; curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:80/api/v1/operator/session >/dev/null"; }
-web_ok() { ct curl -fsSk -b "$WEB_COOKIE" -m 5 https://127.0.0.1:80/api/v1/providers; }
+web_login() { ct sh -c "curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:443/api/v1/operator >/dev/null; curl -sk -c $WEB_COOKIE -X POST -H 'content-type: application/json' -d '{\"username\":\"e2e-admin\",\"password\":\"e2e-password-1234\"}' https://127.0.0.1:443/api/v1/operator/session >/dev/null"; }
+web_ok() { ct curl -fsSk -b "$WEB_COOKIE" -m 5 https://127.0.0.1:443/api/v1/providers; }
 cleanup() {
   [ "${E2E_KEEP:-0}" = 1 ] || lxc delete -f "$NAME" >/dev/null 2>&1
   rm -rf "$WORK"
@@ -43,6 +43,7 @@ t_dir_gone() { ! ct test -e "$DIR"; }
 t_no_containers() { test -z "$(ct sh -c "docker ps -a --format '{{.Names}}' 2>/dev/null | grep vpngwgui" )"; }
 t_no_sysctl() { ! ct test -f /etc/sysctl.d/99-vpngwgui.conf; }
 t_no_guard() { ! ct test -f /etc/systemd/system/vpngwgui-boot-guard.service; }
+t_no_host_reboot() { ! ct test -e /var/lib/vpngwgui-host-ctl && ! ct test -f /etc/systemd/system/vpngwgui-reboot.path && ! ct test -f /etc/systemd/system/vpngwgui-reboot.service; }
 t_guard_not_enabled() { ! ct systemctl is-enabled vpngwgui-boot-guard.service >/dev/null 2>&1; }
 t_web_has_adguard() { web_login; web_ok | grep -q adguardvpn; }
 
@@ -58,11 +59,11 @@ ct cloud-init status --wait >/dev/null 2>&1
 for _ in $(seq 1 30); do ct getent hosts download.docker.com >/dev/null 2>&1 && break; sleep 2; done
 lxc file push -r "$WORK/vpngw.git" "$NAME/srv/" >/dev/null && ct chown -R root:root /srv/vpngw.git
 
-echo "== 準備: 頒布URL経由（ブートストラップの標準入力パイプ）で導入する（既定ポート80）"
+echo "== 準備: 頒布URL経由（ブートストラップの標準入力パイプ）で導入する（既定ポート443）"
 check "ブートストラップの導入が成功する" t_bootstrap_ok --providers adguardvpn
 tail -5 "$WORK/install.log" | sed 's/^/    | /'
 web_login
-check "Web UIが応答する（ポート80）" web_ok
+check "Web UIが応答する（ポート443）" web_ok
 check "AdGuard VPNが有効なベンダーとして現れる" t_web_has_adguard
 
 echo "== uninstall: 頒布URL経由（同じ標準入力パイプ）で --uninstall を実行する"
@@ -73,6 +74,7 @@ check "docker composeのコンテナが残っていない" t_no_containers
 check "IPフォワーディングの設定（sysctl）が削除されている" t_no_sysctl
 check "起動時のKill Switchガードのユニットファイルが削除されている" t_no_guard
 check "起動時のKill Switchガードが無効（未登録）になっている" t_guard_not_enabled
+check "ゲートウェイ機の再起動の仕組み（依頼用ディレクトリ・ユニット）が削除されている" t_no_host_reboot
 
 echo "== reinstall: アンインストール後も、同じ頒布URLで再導入できる"
 check "再導入（ブートストラップ）が成功する" t_bootstrap_ok --providers adguardvpn

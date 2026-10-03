@@ -25,6 +25,9 @@ services:
       # ゲートウェイ制御チャネル（mTLS TCP）のサーバ証明書一式。install.shがホストの
       # /etc/vpngwgui/pki/へローカル生成（単一ホスト構成）またはscp配布（分離構成）する。
       - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
+      # ホスト再起動の依頼用ディレクトリ。install/setup.shがホストに作成し（所有者は10001）、proxyは依頼ファイルを置くだけ
+      # （再起動はホストのsystemdが行う。proxyserver/design.md「ホストの再起動依頼」）。
+      - /var/lib/vpngwgui-host-ctl:/var/run/vpngw-host-ctl
     environment:
       # ランナーのUDS（runner-<ベンダーID>.sock）を探すディレクトリ（gateway-channel/runner-forward.ts）。
       CTL_SOCKET_DIR: /var/run/vpngw-ctl

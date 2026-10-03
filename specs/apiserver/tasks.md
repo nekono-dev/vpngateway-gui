@@ -179,6 +179,13 @@
 
 検証: 単体・結合テスト（api 345件。`verification-service.test.ts`・`client-judgements.test.ts`・`routes/verifications.test.ts`）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
 
+## ゲートウェイ機の再起動（Phase 29、実装完了・検証完了）
+
+- [x] `POST /v1/gateway/reboot`（パスワード再入力の検証、ログインと共通の失敗回数制限、`proxy`への依頼、`401`/`409`/`429`/`502`/`503`/`504`、監査ログ`gateway_reboot`。`api/src/routes/gateway-reboot.ts`・`proxy-client`の`requestGatewayReboot()`）
+- [x] 統合テスト（`routes/gateway-reboot.test.ts`。誤パスワード・未ログイン・429・503/409・監査ログにパスワードが無いこと）
+
+検証: 単体・結合テスト（api 350件）。実機での通しの動作は`../proxyserver/tasks.md`「ゲートウェイ機の再起動」。
+
 # 将来課題
 
 - レート制限の閾値のチューニング（Web UIログイン以外の操作系エンドポイントへの適用要否を含む）。

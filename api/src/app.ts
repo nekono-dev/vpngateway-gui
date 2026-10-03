@@ -15,6 +15,7 @@ import { registerSessionRoute } from "./routes/session.js";
 import { registerOperatorRoute } from "./routes/operator.js";
 import { registerOperatorSessionRoute } from "./routes/operator-session.js";
 import { registerVerificationsRoute } from "./routes/verifications.js";
+import { registerGatewayRebootRoute } from "./routes/gateway-reboot.js";
 import { requireOperatorSession } from "./auth/require-operator-session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
@@ -31,6 +32,8 @@ import {
   OperatorValidationError,
   RateLimitedError,
   VerificationRunningError,
+  HostControlUnavailableError,
+  RebootAlreadyRequestedError,
 } from "./errors.js";
 
 /**
@@ -123,6 +126,15 @@ export function buildApp(options: BuildAppOptions = {}) {
       reply.code(409).send({ error: "verification_running", message: error.message });
       return;
     }
+    // ゲートウェイ機の再起動: ホスト側の仕組みが未導入（503）・すでに依頼済み（409）。
+    if (error instanceof HostControlUnavailableError) {
+      reply.code(503).send({ error: "host_control_unavailable", message: error.message });
+      return;
+    }
+    if (error instanceof RebootAlreadyRequestedError) {
+      reply.code(409).send({ error: "reboot_already_requested", message: error.message });
+      return;
+    }
     if (error instanceof ProviderSwitchingError) {
       reply.code(409).send({ error: "provider_switching", message: error.message });
       return;
@@ -152,6 +164,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(registerOperatorRoute);
   app.register(registerOperatorSessionRoute);
   app.register(registerVerificationsRoute);
+  app.register(registerGatewayRebootRoute);
 
   return app;
 }

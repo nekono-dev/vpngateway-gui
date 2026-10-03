@@ -53,6 +53,7 @@ t_head_is() { test "$(ct git -C "$DIR" rev-parse HEAD)" = "$1"; }
 t_docker_official() { ct docker compose version >/dev/null && ct grep -q download.docker.com /etc/apt/sources.list.d/docker.list; }
 t_sysctl() { ct grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.d/99-vpngwgui.conf; }
 t_guard() { ct systemctl is-enabled vpngwgui-boot-guard.service | grep -q enabled; }
+t_host_reboot() { ct systemctl is-enabled vpngwgui-reboot.path | grep -q enabled && ct systemctl is-active --quiet vpngwgui-reboot.path && test "$(ct stat -c '%u %a' /var/lib/vpngwgui-host-ctl)" = "10001 700"; }
 t_env_initial() { test "$(env_val VPN_PROVIDERS)" = adguardvpn && test "$(env_val COMPOSE_FILE)" = "docker-compose.yml:compose/web.yml:compose/api.yml:compose/gateway.yml:vendors/adguardvpn/compose.yml" && test -n "$(env_val LAN_IFACE)"; }
 t_web_has() { web_login; web_ok | grep -q "$1"; }
 t_web_lacks() { web_login; web_ok >/dev/null && ! web_ok | grep -q "$1"; }
@@ -86,6 +87,7 @@ check "取得したソースが、埋め込まれたコミットと一致する"
 check "Docker（公式リポジトリ）とcompose v2が導入されている" t_docker_official
 check "sysctl設定（IPフォワーディング）が作られている" t_sysctl
 check "起動時のKill Switchガードが有効化されている" t_guard
+check "ゲートウェイ機の再起動の仕組み（依頼用ディレクトリ・pathユニット）が導入されている" t_host_reboot
 check ".envにLAN_IFACE・VPN_PROVIDERS・COMPOSE_FILEが書かれている" t_env_initial
 check "Web UIが応答し、有効なベンダーが現れる" t_web_has adguardvpn
 check "有効なベンダーのランナーだけが起動している（web・api・proxy・runner-adguardvpn）" t_services_are "api proxy runner-adguardvpn web"

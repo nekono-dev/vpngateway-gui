@@ -164,6 +164,15 @@
 
 検証: 単体テスト（proxy 290件）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
 
+## ゲートウェイ機の再起動（Phase 29、実装完了・検証完了）
+
+- [x] `POST /net/host-reboot`（依頼ファイルの作成、`409`・`503`の応答、監査ログ`host_reboot_requested`。`proxy/src/host-control/host-reboot.ts`）
+- [x] `compose/gateway.yml`へ依頼用ディレクトリのバインドマウントを追加
+- [x] `install/setup.sh`へ、依頼用ディレクトリ（10001所有・0700）・`vpngwgui-reboot.path`/`.service`の作成（`setup_host_reboot`）と、`--uninstall`での撤去（`uninstall_host_reboot`）を追加
+- [x] E2E: インストール（`e2e/phase11/install-scenarios.sh`）・アンインストール（`e2e/phase20/uninstall-scenarios.sh`）にユニット・ディレクトリの確認を追加
+
+検証: 単体テスト（`host-reboot.test.ts`）。実機（検証サーバ）で、実際にホストを再起動し、`e2e/phase29/reboot-scenarios.sh`で復旧（コンテナ・nftテーブル・依頼ファイルの除去・再起動を繰り返さないこと）を確認。
+
 # 将来課題
 
 - IPv6対応（現行設計はIPv4のNAT/FORWARDのみを前提としている）。

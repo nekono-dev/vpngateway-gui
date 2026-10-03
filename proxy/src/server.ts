@@ -16,6 +16,7 @@ import { createServer as createHttpsServer } from "node:https";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { logAuditEvent } from "./lib/audit-event.js";
 import { readRequestBody, sendJson } from "./lib/http-json.js";
+import { requestHostReboot } from "./host-control/host-reboot.js";
 import { loadGatewayTlsOptions } from "./gateway-channel/tls-options.js";
 import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
@@ -251,6 +252,15 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
       logAuditEvent({ event: "settings_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });
+    return;
+  }
+  if (req.method === "POST" && req.url === "/net/host-reboot") {
+    // ホストの再起動依頼。依頼ファイルを置くだけで、実行はホスト側のsystemdが行う（host-control/host-reboot.ts）。
+    const result = requestHostReboot();
+    logAuditEvent({ event: "host_reboot_requested", result });
+    if (result === "requested") sendJson(res, 202, { requested: true });
+    else if (result === "already_requested") sendJson(res, 409, { error: "reboot_already_requested" });
+    else sendJson(res, 503, { error: "host_control_unavailable" });
     return;
   }
   if (req.method === "POST" && req.url === "/net/checks") {

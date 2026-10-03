@@ -10,7 +10,7 @@ import { Agent } from "undici";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
-import { ProxyUnavailableError, ProxyTimeoutError } from "../errors.js";
+import { ProxyUnavailableError, ProxyTimeoutError, HostControlUnavailableError, RebootAlreadyRequestedError } from "../errors.js";
 import { loadGatewayClientTlsOptions } from "./gateway-tls-options.js";
 
 const GATEWAY_HOST = process.env.GATEWAY_HOST ?? "127.0.0.1";
@@ -306,6 +306,32 @@ export async function fetchCheckNonce(name: string): Promise<CheckNonceRecord | 
       throw new Error(`unexpected response shape from proxy: status ${response.statusCode}`);
     }
     return body;
+  } catch (error) {
+    throw toProxyClientError(error);
+  }
+}
+
+/**
+ * 目的: ゲートウェイ機（ホスト）の再起動を、ゲートウェイの`/net/host-reboot`へ依頼する。
+ * 入力: なし。
+ * 出力: なし（依頼が受け付けられたら解決する。再起動の実行はホスト側が行う）。
+ * 失敗時の方針: 通信失敗はProxyUnavailableError/ProxyTimeoutError、ホスト側の仕組みが未導入（503）は
+ *              HostControlUnavailableError、すでに依頼済み（409）はRebootAlreadyRequestedError、その他の拒否は通常のErrorにする。
+ */
+export async function requestGatewayReboot(): Promise<void> {
+  try {
+    const response = await getGatewayAgent().request({
+      origin: GATEWAY_ORIGIN,
+      path: "/net/host-reboot",
+      method: "POST",
+      bodyTimeout: 5000,
+      headersTimeout: 5000,
+    });
+    await response.body.dump();
+    if (response.statusCode === 202) return;
+    if (response.statusCode === 503) throw new HostControlUnavailableError("host control is not available on the gateway");
+    if (response.statusCode === 409) throw new RebootAlreadyRequestedError("reboot has already been requested");
+    throw new Error(`reboot request was rejected: status ${response.statusCode}`);
   } catch (error) {
     throw toProxyClientError(error);
   }

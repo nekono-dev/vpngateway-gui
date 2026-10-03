@@ -49,3 +49,9 @@ export class RateLimitedError extends Error {}
 
 // 設定の動作検証の実行中に、別の検証の開始が要求された場合のエラー。409で通知する（Phase 27）。
 export class VerificationRunningError extends Error {}
+
+// ゲートウェイ機の再起動の依頼用ディレクトリが無い・書き込めない（ホスト側の仕組みが未導入）場合のエラー。503で通知する。
+export class HostControlUnavailableError extends Error {}
+
+// ゲートウェイ機の再起動がすでに依頼済み（依頼ファイルが残っている）場合のエラー。409で通知する。
+export class RebootAlreadyRequestedError extends Error {}

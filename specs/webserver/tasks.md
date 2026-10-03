@@ -211,6 +211,14 @@
 
 検証: 単体テスト（web 168件。`verification-view.test.ts`・`VerificationPanel.test.tsx`）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
 
+## ゲートウェイ機の再起動（Phase 29、実装完了・検証完了）
+
+- [x] ヘッダーの「接続ログ」の隣に「ゲートウェイ再起動」ボタンと`RebootDialog`（確認文・パスワード再入力・エラー/成功のダイアログ内表示）を追加
+- [x] 接続ログの操作名に「ゲートウェイ再起動」を追加
+- [x] 生成クライアントの再生成
+
+検証: 単体テスト（web 172件。`RebootDialog.test.tsx`）。実ブラウザ（Playwright、`e2e/phase29/webgui-phase29.mjs`）でボタンの配置・警告・誤パスワードのエラー・依頼成功の表示を確認。
+
 # 将来課題
 
 - 多言語対応。

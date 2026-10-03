@@ -18,6 +18,7 @@ const ACTION_LABELS: Record<string, string> = {
   disconnect: "切断",
   logout: "ログアウト",
   login: "ログイン",
+  gateway_reboot: "ゲートウェイ再起動",
 };
 
 /**

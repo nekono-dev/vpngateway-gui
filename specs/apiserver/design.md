@@ -797,3 +797,11 @@ IP確認サービスは、次を満たさなければならない。(1) 応答�
 - 監査ログに`verification_run`（`input`: 対象項目数・結果ごとの件数）を記録する。IP・名前・問い合わせ内容は記録しない。
 - 認証は他の`/v1/*`と同じ（`require-operator-session`）。実行は同時に1件までに制限する（操作系エンドポイントのレート制限は無い。`tasks.md`「将来課題」）。
 - 実装は`api/src/verification/`（項目の一覧: `check-catalog.ts`、L3の判定: `client-judgements.ts`、実行と保持: `verification-service.ts`）、ルートは`api/src/routes/verifications.ts`。
+
+# ゲートウェイ機の再起動
+
+## エンドポイント（`POST /v1/gateway/reboot`）
+
+- ボディ`{ "password": "<利用者のパスワード>" }`。認証は他の`/v1/*`と同じ（`require-operator-session`）に加え、ボディのパスワードを現在の利用者アカウントに対して検証する。誤りは`401`（ログインと同じ失敗回数の制限を共有し、超過は`429`）。成功すると`proxy`の`POST /net/host-reboot`へ依頼し、`202 { "requested": true }`を返す。`proxy`が依頼を受け付けられない場合は、既存の内部通信と同じ分類で`502`/`504`、ホスト側の仕組みが無い（`503`相当）場合は`503`とする。
+- 監査ログに`gateway_reboot`（成功は`exitCode: 0`、失敗は`error`）を記録する。パスワードは記録しない。
+- 実装は`api/src/routes/gateway-reboot.ts`、`proxy-client`の`requestGatewayReboot()`。
