@@ -75,6 +75,7 @@ try {
   await page.getByRole("button", { name: "設定", exact: true }).click();
   const settingsDialog = page.getByRole("dialog", { name: "設定" });
   await settingsDialog.getByRole("tab", { name: "通信制御" }).waitFor({ timeout: 15000 });
+  await settingsDialog.getByRole("tab", { name: "メンテナンス" }).click();
   await settingsDialog.getByRole("button", { name: "アカウント情報を変更" }).click();
   const accountDialog = page.getByRole("dialog", { name: "アカウント設定" });
   await accountDialog.waitFor({ timeout: 15000 });

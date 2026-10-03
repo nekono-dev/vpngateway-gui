@@ -19,7 +19,7 @@ async function openSettings() {
 try {
   let dialog = await openSettings();
   const relayOnAtStart = (await dialog.getByRole("tab", { name: "DNS詳細" }).count()) === 1;
-  assert((await dialog.getByRole("tab").count()) === (relayOnAtStart ? 4 : 3), "タブが表示される（DNS中継が有効なら4つ、無効なら「DNS詳細」を除く3つ）");
+  assert((await dialog.getByRole("tab").count()) === (relayOnAtStart ? 6 : 5), "タブが表示される（DNS中継が有効なら6つ、無効なら「DNS詳細」を除く5つ）");
   assert((await dialog.getByRole("tab", { name: "通信制御" }).getAttribute("aria-selected")) === "true", "開いた直後は先頭の「通信制御」タブが選択されている");
   assert(await dialog.getByRole("checkbox", { name: /Kill Switch/ }).isVisible(), "通信制御タブにKill Switchが表示される");
   assert((await dialog.getByRole("checkbox", { name: /明示的プロキシモード/ }).count()) === 0, "通信制御タブにはゲートウェイの項目が表示されない");
@@ -87,13 +87,13 @@ try {
     assert(b.ws === "nowrap" && b.height < 44, `ダイアログのボタン「${b.text}」の文字が折り返されていない（高さ${Math.round(b.height)}px）`);
   }
   const box = async (name) => (await dialog.getByRole("button", { name }).boundingBox());
-  const [account, save, cancel] = [await box("アカウント情報を変更"), await box("保存"), await box("キャンセル")];
+  const [save, cancel] = [await box("保存"), await box("キャンセル")];
   assert(Math.abs(save.y - cancel.y) < 2 && cancel.x > save.x, "狭い幅でも「保存」「キャンセル」は横並びのまま");
-  assert(account.y < save.y, "収まらない場合、「アカウント情報を変更」と「保存・キャンセル」の組が別の行へ折り返される");
+  assert((await dialog.getByRole("button", { name: "アカウント情報を変更" }).count()) === 0, "「アカウント情報を変更」はメンテナンスタブを開くまで表示されない");
   const tabInfo = await dialog.getByRole("tablist").evaluate((el) => ({ ox: getComputedStyle(el).overflowX, sw: el.scrollWidth, cw: el.clientWidth }));
   assert(tabInfo.ox === "auto" && tabInfo.sw > tabInfo.cw, `タブ列は幅に収まらないとき折り返さず、タブ列だけが横スクロールできる（${tabInfo.sw}>${tabInfo.cw}）`);
   const dlgBox = await dialog.boundingBox();
-  assert(Math.abs(dlgBox.x - 9.5) < 1 && Math.abs(dlgBox.width - (300 - 19)) < 1, `スマートフォン幅ではダイアログの左右の余白が約9.5px（従来の約19pxの半分）になる（x=${dlgBox.x}, width=${dlgBox.width}）`);
+  assert(Math.abs(dlgBox.x - 10) < 1 && Math.abs(dlgBox.width - (300 - 20)) < 1, `スマートフォン幅ではダイアログの左右の余白が10pxになる（x=${dlgBox.x}, width=${dlgBox.width}）`);
   const dlgScroll = await dialog.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth }));
   assert(dlgScroll.sw <= dlgScroll.cw, `ダイアログ全体は横スクロールしない（${dlgScroll.sw}<=${dlgScroll.cw}）`);
   await dialog.getByRole("tablist").evaluate((el) => { el.scrollLeft = el.scrollWidth; });
@@ -101,8 +101,8 @@ try {
   await dialog.getByRole("tablist").evaluate((el) => { el.scrollLeft = 0; });
   await cidrBox.evaluate((el) => { el.disabled = false; });
   await page.setViewportSize({ width: 1280, height: 720 });
-  const [wa, ws, wc] = [await box("アカウント情報を変更"), await box("保存"), await box("キャンセル")];
-  assert(Math.abs(wa.y - ws.y) < 2 && Math.abs(ws.y - wc.y) < 2, "横幅に収まるときは3つのボタンが1行に表示される");
+  const [ws, wc] = [await box("保存"), await box("キャンセル")];
+  assert(Math.abs(ws.y - wc.y) < 2, "横幅に収まるときは「保存」「キャンセル」が1行に表示される");
   await page.setViewportSize({ width: 300, height: 700 });
   await page.screenshot({ path: "/tmp/phase26-mobile.png" });
   const dialogBox = await dialog.boundingBox();
@@ -159,8 +159,10 @@ try {
   }
   await page.setViewportSize({ width: 1280, height: 720 });
 
-  // アカウント情報ボタンはタブと無関係に使える
+  // 「アカウント情報を変更」「ゲートウェイ再起動」はメンテナンスタブに置かれる
   dialog = await openSettings();
+  await dialog.getByRole("tab", { name: "メンテナンス" }).click();
+  assert((await dialog.getByRole("button", { name: "ゲートウェイ再起動" }).count()) === 1, "メンテナンスタブに「ゲートウェイ再起動」がある");
   await dialog.getByRole("button", { name: "アカウント情報を変更" }).click();
   await page.getByRole("dialog", { name: /アカウント/ }).waitFor({ timeout: 5000 });
   assert(true, "アカウント情報ダイアログが従来どおり開く");

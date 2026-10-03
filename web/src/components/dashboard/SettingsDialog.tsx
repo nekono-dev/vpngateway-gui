@@ -12,6 +12,7 @@ import { describeApiError, describeThrownError } from "../../notifications/descr
 import { isIpv4Cidr } from "../../lib/ipv4-cidr";
 import { LineListEditor } from "./LineListEditor";
 import { AccountSettingsDialog } from "./AccountSettingsDialog";
+import { RebootDialog } from "./RebootDialog";
 import { VerificationPanel } from "./verification/VerificationPanel";
 import { useVerification } from "../../hooks/useVerification";
 
@@ -23,7 +24,7 @@ interface Props {
   defaultExplicitProxyAllowedCidr?: string;
 }
 
-type SettingsTab = "control" | "gateway" | "dnsResolver" | "dnsDetail" | "verify";
+type SettingsTab = "control" | "gateway" | "dnsResolver" | "dnsDetail" | "verify" | "maintenance";
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   control: "通信制御",
@@ -31,6 +32,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   dnsResolver: "上位DNSリゾルバ",
   dnsDetail: "DNS詳細",
   verify: "動作検証",
+  maintenance: "メンテナンス",
 };
 const TAB_KEYS = Object.keys(TAB_LABELS) as SettingsTab[];
 
@@ -43,6 +45,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isRebootOpen, setIsRebootOpen] = useState(false);
   const [tab, setTab] = useState<SettingsTab>("control");
   const verification = useVerification(open, loadedSettings?.verifyEchoUrl);
   // 許可CIDRの初期値は、ダイアログを開いた時点の値を使う。ダッシュボードの定期取得で値が変わる（取得の失敗で一時的に
@@ -125,6 +128,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
     dnsResolver: dnsRelayNeedsUpstream,
     dnsDetail: dnsFallbackNeedsServers,
     verify: verifyEchoUrlMissing,
+    maintenance: false,
   };
   const hasUnsavedChanges = JSON.stringify(settings) !== JSON.stringify(loadedSettings);
   const visibleTabKeys = TAB_KEYS.filter((key) => key !== "dnsDetail" || settings?.dnsRelayEnabled === true);
@@ -133,7 +137,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
   const hasExcludedDomains = settings?.excludedDomains.some((domain) => domain.trim().length > 0) ?? false;
 
   return (
-    // アカウント設定ダイアログ（AccountSettingsDialog）は、この<dialog>の子要素にせず兄弟要素にする
+    // アカウント設定ダイアログ（AccountSettingsDialog）・再起動ダイアログ（RebootDialog）は、この<dialog>の子要素にせず兄弟要素にする
     // （<dialog>同士を入れ子にすると、内側を閉じたときに外側までブラウザによって閉じられてしまうため）。
     <>
       <dialog ref={dialogRef} onClose={onClose} aria-label="設定">
@@ -234,6 +238,15 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
                   />
                   {verifyEchoUrlMissing ? <p className="restriction">IP確認サービスのURLを入力してください。</p> : null}
                 </>
+              ) : activeTab === "maintenance" ? (
+                <div className="maintenance-actions">
+                  <button type="button" onClick={() => setIsAccountOpen(true)}>
+                    アカウント情報を変更
+                  </button>
+                  <button type="button" onClick={() => setIsRebootOpen(true)}>
+                    ゲートウェイ再起動
+                  </button>
+                </div>
               ) : activeTab === "dnsResolver" ? (
                 <>
                   <label>
@@ -332,10 +345,6 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
             {error ? <p role="alert">{error}</p> : null}
 
             <div className="dialog-actions">
-              <button type="button" onClick={() => setIsAccountOpen(true)}>
-                アカウント情報を変更
-              </button>
-              {/* 保存・キャンセルは常に横並びのまま折り返す（狭い幅ではアカウント情報ボタンと分かれて次の行へ回る） */}
               <div className="dialog-actions-group">
                 <button type="submit" disabled={isSaving || explicitProxyNeedsCidr || hasIncompleteDnsSettings || verifyEchoUrlMissing}>
                   {isSaving ? "保存中..." : "保存"}
@@ -349,6 +358,7 @@ export function SettingsDialog({ open, onClose, defaultExplicitProxyAllowedCidr 
         )}
       </dialog>
       <AccountSettingsDialog open={isAccountOpen} onClose={() => setIsAccountOpen(false)} />
+      <RebootDialog open={isRebootOpen} onClose={() => setIsRebootOpen(false)} />
     </>
   );
 }

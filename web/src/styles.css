@@ -25,6 +25,12 @@ body,
   height: 100%;
 }
 
+/* ページ・設定ダイアログの左右余白。カード幅が569pxになる画面幅（569px＋余白16px×2＝601px）で
+   16px、そこから画面が狭くなるにつれて連続的に10pxまで縮める（境界値での切り替えはしない）。 */
+:root {
+  --page-gutter: clamp(10px, calc((100vw - 569px) / 2), 16px);
+}
+
 body {
   margin: 0;
   background: #f6f8fa;
@@ -40,7 +46,7 @@ main {
   height: 100dvh;
   max-width: 640px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 16px var(--page-gutter);
   padding-top: max(16px, env(safe-area-inset-top, 0px));
   padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
@@ -55,7 +61,6 @@ main {
    発生しないようにする（webserver/requirements.md「スマートフォンでのスクロール防止」）。 */
 @media (max-width: 420px) {
   main {
-    padding: 10px;
     padding-top: max(10px, env(safe-area-inset-top, 0px));
     padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
     gap: 8px;
@@ -90,16 +95,36 @@ h2 {
 
 .app-header {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
+/* カード幅が569px未満（画面幅601px未満。余白16px×2）では、ヘッダーのタイトル文字列を非表示にし、
+   操作ボタンのみを右寄せで表示する。 */
+@media (max-width: 600px) {
+  .app-header h1 {
+    display: none;
+  }
+
+  .app-header {
+    justify-content: flex-end;
+  }
+}
+
+.app-header h1 {
+  flex: none;
+}
+
+/* ボタン列は折り返さず、幅を超えた分をボタン列だけの横スクロール（スワイプ）で表示する。 */
 .header-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* ボタンは、狭い画面幅でも文字を折り返さず・縮めず（大きさを保ち）、複数のボタンを並べる親の
@@ -536,21 +561,25 @@ dialog {
   /* border-boxにして、padding・枠線を含めて画面幅（100vw - 32px）に収める（content-boxだと狭い画面で
      padding・枠線の分だけはみ出す）。PC幅での見た目は従来と同じ（内容560px＋padding・枠線）。 */
   box-sizing: border-box;
-  width: min(602px, calc(100vw - 32px));
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px 20px;
 }
 
-/* スマートフォン幅では、画面の左右の余白を半分にして、小さい画面をできるだけ広く使う
-   （webserver/requirements.md「設定ダイアログの横幅」）。現在の余白は、ブラウザ既定の
-   `dialog:modal { max-width: calc(100% - 6px - 2em) }`（=38px、左右各19px）で決まっているため、
-   この上限を外し、全体で19px（左右各約9.5px）を引いた幅にする。PC幅は変更しない。 */
-@media (max-width: 420px) {
-  dialog {
-    max-width: none;
-    width: calc(100vw - 19px);
-  }
+/* 画面の左右の余白は、ページと同じ--page-gutterで連続的に変える（webserver/requirements.md「設定ダイアログの横幅」）。
+   ブラウザ既定の`dialog:modal { max-width: calc(100% - 6px - 2em) }`を外し、幅で余白を決める。 */
+dialog {
+  max-width: none;
+  width: min(602px, calc(100vw - 2 * var(--page-gutter)));
+}
+
+/* 縦スクロールのバーは表示しない（ホイール・スワイプ等でのスクロールはできる）。タブ列の横スクロールには影響しない。 */
+dialog {
+  scrollbar-width: none;
+}
+
+dialog::-webkit-scrollbar {
+  display: none;
 }
 
 dialog::backdrop {
@@ -626,6 +655,12 @@ dialog [role="alert"] {
 
 /* 一緒に折り返したいボタンの組（保存・キャンセル等）。組の中は折り返さず横並びを保ち、
    組ごと次の行へ回る。 */
+.maintenance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .dialog-actions-group {
   display: flex;
   gap: 8px;

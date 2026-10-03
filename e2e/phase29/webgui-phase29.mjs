@@ -1,6 +1,6 @@
 // 責務: Phase29（ゲートウェイ機の再起動）のWeb UI側のPlaywright検証。
 // モード:
-//   wrong   : ヘッダーに「ゲートウェイ再起動」ボタンが「接続ログ」の隣にあり、誤ったパスワードでは再起動されずエラーが出ること。
+//   wrong   : 設定ダイアログの「メンテナンス」タブに「ゲートウェイ再起動」ボタンがあり（ヘッダーには無く）、誤ったパスワードでは再起動されずエラーが出ること。
 //   request : 正しいパスワードで依頼が受け付けられ、「再起動を依頼しました」が表示されること（この後ホストが再起動する）。
 // 使い方: node e2e/phase29/webgui-phase29.mjs <baseUrl> <wrong|request> [スクリーンショットの出力先]
 
@@ -13,15 +13,12 @@ const { browser, page } = await launch(baseUrl);
 try {
   await page.getByRole("heading", { name: "VPNGateway-GUI" }).waitFor({ state: "visible", timeout: 15000 });
 
-  const logButton = page.getByRole("button", { name: "接続ログ" });
-  const rebootButton = page.getByRole("button", { name: "ゲートウェイ再起動" });
-  assert((await rebootButton.count()) === 1, "ヘッダーに「ゲートウェイ再起動」ボタンがある");
-  const placement = await page.evaluate(() => {
-    const buttons = [...document.querySelectorAll(".header-actions button")].map((b) => b.textContent?.trim());
-    return buttons.indexOf("ゲートウェイ再起動") - buttons.indexOf("接続ログ");
-  });
-  assert(placement === 1, "「接続ログ」ボタンの隣に並んでいる");
-  assert((await logButton.count()) === 1, "「接続ログ」ボタンも残っている");
+  assert((await page.locator(".header-actions").getByRole("button", { name: "ゲートウェイ再起動" }).count()) === 0, "ヘッダーに「ゲートウェイ再起動」ボタンは無い");
+  await page.getByRole("button", { name: "設定", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "設定" });
+  await settings.getByRole("tab", { name: "メンテナンス" }).click();
+  const rebootButton = settings.getByRole("button", { name: "ゲートウェイ再起動" });
+  assert((await rebootButton.count()) === 1, "メンテナンスタブに「ゲートウェイ再起動」ボタンがある");
 
   await rebootButton.click();
   const dialog = page.getByRole("dialog", { name: "ゲートウェイ再起動" });

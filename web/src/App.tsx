@@ -13,7 +13,6 @@ import { ConnectButton } from "./components/dashboard/ConnectButton";
 import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
-import { RebootDialog } from "./components/dashboard/RebootDialog";
 import { GithubIcon } from "./components/icons/GithubIcon";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
 import { useToast } from "./notifications/ToastProvider";
@@ -37,7 +36,6 @@ export function App({ onLogout }: Props) {
   const [submitting, setSubmitting] = useState<SubmittingAction>();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(false);
-  const [isRebootOpen, setIsRebootOpen] = useState(false);
   // ベンダーの切替中（切断を伴う。その間、接続操作を止める）。
   const [isSwitchingProvider, setIsSwitchingProvider] = useState(false);
   const { notifyError, notifySuccess } = useToast();
@@ -132,9 +130,6 @@ export function App({ onLogout }: Props) {
           <button type="button" onClick={() => setIsLogOpen(true)}>
             接続ログ
           </button>
-          <button type="button" onClick={() => setIsRebootOpen(true)}>
-            ゲートウェイ再起動
-          </button>
           <button type="button" onClick={() => setIsSettingsOpen(true)}>
             設定
           </button>
@@ -214,7 +209,6 @@ export function App({ onLogout }: Props) {
       </section>
       <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} defaultExplicitProxyAllowedCidr={data?.gateway?.lanCidr} />
       <ConnectionLogDialog open={isLogOpen} onClose={() => setIsLogOpen(false)} />
-      <RebootDialog open={isRebootOpen} onClose={() => setIsRebootOpen(false)} />
       <footer className="app-footer">
         <a href="https://github.com/nekono-dev/vpngateway-gui" target="_blank" rel="noreferrer">
           <GithubIcon />

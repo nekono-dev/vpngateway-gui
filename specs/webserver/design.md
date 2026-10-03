@@ -99,14 +99,15 @@
 
 - `SettingsDialog.tsx`に、`role="tablist"`のボタン群（`.location-tabs`のスタイルを共用し、選択中は`tab-active`・`aria-selected`）と`role="tabpanel"`を置く。選択中のタブは`useState`で保持する。ダイアログを開くたびに先頭のタブへ戻す。
 - 設定値（`settings`）・保存・エラー表示・ボタン列は従来どおり`SettingsDialog`が1つだけ持ち、タブはフォームの入力部品の表示を切り替えるだけとする（タブごとに状態・保存処理を分けない）。非選択のタブのパネルは`hidden`で残すのではなく描画しないが、値は親の`settings`にあるため失われない。
-- タブは「通信制御」「ゲートウェイ」「上位DNSリゾルバ」「DNS詳細」の4つ。DNS中継の設定は、従来の枠線付きグループ（`fieldset`）をやめ、上位DNSリゾルバ（有効化・DoH URL・CA）とDNS詳細（失敗時の挙動・公開DNS・クライアント名の取得先・リダイレクト）の2タブへ分けて表示する。「DNS詳細」は`dnsRelayEnabled`がONのときだけ`tablist`に含め、OFFの間は描画しない（選択中のタブが消えた場合は`activeTab`が「上位DNSリゾルバ」へ落ちる）。DNS詳細の入力は、タブが見えない間に保存を妨げないよう、`dnsFallbackNeedsServers`を`dnsRelayEnabled`がONのときだけ有効にする（`dnsFailureMode`等の値自体は保持して送信する）。
+- タブは「通信制御」「ゲートウェイ」「上位DNSリゾルバ」「DNS詳細」「動作検証」「メンテナンス」。ただし「メンテナンス」は設定値を持たず、ボタンだけを置く。ダイアログ下部の`.dialog-actions`は保存・キャンセルのみ。DNS中継の設定は、従来の枠線付きグループ（`fieldset`）をやめ、上位DNSリゾルバ（有効化・DoH URL・CA）とDNS詳細（失敗時の挙動・公開DNS・クライアント名の取得先・リダイレクト）の2タブへ分けて表示する。「DNS詳細」は`dnsRelayEnabled`がONのときだけ`tablist`に含め、OFFの間は描画しない（選択中のタブが消えた場合は`activeTab`が「上位DNSリゾルバ」へ落ちる）。DNS詳細の入力は、タブが見えない間に保存を妨げないよう、`dnsFallbackNeedsServers`を`dnsRelayEnabled`がONのときだけ有効にする（`dnsFailureMode`等の値自体は保持して送信する）。
 - 保存不可条件（`explicitProxyNeedsCidr`・`hasIncompleteDnsSettings`）は従来どおりダイアログ全体の保存ボタンの`disabled`に使い、該当タブ（ゲートウェイ・上位DNSリゾルバ・DNS詳細）のラベル末尾に`!`を付ける。
 - ラジオボタンは`styles.css`の`input[type="radio"]:not(.visually-hidden)`で、チェックボックスと同様に`appearance: none`の自前デザインにする（`.visually-hidden`の接続先リストのラジオは除外する）。
 - 複数行入力欄のスタイルは`styles.css`の`dialog textarea`に置く（`width: 100%`・`box-sizing: border-box`・`resize: vertical`・無効時の背景）。複数行入力欄は既定の折り返し（横スクロールなし）とする。
 - 設定ダイアログのボタン列（`.dialog-actions`）は、「保存」「キャンセル」を`.dialog-actions-group`（折り返さない`flex`）で囲み、組ごと折り返す。
-- 設定ダイアログの幅は、PC幅では`width: min(602px, calc(100vw - 32px))`だが、モーダルの`dialog`にはブラウザ既定の`max-width: calc(100% - 6px - 2em)`（左右各約19px）が掛かるため、実際の余白はこちらで決まる。幅420px以下のメディアクエリで`max-width: none`・`width: calc(100vw - 19px)`（左右各約9.5px）にする（メディアクエリは`dialog`の通常定義より後ろに置く）。
+- ページと設定ダイアログの左右余白は、`:root`の`--page-gutter: clamp(10px, calc((100vw - 569px) / 2), 16px)`で連続的に決める（`main`は`padding: 16px var(--page-gutter)`）。`dialog`は、ブラウザ既定の`max-width: calc(100% - 6px - 2em)`を`max-width: none`で外し、`width: min(602px, calc(100vw - 2 * var(--page-gutter)))`とする。
+- 設定ダイアログ（`dialog`）の縦スクロールバーは、`scrollbar-width: none`と`dialog::-webkit-scrollbar { display: none }`で非表示にする（スクロール自体はできる）。
 - 設定ダイアログのタブ列（`dialog .location-tabs`）は`flex-wrap: nowrap`・`overflow-x: auto`・`min-width: 0`とし、タブ列だけを横スクロールさせる（`.location-tabs`の共通定義は`flex-wrap`を持たないため、折り返しを戻すとダイアログ全体が横に溢れる）。
-- ボタンの折り返しは、`styles.css`の`button`に`white-space: nowrap`・`flex: none`を与え（文字を折り返さず大きさを保つ）、ボタンを並べる親（`.app-header`・`.header-actions`・`.dialog-actions`・`.location-tabs`・`.session-action`・`.connect-row`・`.location-toolbar(-actions)`）に`flex-wrap: wrap`を与えて、ボタンごと折り返す。新しくボタンを並べる親を追加するときも`flex-wrap: wrap`を付ける。
+- ボタンの折り返しは、`styles.css`の`button`に`white-space: nowrap`・`flex: none`を与え（文字を折り返さず大きさを保つ）、ボタンを並べる親（`.dialog-actions`・`.location-tabs`・`.session-action`・`.connect-row`・`.location-toolbar(-actions)`）に`flex-wrap: wrap`を与えて、ボタンごと折り返す。新しくボタンを並べる親を追加するときも`flex-wrap: wrap`を付ける。ヘッダーのボタン列（`.header-actions`）は例外で、`flex-wrap: nowrap`・`overflow-x: auto`・`min-width: 0`とし、`.app-header`も`nowrap`にして、幅を超えた分をボタン列だけの横スクロールにする。
 - 高さは、タブの内容で最も高いものに合わせ固定せず、選択中のタブの内容に従う。
 - 設定の読み込み（`GET /v1/connection/config`）とタブの初期化は、ダイアログを開いたときだけ行う。明示的プロキシの許可CIDRの初期値（ダッシュボードの稼働状況の`lanCidr`）は開いた時点の値を使い、読み込みの契機にしない（定期取得の失敗等で値が変わるたびに読み直すと、開いているダイアログのタブ・未保存の入力・動作検証の表示が初期化されるため。Phase 27の実機検証で発見）。
 
@@ -368,5 +369,9 @@
 
 # ゲートウェイ機の再起動の実装方針
 
-- ヘッダーの「接続ログ」の隣へ「ゲートウェイ再起動」ボタンを置く（`App.tsx`）。押下で`RebootDialog`（`components/dashboard/RebootDialog.tsx`）を開く。
+- 設定ダイアログの「メンテナンス」タブ（`SettingsDialog.tsx`）へ「ゲートウェイ再起動」「アカウント情報を変更」のボタンを置く（`.maintenance-actions`）。`RebootDialog`・`AccountSettingsDialog`は、`<dialog>`の入れ子を避けるため設定ダイアログの兄弟要素とする。押下で`RebootDialog`（`components/dashboard/RebootDialog.tsx`）を開く。
 - ダイアログは、警告文・パスワード入力・「再起動」「キャンセル」で構成する。「再起動」は生成クライアントの`POST /v1/gateway/reboot`を呼ぶ。エラーはダイアログ内に表示する（モーダル中はトーストが操作できないため。接続ログのダイアログと同じ方針）。成功したら、依頼を受け付けた旨と、接続できなくなる旨を同じダイアログに示し、閉じるまでパスワードは保持しない。
+
+## スマートフォン幅でのヘッダータイトル非表示
+
+要件は`requirements.md`「スマートフォン幅でのヘッダータイトル非表示」。`styles.css`に`@media (max-width: 600px)`（カード幅569px＋余白16px×2）を追加し、`.app-header h1`を`display: none`、`.app-header`を`justify-content: flex-end`にする（メディアクエリは`.app-header`の通常定義より後ろに置く）。

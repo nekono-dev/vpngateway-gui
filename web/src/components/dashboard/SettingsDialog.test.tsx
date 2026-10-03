@@ -60,7 +60,7 @@ describe("SettingsDialog: タブ", () => {
 
   it("先頭の「通信制御」タブを表示し、タブで項目を切り替えられる", async () => {
     await renderDialog();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ", "動作検証"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ", "動作検証", "メンテナンス"]);
     expect(screen.getByRole("tab", { name: "通信制御" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("checkbox", { name: /Kill Switch/ })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /明示的プロキシモード/ })).not.toBeInTheDocument();
@@ -83,7 +83,7 @@ describe("SettingsDialog: タブ", () => {
 
     await openTab("上位DNSリゾルバ");
     await userEvent.click(screen.getByLabelText(/DNS中継を有効にする/));
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ !", "DNS詳細", "動作検証"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ !", "DNS詳細", "動作検証", "メンテナンス"]);
 
     await openTab("DNS詳細");
     expect(screen.getByLabelText(/名前解決を止める/)).toBeInTheDocument();
@@ -217,5 +217,14 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
       dnsRedirectExcludedCidrs: ["192.168.3.5/32"],
       dnsFailureMode: "fallback",
     });
+  });
+
+  it("メンテナンスタブに「アカウント情報を変更」「ゲートウェイ再起動」を置き、ダイアログ下部の操作は保存・キャンセルのみにする", async () => {
+    await renderDialog();
+    expect(screen.queryByRole("button", { name: "アカウント情報を変更" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "ゲートウェイ再起動" })).not.toBeInTheDocument();
+    await openTab("メンテナンス");
+    expect(screen.getByRole("button", { name: "アカウント情報を変更" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "ゲートウェイ再起動" })).toBeInTheDocument();
   });
 });
