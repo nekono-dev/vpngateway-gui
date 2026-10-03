@@ -28,6 +28,9 @@ try {
     assert(!bar.wrapped, `幅${width}px: ヘッダーのボタンが折り返さない`);
     assert(bar.overflowing === bar.scrolled, `幅${width}px: ボタン列が幅を超えるときだけ横スクロールできる（超過=${bar.overflowing}）`);
     await page.locator(".header-actions").evaluate((e) => { e.scrollLeft = 0; });
+    const pad = await page.locator(".header-actions").evaluate((e) => ({ padding: parseFloat(getComputedStyle(e).paddingBottom), vertical: e.scrollHeight > e.clientHeight }));
+    assert(pad.padding === 0, `幅${width}px: ボタン列に余白を足していない（${pad.padding}px）`);
+    assert(!pad.vertical, `幅${width}px: ヘッダーのボタン列が縦にスクロールしない`);
     if (narrow && !bar.overflowing) {
       const edges = await page.evaluate(() => ({
         header: document.querySelector(".app-header").getBoundingClientRect().right,

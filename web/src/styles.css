@@ -29,6 +29,9 @@ body,
    16px、そこから画面が狭くなるにつれて連続的に10pxまで縮める（境界値での切り替えはしない）。 */
 :root {
   --page-gutter: clamp(10px, calc((100vw - 569px) / 2), 16px);
+  /* スクロールバーが内容に重なって表示される環境（Safari等）で、バーがボタン・文字を隠さないための余白。
+     スクロールする要素は、バーを置く側（横スクロールは下、縦スクロールは右）にこの余白を付ける。 */
+  --scrollbar-gap: 16px;
 }
 
 body {
@@ -354,6 +357,38 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
   gap: 4px;
 }
 
+/* 横スクロールするボタン列・タブ列。マウス操作でもスクロールできるよう、バーは表示する。
+   バーはボタンの高さに影響させない: ボタンを引き伸ばさず（align-items: flex-start）、バーの太さはレイアウトに
+   含まれるため、余白は付けない。引き伸ばしたままだと、Safariでバーが表示された後に内容の高さが
+   バーの分だけ縮み、ボタンの高さが崩れる（他の要素をクリックするまで直らない）。 */
+.header-actions,
+.location-toolbar,
+dialog .location-tabs {
+  align-items: flex-start;
+  overflow-y: hidden;
+}
+
+.header-actions::-webkit-scrollbar,
+.location-toolbar::-webkit-scrollbar,
+dialog .location-tabs::-webkit-scrollbar {
+  height: 10px;
+}
+
+.header-actions::-webkit-scrollbar-thumb,
+.location-toolbar::-webkit-scrollbar-thumb,
+dialog .location-tabs::-webkit-scrollbar-thumb {
+  background: #c1c7cd;
+  border-radius: 5px;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .header-actions,
+  .location-toolbar,
+  dialog .location-tabs {
+    scrollbar-width: thin;
+  }
+}
+
 .location-toolbar-actions {
   display: flex;
   flex: none;
@@ -377,6 +412,7 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
      flexの最小サイズにより縮む。webserver/design.md「画面の縦幅をビューポートに収める」）。 */
   flex: 1 1 auto;
   min-height: 6rem;
+  padding-right: var(--scrollbar-gap);
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -635,6 +671,9 @@ dialog .location-tabs {
   max-width: 100%;
   flex-wrap: nowrap;
   overflow-x: auto;
+  /* overflow-xだけをautoにすると、overflow-yもautoに計算され、Safari等のバーを常時表示する環境で
+     横スクロールバーの分だけ縦にあふれて縦スクロールバーが出る。縦は常に隠す。 */
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -668,6 +707,7 @@ dialog [role="alert"] {
 
 .log-scroll {
   max-height: 50vh;
+  padding: 0 var(--scrollbar-gap) var(--scrollbar-gap) 0;
   overflow: auto;
 }
 
@@ -749,6 +789,7 @@ dialog [role="alert"] {
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 160px;
+  padding: 0 var(--scrollbar-gap) var(--scrollbar-gap) 0;
   overflow: auto;
   color: #1f2328;
   font-size: 0.75rem;
