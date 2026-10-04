@@ -22,3 +22,12 @@ if (typeof HTMLDialogElement !== "undefined") {
     this.dispatchEvent(new Event("close"));
   };
 }
+
+// jsdomは`ResizeObserver`を実装していないため、何もしない実装で補う（寸法はjsdomでは常に0で、観測しても変化しない）。
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}

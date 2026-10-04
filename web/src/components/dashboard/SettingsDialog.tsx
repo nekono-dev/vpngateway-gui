@@ -11,6 +11,7 @@ import {
 } from "../../generated/api/default/default";
 import type { GetV1ConnectionConfig200 } from "../../generated/api/endpoints.schemas";
 import { useDialogOpen } from "../../hooks/useDialogOpen";
+import { HorizontalScroll } from "../HorizontalScroll";
 import {
   describeApiError,
   describeThrownError,
@@ -226,7 +227,7 @@ export function SettingsDialog({
               void handleSave();
             }}
           >
-            <div
+            <HorizontalScroll
               role="tablist"
               aria-label="設定の項目"
               className="location-tabs"
@@ -244,38 +245,45 @@ export function SettingsDialog({
                   {tabHasIncompleteInput[key] ? " !" : ""}
                 </button>
               ))}
-            </div>
+            </HorizontalScroll>
 
             <div role="tabpanel" className="settings-tabpanel">
               {activeTab === "control" ? (
                 <>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={settings.killSwitch}
-                      onChange={(event) =>
-                        setSettings({
-                          ...settings,
-                          killSwitch: event.target.checked,
-                        })
+                  <div className="settings-item">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={settings.killSwitch}
+                        onChange={(event) =>
+                          setSettings({
+                            ...settings,
+                            killSwitch: event.target.checked,
+                          })
+                        }
+                      />
+                      Kill Switch
+                    </label>
+                    <p className="hint">
+                      VPN切断を検知したら、LAN側の通信を遮断します。
+                    </p>
+                  </div>
+
+                  <div className="settings-item">
+                    <LineListEditor
+                      label="迂回ドメイン"
+                      placeholder="example.com"
+                      value={settings.excludedDomains}
+                      onChange={(excludedDomains) =>
+                        setSettings({ ...settings, excludedDomains })
                       }
                     />
-                    Kill Switch（VPN切断検知時にLAN側通信を遮断する）
-                  </label>
-
-                  <LineListEditor
-                    label="迂回ドメイン（split-tunnel。VPNを経由せず直接通信するドメイン）"
-                    placeholder="example.com"
-                    value={settings.excludedDomains}
-                    onChange={(excludedDomains) =>
-                      setSettings({ ...settings, excludedDomains })
-                    }
-                  />
-                  <p className="hint">
-                    example.com はそのドメイン自身のみ、*.example.com
-                    はサブドメインのみ（example.com自身は含まない）が対象です。ドメインとそのサブドメインの両方を迂回するには、example.com
-                    と *.example.com の両方を登録してください。
-                  </p>
+                    <p className="hint">
+                      VPNを経由せず直接通信するドメインです（split-tunnel）。
+                      example.com はそのドメイン自身のみ、*.example.com
+                      はサブドメインのみが対象です。両方を迂回するには両方を登録してください。
+                    </p>
+                  </div>
                   {hasExcludedDomains && !settings.dnsRelayEnabled ? (
                     <p className="restriction">
                       DNS中継が無効なため、迂回ドメインは反映されません。
@@ -284,6 +292,7 @@ export function SettingsDialog({
                 </>
               ) : activeTab === "gateway" ? (
                 <>
+                  <div className="settings-item">
                   <label>
                     <input
                       type="checkbox"
@@ -301,7 +310,9 @@ export function SettingsDialog({
                     />
                     透過ゲートウェイモード
                   </label>
+                  </div>
 
+                  <div className="settings-item">
                   <label>
                     <input
                       type="checkbox"
@@ -320,11 +331,13 @@ export function SettingsDialog({
                     明示的プロキシモード（SOCKS5/HTTP）
                   </label>
                   <p className="hint">
-                    透過ゲートウェイ・明示的プロキシは少なくとも一方を有効にする必要があります。
+                    透過ゲートウェイとの少なくとも一方を有効にしてください。
                   </p>
+                  </div>
 
+                  <div className="settings-item">
                   <LineListEditor
-                    label="明示的プロキシの許可CIDR（接続元IPがこの範囲内のみプロキシ利用を許可。他は拒否）"
+                    label="明示的プロキシの許可CIDR"
                     placeholder="192.168.3.0/24"
                     value={settings.explicitProxyAllowedCidrs}
                     onChange={(explicitProxyAllowedCidrs) =>
@@ -332,9 +345,13 @@ export function SettingsDialog({
                     }
                     disabled={!settings.explicitProxyEnabled}
                   />
+                  <p className="hint">
+                    接続元IPがこの範囲内のときだけプロキシを利用できます。他は拒否します。
+                  </p>
+                  </div>
                   {explicitProxyNeedsCidr ? (
                     <p className="restriction">
-                      明示的プロキシモードを使うには、有効な許可CIDRを1つ以上入力してください。
+                      許可CIDRを1つ以上入力してください。
                     </p>
                   ) : null}
                 </>
@@ -368,6 +385,7 @@ export function SettingsDialog({
                 </div>
               ) : activeTab === "dnsResolver" ? (
                 <>
+                  <div className="settings-item">
                   <label>
                     <input
                       type="checkbox"
@@ -379,11 +397,13 @@ export function SettingsDialog({
                         })
                       }
                     />
-                    DNS中継を有効にする（迂回ドメインの判定と、自宅DNSサーバでの名前解決）
+                    DNS中継を有効にする
                   </label>
                   <p className="hint">
-                    暗号化DNS（DoH・DoT）を使うクライアントは中継できないため、迂回ドメインが効きません。
+                    迂回ドメインの判定と、自宅DNSサーバでの名前解決を行います。
+                    DoH・DoTを使うクライアントは中継できず、迂回ドメインが効きません。
                   </p>
+                  </div>
 
                   <label>
                     自宅DNSサーバ（DoHのURL）
@@ -400,10 +420,11 @@ export function SettingsDialog({
                       }
                     />
                   </label>
+                  <div className="settings-item">
                   <label>
-                    自宅DNSサーバの証明書を発行したCA（PEM形式。公的な認証局の証明書なら空でよい）
+                    自宅DNSサーバのCA証明書（PEM形式）
                     <textarea
-                      rows={4}
+                      rows={5}
                       disabled={!settings.dnsRelayEnabled}
                       value={settings.dnsUpstreamCaPem}
                       onChange={(event) =>
@@ -414,9 +435,13 @@ export function SettingsDialog({
                       }
                     />
                   </label>
+                  <p className="hint">
+                    公的な認証局の証明書を使う場合は空で構いません。
+                  </p>
+                  </div>
                   {dnsRelayNeedsUpstream ? (
                     <p className="restriction">
-                      DNS中継を使うには、自宅DNSサーバのURLか、切り替え先の公開DNSを入力してください。
+                      自宅DNSサーバのURLか、公開DNSを入力してください。
                     </p>
                   ) : null}
                 </>
@@ -425,6 +450,7 @@ export function SettingsDialog({
                   <div
                     role="radiogroup"
                     aria-label="自宅DNSサーバが応答しないとき"
+                    className="settings-radiogroup"
                   >
                     <label>
                       <input
@@ -438,7 +464,8 @@ export function SettingsDialog({
                           })
                         }
                       />
-                      名前解決を止める（フィルタと履歴を優先）
+                      名前解決を止める
+                      <span className="hint">フィルタと履歴を優先</span>
                     </label>
                     <label>
                       <input
@@ -452,33 +479,37 @@ export function SettingsDialog({
                           })
                         }
                       />
-                      公開DNSへ切り替える（フィルタと履歴は効かなくなる）
+                      公開DNSへ切り替える
+                      <span className="hint">フィルタと履歴は効かなくなる</span>
                     </label>
                   </div>
-                  <LineListEditor
-                    label="切り替え先の公開DNS（最大3件）"
-                    placeholder="1.1.1.1"
-                    maxItems={3}
-                    value={settings.dnsFallbackServers}
-                    onChange={(dnsFallbackServers) =>
-                      setSettings({ ...settings, dnsFallbackServers })
-                    }
-                    disabled={settings.dnsFailureMode !== "fallback"}
-                  />
+                  {settings.dnsFailureMode === "fallback" ? (
+                    <LineListEditor
+                      label="切り替え先の公開DNS（最大3件）"
+                      placeholder="1.1.1.1"
+                      maxItems={3}
+                      value={settings.dnsFallbackServers}
+                      onChange={(dnsFallbackServers) =>
+                        setSettings({ ...settings, dnsFallbackServers })
+                      }
+                    />
+                  ) : null}
 
-                  <LineListEditor
-                    label="クライアント名の取得先（DHCPサーバ・ルータのDNS、最大3件。空ならIPアドレスで記録）"
-                    placeholder="192.168.3.254"
-                    maxItems={3}
-                    value={settings.dnsClientNameServers}
-                    onChange={(dnsClientNameServers) =>
-                      setSettings({ ...settings, dnsClientNameServers })
-                    }
-                  />
-                  <p className="hint">
-                    指定すると、自宅DNSサーバの履歴に、DHCPで配られた名前（例:
-                    macmini.lan → macmini-lan）でクライアントが記録されます。
-                  </p>
+                  <div className="settings-item">
+                    <LineListEditor
+                      label="クライアント名の取得先（最大3件）"
+                      placeholder="192.168.3.254"
+                      maxItems={3}
+                      value={settings.dnsClientNameServers}
+                      onChange={(dnsClientNameServers) =>
+                        setSettings({ ...settings, dnsClientNameServers })
+                      }
+                    />
+                    <p className="hint">
+                      DHCPサーバ・ルータのDNSを指定します。履歴には、DHCPで配られた名前（例:
+                      macmini.lan → macmini-lan）で記録されます。空ならIPアドレスで記録します。
+                    </p>
+                  </div>
 
                   <label>
                     <input
@@ -493,18 +524,25 @@ export function SettingsDialog({
                     />
                     手動でDNSを指定した端末の問い合わせも中継する
                   </label>
-                  <LineListEditor
-                    label="中継しない宛先（LAN内のDNSサーバ等、CIDR）"
-                    placeholder="192.168.3.5/32"
-                    value={settings.dnsRedirectExcludedCidrs}
-                    onChange={(dnsRedirectExcludedCidrs) =>
-                      setSettings({ ...settings, dnsRedirectExcludedCidrs })
-                    }
-                    disabled={!settings.dnsRedirectEnabled}
-                  />
+                  {settings.dnsRedirectEnabled ? (
+                    <div className="settings-item">
+                      <LineListEditor
+                        label="中継しない宛先（CIDR）"
+                        placeholder="192.168.3.5/32"
+                        value={settings.dnsRedirectExcludedCidrs}
+                        onChange={(dnsRedirectExcludedCidrs) =>
+                          setSettings({
+                            ...settings,
+                            dnsRedirectExcludedCidrs,
+                          })
+                        }
+                      />
+                      <p className="hint">LAN内のDNSサーバ等を指定します。</p>
+                    </div>
+                  ) : null}
                   {dnsFallbackNeedsServers ? (
                     <p className="restriction">
-                      公開DNSへ切り替えるには、切り替え先の公開DNSを1つ以上入力してください。
+                      公開DNSを1つ以上入力してください。
                     </p>
                   ) : null}
                 </>

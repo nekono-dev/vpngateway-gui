@@ -357,36 +357,58 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
   gap: 4px;
 }
 
-/* 横スクロールするボタン列・タブ列。マウス操作でもスクロールできるよう、バーは表示する。
-   バーはボタンの高さに影響させない: ボタンを引き伸ばさず（align-items: flex-start）、バーの太さはレイアウトに
-   含まれるため、余白は付けない。引き伸ばしたままだと、Safariでバーが表示された後に内容の高さが
-   バーの分だけ縮み、ボタンの高さが崩れる（他の要素をクリックするまで直らない）。 */
+/* 横スクロールするボタン列・タブ列（HorizontalScroll）。標準のスクロールバーは使わず、自前のバーを列の下に置く。
+   標準のバーは、Safariで表示の有無・太さが初回レイアウト後に変わり、ボタンに被る・高さが崩れる（他の要素を
+   クリックするまで直らない）ため。自前のバーは通常のレイアウトに置くので高さが常に確定する。
+   ボタンは引き伸ばさない（align-items: flex-start）。縦は常に隠す（overflow-xだけをautoにするとoverflow-yも
+   autoに計算され、縦スクロールバーが出るため）。 */
 .header-actions,
 .location-toolbar,
 dialog .location-tabs {
   align-items: flex-start;
   overflow-y: hidden;
+  scrollbar-width: none;
 }
 
 .header-actions::-webkit-scrollbar,
 .location-toolbar::-webkit-scrollbar,
 dialog .location-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.hscroll {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 縦に並べる親（.location-list）で、横スクロールの外枠が縦の縮みで潰れないようにする。 */
+.hscroll-fixed {
+  flex: none;
+}
+
+.hscroll-track {
+  position: relative;
   height: 10px;
-}
-
-.header-actions::-webkit-scrollbar-thumb,
-.location-toolbar::-webkit-scrollbar-thumb,
-dialog .location-tabs::-webkit-scrollbar-thumb {
-  background: #c1c7cd;
+  margin-top: 2px;
   border-radius: 5px;
+  background: var(--muted-bg);
+  cursor: pointer;
 }
 
-@supports not selector(::-webkit-scrollbar) {
-  .header-actions,
-  .location-toolbar,
-  dialog .location-tabs {
-    scrollbar-width: thin;
-  }
+.hscroll-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  min-width: 24px;
+  border-radius: 5px;
+  background: #c1c7cd;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hscroll-thumb:active {
+  background: #a8b0b8;
+  cursor: grabbing;
 }
 
 .location-toolbar-actions {
@@ -644,8 +666,25 @@ dialog form {
 .settings-tabpanel {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 14px;
   padding: 8px 0;
+}
+
+.settings-tabpanel p {
+  margin: 0;
+}
+
+/* 項目とその補足説明（.hint）を1組にして、組の中は詰め、組と組の間は広げる（補足がどの項目のものか分かるようにする）。 */
+.settings-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-radiogroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 dialog label {
@@ -670,6 +709,24 @@ dialog textarea {
   resize: vertical;
   background: #fff;
   color: inherit;
+  /* 文字入力欄（テキストボックス）と同じ余白・枠線・角丸・フォーカス表示を土台に、複数行入力欄としての独自スタイルを重ねる。
+     フォントは他の入力欄と揃えて本文と同じものを継承し、行間を広げて読みやすくする。
+     既定の表示行数は5行（rows属性）で、縦リサイズしても5行分より小さくはならない。 */
+  font-family: inherit;
+  /* iOS Safariの自動拡大を避けるため、16px（1rem）未満にしない。 */
+  font-size: 1rem;
+  line-height: 1.5;
+  min-height: calc(5 * 1.5em + 2 * 8px + 2px);
+  /* 横スクロールはさせず、長い行は折り返して表示する（縦のみスクロール）。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+dialog textarea:focus-visible {
+  border-color: var(--accent);
+  outline-color: var(--accent);
 }
 
 dialog textarea:disabled {

@@ -94,9 +94,14 @@ describe("SettingsDialog: タブ", () => {
 
     await openTab("DNS詳細");
     expect(screen.getByLabelText(/名前解決を止める/)).toBeInTheDocument();
-    expect(screen.getByRole("listbox", { name: /切り替え先の公開DNS/ })).toBeInTheDocument();
     expect(screen.getByRole("listbox", { name: /クライアント名の取得先/ })).toBeInTheDocument();
     expect(screen.getByLabelText(/手動でDNSを指定した端末/)).toBeInTheDocument();
+    // リストを使わない状態（名前解決を止める・リダイレクト無効）では、リストは非表示
+    expect(screen.queryByRole("listbox", { name: /切り替え先の公開DNS/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: /中継しない宛先/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText(/公開DNSへ切り替える/));
+    await userEvent.click(screen.getByLabelText(/手動でDNSを指定した端末/));
+    expect(screen.getByRole("listbox", { name: /切り替え先の公開DNS/ })).toBeInTheDocument();
     expect(screen.getByRole("listbox", { name: /中継しない宛先/ })).toBeInTheDocument();
     expect(screen.queryByLabelText(/自宅DNSサーバ（DoHのURL）/)).not.toBeInTheDocument();
 
@@ -145,7 +150,7 @@ describe("SettingsDialog: タブ", () => {
     expect(screen.getByRole("tab", { name: "ゲートウェイ !" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "上位DNSリゾルバ" })).toBeInTheDocument();
     await openTab("ゲートウェイ !");
-    expect(screen.getByText(/有効な許可CIDRを1つ以上入力/)).toBeInTheDocument();
+    expect(screen.getByText(/許可CIDRを1つ以上入力/)).toBeInTheDocument();
   });
 
   it("上位DNSリゾルバの入力が不完全で保存できないとき、上位DNSリゾルバタブに警告印が付く", async () => {
@@ -165,7 +170,7 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
   it("「未対応」の暫定表示は出さず、ドメインの表記規則（両方の登録が必要）を案内する", async () => {
     await renderDialog();
     expect(screen.queryByText(/未対応/)).not.toBeInTheDocument();
-    expect(screen.getByText(/example\.com と \*\.example\.com の両方を登録/)).toBeInTheDocument();
+    expect(screen.getByText(/両方を迂回するには両方を登録/)).toBeInTheDocument();
   });
 
   it("迂回ドメインがあるのにDNS中継が無効なら、反映されない旨を表示する。有効にすると消える", async () => {
@@ -181,7 +186,7 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
     await renderDialog();
     await openTab("上位DNSリゾルバ");
     expect(screen.getByLabelText(/自宅DNSサーバ（DoHのURL）/)).toBeDisabled();
-    expect(screen.getByLabelText(/自宅DNSサーバの証明書を発行したCA/)).toBeDisabled();
+    expect(screen.getByLabelText(/自宅DNSサーバのCA証明書/)).toBeDisabled();
   });
 
   it("DNS中継を有効にしたのに上流もフォールバック先も空なら、保存できず理由を示す", async () => {
@@ -189,7 +194,7 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
     await openTab("上位DNSリゾルバ");
     await userEvent.click(screen.getByLabelText(/DNS中継を有効にする/));
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
-    expect(screen.getByText(/自宅DNSサーバのURLか、切り替え先の公開DNSを入力/)).toBeInTheDocument();
+    expect(screen.getByText(/自宅DNSサーバのURLか、公開DNSを入力/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/自宅DNSサーバ（DoHのURL）/), "https://dns.home.example/dns-query");
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
   });

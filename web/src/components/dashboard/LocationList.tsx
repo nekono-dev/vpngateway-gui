@@ -10,6 +10,7 @@ import { AvailableLocations } from "./AvailableLocations";
 import { RestrictionNote } from "./RestrictionNote";
 import type { AvailableLocation } from "../../hooks/useAvailableLocations";
 import type { CurrentAvailableLocation } from "../../locations/current-available-location";
+import { HorizontalScroll } from "../HorizontalScroll";
 
 interface Props {
   locations: LocationItem[];
@@ -109,7 +110,10 @@ export function LocationList({
 
   return (
     <div className="location-list">
-      <div className="location-toolbar">
+      <HorizontalScroll
+        className="location-toolbar"
+        wrapperClassName="hscroll-fixed"
+      >
         <div role="tablist" aria-label="接続先の表示" className="location-tabs">
           {(Object.keys(TAB_LABELS) as LocationTab[]).map((key) => (
             <button
@@ -135,7 +139,7 @@ export function LocationList({
             {isRefreshing ? "計測中..." : "再計測"}
           </button>
         </div>
-      </div>
+      </HorizontalScroll>
       <RestrictionNote id="refresh-restriction" message={refreshDisabledReason} />
       <RestrictionNote message={favoritesDisabledReason} />
       <input

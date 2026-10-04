@@ -14,6 +14,7 @@ import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
 import { GithubIcon } from "./components/icons/GithubIcon";
+import { HorizontalScroll } from "./components/HorizontalScroll";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
 import { useToast } from "./notifications/ToastProvider";
 import { putV1Connection } from "./generated/api/default/default";
@@ -126,7 +127,7 @@ export function App({ onLogout }: Props) {
     <main>
       <header className="app-header">
         <h1>VPNGateway-GUI</h1>
-        <div className="header-actions">
+        <HorizontalScroll className="header-actions">
           <button type="button" onClick={() => setIsLogOpen(true)}>
             接続ログ
           </button>
@@ -138,7 +139,7 @@ export function App({ onLogout }: Props) {
               ログアウト
             </button>
           ) : null}
-        </div>
+        </HorizontalScroll>
       </header>
       {/* ベンダーが替わったら、ログイン導線のローカルな状態（入力中のフォーム・URL提示の結果）を捨てるため、IDをkeyにして再マウントする。 */}
       <section key={`provider-${activeProviderId}`} className="card provider-card" aria-label="VPNベンダー">
