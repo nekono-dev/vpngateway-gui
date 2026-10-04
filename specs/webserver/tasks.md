@@ -274,3 +274,11 @@
 - [x] 2段階認証欄は、ボタンを押したときだけ`<form>`へ追加する（同じ`<form>`に最初から置くとProton Passが反応しない）
 
 検証: `npm test`PASS（173件）。検証サーバへ反映のうえ、実ブラウザ（Proton Pass）で、ユーザー名・パスワードの自動入力、ログイン後に「保存しますか？」の通知が出ないことを確認。2段階認証欄を出した後はProton Passのフォームは出ない（先に自動入力してからボタンを押す）。
+
+## 行リストエディタへの換装（Phase 36）
+
+- [ ] 仕様（`requirements.md`・`design.md`）の追記
+- [ ] 選択・追加位置・削除・並べ替えの純関数（`web/src/lib/list-selection.ts`）と単体テスト
+- [ ] `LineListEditor.tsx`の再実装と`styles.css`
+- [ ] `SettingsDialog.tsx`の5か所（`maxItems`を「最大3件」の2か所へ）・`SettingsDialog.test.tsx`の追従
+- [ ] 検証サーバへ反映し、実ブラウザで選択・編集・追加位置・並べ替えを確認

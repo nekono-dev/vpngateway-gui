@@ -102,7 +102,7 @@
 - タブは「通信制御」「ゲートウェイ」「上位DNSリゾルバ」「DNS詳細」「動作検証」「メンテナンス」。ただし「メンテナンス」は設定値を持たず、ボタンだけを置く。ダイアログ下部の`.dialog-actions`は保存・キャンセルのみ。DNS中継の設定は、従来の枠線付きグループ（`fieldset`）をやめ、上位DNSリゾルバ（有効化・DoH URL・CA）とDNS詳細（失敗時の挙動・公開DNS・クライアント名の取得先・リダイレクト）の2タブへ分けて表示する。「DNS詳細」は`dnsRelayEnabled`がONのときだけ`tablist`に含め、OFFの間は描画しない（選択中のタブが消えた場合は`activeTab`が「上位DNSリゾルバ」へ落ちる）。DNS詳細の入力は、タブが見えない間に保存を妨げないよう、`dnsFallbackNeedsServers`を`dnsRelayEnabled`がONのときだけ有効にする（`dnsFailureMode`等の値自体は保持して送信する）。
 - 保存不可条件（`explicitProxyNeedsCidr`・`hasIncompleteDnsSettings`）は従来どおりダイアログ全体の保存ボタンの`disabled`に使い、該当タブ（ゲートウェイ・上位DNSリゾルバ・DNS詳細）のラベル末尾に`!`を付ける。
 - ラジオボタンは`styles.css`の`input[type="radio"]:not(.visually-hidden)`で、チェックボックスと同様に`appearance: none`の自前デザインにする（`.visually-hidden`の接続先リストのラジオは除外する）。
-- 複数行入力欄のスタイルは`styles.css`の`dialog textarea`に置く（`width: 100%`・`box-sizing: border-box`・`resize: vertical`・無効時の背景）。複数行入力欄は既定の折り返し（横スクロールなし）とする。
+- 複数行入力欄（CAのPEM。1行1値のリストは`LineListEditor`が行リストエディタとして別に扱う）のスタイルは`styles.css`の`dialog textarea`に置く（`width: 100%`・`box-sizing: border-box`・`resize: vertical`・無効時の背景）。複数行入力欄は既定の折り返し（横スクロールなし）とする。
 - 設定ダイアログのボタン列（`.dialog-actions`）は、「保存」「キャンセル」を`.dialog-actions-group`（折り返さない`flex`）で囲み、組ごと折り返す。
 - ページと設定ダイアログの左右余白は、`:root`の`--page-gutter: clamp(10px, calc((100vw - 569px) / 2), 16px)`で連続的に決める（`main`は`padding: 16px var(--page-gutter)`）。`dialog`は、ブラウザ既定の`max-width: calc(100% - 6px - 2em)`を`max-width: none`で外し、`width: min(602px, calc(100vw - 2 * var(--page-gutter)))`とする。
 - スクロールする領域の余白は、`:root`の`--scrollbar-gap`（14px）で共通にする。縦にスクロールする領域（`.location-scroll`は`padding-right`、`.log-scroll`・`.toast pre`は右と下）に付ける。横スクロールの領域（`.header-actions`・`.location-toolbar`・`dialog .location-tabs`）は、バーを表示したまま、`align-items: flex-start`でボタンを引き伸ばさず、追加の余白は付けない（バーの太さはレイアウトに含まれ、余白を足すとバーの上に大きな空きができるため。`--scrollbar-gap`は縦スクロールの領域だけに使う）。縦は`overflow-y: hidden`。バーは`::-webkit-scrollbar { height: 10px }`で太さを固定する（Firefoxは`scrollbar-width: thin`）。引き伸ばしたままだと、Safariでバー表示後に内容の高さがバーの分だけ縮んでボタンの高さが崩れ、他の要素をクリックするまで直らなかったため。スクロールする領域を新設するときも付ける。
@@ -392,3 +392,15 @@
   - **同じ`<form>`に2段階認証欄があると、`autocomplete`の値によらず、Proton Passがログインフォームとして反応しない**。そこで2段階認証欄は最初は出さず、「2段階認証を設定している場合」ボタンで`<form>`へ追加する（静的ページでは、追加後も入力済みの値は残る。追加後はProton Passのフォームは出ない）。
   - 2段階認証欄と送信ボタンを`<form>`の外に置き`form`属性で関連付ける構成は、静的なテストページでは自動入力できたが、アプリ内ではユーザー名のみ入りパスワードが入らなかった（Proton Passが`<main>`全体をフォーム扱いした）。`<form>`にユーザー名・パスワード・送信ボタンだけを置く構造にする。
   - React制御の入力欄、送信ボタンの`disabled`、`placeholder`・`inputMode`、アプリのCSS、URL、`<head>`、スクリプトの有無は、原因ではなかった。
+
+## 行リストエディタの実装方針（Phase 36）
+
+要件は`webserver/requirements.md`「行リストエディタ（Phase 36）」。
+
+- `LineListEditor.tsx`は、従来のpropsの形（`label`・`value: string[]`・`onChange`・`disabled`・`placeholder`）を保ったまま内部を作り直し、`maxItems`（任意）を加える。保存時の変換は`SettingsDialog.tsx`の`handleSave`が従来どおり行うため、呼び出し側の値の型・APIの契約は変えない。
+- 各行に、内部で振る安定したID（`{id, text}[]`）を持たせる。`value`には重複・空文字がありうるため、行の識別・フォーカス・選択状態を値や添字に依存させないためである。外部の`value`が自分の`onChange`の結果と異なるとき（設定の読み込み等）だけIDを振り直す。
+- 選択の決定（単独・`Ctrl`の追加解除・`Shift`の範囲・全選択・矢印キー）、追加位置（選択行のうち最下行の直後。選択なしは末尾）、削除後の選択先、並べ替え後の配列は、DOMに依存しない純関数として`web/src/lib/list-selection.ts`に置き、単体テストで検証する（ポータビリティテストを満たすためlibに置く）。
+- 選択は`mousedown`で確定する（`click`で確定すると、すでに選択中の行の2回目のクリックと区別できない）。選択の変更では行を再描画せず見た目だけを更新する（再描画すると、ドラッグ開始が壊れる）。編集の開始は`click`で行う。
+- 行の並べ替えはHTML5のドラッグ＆ドロップを使う。行の`draggable`は掴み部の`mousedown`の間だけ有効にし、テキストの選択と競合させない。編集中の行は掴めない。
+- リストは`role="listbox"`・`aria-multiselectable="true"`、行は`role="option"`・`aria-selected`とし、見出しは`aria-labelledby`で結ぶ（入力欄が複数になるため`<label>`で包まない）。非編集の行のテキストボックスは`readOnly`・`tabIndex=-1`・`pointer-events: none`とし、クリックは行が受ける。
+- スタイルは`styles.css`の`.line-list`系に置く。枠・行の区切り・ホバー・選択行は`.location-items`・`.location-selected`の配色に揃える。入力欄は16px以上（Phase 22）。内部スクロールする最大高さを設け、スクロールバーの余白は`--scrollbar-gap`を使う。
