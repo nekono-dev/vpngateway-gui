@@ -10,6 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { launch, assert } from "../lib/playwright.mjs";
+import { getListItems, setListItems } from "../lib/line-list.mjs";
 
 const [baseUrl, caFile, shotDir] = process.argv.slice(2);
 const caPem = readFileSync(caFile, "utf8");
@@ -57,7 +58,7 @@ try {
   await selectTab(dialog, "DNS詳細");
   // 切り替え先の欄は「公開DNSへ切り替える」のときだけ編集できるため、一度選んで空にしてから戻す。
   await dialog.getByRole("radio", { name: /公開DNSへ切り替える/ }).check();
-  await dialog.getByLabel(/切り替え先の公開DNS/).fill("");
+  await setListItems(dialog, /切り替え先の公開DNS/, []);
   await dialog.getByRole("radio", { name: /名前解決を止める/ }).check();
   assert(await dialog.getByRole("button", { name: "保存" }).isDisabled(), "上流も公開DNSも空のままでは保存できない");
   assert(await dialog.getByRole("tab", { name: "上位DNSリゾルバ !" }).isVisible(), "保存できないタブに警告印が付く");
@@ -70,9 +71,9 @@ try {
   await selectTab(dialog, "DNS詳細");
   await dialog.getByRole("radio", { name: /公開DNSへ切り替える/ }).check();
   assert(await dialog.getByRole("button", { name: "保存" }).isDisabled(), "「公開DNSへ切り替える」で切り替え先が空なら保存できない");
-  await dialog.getByLabel(/切り替え先の公開DNS/).fill("1.1.1.1");
+  await setListItems(dialog, /切り替え先の公開DNS/, ["1.1.1.1"]);
   await dialog.getByRole("checkbox", { name: /手動でDNSを指定した端末/ }).setChecked(true);
-  await dialog.getByLabel(/中継しない宛先/).fill("192.168.3.5/32");
+  await setListItems(dialog, /中継しない宛先/, ["192.168.3.5/32"]);
   await shot("02-filled");
   await dialog.getByRole("button", { name: "保存" }).click();
   await dialog.waitFor({ state: "hidden", timeout: 15000 });
@@ -86,13 +87,13 @@ try {
   await page.reload();
   await page.locator("strong.connection-label").waitFor({ timeout: 30000 });
   dialog = await openSettings();
-  assert((await dialog.getByRole("textbox", { name: /迂回ドメイン（split-tunnel/ }).inputValue()) === "a.example.test\n*.wild.example.test", "再読込後も迂回ドメインが保持されている");
+  assert((await getListItems(dialog, /迂回ドメイン（split-tunnel/)).join("\n") === "a.example.test\n*.wild.example.test", "再読込後も迂回ドメインが保持されている");
   await selectTab(dialog, "上位DNSリゾルバ");
   await selectTab(dialog, "上位DNSリゾルバ");
   assert((await dialog.getByLabel(/自宅DNSサーバ（DoHのURL）/).inputValue()) === "https://10.98.1.40/dns-query", "再読込後も上流URLが保持されている");
   await selectTab(dialog, "DNS詳細");
   assert(await dialog.getByRole("radio", { name: /公開DNSへ切り替える/ }).isChecked(), "再読込後も「公開DNSへ切り替える」が保持されている");
-  assert((await dialog.getByLabel(/切り替え先の公開DNS/).inputValue()) === "1.1.1.1", "再読込後も切り替え先の公開DNSが保持されている");
+  assert((await getListItems(dialog, /切り替え先の公開DNS/)).join("\n") === "1.1.1.1", "再読込後も切り替え先の公開DNSが保持されている");
   assert(await dialog.getByRole("checkbox", { name: /手動でDNSを指定した端末/ }).isChecked(), "再読込後もリダイレクトの設定が保持されている");
   await shot("04-reopened");
 

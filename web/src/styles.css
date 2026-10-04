@@ -1396,3 +1396,148 @@ dialog [role="alert"] {
   .verify-icon-running circle:nth-child(7) { opacity: 0.25; }
   .verify-icon-running circle:nth-child(8) { opacity: 0.15; }
 }
+
+/* 行リストエディタ（Phase 36）。枠・行の区切り・選択行は、入力欄・接続先リスト（.location-items・.location-selected）の配色に揃える。
+   ボタンは枠の上端のツールバーに置き、行頭の掴み部で並べ替える。 */
+.line-list-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.line-list-frame {
+  border: 1px solid var(--input-border);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.line-list-frame[aria-disabled="true"] {
+  background: var(--muted-bg);
+}
+
+.line-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  background: #f6f8fa;
+  border-bottom: 1px solid var(--border);
+}
+
+.line-list-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.line-list-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.line-list-buttons button {
+  padding: 3px 12px;
+}
+
+.line-list {
+  max-height: 224px;
+  overflow-y: auto;
+  outline: none;
+}
+
+.line-list:focus-visible {
+  outline: 2px solid var(--input-border);
+  outline-offset: -2px;
+}
+
+.line-list-empty {
+  padding: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.line-list-row {
+  display: flex;
+  align-items: center;
+  padding: 3px var(--scrollbar-gap) 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.line-list-row:last-child {
+  border-bottom: none;
+}
+
+.line-list-row:hover {
+  background: #f6f8fa;
+}
+
+.line-list-row.line-list-selected,
+.line-list-row.line-list-selected:hover {
+  background: #ddf4ff;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.line-list-row.line-list-editing,
+.line-list-row.line-list-editing:hover {
+  background: #fff;
+}
+
+.line-list-row.line-list-dragging {
+  opacity: 0.45;
+}
+
+.line-list-row.line-list-drop-before {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+.line-list-row.line-list-drop-after {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.line-list-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  align-self: stretch;
+  color: var(--muted);
+  letter-spacing: -2px;
+  cursor: grab;
+  user-select: none;
+}
+
+.line-list-grip:active {
+  cursor: grabbing;
+}
+
+.line-list-selected .line-list-grip {
+  color: var(--accent);
+}
+
+.line-list-frame[aria-disabled="true"] .line-list-grip {
+  cursor: not-allowed;
+}
+
+/* 入力欄の共通ルール（input:not([type="checkbox"])…）より詳細度を上げて上書きする。
+   非編集の間は枠・背景のない表示とし、クリックは行が受ける。 */
+.line-list-frame .line-list-row input.line-list-cell {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.line-list-frame .line-list-row.line-list-editing input.line-list-cell {
+  pointer-events: auto;
+  background: #fff;
+  border-color: var(--input-border);
+  outline: 2px solid var(--input-border);
+  outline-offset: 1px;
+}

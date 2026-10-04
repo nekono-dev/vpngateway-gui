@@ -3,6 +3,7 @@
 // 確認内容: 先頭タブの表示・タブ切替・未保存入力の保持・保存後の永続化・保存不可時の警告印・ダイアログの高さ。
 
 import { launch, assert } from "../lib/playwright.mjs";
+import { listbox, setListItems } from "../lib/line-list.mjs";
 
 const [baseUrl] = process.argv.slice(2);
 const { browser, page } = await launch(baseUrl);
@@ -63,7 +64,7 @@ try {
   await dialog.getByRole("tab", { name: /ゲートウェイ/ }).click();
   const explicit = dialog.getByRole("checkbox", { name: /明示的プロキシモード/ });
   if (!(await explicit.isChecked())) await explicit.setChecked(true);
-  await dialog.getByLabel(/明示的プロキシの許可CIDR/).fill("");
+  await setListItems(dialog, /明示的プロキシの許可CIDR/, []);
   await dialog.getByRole("tab", { name: "通信制御" }).click();
   assert(await dialog.getByRole("tab", { name: "ゲートウェイ !" }).isVisible(), "保存不可のとき「ゲートウェイ」タブに警告印が付く");
   assert(await dialog.getByRole("button", { name: "保存" }).isDisabled(), "別タブ表示中でも保存ボタンが無効のまま");
@@ -72,13 +73,11 @@ try {
   // 複数行入力欄のスタイル（幅がラベルいっぱい）と、スマートフォン幅での横スクロール
   dialog = await openSettings();
   await dialog.getByRole("tab", { name: /ゲートウェイ/ }).click();
-  const cidrBox = dialog.getByLabel(/明示的プロキシの許可CIDR/);
+  const cidrBox = listbox(dialog, /明示的プロキシの許可CIDR/).locator("xpath=ancestor::*[contains(@class,'line-list-frame')]");
   const cidrWidth = (await cidrBox.boundingBox()).width;
   const labelWidth = (await dialog.getByRole("tabpanel").boundingBox()).width;
-  assert(cidrWidth >= labelWidth - 2, `複数行入力欄の幅がパネルいっぱいに揃う（${Math.round(cidrWidth)}/${Math.round(labelWidth)}px）`);
+  assert(cidrWidth >= labelWidth - 2, `行リストエディタの幅がパネルいっぱいに揃う（${Math.round(cidrWidth)}/${Math.round(labelWidth)}px）`);
   await page.setViewportSize({ width: 300, height: 700 });
-  const style = await cidrBox.evaluate((el) => ({ ws: getComputedStyle(el).whiteSpace }));
-  assert(style.ws !== "pre", `スマートフォン幅でも複数行入力欄は折り返す（横スクロールしない。white-space: ${style.ws}）`);
   // 全てのボタンは文字を折り返さず、ボタンごと折り返して配置される（高さが1行分のまま）
   const buttons = await page.getByRole("dialog", { name: "設定" }).getByRole("button").evaluateAll((els) =>
     els.map((el) => ({ text: el.textContent, height: el.getBoundingClientRect().height, ws: getComputedStyle(el).whiteSpace })),

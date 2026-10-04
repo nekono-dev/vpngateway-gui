@@ -9,6 +9,7 @@
 // 稼働状況は5秒ポーリングで更新されるため、待機上限は余裕を持って20秒とする。
 
 import { launch, assert } from "../lib/playwright.mjs";
+import { getListItems, isListDisabled, setListItems } from "../lib/line-list.mjs";
 
 const [baseUrl, step, ...args] = process.argv.slice(2);
 const POLL_WAIT_MS = 20000;
@@ -33,7 +34,7 @@ async function openSettings() {
 async function saveExplicitProxy(dialog, enabled, cidrs) {
   await dialog.getByRole("checkbox", { name: /明示的プロキシモード/ }).setChecked(enabled);
   if (cidrs !== undefined) {
-    await dialog.getByLabel(/明示的プロキシの許可CIDR/).fill(cidrs);
+    await setListItems(dialog, /明示的プロキシの許可CIDR/, cidrs.split("\n").filter((line) => line !== ""));
   }
   await dialog.getByRole("button", { name: "保存" }).click();
 }
@@ -58,7 +59,7 @@ try {
     const dialog = await openSettings();
     assert(await dialog.getByRole("checkbox", { name: /明示的プロキシモード/ }).isChecked(), "再読み込み後も明示的プロキシが有効のまま保持されている");
     assert(
-      (await dialog.getByLabel(/明示的プロキシの許可CIDR/).inputValue()).trim() === cidr,
+      (await getListItems(dialog, /明示的プロキシの許可CIDR/)).join("\n") === cidr,
       "再読み込み後も許可CIDRが保持されている",
     );
     await dialog.getByRole("button", { name: "キャンセル" }).click();
@@ -81,7 +82,7 @@ try {
     await explicitProxyRow().locator(".badge", { hasText: "停止" }).waitFor({ timeout: POLL_WAIT_MS });
     assert(true, "無効化すると稼働状況が「停止」になる");
     const reopened = await openSettings();
-    assert(await reopened.getByLabel(/明示的プロキシの許可CIDR/).isDisabled(), "無効の間は許可CIDR欄がdisabledになる");
+    assert(await isListDisabled(reopened, /明示的プロキシの許可CIDR/), "無効の間は許可CIDR欄がdisabledになる");
     await reopened.getByRole("button", { name: "キャンセル" }).click();
   } else if (step === "crashloop") {
     await explicitProxyRow().locator(".badge", { hasText: "起動失敗を繰り返しています" }).waitFor({ timeout: POLL_WAIT_MS });

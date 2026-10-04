@@ -1,6 +1,6 @@
 // 責務: 設定ダイアログ（SettingsDialog）のテスト。タブ表示（切替・未保存入力の保持・保存不可時の警告印）と、Phase 14で加えた迂回ドメイン・DNS中継の入力（表示・保存前チェック・送信内容）を検証する。
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,13 @@ const api = vi.hoisted(() => ({
 vi.mock("../../generated/api/default/default", () => api);
 
 const { SettingsDialog } = await import("./SettingsDialog");
+
+// 行リストエディタに1件追加し、入力して確定する（［追加］→入力→Enter）。
+async function addListItem(name: RegExp, text: string): Promise<void> {
+  const frame = screen.getByRole("listbox", { name }).closest(".line-list-frame") as HTMLElement;
+  await userEvent.click(within(frame).getByRole("button", { name: /追加/ }));
+  await userEvent.keyboard(`${text}{Enter}`);
+}
 
 const BASE_SETTINGS = {
   killSwitch: true,
@@ -87,10 +94,10 @@ describe("SettingsDialog: タブ", () => {
 
     await openTab("DNS詳細");
     expect(screen.getByLabelText(/名前解決を止める/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/切り替え先の公開DNS/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/クライアント名の取得先/)).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: /切り替え先の公開DNS/ })).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: /クライアント名の取得先/ })).toBeInTheDocument();
     expect(screen.getByLabelText(/手動でDNSを指定した端末/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/中継しない宛先/)).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: /中継しない宛先/ })).toBeInTheDocument();
     expect(screen.queryByLabelText(/自宅DNSサーバ（DoHのURL）/)).not.toBeInTheDocument();
 
     // 無効へ戻すと、表示中の「DNS詳細」は消え、「上位DNSリゾルバ」へ戻る
@@ -116,7 +123,7 @@ describe("SettingsDialog: タブ", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: /Kill Switch/ }));
     await openTab("ゲートウェイ");
     await userEvent.click(screen.getByRole("checkbox", { name: /明示的プロキシモード/ }));
-    await userEvent.type(screen.getByLabelText(/明示的プロキシの許可CIDR/), "192.168.3.0/24");
+    await addListItem(/明示的プロキシの許可CIDR/, "192.168.3.0/24");
     await openTab("上位DNSリゾルバ");
     await userEvent.click(screen.getByLabelText(/DNS中継を有効にする/));
     await openTab("通信制御");
@@ -192,7 +199,7 @@ describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
     await openTab("DNS詳細");
     await userEvent.click(screen.getByLabelText(/公開DNSへ切り替える/));
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
-    await userEvent.type(screen.getByLabelText(/切り替え先の公開DNS/), "1.1.1.1");
+    await addListItem(/切り替え先の公開DNS/, "1.1.1.1");
     expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
   });
 

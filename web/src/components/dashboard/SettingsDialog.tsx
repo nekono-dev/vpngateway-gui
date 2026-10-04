@@ -264,17 +264,16 @@ export function SettingsDialog({
                   </label>
 
                   <LineListEditor
-                    label="迂回ドメイン（split-tunnel、1行1ドメイン）"
-                    placeholder={
-                      "VPNを経由せず直接通信するドメイン\nexample.com ← example.com自身のみ\n*.example.com ← サブドメインのみ（example.com自身は含まない）"
-                    }
+                    label="迂回ドメイン（split-tunnel。VPNを経由せず直接通信するドメイン）"
+                    placeholder="example.com"
                     value={settings.excludedDomains}
                     onChange={(excludedDomains) =>
                       setSettings({ ...settings, excludedDomains })
                     }
                   />
                   <p className="hint">
-                    ドメインとそのサブドメインの両方を迂回するには、example.com
+                    example.com はそのドメイン自身のみ、*.example.com
+                    はサブドメインのみ（example.com自身は含まない）が対象です。ドメインとそのサブドメインの両方を迂回するには、example.com
                     と *.example.com の両方を登録してください。
                   </p>
                   {hasExcludedDomains && !settings.dnsRelayEnabled ? (
@@ -325,10 +324,8 @@ export function SettingsDialog({
                   </p>
 
                   <LineListEditor
-                    label="明示的プロキシの許可CIDR"
-                    placeholder={
-                      "接続元IPがこの範囲内のみプロキシ利用を許可（他は拒否）\n192.168.3.0/24 ← 192.168.3.1〜254のLAN全体を許可\n10.0.0.5/32 ← 10.0.0.5の1台のみ許可"
-                    }
+                    label="明示的プロキシの許可CIDR（接続元IPがこの範囲内のみプロキシ利用を許可。他は拒否）"
+                    placeholder="192.168.3.0/24"
                     value={settings.explicitProxyAllowedCidrs}
                     onChange={(explicitProxyAllowedCidrs) =>
                       setSettings({ ...settings, explicitProxyAllowedCidrs })
@@ -459,8 +456,9 @@ export function SettingsDialog({
                     </label>
                   </div>
                   <LineListEditor
-                    label="切り替え先の公開DNS（1行1アドレス、最大3件）"
-                    placeholder={"1.1.1.1"}
+                    label="切り替え先の公開DNS（最大3件）"
+                    placeholder="1.1.1.1"
+                    maxItems={3}
                     value={settings.dnsFallbackServers}
                     onChange={(dnsFallbackServers) =>
                       setSettings({ ...settings, dnsFallbackServers })
@@ -469,8 +467,9 @@ export function SettingsDialog({
                   />
 
                   <LineListEditor
-                    label="クライアント名の取得先（DHCPサーバ・ルータのDNS、1行1アドレス、最大3件。空ならIPアドレスで記録）"
-                    placeholder={"192.168.3.254"}
+                    label="クライアント名の取得先（DHCPサーバ・ルータのDNS、最大3件。空ならIPアドレスで記録）"
+                    placeholder="192.168.3.254"
+                    maxItems={3}
                     value={settings.dnsClientNameServers}
                     onChange={(dnsClientNameServers) =>
                       setSettings({ ...settings, dnsClientNameServers })
@@ -495,8 +494,8 @@ export function SettingsDialog({
                     手動でDNSを指定した端末の問い合わせも中継する
                   </label>
                   <LineListEditor
-                    label="中継しない宛先（LAN内のDNSサーバ等、1行1CIDR）"
-                    placeholder={"192.168.3.5/32"}
+                    label="中継しない宛先（LAN内のDNSサーバ等、CIDR）"
+                    placeholder="192.168.3.5/32"
                     value={settings.dnsRedirectExcludedCidrs}
                     onChange={(dnsRedirectExcludedCidrs) =>
                       setSettings({ ...settings, dnsRedirectExcludedCidrs })

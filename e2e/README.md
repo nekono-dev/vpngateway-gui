@@ -36,6 +36,8 @@
 | `phase14/scenarios.sh` | Phase14完了基準（モックの範囲）を通しで自動検証（シナリオA〜M）。検証サーバ上で実行する |
 | `phase14/webgui-phase14.mjs` | Phase14のWeb UI側のPlaywright検証（設定ダイアログのDNS中継の入力・保存前チェック・保持、稼働状況の「DNS中継」欄） |
 | `phase14/remote.sh` | 開発ホストから検証サーバのラボを操作する（`sync`: 資材の転送とゲートウェイ役の再ビルド、`run`: scenarios.shの実行、`lab`: lab.shの実行） |
+| `phase36/webgui-line-list.mjs` | Phase36（行リストエディタ）のWeb UI側のPlaywright検証（選択・2回目のクリックでの編集・Ctrl/Shiftでの複数選択・追加位置〔選択行の直下／選択なしは先頭〕・空欄の自動削除・削除・ドラッグ並べ替え・見た目）。設定ダイアログの「通信制御」タブで操作し、保存はしない |
+| `lib/line-list.mjs` | 行リストエディタを操作・読み取るE2E共通ヘルパー（`setListItems`・`getListItems`・`isListDisabled`） |
 | `phase27/prepare.sh` | Phase27（設定の動作検証）用に、Phase14のラボへ追加の準備をする（宛先サーバ側にHTTPSのIP確認サービス`echo-server.py`〔203.0.113.20:8443、CORS許可〕を起動、proxyコンテナにそのCAを信頼させる、LAN端末役にNode・Playwright〔Chromium〕を導入） |
 | `phase27/scenarios.sh` | Phase27の完了基準を、Phase14のラボで通しで自動検証（シナリオA〜I。ブラウザの動作はLAN端末役のcurl・digで代行し、nftルールの削除・上流の停止等の故障を注入してNGの検出も確認する）。検証サーバ上で実行する |
 | `phase27/webgui-phase27.mjs` | Phase27のWeb UIを、LAN端末役のブラウザでPlaywright検証（`ok`: 全項目OK・折りたたみと代表行・開閉・タブ切替後の保持、`ng`: 故障を注入した状態でのNGの代表行）。実行: `node e2e/phase27/webgui-phase27.mjs <baseUrl> <ok|ng> [スクリーンショットの出力先] [画面幅]` |

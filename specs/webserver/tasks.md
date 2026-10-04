@@ -275,10 +275,13 @@
 
 検証: `npm test`PASS（173件）。検証サーバへ反映のうえ、実ブラウザ（Proton Pass）で、ユーザー名・パスワードの自動入力、ログイン後に「保存しますか？」の通知が出ないことを確認。2段階認証欄を出した後はProton Passのフォームは出ない（先に自動入力してからボタンを押す）。
 
-## 行リストエディタへの換装（Phase 36）
+## 行リストエディタへの換装（Phase 36、実装完了・検証完了）
 
-- [ ] 仕様（`requirements.md`・`design.md`）の追記
-- [ ] 選択・追加位置・削除・並べ替えの純関数（`web/src/lib/list-selection.ts`）と単体テスト
-- [ ] `LineListEditor.tsx`の再実装と`styles.css`
-- [ ] `SettingsDialog.tsx`の5か所（`maxItems`を「最大3件」の2か所へ）・`SettingsDialog.test.tsx`の追従
-- [ ] 検証サーバへ反映し、実ブラウザで選択・編集・追加位置・並べ替えを確認
+- [x] 仕様（`requirements.md`・`design.md`）の追記
+- [x] 選択・追加位置・削除・並べ替えの純関数（`web/src/lib/list-selection.ts`）と単体テスト
+- [x] `LineListEditor.tsx`の再実装と`styles.css`
+- [x] `SettingsDialog.tsx`の5か所（`maxItems`を「最大3件」の2か所へ）・`SettingsDialog.test.tsx`の追従
+- [x] E2E（phase6・phase14・phase26）を新UIへ追従し、`e2e/phase36/webgui-line-list.mjs`を追加
+- [x] 検証サーバへ反映（`scripts/deploy-verify.sh web`）
+
+検証: `npm test`PASS。実ブラウザ（Playwright・Chromium）で、`LineListEditor`単体の一時ページ（検証後に削除）に`webgui-line-list.mjs`と同じ操作を実行し、全項目PASS（選択・編集・追加位置・削除・並べ替え・配色・スマートフォン幅）。検証サーバのWeb UIは、利用者のアカウントが設定済みでE2E共通アカウントではログインできないため、Playwrightでの設定ダイアログの通し確認は行っていない（実ブラウザでの確認は利用者側）。
