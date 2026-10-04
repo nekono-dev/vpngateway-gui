@@ -399,7 +399,7 @@
 
 - `LineListEditor.tsx`は、従来のpropsの形（`label`・`value: string[]`・`onChange`・`disabled`・`placeholder`）を保ったまま内部を作り直し、`maxItems`（任意）を加える。保存時の変換は`SettingsDialog.tsx`の`handleSave`が従来どおり行うため、呼び出し側の値の型・APIの契約は変えない。
 - 各行に、内部で振る安定したID（`{id, text}[]`）を持たせる。`value`には重複・空文字がありうるため、行の識別・フォーカス・選択状態を値や添字に依存させないためである。外部の`value`が自分の`onChange`の結果と異なるとき（設定の読み込み等）だけIDを振り直す。
-- 選択の決定（単独・`Ctrl`の追加解除・`Shift`の範囲・全選択・矢印キー）、追加位置（選択行のうち最下行の直後。選択なしは末尾）、削除後の選択先、並べ替え後の配列は、DOMに依存しない純関数として`web/src/lib/list-selection.ts`に置き、単体テストで検証する（ポータビリティテストを満たすためlibに置く）。
+- 選択の決定（単独・`Ctrl`の追加解除・`Shift`の範囲・全選択・矢印キー）、追加位置（選択行のうち最下行の直後。選択なしは先頭）、削除後の選択先、並べ替え後の配列は、DOMに依存しない純関数として`web/src/lib/list-selection.ts`に置き、単体テストで検証する（ポータビリティテストを満たすためlibに置く）。
 - 選択は`mousedown`で確定する（`click`で確定すると、すでに選択中の行の2回目のクリックと区別できない）。選択の変更では行を再描画せず見た目だけを更新する（再描画すると、ドラッグ開始が壊れる）。編集の開始は`click`で行う。
 - 行の並べ替えはHTML5のドラッグ＆ドロップを使う。行の`draggable`は掴み部の`mousedown`の間だけ有効にし、テキストの選択と競合させない。編集中の行は掴めない。
 - リストは`role="listbox"`・`aria-multiselectable="true"`、行は`role="option"`・`aria-selected`とし、見出しは`aria-labelledby`で結ぶ（入力欄が複数になるため`<label>`で包まない）。非編集の行のテキストボックスは`readOnly`・`tabIndex=-1`・`pointer-events: none`とし、クリックは行が受ける。
