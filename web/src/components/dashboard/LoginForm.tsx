@@ -5,7 +5,7 @@
 // パスワードマネージャによる自動入力を使えるよう、autoCompleteはusername・current-passwordを指定する
 // （offでは種別を判定できず反応しないため。design.md「操作者認証フォームのパスワードマネージャ対応」）。
 // 2段階認証欄は、最初は表示せず、ボタンを押したときに<form>へ追加する（ユーザー名・パスワードと同じ
-// <form>に最初から2段階認証欄があると、Proton Passがパスワード欄へ自動入力しなかったため。実機検証による）。
+// <form>に最初から2段階認証欄があると、パスワードマネージャがパスワード欄へ自動入力しなかったため。実機検証による）。
 import { useState, type FormEvent } from "react";
 
 interface Props {
