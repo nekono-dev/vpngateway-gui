@@ -158,7 +158,7 @@ Phase 7で、プロバイダごとの機能差・プラン制限をデータで�
     "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 30000 },
     "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 15000 },
     "login": {
-      "argv": ["signin", "%USERNAME%"],
+      "argv": ["signin", "--totp", "%USERNAME%"],
       "placeholders": { "USERNAME": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$", "source": "input" } },
       "timeoutMs": 60000
     },
@@ -231,7 +231,7 @@ Phase 7で、プロバイダごとの機能差・プラン制限をデータで�
       "connectName": { "from": "city", "stripPattern": "\\s*\\(Virtual\\)\\s*$" }
     },
     "login": {
-      "argv": ["signin", "%USERNAME%"],
+      "argv": ["signin", "--totp", "%USERNAME%"],
       "placeholders": {
         "USERNAME": { "pattern": "...", "source": "input" },
         "PASSWORD": { "pattern": "^[^\\x00-\\x1f\\x7f]{1,512}$", "source": "secret" },
@@ -247,6 +247,7 @@ Phase 7で、プロバイダごとの機能差・プラン制限をデータで�
 - **`connectedPattern`・`locationPattern`**: 従来は`response-parser.ts`が既定の正規表現を持っていた。text形式では両方を必須にする（json形式は、`status`・`country`を持つ内部規約のまま、ベンダー中立）。
 - **`table`・`connectName`**: 従来は`location-list-parser.ts`が列名の既定を、`location-id.ts`が`(Virtual)`の除去を持っていた。`connectName`はロード時に`stripPattern`の正規表現の妥当性を検証する。
 - **`loginMethod`**: 必須。`GET /v1/session`は宣言された値を返す。
+- **Proton VPNの`login.argv`の`--totp`**: 公式CLI 1.0.5の`signin`は、2段階認証が必要なアカウントで`--totp`が無いと、認証アプリのコードではなくセキュリティキーを待ち、キー確認のプロンプトが標準入力のEOFで`Abort!`になる（標準入力のコードは読まれない）。本システムは標準入力でコードを渡す方式のため、`--totp`を常に付ける。2段階認証が無いアカウントでは`--totp`は無視され（`Ignoring --totp`）、ログインは成功する。
 - **`login.stdin`とsecret**: `credentials`方式のとき、`login`は`stdin`（行のテンプレートの配列）を持つ。各行は、固定の文字列か、`source: "secret"`のプレースホルダー（`%PASSWORD%`・`%TWO_FACTOR_CODE%`）。`optional: true`のプレースホルダーは、値が未指定・空のとき、その行を出さない。`PASSWORD`・`TWO_FACTOR_CODE`・`USERNAME`は、APIの`POST /v1/session`のボディのキー（`password`・`twoFactorCode`・`username`）に対応する固定の語彙である。値は`pattern`で検証する（従来コードが固定で持っていたパスワードの長さ・制御文字の禁止・2FAの形式は、プロファイルの`pattern`へ移る。改行・制御文字を許す`pattern`は、標準入力への余分な行の混入を招くため、ロード時に`\x00-\x1f`を許さない`pattern`だけを`secret`に受理する）。`secret`のプレースホルダーを`argv`に置くプロファイルは、ロード時に失敗させる。
 - **`enum`の廃止**: `source: "enum"`・`enumFrom`・`resolveEnumFrom`を削除した。
 

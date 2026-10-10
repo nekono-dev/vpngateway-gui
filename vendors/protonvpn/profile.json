@@ -53,6 +53,7 @@
     "login": {
       "argv": [
         "signin",
+        "--totp",
         "%USERNAME%"
       ],
       "placeholders": {

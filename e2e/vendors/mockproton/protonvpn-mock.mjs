@@ -81,13 +81,20 @@ const requireSignedIn = (message, name) => {
 
 switch (command) {
   case "signin": {
-    const username = rest[0];
+    const totp = rest.includes("--totp");
+    const username = rest.find((arg) => !arg.startsWith("-"));
     if (!username) usageError("Missing argument 'USERNAME'.", "signin");
     if (state.account) clickError("Already signed in, please sign out first before changing accounts.");
     const [password, twoFactor] = readStdinLines();
     process.stderr.write("Password: ");
     const account = ACCOUNTS[username];
     if (!account || password !== PASSWORD) clickError("Authentication failed. Please check your username and password and try again.");
+    // 実CLI 1.0.5は、--totp無しだと2FAをセキュリティキー待ちで処理し、標準入力のコードを読まずにEOFでAbortする。
+    if (account.twoFactor && !totp) {
+      process.stdout.write("Waiting for security key... (or run 'protonvpn signin " + username + " --totp' to use an authenticator code)\n");
+      process.stderr.write("Aborted!\n");
+      process.exit(1);
+    }
     if (account.twoFactor && twoFactor !== TWO_FACTOR_CODE) clickError("2FA Authentication failed. Please try again.");
     saveState({ account: { username, ...account }, connectedTo: null });
     console.log(`Successfully signed in as '${username}'`);

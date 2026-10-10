@@ -63,6 +63,14 @@
 
 - [x] ランナー自体の実装（`POST /exec`・`GET /health`・UDS）は変更不要と判断した。呼び出し元が`api`から`proxy`（同一ホスト内のUDS転送）へ変わる点のみ、`design.md`「UDS」に追記済み
 
+## ブリッジ構成・経路MTUが小さい回線での接続失敗の修正
+
+- [x] 上り側NICがブリッジ・ボンディングのとき、優先なdefault経路（metric 50）をエントリポイントで維持する（`vendors/protonvpn/entrypoint.sh`）
+- [x] WireGuardトンネルのMTUをNM設定で1360へ下げる（`networkmanager-vpngwgui.conf`）
+- [x] `design.md`「Proton VPNランナーとNetworkManager」へ原因と対処を記載
+
+検証: 検証サーバで、ethernet構成（補助処理は動かない。7/8成功）と、検証用ブリッジ（`enp6s18`を収容した`brv`を`LAN_IFACE`にしたもの。6/6成功）で接続・切断を確認した。無料サーバのハンドシェイク再試行に依存する間欠的な失敗が、ethernetでも数回に1回起きる（本修正とは無関係）。到達確認は経路を後から足しても間に合わないことを、実機の失敗（経路追加方式）で確認し、常時の優先default経路方式へ改めた。実機（ブリッジ`br0`・経路MTU 1460）で、手動の経路追加とMTU 1380への変更により接続成功を確認した。
+
 # 将来課題
 
 - ベンダーの追加（NordVPN CLI等）: ランナー（イメージ・composeサービス・ボリューム）とプロファイルの追加（design.md「VPNベンダーCLI（ランナー）の追加方法」）。

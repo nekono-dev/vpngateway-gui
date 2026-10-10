@@ -272,7 +272,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
       expect(response.json()).toEqual({ message: "ログインしました。" });
 
       const call = executeVendorCommandMock.mock.calls.map(([input]) => input).find((input) => input.resolvedArgv[0] === "signin");
-      expect(call.resolvedArgv).toEqual(["signin", "user@proton.me"]);
+      expect(call.resolvedArgv).toEqual(["signin", "--totp", "user@proton.me"]);
       expect(call.stdin).toBe("hunter2-secret\n654321\n");
       // 秘密は引数（プロセス一覧に見える）にも、監査ログにも現れない。
       expect(JSON.stringify(call.resolvedArgv)).not.toContain("hunter2-secret");

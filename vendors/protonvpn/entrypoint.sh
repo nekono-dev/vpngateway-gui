@@ -98,14 +98,48 @@ run_as env $KEYRING_ENV gnome-keyring-daemon --daemonize --login < "$KEYRING_PAS
 run_as env $KEYRING_ENV gnome-keyring-daemon --start --components=secrets >/dev/null
 log "セッションD-Bus・keyring起動"
 
+# 3.5) VPNサーバへ到達できる経路（上り側NICがブリッジ・ボンディングのとき）。
+# CLIは接続の前にKill Switch（dummyのdefault経路。metric 98）を有効にし、サーバ宛の経路を「ethernet・Wi-Fiの有効なNM接続」へ足して迂回する。
+# 上り側NICがブリッジ・ボンディングだとその経路が作られず、サーバへの到達確認（TCP接続）がdummyへ向かって失敗し「Connection failed」になる。
+# 到達確認は接続の開始と同時に行われ、経路の切り替えが後からでは（送信元アドレスがdummyのものに固定され）間に合わないため、
+# 上り側NICのゲートウェイ向けのdefault経路を、dummy（98）より優先なmetric 50でも常時持つ。経路の向き先は元のdefault経路と同じで、
+# トンネルの経路はポリシールーティング（fwmark）で別表のため影響しない。Kill Switchは本システムのnftablesが担う（CLIのものは使わない）。
+PRIO_METRIC=50
+uplink_is_virtual() {
+  [ -n "$UPLINK_IFACE" ] && { [ -d "/sys/class/net/$UPLINK_IFACE/bridge" ] || [ -d "/sys/class/net/$UPLINK_IFACE/bonding" ]; }
+}
+uplink_gateway() {
+  ip -4 route show default dev "$UPLINK_IFACE" 2>/dev/null | awk -v m="$PRIO_METRIC" '{g="";mt="";for(i=1;i<NF;i++){if($i=="via")g=$(i+1);if($i=="metric")mt=$(i+1)} if(g!=""&&mt!=m){print g;exit}}'
+}
+uplink_priority_route_keeper() {
+  current=""
+  while sleep 1; do
+    gateway=$(uplink_gateway)
+    if [ -n "$gateway" ] && [ "$gateway" != "$current" ]; then
+      [ -z "$current" ] || ip route del default via "$current" dev "$UPLINK_IFACE" metric "$PRIO_METRIC" 2>/dev/null || true
+      ip route replace default via "$gateway" dev "$UPLINK_IFACE" metric "$PRIO_METRIC" && current=$gateway
+    fi
+  done
+}
+cleanup_priority_route() {
+  ip route del default dev "$UPLINK_IFACE" metric "$PRIO_METRIC" 2>/dev/null || true
+}
+if uplink_is_virtual; then
+  cleanup_priority_route
+  uplink_priority_route_keeper &
+  ROUTE_PID=$!
+  log "上り側NIC($UPLINK_IFACE)はブリッジ/ボンディングのため、優先default経路(metric $PRIO_METRIC)を維持する (pid $ROUTE_PID)"
+fi
+
 # 4) proxy本体（非root）
 run_as env HOME="$RUN_HOME" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" "$@" &
 APP_PID=$!
 log "proxy本体起動 (pid $APP_PID)"
 
 # 終了シグナルは子へ伝える。どれか1つでも終了したら、コンテナごと終了する。
-trap 'kill "$APP_PID" "$NM_PID" 2>/dev/null || true' TERM INT
+trap 'kill "$APP_PID" "$NM_PID" "${ROUTE_PID:-}" 2>/dev/null || true; if [ -n "${ROUTE_PID:-}" ]; then cleanup_priority_route; fi' TERM INT
 wait -n "$APP_PID" "$NM_PID" || true
 log "プロセスが終了したためコンテナを終了します"
-kill "$APP_PID" "$NM_PID" 2>/dev/null || true
+kill "$APP_PID" "$NM_PID" "${ROUTE_PID:-}" 2>/dev/null || true
+if [ -n "${ROUTE_PID:-}" ]; then cleanup_priority_route; fi
 exit 1
