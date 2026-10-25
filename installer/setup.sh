@@ -257,6 +257,24 @@ install_docker() {
   docker compose version >/dev/null 2>&1 || die "Dockerの導入後も docker compose が使えません"
 }
 
+# 目的: 他のテーブルが「forwardフックのpolicy drop」を持っていないか検査し、あれば警告する。
+# 背景: policy dropのforwardチェーンが別テーブルにあると、Dockerブリッジ発着の通信（ビルド時のパッケージ取得・
+#       公開ポート宛のDNAT等）が遮断される（別テーブルのacceptでは、他方のdropを覆せない）。
+#       ビルドが名前解決失敗のような分かりにくい形で失敗するため、事前に原因を示す。利用者の設定は書き換えず、警告に留める
+#       （Dockerのブリッジを許可済みの構成もありうるため、導入は止めない）。当製品自身のテーブル（vpngwgui）は対象外。
+# 副作用: 該当があれば標準エラーへ警告を出す。
+warn_foreign_forward_drop() {
+  found=$(nft list ruleset 2>/dev/null | awk '
+    /^table / { tbl = $2 " " $3 }
+    /^\tchain / { chn = $2 }
+    /type filter hook forward/ && /policy drop/ && tbl != "inet vpngwgui" { print tbl " / " chn }
+  ')
+  [ -n "$found" ] || return 0
+  printf '警告: 他のnftablesテーブルのforwardチェーンが policy drop です。Dockerのブリッジ（docker0・br-*）を許可していないと、\n' 1>&2
+  printf '      イメージのビルド（名前解決の失敗）やコンテナの通信が遮断されます。導入が失敗する場合は、次のチェーンを見直してください:\n' 1>&2
+  printf '%s\n' "$found" | sed 's/^/        - /' 1>&2
+}
+
 # 目的: IPフォワーディングを永続的に有効化する設定ファイルを作り、反映する（LAN機器への透過ゲートウェイに必要）。
 #       あわせてICMPリダイレクトの送出を無効にする（単一NICでLAN機器の通信が同一インターフェースへ折り返すとき、
 #       ゲートウェイが「ルータへ直接送れ」と指示してしまい、ドメイン迂回・透過ゲートウェイを迂回されるのを防ぐ）。
@@ -666,6 +684,7 @@ install_roles() {
   preflight
   install_packages
   install_docker
+  warn_foreign_forward_drop
   case ",$roles," in *,gateway,*) setup_lan_iface; setup_sysctl; setup_boot_guard; setup_host_reboot ;; esac
   case ",$roles," in *,web,*) setup_web_port ;; esac
 
@@ -791,12 +810,16 @@ orchestrate_main() {
   determine_topology
   preflight_remote_hosts
 
-  if [ "$(env_get TOPOLOGY_RECORDED)" != "1" ] || [ "$ROTATE_PAIRING" -eq 1 ]; then
+  any_local=0
+  for role in web api gateway; do
+    [ -n "$(get_role_host "$role")" ] || any_local=1
+  done
+  # 記録済みでも、ローカルにロールがあるのに証明書が無い場合（手動削除・アンインストール後の再導入等）は、
+  # 起動できないため再生成・再配布する。
+  pki_missing=0
+  { [ "$any_local" -eq 0 ] || [ -f "$PKI_DIR/web-server.crt" ]; } || pki_missing=1
+  if [ "$(env_get TOPOLOGY_RECORDED)" != "1" ] || [ "$ROTATE_PAIRING" -eq 1 ] || [ "$pki_missing" -eq 1 ]; then
     generate_role_pki
-    any_local=0
-    for role in web api gateway; do
-      [ -n "$(get_role_host "$role")" ] || any_local=1
-    done
     [ "$any_local" -eq 0 ] || distribute_pki_local
     for host in $(distinct_remote_hosts); do
       distribute_pki_remote "$host"
@@ -874,6 +897,26 @@ uninstall_host_reboot() {
   fi
 }
 
+# 目的: proxyが適用した稼働中のnftablesテーブル（inet vpngwgui）を削除する。
+# 背景: コンテナを停止してもカーネル上のテーブルは残り、LAN側からの転送を遮断し続けるため。テーブルが無ければ何もしない。
+uninstall_runtime_nft() {
+  if nft list table inet vpngwgui >/dev/null 2>&1; then
+    nft delete table inet vpngwgui
+    log "稼働中のnftablesテーブル（inet vpngwgui）: 削除しました"
+  else
+    log "稼働中のnftablesテーブル（inet vpngwgui）: 対象なし"
+  fi
+}
+
+# 目的: 配置トポロジーの記録（.envのTOPOLOGY_*）を消す。
+# 背景: 記録が残ると、再導入時に証明書を再生成せず、別のトポロジーの指定もエラーになる（構成変更は--uninstall後の再インストールで行う）。
+uninstall_topology_record() {
+  for key in TOPOLOGY_WEB_HOST TOPOLOGY_API_HOST TOPOLOGY_GATEWAY_HOST TOPOLOGY_RECORDED; do
+    env_unset "$key"
+  done
+  log "配置トポロジーの記録: 削除しました"
+}
+
 # 目的: IPフォワーディングの永続設定（setup_sysctlが作成したもの）を削除し、稼働中の値も戻す。
 uninstall_sysctl() {
   if [ -f "$SYSCTL_FILE" ]; then
@@ -941,10 +984,12 @@ uninstall_main() {
 
   uninstall_stack
   uninstall_boot_guard
+  uninstall_runtime_nft
   uninstall_host_reboot
   uninstall_sysctl
   uninstall_gateway_pki
   uninstall_host_hooks
+  uninstall_topology_record
   echo
   log "アンインストール完了（このホスト）"
   echo "  残っているもの（対象外。手動で削除する場合はREADME.md「アンインストール」参照）:"

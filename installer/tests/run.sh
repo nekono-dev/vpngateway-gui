@@ -140,6 +140,61 @@ VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE UNINSTALL_LOG=$UNINSTALL_LOG sh -c ". 
 check "uninstall_host_hooks: uninstall-host.shを持つベンダーだけ呼ばれ、VPNGW_ROOT・VPNGW_VENDOR_IDが渡る" test "$(cat "$UNINSTALL_LOG")" = "called:vendora:$FAKE"
 rm -f "$FAKE/vendors/vendora/uninstall-host.sh"
 
+# 目的: uninstall_topology_recordが、配置トポロジーの記録だけを消し、他の設定（WEB_PORT等）は残すことを検査する。
+#       記録が残ると、再導入時に証明書が再生成されず、別のトポロジーの指定もエラーになるため。
+printf 'WEB_PORT=8443\nTOPOLOGY_RECORDED=1\nTOPOLOGY_WEB_HOST=w.example\nTOPOLOGY_API_HOST=\nTOPOLOGY_GATEWAY_HOST=\n' > "$FAKE/.env"
+VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; uninstall_topology_record" >/dev/null 2>&1
+check "uninstall_topology_record: TOPOLOGY_*を消し、他の設定は残す" test "$(cat "$FAKE/.env")" = "WEB_PORT=8443"
+rm -f "$FAKE/.env"
+
+# 目的: 他テーブルのforward policy dropの検知（warn_foreign_forward_drop）と、稼働中のinet vpngwguiテーブルの削除
+#       （uninstall_runtime_nft）を、偽のnftコマンドで検査する（rootもnftablesも要らない）。
+FAKE_BIN="$TMP/fake-bin"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/nft" <<'EONFT'
+#!/bin/sh
+case "$1 $2" in
+  "list ruleset") cat "$FAKE_NFT_RULESET" ;;
+  "list table") [ -f "$FAKE_NFT_TABLE_EXISTS" ] ;;
+  "delete table") rm -f "$FAKE_NFT_TABLE_EXISTS"; echo "deleted:$3 $4" >> "$FAKE_NFT_LOG" ;;
+esac
+EONFT
+chmod +x "$FAKE_BIN/nft"
+FAKE_NFT_RULESET="$TMP/fake-ruleset"
+FAKE_NFT_TABLE_EXISTS="$TMP/fake-table-exists"
+FAKE_NFT_LOG="$TMP/fake-nft.log"
+cat > "$FAKE_NFT_RULESET" <<'ERULES'
+table inet other_filter {
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ip saddr 192.168.0.0/24 accept
+	}
+}
+table inet vpngwgui {
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+	}
+}
+table ip filter {
+	chain FORWARD {
+		type filter hook forward priority filter; policy accept;
+	}
+}
+ERULES
+WARN_OUT=$(PATH="$FAKE_BIN:$PATH" FAKE_NFT_RULESET=$FAKE_NFT_RULESET VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; warn_foreign_forward_drop" 2>&1)
+check "warn_foreign_forward_drop: 他テーブルのforward policy dropを警告する" contains "$WARN_OUT" 'inet other_filter / forward'
+check "warn_foreign_forward_drop: 当製品のテーブル（vpngwgui）・policy acceptは警告しない" sh -c "! printf '%s' '$WARN_OUT' | grep -q -e vpngwgui -e 'ip filter'"
+printf 'table ip filter {\n\tchain FORWARD {\n\t\ttype filter hook forward priority filter; policy accept;\n\t}\n}\n' > "$FAKE_NFT_RULESET"
+check "warn_foreign_forward_drop: 該当が無ければ何も出さない" test -z "$(PATH="$FAKE_BIN:$PATH" FAKE_NFT_RULESET=$FAKE_NFT_RULESET VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; warn_foreign_forward_drop" 2>&1)"
+
+: > "$FAKE_NFT_TABLE_EXISTS"
+: > "$FAKE_NFT_LOG"
+PATH="$FAKE_BIN:$PATH" FAKE_NFT_TABLE_EXISTS=$FAKE_NFT_TABLE_EXISTS FAKE_NFT_LOG=$FAKE_NFT_LOG VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; uninstall_runtime_nft" >/dev/null 2>&1
+check "uninstall_runtime_nft: inet vpngwguiがあれば削除する" grep -q 'deleted:inet vpngwgui' "$FAKE_NFT_LOG"
+: > "$FAKE_NFT_LOG"
+PATH="$FAKE_BIN:$PATH" FAKE_NFT_TABLE_EXISTS=$FAKE_NFT_TABLE_EXISTS FAKE_NFT_LOG=$FAKE_NFT_LOG VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; uninstall_runtime_nft" >/dev/null 2>&1
+check "uninstall_runtime_nft: テーブルが無ければ何もしない" test ! -s "$FAKE_NFT_LOG"
+
 # install.sh.tmpl（雛形）の--uninstall分岐（本体インストーラへ--uninstallを渡して実行した後、DIRごと削除する）は
 # root権限を要するため（雛形の冒頭でroot確認する）、ここでは検査しない。e2e/phase20/uninstall-scenarios.shで検査する。
 

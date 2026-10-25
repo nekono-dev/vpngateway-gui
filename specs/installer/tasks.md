@@ -24,4 +24,5 @@
 - [x] T-3.1: 記録済みのトポロジーに基づくアンインストールを実装する。
 - [x] T-3.2: 頒布用スクリプトの生成と、タグ・ブランチごとの公開をCIへ組み込む。
 - [x] T-3.3: 頒布用スクリプトの受け入れテストと、`installer/tests/run.sh` の検査を整える。
+- [x] T-3.4: 再導入の不具合（アンインストール後に証明書が再生成されない・稼働中の `inet vpngwgui` が残る）の修正と、他テーブルの `forward` の `policy drop` の警告を実装する。
 - 検証: `npx vitest run --config tests/vitest.config.ts tests/installer/distribution.test.ts`

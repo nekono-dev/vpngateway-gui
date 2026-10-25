@@ -191,6 +191,7 @@ sudo vpngwgui-ctl uninstall --purge
 | 動作検証済みの環境 | Ubuntu 24.04・Debian 12（bookworm、LXCのクリーンなコンテナ）・Raspberry Pi OS Lite arm64（trixie。QEMUのarm64エミュレーション） |
 | 未検証の環境 | Raspberry Pi OSの32bit（armhf）、Raspberry Pi実機 |
 | Raspberry Pi OSでの順序 | `nftables.service`が既定で有効なため、起動時のKill Switchガードはその後に適用されるよう順序付けている（設定済みであれば利用者が意識する必要はない） |
+| 他のファイアウォール設定 | `/etc/nftables.conf`等の別テーブルで`forward`が`policy drop`になっていると、Dockerのブリッジ（`docker0`・`br-*`）の通信が遮断され、インストール中のイメージのビルドが名前解決の失敗で止まる。インストーラは該当を検出すると警告を表示する。導入前に、以前のゲートウェイ構成の設定を削除するか、Dockerのブリッジを許可すること |
 | `curl`が無いホスト | 先に`sudo apt-get install -y curl`を実行してからインストーラを実行する |
 | 迂回ドメイン | 暗号化DNS（DoH・DoT）を使う端末の問い合わせはゲートウェイで中継できないため、迂回が効かない（端末側の「安全なDNS」等の設定を無効にする）。迂回はIPアドレス単位で判定するため、迂回するドメインとIPアドレスを共有する他のドメイン（CDN等）宛の通信も迂回される。IPv6は対象外である |
 | 動作検証 | 「この端末からの確認」は、Web UIを開いている端末1台だけを対象とする。出口IPの一致で判定するため、同じVPNの出口IPを使う別の経路（別のVPNゲートウェイ等）を通る端末は区別できない。Kill Switchは、ルールの構成だけを確認する（VPNを切断して遮断を確かめることはしない）。IPv6は対象外である |
