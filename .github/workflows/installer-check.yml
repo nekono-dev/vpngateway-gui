@@ -1,0 +1,32 @@
+# 責務: インストーラの頒布（release-installer.yml）の前に通す、このプロジェクト固有の検査。失敗すると install.sh は生成・頒布されない。
+#   - 本体インストーラ（installer/setup.sh）と検査スクリプトの構文・shellcheck
+#   - 単体テスト・ベンダー中立性の検査・インストーラの検査（npm test）
+name: installer-check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: シェルの検査（構文・shellcheck）
+        run: |
+          for f in installer/setup.sh installer/tests/*.sh; do sh -n "$f"; done
+          shellcheck -S warning installer/setup.sh installer/tests/*.sh
+
+      - name: 単体テスト・中立性の検査・インストーラの検査
+        run: |
+          npm ci
+          npm run generate:api-client
+          npm test

@@ -47,11 +47,11 @@
 - 実機検証（検証用サーバ）への反映は、手作業で転送・ビルドせず`scripts/deploy-verify.sh`で行う。検証サーバのIPアドレス等は、リポジトリ直下の`.env`（git管理外。雛形は`.env.example`）の`VERIFY_HOST`・`VERIFY_USER`・`VERIFY_SSH_PASSWORD`・`VERIFY_INSTALL_DIR`で指定する。
 - 実行: `scripts/deploy-verify.sh [composeのサービス名...]`（省略時は全サービスを再ビルド・再起動。例: Web UIのみの変更は`scripts/deploy-verify.sh web`）。作業ツリーを検証サーバの`~/vpngateway-gui`と`VERIFY_INSTALL_DIR`へ転送し、`docker compose build`・`up -d`する。検証サーバの`.env`（インストーラ生成）は上書きしない。
 - 機能の追加・実装作業が完了したら、実機検証の前に必ずこのスクリプトを実行して、検証サーバへ最新の状態を反映する。反映せずに実機検証したと報告しない。
-- ホスト設定（sysctl等）の変更を伴う場合は、スクリプトではなくインストーラ（`install.sh`）を再実行して反映する。
+- ホスト設定（sysctl等）の変更を伴う場合は、スクリプトではなくインストーラ（`vpngwgui-ctl update`）を再実行して反映する。
 
 # ベンダー非依存（VPNプロバイダに依存しない）
 
-- 本システムはVPNベンダーに依存しない（`specs/requirements.md`「ベンダー非依存性」）。本番のソースコード（`api/src`・`proxy/src`・`web/src`・`web/server`・`install/`・composeの本体・共通のDockerfile）に、ベンダーのID・名称・CLIの書式・エラー文言を書かない。**コメントやエラーメッセージの例にも書かない。**
+- 本システムはVPNベンダーに依存しない（`specs/requirements.md`「ベンダー非依存性」）。本番のソースコード（`api/src`・`proxy/src`・`web/src`・`web/server`・`installer/`・composeの本体・共通のDockerfile）に、ベンダーのID・名称・CLIの書式・エラー文言を書かない。**コメントやエラーメッセージの例にも書かない。**
 - ベンダー間の差が必要なときは、コードに分岐を足さず、プロファイル（`vendors/<ID>/profile.json`）の項目として抽象化する。分岐は「プロファイルが宣言する機構」（例: `loginMethod`）に対してのみ行い、ベンダーには行わない。ベンダー固有になりうる項目に暗黙の既定値を置かず、プロファイルで必須にする。
 - ベンダー固有のものは、ベンダーバンドル（`vendors/<ID>/`）に置く。ベンダーの追加・削除がバンドルの追加・削除だけで済まなくなる変更をしない。
 - 仕様書・E2E・単体テスト・バンドルの中は、ベンダー固有の情報を置いてよい。中立性の検査（`scripts/check-vendor-neutrality.mjs`。`npm test`に含まれる）が本番コードの違反を検出する。

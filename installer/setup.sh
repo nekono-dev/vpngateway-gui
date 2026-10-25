@@ -18,7 +18,7 @@
 # （下記「--uninstall」参照）。
 #
 # 使い方（root権限で）:
-#   sh install/setup.sh --providers <ID>[,<ID>...] [--web-port <番号>] [--lan-iface <名前>] [--redetect-lan-iface]
+#   sh installer/setup.sh --providers <ID>[,<ID>...] [--web-port <番号>] [--lan-iface <名前>] [--redetect-lan-iface]
 #                          [--api <ホスト名/IP>] [--web <ホスト名/IP>] [--gateway <ホスト名/IP>] [--rotate-pairing] [--no-start]
 #   --providers            有効にするベンダー（vendors/<ID>/ のディレクトリ名）。省略時は、その時点でvendors/にある全ベンダー（all）を有効にする
 #                           （新しい版で追加されたベンダーも、再実行のたびに自動的に有効化される）。gatewayロールが配置されたホストでのみ意味を持つ。
@@ -35,10 +35,10 @@
 #                           再実行時、記録済みのトポロジーと異なる指定はエラーで停止する（構成変更は--uninstall後の再インストールで行う）。
 #   --rotate-pairing        既存の証明書一式を破棄し、再生成・再配布する（相手ホストを作り直した場合等）。
 #   --no-start             起動（docker compose up）をしない。
-# 例（単一ホスト）:     sudo sh install/setup.sh --providers vendora,vendorb
-# 例（3ホストへ分離）: sudo sh install/setup.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers vendora
+# 例（単一ホスト）:     sudo sh installer/setup.sh --providers vendora,vendorb
+# 例（3ホストへ分離）: sudo sh installer/setup.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers vendora
 #
-# 使い方（アンインストール、root権限で）: sh install/setup.sh --uninstall [--keep-data]
+# 使い方（アンインストール、root権限で）: sh installer/setup.sh --uninstall [--keep-data]
 #   --uninstall            記録済みのトポロジーに基づいて後始末する。--api・--web・--gatewayとは併用できない
 #                           （分離構成では、このコマンドを実行したホスト＝オーケストレーターで実行すること。記録が無いホストで
 #                           実行した場合は警告のうえ、そのホスト自身の後始末のみ行う）。docker composeスタックの停止・削除
@@ -48,7 +48,7 @@
 #                           （前者は頒布されたブートストラップ install.sh --uninstall が削除する。後者は手動で削除すること。README.md参照）。
 #   --keep-data             --uninstall と併用。ベンダーのログイン情報（Dockerボリューム）を削除せず残す（再導入時にログイン状態を維持したい場合）。
 # 例（頒布されたブートストラップ経由。ソースの取得先ディレクトリ自体も削除される）: curl -fsSL <頒布URL>/install.sh | sudo sh -s -- --uninstall
-# 例（取得済みのソースから直接実行。ソース一式は削除されず残る）: sudo sh install/setup.sh --uninstall
+# 例（取得済みのソースから直接実行。ソース一式は削除されず残る）: sudo sh installer/setup.sh --uninstall
 
 set -eu
 
@@ -265,7 +265,7 @@ install_docker() {
 setup_sysctl() {
   cat > "$SYSCTL_FILE" <<EOSYSCTL
 # vpngateway-gui: LAN機器への透過ゲートウェイ提供に必要なIPフォワーディング設定。
-# install/setup.shにより作成された。手動で削除・変更しないこと。
+# installer/setup.shにより作成された。手動で削除・変更しないこと。
 net.ipv4.ip_forward=1
 net.ipv4.conf.all.send_redirects=0
 net.ipv4.conf.default.send_redirects=0
@@ -328,7 +328,7 @@ setup_web_port() {
 setup_boot_guard() {
   nft_bin=$(command -v nft) || die "nft コマンドが見つかりません"
   cat > "$GUARD_UNIT" <<EOGUARD
-# vpngateway-gui: 起動直後のKill Switch用フェイルクローズガード。install/setup.shにより作成された。
+# vpngateway-gui: 起動直後のKill Switch用フェイルクローズガード。installer/setup.shにより作成された。
 [Unit]
 Description=vpngateway-gui boot-time fail-closed guard
 DefaultDependencies=no
@@ -364,7 +364,7 @@ setup_host_reboot() {
   chown 10001:10001 "$HOST_CTL_DIR"
   chmod 0700 "$HOST_CTL_DIR"
   cat > "$REBOOT_SERVICE_UNIT" <<EOREBOOTSVC
-# vpngateway-gui: Web UIからの再起動依頼を実行する。install/setup.shにより作成された。
+# vpngateway-gui: Web UIからの再起動依頼を実行する。installer/setup.shにより作成された。
 [Unit]
 Description=vpngateway-gui host reboot (requested from the Web UI)
 
@@ -373,7 +373,7 @@ Type=oneshot
 ExecStart=/bin/sh -c 'rm -f $HOST_CTL_DIR/reboot-request && exec systemctl reboot'
 EOREBOOTSVC
   cat > "$REBOOT_PATH_UNIT" <<EOREBOOTPATH
-# vpngateway-gui: 再起動の依頼ファイルを監視する。install/setup.shにより作成された。
+# vpngateway-gui: 再起動の依頼ファイルを監視する。installer/setup.shにより作成された。
 [Unit]
 Description=vpngateway-gui host reboot request watcher
 
@@ -653,7 +653,7 @@ start_stack() {
 }
 
 # 目的: このホストへ配置された1つ以上のロールを導入する。ローカル配置ならオーケストレーター（orchestrate_main）から
-#      直接呼ばれ、リモート配置ならssh経由で「sh install/setup.sh --only-roles <roles> ...」として呼ばれる
+#      直接呼ばれ、リモート配置ならssh経由で「sh installer/setup.sh --only-roles <roles> ...」として呼ばれる
 #      （どちらも同じこの関数を実行する。specs/design.md「ロールごとの実行」）。
 # 入力: roles(このホストへ配置するロールのカンマ区切り。例"web,api"・"gateway")。
 #      グローバル変数 GATEWAY_HOST_OVERRIDE_ARG（apiロールを含む場合、gatewayの接続先を上書き。空ならcomposeの既定）、
@@ -704,7 +704,7 @@ install_roles() {
 # 目的: リモートホストへ、ソース一式の転送とロールの導入を行う（specs/design.md「ロールごとの実行」）。
 # 入力: host(配置先)、roles(そのホストへ配置するロールのカンマ区切り)。
 # 副作用: `git archive`によるソース転送（リモートにDocker・Node.js等の事前導入は要求しない）、
-#         リモートでの「sh install/setup.sh --only-roles ...」実行。
+#         リモートでの「sh installer/setup.sh --only-roles ...」実行。
 # 失敗時: 転送・リモート実行のいずれかが失敗すれば終了する。
 # 呼び出し順序: 呼び出し元（orchestrate_main）はdistinct_remote_hostsの順（gateway→api→web）で
 #   このホストを処理する。webロールのstart_stackはこのホスト自身のweb→api疎通確認（api/v1/operator）を
@@ -720,7 +720,7 @@ remote_install_role() {
     || die "リモートホスト $host へのソース転送に失敗しました"
 
   # shellcheck disable=SC2086
-  $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/setup.sh --only-roles $roles $(remote_role_args "$roles")" \
+  $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh installer/setup.sh --only-roles $roles $(remote_role_args "$roles")" \
     || die "リモートホスト $host でのロール導入に失敗しました"
 }
 
@@ -782,7 +782,7 @@ finish_summary() {
   echo "  Web UI:        https://$web_addr:$summary_port（自己署名証明書のため、初回アクセス時にブラウザの警告を許可する）"
   echo "  配置:          web=${ROLE_HOST_web:-ローカル} api=${ROLE_HOST_api:-ローカル} gateway=${ROLE_HOST_gateway:-ローカル}"
   echo "  次の操作:      Web UIを開き、初回はアカウントを作成してログインする。ベンダーごとにログインし、LAN機器のデフォルトゲートウェイをゲートウェイ役のホストへ向ける。"
-  echo "  設定の変更:    sudo sh $REPO_ROOT/install/setup.sh --providers <ID>,...（同じトポロジーでの再実行で、有効なベンダーを変更できる。トポロジー自体の変更は--uninstall後に行う）"
+  echo "  設定の変更:    sudo sh $REPO_ROOT/installer/setup.sh --providers <ID>,...（同じトポロジーでの再実行で、有効なベンダーを変更できる。トポロジー自体の変更は--uninstall後に行う）"
 }
 
 # 目的: インストールの全体（オーケストレーター側）。トポロジーの決定・証明書の生成配布・ロールごとの実行をまとめる
@@ -932,7 +932,7 @@ uninstall_main() {
       # リモートホストは頒布されたブートストラップ（install.sh）を経由しないため、取得先ディレクトリ自体の削除も
       # ここでオーケストレーターが明示的に行う（ローカルのブートストラップが行うのと同じ役割）。
       # shellcheck disable=SC2086
-      $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh install/setup.sh --uninstall$keep_flag && cd / && sudo rm -rf $REMOTE_INSTALL_DIR" \
+      $SSH_AS ssh $SSH_OPTS "$SSH_USER@$host" "cd $REMOTE_INSTALL_DIR && sudo sh installer/setup.sh --uninstall$keep_flag && cd / && sudo rm -rf $REMOTE_INSTALL_DIR" \
         || log "リモートホスト $host の後始末に失敗しました（続行します）"
     done
   else
@@ -969,7 +969,7 @@ main() {
   orchestrate_main
 }
 
-# 検査（install/tests/run.sh）が各関数だけを読み込めるよう、VPNGW_INSTALL_LIB が設定されていれば main を実行しない。
+# 検査（installer/tests/run.sh）が各関数だけを読み込めるよう、VPNGW_INSTALL_LIB が設定されていれば main を実行しない。
 if [ -z "${VPNGW_INSTALL_LIB:-}" ]; then
   main "$@"
 fi

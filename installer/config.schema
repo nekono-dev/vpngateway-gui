@@ -1,0 +1,6 @@
+PROVIDERS||optional|有効にするベンダー（vendors/ のディレクトリ名をカンマ区切り。空ならすべて）
+WEB_PORT||optional|Web UI を配信するポート（空なら保存済みの値、無ければ 443）
+LAN_IFACE||optional|LAN 側インターフェース名（空なら自動検出）
+WEB_HOST||optional|web ロールの配置先ホスト（空ならこのホスト）
+API_HOST||optional|api ロールの配置先ホスト（空ならこのホスト）
+GATEWAY_HOST||optional|gateway ロールの配置先ホスト（空ならこのホスト）

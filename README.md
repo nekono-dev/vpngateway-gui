@@ -9,51 +9,60 @@ VPNベンダー（AdGuard VPN・Proton VPN等）のCLIをLinuxサーバ上に導
 対象は、クリーンなDebian系のベアメタル（Debian・Raspberry Pi OS・Ubuntu 24.04 LTS等。検証済みはUbuntu 24.04）である。Docker・git等をホストに事前導入しておく必要はない。
 
 ```sh
-curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- --providers <ベンダーID>[,<ベンダーID>...]
+curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- install --set PROVIDERS=<ベンダーID>[,<ベンダーID>...]
 ```
 
-| 引数 | 意味 |
+設定は `--set KEY=VALUE` で渡す。値は `/etc/vpngwgui/vpngwgui.env` に保存され、以後の更新でも使われる（変える項目だけ指定すればよい）。
+
+| キー | 意味 |
 |---|---|
-| `--providers <ID>[,<ID>...]` | 有効にするベンダー（`vendors/<ID>/`のディレクトリ名）。省略時は、その時点で`vendors/`にある全ベンダー（all）を有効にする |
-| `--web-port <番号>` | Web UIを配信するホスト側のポート番号（1〜65535）。既定は443 |
-| `--lan-iface <名前>` | LAN側インターフェース名を指定する。自動検出できない場合、または複数NICがある場合に指定する |
-| `--redetect-lan-iface` | 保存済みのLAN側インターフェース名を破棄し、再検出する。VPN未接続の状態で実行する |
-| `--api <ホスト名/IP>` | APIサーバの配置先ホスト。省略時はこのコマンドを実行したホスト（ローカル） |
-| `--web <ホスト名/IP>` | Webサーバの配置先ホスト。省略時はローカル |
-| `--gateway <ホスト名/IP>` | ゲートウェイ（VPN通信を実際に中継する機体）の配置先ホスト。省略時はローカル |
-| `--rotate-pairing` | 各ホスト間の通信を保護する証明書一式を破棄し、再生成・再配布する |
-| `--no-start` | インストール後にコンテナを起動しない |
+| `PROVIDERS` | 有効にするベンダー（`vendors/<ID>/`のディレクトリ名をカンマ区切り）。空なら、その時点で`vendors/`にある全ベンダー（all）を有効にする |
+| `WEB_PORT` | Web UIを配信するホスト側のポート番号（1〜65535）。空なら保存済みの値、無ければ443 |
+| `LAN_IFACE` | LAN側インターフェース名。空なら自動検出する。自動検出できない場合、または複数NICがある場合に指定する |
+| `API_HOST` | APIサーバの配置先ホスト。空ならこのコマンドを実行したホスト（ローカル） |
+| `WEB_HOST` | Webサーバの配置先ホスト。空ならローカル |
+| `GATEWAY_HOST` | ゲートウェイ（VPN通信を実際に中継する機体）の配置先ホスト。空ならローカル |
+
+不正な値（存在しないベンダー、範囲外のポートなど）は、何も変更せずに中止する。
+
+導入後は常設コマンド `vpngwgui-ctl` で更新・状態確認・削除を行う（`curl`は不要）。
+
+| 目的 | コマンド |
+|---|---|
+| アップデート | `sudo vpngwgui-ctl update`（導入中のブランチ・タグの最新へ更新する。設定・ログイン情報は保持される） |
+| 有効なベンダーを絞る・増やす | `sudo vpngwgui-ctl update --set PROVIDERS=adguardvpn,protonvpn` |
+| Web UIのポートを変更する | `sudo vpngwgui-ctl update --set WEB_PORT=8443` |
+| 版・ブランチを切り替える | `sudo vpngwgui-ctl update --ref <タグ・ブランチ名>`（一覧は `vpngwgui-ctl refs`） |
+| 導入情報を見る | `vpngwgui-ctl status` |
+
+次の一回限りの操作は、取得先の本体インストーラを直接実行する（設定は保存されない）。
+
+| 操作 | コマンド |
+|---|---|
+| LAN側インターフェースの再検出（VPN未接続の状態で実行する） | `sudo sh /opt/vpngwgui/installer/setup.sh --redetect-lan-iface` |
+| 各ホスト間の通信を保護する証明書一式の再生成・再配布 | `sudo sh /opt/vpngwgui/installer/setup.sh --rotate-pairing` |
+| コンテナを起動せずに設定だけ反映する | `sudo sh /opt/vpngwgui/installer/setup.sh --no-start` |
+
+いずれも、分離配置では保存済みと同じ `--api`・`--web`・`--gateway` も付けて実行する。
 
 初回アクセス時、Web UIは自己署名証明書を使ったHTTPS（`https://<ホストのアドレス>:<ポート>`）で応答する。ブラウザが表示する証明書の警告は、自己署名証明書によるもので想定内であるため、許可して進めてよい。アクセス後、最初に開いた人がWeb UIの利用者アカウント（ユーザー名・パスワード）を作成する（複数人が同時にアクセスした場合、先に作成した方が優先される）。
 
 ### 複数ホストへの分離配置
 
-`--api`・`--web`・`--gateway`を指定すると、Webサーバ・APIサーバ・ゲートウェイをそれぞれ別のホストへ分離して配置できる（いずれも省略した場合は、全体を1台へまとめる単一ホスト構成になる）。指定しなかったロールは、このコマンドを実行したホスト（オーケストレーター）へ配置される。
+`API_HOST`・`WEB_HOST`・`GATEWAY_HOST`を指定すると、Webサーバ・APIサーバ・ゲートウェイをそれぞれ別のホストへ分離して配置できる（いずれも省略した場合は、全体を1台へまとめる単一ホスト構成になる）。指定しなかったロールは、このコマンドを実行したホスト（オーケストレーター）へ配置される。
 
 ```sh
-sudo sh install/setup.sh --web 192.168.1.10 --api 192.168.1.11 --gateway 192.168.1.12 --providers adguardvpn
+curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- install \
+  --set WEB_HOST=192.168.1.10 --set API_HOST=192.168.1.11 --set GATEWAY_HOST=192.168.1.12 --set PROVIDERS=adguardvpn
 ```
 
 - 配置先に指定するリモートホストへは、このコマンドを実行するユーザーと同じユーザー名でのSSH鍵認証によるアクセスが、事前に確立できていること（`ssh <ホスト>`がパスワード入力なしで通ること）。ユーザー名・秘密鍵・ポートを個別に指定する引数は無いため、ホストごとに設定が要る場合は`~/.ssh/config`側で吸収する。
 - リモートホストにDocker・gitなどを事前に導入しておく必要はない（オーケストレーター側のインストーラが、対象ホストへ導入する）。
 - ホスト間の通信（ブラウザ⇄Webサーバ・Webサーバ⇄APIサーバ・APIサーバ⇄ゲートウェイ）は、いずれもこのコマンドが生成・配布する証明書によって暗号化・認証される。
-- 一度決めたロールの配置先（トポロジー）は、`--uninstall`で後始末してから新しい配置で再インストールするまで変更できない（配置を変えて再実行すると、記録済みの配置と異なる旨のエラーで停止する）。
+- 一度決めたロールの配置先（トポロジー）は、`uninstall`で後始末してから新しい配置で再インストールするまで変更できない（配置を変えて再実行すると、記録済みの配置と異なる旨のエラーで停止する）。
+- 旧版（`install.sh --providers …` の形）で分離配置した環境を新しいインストーラで更新するときは、最初の `install` で、そのときと同じ配置先を `--set` で指定する。
 
 ## 設定方法
-
-### 更新・ベンダー構成の変更
-
-インストール時と同じコマンドを対象ホスト上で再実行する（冪等なので、既存の設定・ログイン情報は保持される）。
-
-```sh
-sudo sh /opt/vpngwgui/install/setup.sh --providers adguardvpn
-```
-
-| 目的 | コマンド |
-|---|---|
-| アップデート | インストールコマンドを再実行する。 |
-| 有効なベンダーを絞る・増やす | `--providers`に有効にしたいベンダーだけを指定して再実行する |
-| Web UIのポートを変更する | `--web-port`に変更後のポート番号を指定して再実行する。省略した場合は現在の設定を維持する |
 
 ### 迂回ドメインとDNS中継
 
@@ -156,15 +165,17 @@ Web UIの［設定］の「メンテナンス」タブにある［ゲートウ�
 
 ### アンインストール
 
-対象ホスト上で以下を実行する。インストールと同じ頒布URLで実行でき、`/opt/vpngwgui`を事前に取得しておく必要はない。docker composeスタック（ベンダーのログイン情報を含む）、証明書一式、IPフォワーディングの設定、起動時のKill Switchガード、ゲートウェイ機の再起動の仕組み、ソース一式の取得先ディレクトリ（`/opt/vpngwgui`自体）を削除する。複数ホストへ分離配置した場合は、インストールを実行したホスト（オーケストレーター）上で実行すること。配置した全ホストの後始末をまとめて行う（`--uninstall`は`--api`・`--web`・`--gateway`と併用できない。後始末の範囲は記録済みの配置から自動的に決まる）。
+対象ホスト上で以下を実行する。docker composeスタック、証明書一式、IPフォワーディングの設定、起動時のKill Switchガード、ゲートウェイ機の再起動の仕組み、常設コマンド、ソース一式の取得先ディレクトリ（`/opt/vpngwgui`自体）を削除する。設定（`/etc/vpngwgui`）とベンダーのログイン情報（Dockerボリューム）は残すため、再度 `install` すると引き継げる。複数ホストへ分離配置した場合は、インストールを実行したホスト（オーケストレーター）上で実行すること。配置した全ホストの後始末をまとめて行う（後始末の範囲は記録済みの配置から自動的に決まる）。
 
 ```sh
-curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- --uninstall
+sudo vpngwgui-ctl uninstall
 ```
 
-| 引数 | 意味 |
-|---|---|
-| `--keep-data` | ベンダーのログイン情報（Dockerボリューム）を削除せず残す。省略時は削除する |
+`--purge` を付けると、設定・ベンダーのログイン情報・導入メタ情報も削除する。
+
+```sh
+sudo vpngwgui-ctl uninstall --purge
+```
 
 以下は対象外であり、手動で削除・無効化する。
 

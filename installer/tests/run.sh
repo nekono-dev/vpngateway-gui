@@ -1,14 +1,14 @@
 #!/bin/sh
-# 責務: インストーラ関連スクリプト（install/install.sh.tmpl・build-install.sh・setup.sh）の、root権限もネットワークも要らない範囲の検査。
-# 内容: 構文、頒布物の生成（値の埋め込み・置換漏れ・不正な引数の拒否）、雛形のまま実行した場合の中止、setup.shの引数の解釈。
+# 責務: インストーラのアプリ固有部分（installer/app.sh・setup.sh）の、root権限もネットワークも要らない範囲の検査。
+# 内容: 構文、app.shによる設定値からsetup.shの引数への変換、setup.shの引数の解釈。頒布物の生成・導入メタ情報などの共通部分は
+#       bootstrap-ci-builderプラグインの検査が受け持つ。
 # 実際の導入（apt・Docker・ホスト設定・起動）は、クリーンなLXC環境でのE2E（e2e/phase11/install-scenarios.sh）で検証する。
-# 使い方: sh install/tests/run.sh   出力: 各検査をPASS/FAILで表示し、FAIL件数を終了コードにする。
+# 使い方: sh installer/tests/run.sh   出力: 各検査をPASS/FAILで表示し、FAIL件数を終了コードにする。
 
 set -u
 HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 INSTALL_DIR=$(CDPATH='' cd -- "$HERE/.." && pwd)
 FAILS=0
-COMMIT=0123456789abcdef0123456789abcdef01234567
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -18,36 +18,25 @@ check() {
   if "$@"; then echo "PASS: $desc"; else echo "FAIL: $desc"; FAILS=$((FAILS + 1)); fi
 }
 
-for script in install.sh.tmpl build-install.sh setup.sh; do
+for script in app.sh setup.sh; do
   check "$script: 構文が正しい" sh -n "$INSTALL_DIR/$script"
 done
 
-# --- 頒布物の生成
-sh "$INSTALL_DIR/build-install.sh" v1.2.3 "$COMMIT" https://example.test/org/repo.git > "$TMP/install.sh"
-check "生成: REF・COMMIT・REPO_URLが埋め込まれる" sh -c "grep -q \"^REF='v1.2.3'\" '$TMP/install.sh' && grep -q \"^COMMIT='$COMMIT'\" '$TMP/install.sh' && grep -q \"^REPO_URL='https://example.test/org/repo.git'\" '$TMP/install.sh'"
-check "生成: 代入行に置換漏れが無い" sh -c "! grep -q \"^\\(REF\\|COMMIT\\|REPO_URL\\)='@@\" '$TMP/install.sh'"
-check "生成: 生成物の構文が正しい" sh -n "$TMP/install.sh"
-sh "$INSTALL_DIR/build-install.sh" feature/x-1 "$COMMIT" file:///srv/repo.git > "$TMP/branch.sh"
-check "生成: ブランチ名（/を含む）・file://も受け付ける" grep -q "^REF='feature/x-1'" "$TMP/branch.sh"
-
-# 目的: 生成スクリプトが、引数を拒否する（終了コードが非ゼロで、標準出力に何も出さない）ことを検査する。 入力: 生成スクリプトへ渡す引数。
-# shellcheck disable=SC2317,SC2329  # check経由で呼ばれる（間接呼び出し。shellcheckの版により指摘のコードが異なる）
-rejects() {
-  out=$(sh "$INSTALL_DIR/build-install.sh" "$@" 2>/dev/null)
-  rc=$?
-  [ "$rc" -ne 0 ] && [ -z "$out" ]
+# --- app.sh: 設定ファイルの値を setup.sh の引数へ変換する（空のキーは渡さない）
+# 目的: 指定した設定ファイルの内容で setup_args を実行し、組み立てた引数列を返す。 入力: 設定ファイルの中身。
+app_args_with() {
+  printf '%s\n' "$1" > "$TMP/app.env"
+  sh -c "die() { echo \"エラー: \$*\" >&2; exit 1; }; CONF_FILE='$TMP/app.env'; . '$INSTALL_DIR/app.sh'; setup_args"
 }
-for bad in "bad ref" "ref'quote" 'ref|pipe' 'ref&amp'; do
-  check "生成: 不正なREF（$bad）を拒否し、何も出力しない" rejects "$bad" "$COMMIT" https://example.test/r.git
-done
-check "生成: 40桁でないCOMMITを拒否する" rejects v1 abc123 https://example.test/r.git
-check "生成: 大文字のCOMMITを拒否する" rejects v1 0123456789ABCDEF0123456789abcdef01234567 https://example.test/r.git
-check "生成: https・file以外のREPO_URLを拒否する" rejects v1 "$COMMIT" http://example.test/r.git
-check "生成: 引用符を含むREPO_URLを拒否する" rejects v1 "$COMMIT" "https://example.test/r'.git"
-check "生成: 引数の数が違えば失敗する" rejects v1
-
-# --- 雛形のまま実行した場合の中止（root権限の検査より前に判定するため、一般ユーザーでも確認できる）
-check "雛形のまま実行すると、雛形である旨を示して中止する" sh -c "out=\$(sh '$INSTALL_DIR/install.sh.tmpl' 2>&1); [ \$? -ne 0 ] && printf '%s' \"\$out\" | grep -q 'ひな形'"
+check "app.sh: 空の設定では引数を渡さない（setup.shの既定・保存済みの値を使わせる）" test "$(app_args_with "PROVIDERS=''")" = ""
+check "app.sh: 設定した値だけを対応する引数として渡す" test "$(app_args_with "PROVIDERS='vendora,vendorb'
+WEB_PORT='8443'
+API_HOST='10.0.0.2'")" = " --providers vendora,vendorb --web-port 8443 --api 10.0.0.2"
+check "app.sh: ロールの配置先を --web・--api・--gateway で渡す" test "$(app_args_with "WEB_HOST='w.example'
+API_HOST='a.example'
+GATEWAY_HOST='g.example'
+LAN_IFACE='eth1'")" = " --lan-iface eth1 --web w.example --api a.example --gateway g.example"
+check "app.sh: 空白やシェルの特殊文字を含む値は拒否する" sh -c "! (printf '%s\n' \"API_HOST='a;rm'\" > '$TMP/bad.env'; die() { exit 1; }; CONF_FILE='$TMP/bad.env'; . '$INSTALL_DIR/app.sh'; setup_args) >/dev/null 2>&1"
 
 # --- 本体インストーラの引数の解釈（引数の検査はroot権限の検査より前）
 check "setup.sh --help は使い方を表示して成功する" sh -c "sh '$INSTALL_DIR/setup.sh' --help | grep -q -- '--providers'"
@@ -59,8 +48,8 @@ check "setup.sh: --keep-data は --uninstall と併用しなければ失敗す�
 # --- --providers省略時の挙動（Phase 17: all化）。一時ディレクトリに、2つのバンドル（profile.jsonとcompose.ymlを持つ）を持つ
 # 偽のリポジトリを作って、関数だけを読み込む（VPNGW_INSTALL_LIBを立てるとmainを実行しない）。
 FAKE="$TMP/repo"
-mkdir -p "$FAKE/install" "$FAKE/vendors/vendora" "$FAKE/vendors/vendorb" "$FAKE/vendors/nocompose"
-cp "$INSTALL_DIR/setup.sh" "$FAKE/install/setup.sh"
+mkdir -p "$FAKE/installer" "$FAKE/vendors/vendora" "$FAKE/vendors/vendorb" "$FAKE/vendors/nocompose"
+cp "$INSTALL_DIR/setup.sh" "$FAKE/installer/setup.sh"
 printf '{ "vendor": "vendora", "displayName": "Vendor A" }\n' > "$FAKE/vendors/vendora/profile.json"
 printf '{ "vendor": "vendorb" }\n' > "$FAKE/vendors/vendorb/profile.json"
 printf '{ "vendor": "nocompose" }\n' > "$FAKE/vendors/nocompose/profile.json"
@@ -68,7 +57,7 @@ printf '{ "vendor": "nocompose" }\n' > "$FAKE/vendors/nocompose/profile.json"
 : > "$FAKE/vendors/vendorb/compose.yml"
 # 目的: determine_providers を実行し、決定されたPROVIDERSを返す。 入力: PROVIDERS_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。
 setup_providers_with() {
-  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; PROVIDERS_ARG='$1'; determine_providers >/dev/null; printf '%s' \"\$PROVIDERS\""
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; PROVIDERS_ARG='$1'; determine_providers >/dev/null; printf '%s' \"\$PROVIDERS\""
 }
 check "--providers省略時: vendors/にある全ベンダー（all）が選ばれる" test "$(setup_providers_with '')" = "vendora,vendorb"
 rm -f "$FAKE/.env"
@@ -80,16 +69,16 @@ rm -f "$FAKE/.env"
 # --- Web UIのポート（--web-port）
 # 目的: setup_web_port を実行し、決定されたWEB_PORTを返す。 入力: WEB_PORT_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。
 setup_web_port_with() {
-  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; WEB_PORT_ARG='$1'; setup_web_port >/dev/null; printf '%s' \"\$WEB_PORT\""
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; WEB_PORT_ARG='$1'; setup_web_port >/dev/null; printf '%s' \"\$WEB_PORT\""
 }
 check "--web-port省略時・.env未設定: 既定（443）になる" test "$(setup_web_port_with '')" = "443"
 check "--web-port指定時: 指定した値になる" test "$(setup_web_port_with '8080')" = "8080"
 printf 'WEB_PORT=8443\n' > "$FAKE/.env"
 check "--web-port省略時: .envの既存値を使う" test "$(setup_web_port_with '')" = "8443"
 rm -f "$FAKE/.env"
-check "--web-port: 範囲外（0）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_PORT_ARG=0; setup_web_port' >/dev/null 2>&1"
-check "--web-port: 範囲外（65536）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_PORT_ARG=65536; setup_web_port' >/dev/null 2>&1"
-check "--web-port: 数字以外は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_PORT_ARG=abc; setup_web_port' >/dev/null 2>&1"
+check "--web-port: 範囲外（0）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; WEB_PORT_ARG=0; setup_web_port' >/dev/null 2>&1"
+check "--web-port: 範囲外（65536）は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; WEB_PORT_ARG=65536; setup_web_port' >/dev/null 2>&1"
+check "--web-port: 数字以外は拒否する" sh -c "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; WEB_PORT_ARG=abc; setup_web_port' >/dev/null 2>&1"
 
 # 目的: 文字列に部分文字列が含まれるか判定する。 入力: 対象の文字列, 探す文字列。
 contains() { printf '%s' "$1" | grep -q -- "$2"; }
@@ -98,7 +87,7 @@ contains() { printf '%s' "$1" | grep -q -- "$2"; }
 #      ローカル配置は setup_web_port → finish_summary の順に呼ぶ（install_roles→finish_summaryと同じ順）。
 # 入力: WEB_PORT_ARGに設定する値（空なら省略扱い）。既存の.envがあれば事前に用意しておく。 出力: 完了の表示のうちWeb UIの行。
 summary_line_local_with() {
-  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; WEB_PORT_ARG='$1'; ROLE_HOST_web=''; ROLE_HOST_api=''; ROLE_HOST_gateway=''; setup_web_port >/dev/null; finish_summary" | grep 'Web UI:'
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; WEB_PORT_ARG='$1'; ROLE_HOST_web=''; ROLE_HOST_api=''; ROLE_HOST_gateway=''; setup_web_port >/dev/null; finish_summary" | grep 'Web UI:'
 }
 printf 'WEB_PORT=8443\n' > "$FAKE/.env"
 check "完了の表示: --web-port省略時の再実行で、.envに保存済みのポートを表示する" contains "$(summary_line_local_with '')" ':8443（'
@@ -119,14 +108,14 @@ EOSCRIPT
 chmod +x "$TMP/fake-ssh"
 FAKE_SSH_LOG="$TMP/fake-ssh.log"
 : > "$FAKE_SSH_LOG"
-REMOTE_SUMMARY=$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE FAKE_SSH_LOG=$FAKE_SSH_LOG sh -c ". $FAKE/install/setup.sh; SSH_AS='$TMP/fake-ssh'; WEB_PORT_ARG=''; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=''; ROLE_HOST_gateway=''; finish_summary" | grep 'Web UI:')
+REMOTE_SUMMARY=$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE FAKE_SSH_LOG=$FAKE_SSH_LOG sh -c ". $FAKE/installer/setup.sh; SSH_AS='$TMP/fake-ssh'; WEB_PORT_ARG=''; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=''; ROLE_HOST_gateway=''; finish_summary" | grep 'Web UI:')
 check "完了の表示: webロールがリモートなら、そのホストの.envのWEB_PORTを表示する" contains "$REMOTE_SUMMARY" 'https://10.0.0.1:7443（'
 check "完了の表示: リモートの.envのWEB_PORTを読むコマンドを実行する" grep -q "WEB_PORT=.*/opt/vpngwgui/.env" "$FAKE_SSH_LOG"
 
 # 目的: remote_role_argsが、--web-portをwebロールの配置先へだけ転送し、省略時は転送しないことを検査する。
 # 入力: roles, WEB_PORT_ARGに設定する値。 出力: 組み立てた引数列。
 remote_role_args_with() {
-  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=10.0.0.2; ROLE_HOST_gateway=10.0.0.3; PROVIDERS_ARG=vendora; WEB_PORT_ARG='$2'; remote_role_args '$1'"
+  VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=10.0.0.2; ROLE_HOST_gateway=10.0.0.3; PROVIDERS_ARG=vendora; WEB_PORT_ARG='$2'; remote_role_args '$1'"
 }
 check "remote_role_args: webロールには--web-portを転送する" test "$(remote_role_args_with web 8443)" = " --api-origin https://10.0.0.2:3000 --web-port 8443"
 check "remote_role_args: --web-port省略時は転送しない（リモートの.envの既存値を使わせる）" test "$(remote_role_args_with web '')" = " --api-origin https://10.0.0.2:3000"
@@ -134,7 +123,7 @@ check "remote_role_args: webロールを含まないホストへは--web-portを
 check "remote_role_args: apiロールにはgatewayの接続先とベンダーを渡す" test "$(remote_role_args_with api '')" = " --gateway-host 10.0.0.3 --providers vendora"
 
 # --- アンインストール（root・Docker・systemdが要らない範囲。ホスト設定の実際の削除はE2Eで検証する）
-check "uninstall_stack: docker-compose.ymlが無ければ何もしない（root不要）" sh -c "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; uninstall_stack' | grep -q '対象なし'"
+check "uninstall_stack: docker-compose.ymlが無ければ何もしない（root不要）" sh -c "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; uninstall_stack' | grep -q '対象なし'"
 
 # 目的: uninstall_host_hooksが、uninstall-host.shを持つベンダーだけを呼び、実行時の環境変数（VPNGW_ROOT・VPNGW_VENDOR_ID）が
 #       install側（VPNGW_ROOT・VPNGW_VENDOR_ID）と同じ契約であること、1つの失敗で後始末全体を止めないことを検査する。
@@ -147,7 +136,7 @@ EOSCRIPT
 chmod +x "$FAKE/vendors/vendora/uninstall-host.sh"
 UNINSTALL_LOG="$TMP/uninstall-hooks.log"
 : > "$UNINSTALL_LOG"
-VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE UNINSTALL_LOG=$UNINSTALL_LOG sh -c ". $FAKE/install/setup.sh; uninstall_host_hooks" >/dev/null 2>&1
+VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE UNINSTALL_LOG=$UNINSTALL_LOG sh -c ". $FAKE/installer/setup.sh; uninstall_host_hooks" >/dev/null 2>&1
 check "uninstall_host_hooks: uninstall-host.shを持つベンダーだけ呼ばれ、VPNGW_ROOT・VPNGW_VENDOR_IDが渡る" test "$(cat "$UNINSTALL_LOG")" = "called:vendora:$FAKE"
 rm -f "$FAKE/vendors/vendora/uninstall-host.sh"
 
@@ -158,31 +147,31 @@ rm -f "$FAKE/vendors/vendora/uninstall-host.sh"
 rm -f "$FAKE/.env"
 
 check "build_san: ローカル配置時はlocalhost/127.0.0.1に加えLAN側アドレスを含む" sh -c \
-  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; build_san \"\" \"\"' | grep -q 'DNS:localhost,IP:127.0.0.1'"
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; build_san \"\" \"\"' | grep -q 'DNS:localhost,IP:127.0.0.1'"
 check "build_san: ホスト名指定時はDNS:として含む" sh -c \
-  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; build_san example.internal \"\"' | grep -q 'DNS:example.internal'"
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; build_san example.internal \"\"' | grep -q 'DNS:example.internal'"
 check "build_san: IPv4指定時はIP:として含む" sh -c \
-  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; build_san 192.168.1.5 \"\"' | grep -q 'IP:192.168.1.5'"
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; build_san 192.168.1.5 \"\"' | grep -q 'IP:192.168.1.5'"
 check "build_san: 追加のSAN項目（extra）を含める" sh -c \
-  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; build_san \"\" DNS:api' | grep -q 'DNS:api'"
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; build_san \"\" DNS:api' | grep -q 'DNS:api'"
 
 check "determine_topology: 初回は--api/--web/--gatewayの指定をそのまま採用する" test \
-  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; WEB_HOST_ARG=w.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology >/dev/null; printf '%s:%s:%s' \"\$ROLE_HOST_web\" \"\$ROLE_HOST_api\" \"\$ROLE_HOST_gateway\"")" = "w.example:a.example:"
+  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; WEB_HOST_ARG=w.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology >/dev/null; printf '%s:%s:%s' \"\$ROLE_HOST_web\" \"\$ROLE_HOST_api\" \"\$ROLE_HOST_gateway\"")" = "w.example:a.example:"
 
 printf 'TOPOLOGY_RECORDED=1\nTOPOLOGY_WEB_HOST=w.example\nTOPOLOGY_API_HOST=a.example\nTOPOLOGY_GATEWAY_HOST=\n' > "$FAKE/.env"
 check "determine_topology: 記録済みトポロジーと一致すれば成功する" sh -c \
-  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_HOST_ARG=w.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
+  "VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; WEB_HOST_ARG=w.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
 check "determine_topology: 記録済みトポロジーと異なれば変更前に失敗する" sh -c \
-  "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/install/setup.sh; WEB_HOST_ARG=other.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
+  "! VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c '. $FAKE/installer/setup.sh; WEB_HOST_ARG=other.example; API_HOST_ARG=a.example; GATEWAY_HOST_ARG=; determine_topology' >/dev/null 2>&1"
 rm -f "$FAKE/.env"
 
 # 目的: distinct_remote_hostsが、ホストのIPアドレス等の文字列順ではなく、ロールの依存関係の順（gateway→api→web）で
 #      返すことを検証する（webの起動確認がapiロールの疎通を要するため、apiが先に導入済みでなければならない。
 #      3台分離構成の実機検証で見つけた不具合の再発防止）。
 check "distinct_remote_hosts: IPが若い順ではなくgateway→api→webの順で返す（webのIPが最も若い場合）" test \
-  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=10.0.0.2; ROLE_HOST_gateway=10.0.0.3; distinct_remote_hosts" | tr '\n' ,)" = "10.0.0.3,10.0.0.2,10.0.0.1,"
+  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; ROLE_HOST_web=10.0.0.1; ROLE_HOST_api=10.0.0.2; ROLE_HOST_gateway=10.0.0.3; distinct_remote_hosts" | tr '\n' ,)" = "10.0.0.3,10.0.0.2,10.0.0.1,"
 check "distinct_remote_hosts: 同じホストに複数ロールがあっても重複せず1回だけ返す" test \
-  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/install/setup.sh; ROLE_HOST_web=10.0.0.9; ROLE_HOST_api=10.0.0.9; ROLE_HOST_gateway=10.0.0.3; distinct_remote_hosts" | tr '\n' ,)" = "10.0.0.3,10.0.0.9,"
+  "$(VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c ". $FAKE/installer/setup.sh; ROLE_HOST_web=10.0.0.9; ROLE_HOST_api=10.0.0.9; ROLE_HOST_gateway=10.0.0.3; distinct_remote_hosts" | tr '\n' ,)" = "10.0.0.3,10.0.0.9,"
 
 check "setup.sh: --uninstall は --api と併用できない" sh -c \
   "! sh '$INSTALL_DIR/setup.sh' --uninstall --api example.internal >/dev/null 2>&1"
@@ -191,7 +180,7 @@ check "setup.sh: --uninstall は --api と併用できない" sh -c \
 #      （gatewayロールを含まない場合はベンダーのcompose fragmentを並べない）。DockerもNO_START=1で回避する。
 install_roles_compose_file_with() {
   VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c \
-    ". $FAKE/install/setup.sh; NO_START=1; GATEWAY_HOST_OVERRIDE_ARG=''; API_ORIGIN_OVERRIDE_ARG=''; preflight() { :; }; install_packages() { :; }; install_docker() { :; }; install_roles '$1' >/dev/null 2>&1; env_get COMPOSE_FILE"
+    ". $FAKE/installer/setup.sh; NO_START=1; GATEWAY_HOST_OVERRIDE_ARG=''; API_ORIGIN_OVERRIDE_ARG=''; preflight() { :; }; install_packages() { :; }; install_docker() { :; }; install_roles '$1' >/dev/null 2>&1; env_get COMPOSE_FILE"
 }
 check "install_roles: webロールのみの場合、compose/web.ymlだけを並べる（ベンダーfragmentは含めない）" test \
   "$(install_roles_compose_file_with web)" = "docker-compose.yml:compose/web.yml"
@@ -205,7 +194,7 @@ rm -f "$FAKE/.env"
 # （root権限・SSHを要する配布そのもの）はこのテストの対象外とし、実機検証（tasks.md参照）に委ねる。
 regenerate_pki_fingerprints() {
   VPNGW_INSTALL_LIB=1 VPNGW_REPO_ROOT=$FAKE sh -c "
-    . $FAKE/install/setup.sh
+    . $FAKE/installer/setup.sh
     ROLE_HOST_web=''; ROLE_HOST_api=''; ROLE_HOST_gateway=''
     generate_role_pki >/dev/null 2>&1
     fp1=\$(openssl x509 -noout -fingerprint -sha256 -in \"\$PKI_STAGING/web-server.crt\")
@@ -221,6 +210,22 @@ PKI_FP1=$(printf '%s\n' "$PKI_FINGERPRINTS" | sed -n 1p)
 PKI_FP2=$(printf '%s\n' "$PKI_FINGERPRINTS" | sed -n 2p)
 check "generate_role_pki: 2回連続で呼ぶと証明書（web-server.crt）のフィンガープリントが変わる（再生成保証）" \
   sh -c "[ -n '$PKI_FP1' ] && [ -n '$PKI_FP2' ] && [ '$PKI_FP1' != '$PKI_FP2' ]"
+
+# --- app.sh: 設定を書き込む前の検査（app_check）。偽のリポジトリ（vendors/vendora・vendorb）を取得先とみなす。
+# 目的: PROVIDERS・WEB_PORT を与えて app_check を実行する。 入力: PROVIDERS の値, WEB_PORT の値。 終了コード: 検査に通れば 0。
+app_check_with() {
+  sh -c "die() { echo \"エラー: \$*\" >&2; exit 1; }
+    config_value() { case \$1 in PROVIDERS) printf '%s' '$1' ;; WEB_PORT) printf '%s' '$2' ;; esac; }
+    DIR='$FAKE'; . '$INSTALL_DIR/app.sh'; app_check" >/dev/null 2>&1
+}
+check "app_check: 空の設定は通す" app_check_with "" ""
+check "app_check: 存在するベンダーとポートは通す" app_check_with "vendora,vendorb" 8443
+# 目的: app_check が拒否する（終了コードが非ゼロ）ことを検査する。 入力: app_check_with と同じ。
+app_check_rejects() { ! app_check_with "$@"; }
+check "app_check: 存在しないベンダーは拒否する" app_check_rejects nosuch ""
+check "app_check: パスを含むベンダーIDは拒否する" app_check_rejects ../etc ""
+check "app_check: 範囲外のポートは拒否する" app_check_rejects "" 70000
+check "app_check: 数字以外のポートは拒否する" app_check_rejects "" abc
 
 echo "== 結果: FAIL $FAILS 件"
 exit "$FAILS"
