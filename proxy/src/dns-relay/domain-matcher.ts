@@ -1,5 +1,5 @@
 // 責務: 迂回ドメインの表記（`example.com`＝完全一致、`*.example.com`＝サブドメインのみ）の検証と、
-// 問い合わせ名との照合を行う純粋関数。proxyserver/design.md「ドメイン迂回とDNS中継」の照合規則に対応する。
+// 問い合わせ名との照合を行う純粋関数。proxyserver/design.md D-7の照合規則に対応する。
 
 export type DomainMatcher = (queryName: string) => boolean;
 

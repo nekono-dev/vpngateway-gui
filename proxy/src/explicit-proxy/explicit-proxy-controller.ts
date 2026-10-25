@@ -19,7 +19,7 @@ export interface ExplicitProxySettings {
 // crashLoop: 起動直後の異常終了を連続して繰り返している / error: 設定ファイルの生成・書き込みに失敗。
 export type ExplicitProxyState = "active" | "stopped" | "unconfigured" | "crashLoop" | "error";
 
-// `GET /status`が返す稼働状況（apiserver/design.md「稼働状況取得」と同形状）。
+// `GET /status`が返す稼働状況（apiserver/design.md D-9と同形状）。
 export interface ExplicitProxyStatus {
   state: ExplicitProxyState;
   // 稼働中（state=active）のみ含める。

@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証（`/v1/verifications`、Phase 27）のTypeBoxスキーマ定義。OpenAPI公開とWeb UIの生成クライアントの唯一の情報源。
-// 形状はapiserver/design.md「設定の動作検証」の「エンドポイント」に対応する。
+// 形状はapiserver/design.md D-12に対応する。
 
 import { Type, type Static } from "@sinclair/typebox";
 import { Nullable } from "../lib/typebox-nullable.js";

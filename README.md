@@ -210,7 +210,7 @@ sudo vpngwgui-ctl uninstall --purge
 | `install-host.sh`（任意） | CLIがホスト（ベアメタル）側への追加導入を要する場合だけ |
 | `samples.json`（推奨） | 実CLIの出力サンプルと期待値（適合テストが使う） |
 
-詳細な仕様は[specs/design.md](specs/design.md)「ベンダー非依存の設計原則」、各ファイルの詳しい書式は[specs/runner/design.md](specs/runner/design.md)「ベンダーの追加方法」を参照。
+詳細な仕様と各ファイルの書式は[specs/runner/design.md](specs/runner/design.md)のD-8を参照。
 
 ## 開発
 

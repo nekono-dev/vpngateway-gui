@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証の開始・進行の取得（ポーリング）・ブラウザ側の観測（出口IPの取得と提出、検証用の名前の解決）。
-// 設定ダイアログが開いている間の状態として保持し、閉じると破棄する（webserver/design.md「設定の動作検証の実装方針」）。
+// 設定ダイアログが開いている間の状態として保持し、閉じると破棄する（webserver/design.md D-11）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {

@@ -1,5 +1,5 @@
 // 責務: 接続状態ダッシュボード画面の組み立てのみを行う。業務ロジック（コマンド解決等）は持たない
-// （webserver/requirements.md「責務の範囲」参照）。API呼び出しは生成クライアント以外を使わない。
+// （webserver/requirements.md FR-1参照）。API呼び出しは生成クライアント以外を使わない。
 
 import { useEffect, useRef, useState } from "react";
 import { useDashboardPolling, type ConnectionState } from "./hooks/useDashboardPolling";

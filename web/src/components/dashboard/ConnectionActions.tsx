@@ -1,6 +1,6 @@
 // 責務: ［接続先を変更］ボタンの表示と二重送信防止（送信中は無効化）、および操作の実行可否（capability）
-// による無効化・理由表示のみを行う（webserver/requirements.md「接続先リスト」「操作の制限表示」、
-// design.md「選択・ボタンの状態遷移」）。何を接続先とするか、自動接続として使うかの決定は親が行う。
+// による無効化・理由表示のみを行う（webserver/requirements.md FR-7「操作の制限表示」、
+// webserver/design.md D-7）。何を接続先とするか、自動接続として使うかの決定は親が行う。
 // ［接続］［切断］ボタンはSessionCard側（ログイン/ログアウト導線の隣）に置くため、ここでは扱わない
 // （Phase 16「接続・切断ボタンの配置」）。
 import type { CapabilitiesState, ConnectionState } from "../../hooks/useDashboardPolling";

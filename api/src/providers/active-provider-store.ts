@@ -1,5 +1,5 @@
 // 責務: Web UIで選択された「選択中のベンダー」の永続化と取得。全てのベンダー操作（接続・切断・ログイン・接続先一覧等）は
-// 選択中のベンダーを対象にする（apiserver/design.md「ベンダーの選択」）。サーバ側に保持することで、ブラウザの再読み込み・
+// 選択中のベンダーを対象にする（apiserver/design.md D-4）。サーバ側に保持することで、ブラウザの再読み込み・
 // 別端末・別ブラウザでも同じベンダーが選択される。単一JSONファイル（`$STATE_DIR/active-provider.json`）の上書き保存。
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";

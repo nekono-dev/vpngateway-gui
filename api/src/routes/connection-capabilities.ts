@@ -1,5 +1,5 @@
 // 責務: 操作（オペレーション）ごとの実行可否（capability）の取得（GET）。
-// apiserver/design.md「オペレーションと実行可否（capability）」に対応する。ログイン状態・プランは
+// apiserver/design.md D-5に対応する。ログイン状態・プランは
 // `account`アクションの判定（30秒キャッシュ）を使い、判定できない場合は制限しない。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { CapabilitiesResponseSchema } from "../schemas/capabilities.js";

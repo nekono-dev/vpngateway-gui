@@ -1,5 +1,5 @@
 // 責務: 有効なベンダーの一覧の取得と、使うベンダーの切替。
-// apiserver/design.md「ベンダーの選択」`GET /v1/providers`・`PUT /v1/providers/active`に対応する。
+// apiserver/design.md D-4`GET /v1/providers`・`PUT /v1/providers/active`に対応する。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import { ActiveProviderBodySchema, ActiveProviderSchema, ProvidersResponseSchema } from "../schemas/providers.js";

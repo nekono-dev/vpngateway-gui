@@ -1,808 +1,398 @@
-# SPEC-API: APIサーバ基本設計
+# APIサーバ 設計書
 
-サービス全体設計（../design.md）で定義されたAPIサーバの詳細設計を示す。
+## 1. 構成
 
-# 管理者向け設定「VPNクライアント操作プロファイル」の具体スキーマ
+| パス                                                 | 責務                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| `api/src/server.ts`                                  | 起動。TLS待受、設定の通知と再通知、接続状態の復元                 |
+| `api/src/app.ts`                                     | Fastifyの構築。ルート登録、認可フック、エラーのHTTPステータス対応 |
+| `api/src/routes/connection.ts`                       | 接続状態の取得と、接続・切断                                      |
+| `api/src/routes/connection-locations.ts`             | 接続先の一覧と、お気に入りの登録・解除                            |
+| `api/src/routes/connection-capabilities.ts`          | 操作ごとの実行可否                                                |
+| `api/src/routes/connection-config.ts`                | ユーザ向け設定の取得と更新                                        |
+| `api/src/routes/providers.ts`                        | ベンダーの一覧と切替                                              |
+| `api/src/routes/session.ts`                          | ベンダーへのログイン・ログアウト・状態                            |
+| `api/src/routes/operator-session.ts`                 | 利用者のログイン・ログアウト                                      |
+| `api/src/routes/verifications.ts`                    | 設定の動作検証                                                    |
+| `api/src/routes/gateway-reboot.ts`                   | ゲートウェイ機の再起動の依頼                                      |
+| `api/src/auth/require-operator-session.ts`           | 認可フック                                                        |
+| `api/src/auth/operator-account-store.ts`             | 利用者アカウントのハッシュ保存と照合                              |
+| `api/src/auth/session-store.ts`                      | ログインセッションの保持                                          |
+| `api/src/auth/login-rate-limiter.ts`                 | ログイン失敗の回数制限                                            |
+| `api/src/providers/provider-registry.ts`             | 有効なプロファイルの読み込みと保持                                |
+| `api/src/providers/active-provider-store.ts`         | 選択中のベンダーの永続化                                          |
+| `api/src/providers/provider-switcher.ts`             | ベンダーの切替手順                                                |
+| `api/src/profile/profile-loader.ts`                  | プロファイルの検証付き読み込み                                    |
+| `api/src/profile/profile.schema.ts`                  | プロファイルのスキーマ                                            |
+| `api/src/profile/placeholder-resolver.ts`            | プレースホルダーの検証と引数配列の解決                            |
+| `api/src/profile/response-parser.ts`                 | 状態出力の解析                                                    |
+| `api/src/capabilities/capability-evaluator.ts`       | 操作の実行可否の算出                                              |
+| `api/src/session/session-probe.ts`                   | ログイン状態とプランの判定                                        |
+| `api/src/locations/location-list-parser.ts`          | 接続先の表の解析                                                  |
+| `api/src/locations/favorite-locations-store.ts`      | お気に入りの永続化                                                |
+| `api/src/connection-state/apply-connection.ts`       | 接続の実行と状態の保存                                            |
+| `api/src/connection-state/connection-state-store.ts` | 接続先と国の保存                                                  |
+| `api/src/connection-state/restore-connection.ts`     | 起動時の再接続                                                    |
+| `api/src/settings/settings-store.ts`                 | ユーザ向け設定の検証と永続化                                      |
+| `api/src/verification/verification-service.ts`       | 動作検証の項目の実行と保持                                        |
+| `api/src/proxy-client/proxy-client.ts`               | ゲートウェイ制御チャネルのクライアント                            |
+| `api/src/proxy-client/gateway-tls-options.ts`        | 相互TLSのクライアント証明書の読み込み                             |
 
-サーバ管理者が用意し、APIコンテナに読み取り専用（`:ro`）でマウントするJSONファイル。
+## 2. 関係図・ワークフロー
 
-シェル文字列（例 `"adguardvpn-cli connection -l %COUNTRY%"`）としては保持せず、**argv配列**として保持する。値の代入段階でシェルメタ文字（`;` `|` `` ` `` `$()` 等）が入り込んでも解釈される余地をなくすためである。
+ルートと実行の依存方向を示す。
 
-```json
-{
-  "vendor": "adguardvpn",
-  "binary": "/usr/bin/adguardvpn-cli",
-  "actions": {
-    "connect": {
-      "argv": ["connection", "-l", "%COUNTRY%"],
-      "placeholders": {
-        "COUNTRY": {
-          "pattern": "^[a-z]{2,3}(-[a-z0-9]+)?$",
-          "source": "enum",
-          "enumFrom": "adguardvpn.countries"
-        }
-      },
-      "timeoutMs": 15000
-    },
-    "disconnect": {
-      "argv": ["connection", "-d"],
-      "placeholders": {},
-      "timeoutMs": 10000
-    },
-    "status": {
-      "argv": ["connection", "-s"],
-      "placeholders": {},
-      "timeoutMs": 5000
-    }
-  },
-  "countries": ["jp", "us", "de", "sg"]
-}
+```mermaid
+flowchart LR
+  server["server"] --> app["app"]
+  server --> restore_connection["restore-connection"]
+  app --> connection["connection"]
+  app --> connection_locations["connection-locations"]
+  app --> connection_capabilities["connection-capabilities"]
+  app --> connection_config["connection-config"]
+  app --> providers["providers"]
+  app --> session["session"]
+  app --> operator_session["operator-session"]
+  app --> verifications["verifications"]
+  app --> gateway_reboot["gateway-reboot"]
+  app --> require_operator["require-operator-session"]
+  connection --> apply_connection["apply-connection"]
+  restore_connection --> apply_connection
+  providers --> provider_switcher["provider-switcher"]
+  session --> session_probe["session-probe"]
+  connection_capabilities --> capability_evaluator["capability-evaluator"]
+  session_probe --> capability_evaluator
+  verifications --> verification_service["verification-service"]
+  apply_connection --> proxy_client["proxy-client"]
+  provider_switcher --> proxy_client
+  session_probe --> proxy_client
+  verification_service --> proxy_client
+  gateway_reboot --> proxy_client
+  connection_config --> proxy_client
 ```
 
-- `binary` はランナー側の実行可能バイナリ許可リスト（../runner/design.md参照。Phase 8以降は各ランナーが自ベンダーのバイナリ1つだけを許可する）と突き合わせる値であり、APIサーバはこの値を信頼してランナーへ送信する送信データの一部に含める。
-- `placeholders.<KEY>.pattern` は正規表現、`enumFrom` は同ファイル内の列挙値（例 `countries`）を指す。APIサーバはWeb UIから渡された値がこの許可条件を満たすかを必ず再検証する。
-- ベンダー追加時は、このJSONを1ファイル追加し、そのベンダーのランナー（許可リストに自ベンダーのバイナリを持つコンテナ）を追加するだけで対応できる（Phase 8。詳細は../runner/design.md「VPNベンダーCLI（ランナー）の追加方法」）。
+プロファイル・保存・認証まわりの依存方向を示す。
 
-## Phase 1における具体プロファイル
-
-Phase 1では実VPNベンダーCLIの代わりにモックCLIスクリプトを使用した。この段階でのプロファイルは以下の内容とし、`outputFormat`フィールド（Phase 1では`"json"`固定）を追加する。これはモックCLIのstdoutをJSON固定にしている割り切りをプロファイル側から表現するためのもので、Phase 2で実CLI統合時に`"text"`等の値を追加し対応するパーサーを実装する拡張点となる（実CLI統合をネットワーク基盤移行より前のPhase 2で行ったのは、モックの疑似的な状態遷移ではなく実CLIの非決定的な挙動を早期に検証し、後続のネットワーク制御ロジックの検証も実際のVPN接続状態で行うため）。
-
-```json
-{
-  "vendor": "adguardvpn",
-  "binary": "/usr/local/bin/adguardvpn-cli-mock",
-  "outputFormat": "json",
-  "actions": {
-    "connect": {
-      "argv": ["connection", "-l", "%COUNTRY%"],
-      "placeholders": {
-        "COUNTRY": { "pattern": "^[a-z]{2}$", "source": "enum", "enumFrom": "adguardvpn.countries" }
-      },
-      "timeoutMs": 15000
-    },
-    "disconnect": { "argv": ["connection", "-d"], "placeholders": {}, "timeoutMs": 10000 },
-    "status": { "argv": ["connection", "-s"], "placeholders": {}, "timeoutMs": 5000 }
-  },
-  "countries": ["jp", "us", "de", "sg", "zz"]
-}
+```mermaid
+flowchart LR
+  profile_loader["profile-loader"] --> profile_schema["profile.schema"]
+  provider_registry["provider-registry"] --> profile_loader
+  provider_registry --> profile_schema
+  placeholder_resolver["placeholder-resolver"] --> profile_schema
+  active_provider_store["active-provider-store"] --> provider_registry
+  apply_connection["apply-connection"] --> placeholder_resolver
+  apply_connection --> response_parser["response-parser"]
+  apply_connection --> provider_registry
+  apply_connection --> location_list_parser["location-list-parser"]
+  apply_connection --> connection_state_store["connection-state-store"]
+  apply_connection --> proxy_client["proxy-client"]
+  proxy_client --> gateway_tls_options["gateway-tls-options"]
+  connection_locations["connection-locations"] --> favorite_store["favorite-locations-store"]
+  connection_locations --> location_list_parser
+  connection_config["connection-config"] --> settings_store["settings-store"]
+  operator_session["operator-session"] --> operator_store["operator-account-store"]
+  operator_session --> login_limiter["login-rate-limiter"]
+  operator_session --> session_store["session-store"]
 ```
 
-`"zz"`はモックCLIのエラー注入用コード（proxyserver/design.md「Phase 1: モックVPN CLI仕様」参照）。プレースホルダー検証は`countries`（enumFrom参照先）に対する一致判定であるため、`zz`が`countries`に含まれていないとAPIサーバ側の入力検証（400）で弾かれ、プロキシ側の実行失敗（422）を再現できない。そのためPhase 1限定でテスト用コードとして`countries`に含めている（Web UIの国選択肢にも表示されるが、Phase 1はモックプロファイルでありWeb UIも本番運用しないため許容する）。
+接続の流れと、プラン制限による失敗の分岐を示す。
 
-## Phase 2における具体プロファイル
-
-Phase 2でモックCLIから実VPNベンダーCLI（AdGuard VPN CLI）へ置換した。実バイナリ（v1.7.12、Linux amd64/arm64/armv7）を用いて実機検証した結果に基づき、以下の内容とする。
-
-```json
-{
-  "vendor": "adguardvpn",
-  "binary": "/usr/local/bin/adguardvpn-cli",
-  "outputFormat": "text",
-  "actions": {
-    "connect": { "argv": ["connect", "-l", "%COUNTRY%", "-y"], "placeholders": { "COUNTRY": { "pattern": "^[a-z]{2}$", "source": "enum", "enumFrom": "adguardvpn.countries" } }, "timeoutMs": 30000 },
-    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 15000 },
-    "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 8000 },
-    "login": {
-      "argv": ["login"],
-      "placeholders": {},
-      "timeoutMs": 15000,
-      "completionPattern": "https://auth\\.adguard\\.io/device_code\\?user_code=[A-Z0-9-]+"
-    }
-  },
-  "countries": ["ae", "ar", "..."]
-}
+```mermaid
+sequenceDiagram
+  participant ext_web as Webサーバ
+  participant connection
+  participant apply_connection as apply-connection
+  participant proxy_client as proxy-client
+  participant ext_gateway as ゲートウェイ
+  ext_web->>connection: 接続の要求
+  connection->>apply_connection: 接続の適用
+  apply_connection->>proxy_client: 接続コマンド
+  proxy_client->>ext_gateway: 実行の要求
+  alt 成功
+    ext_gateway-->>proxy_client: 終了コード0
+    apply_connection-->>connection: 接続中の状態
+    connection-->>ext_web: 200
+  else プラン制限の出力
+    ext_gateway-->>proxy_client: 非ゼロの終了
+    connection-->>ext_web: 403
+  end
 ```
 
-実機検証で判明した点（`api/config/vpn-profile.json`が本番用の実データ）:
+ベンダーの切替の流れと、切断失敗の分岐を示す。
 
-- **`outputFormat: "text"`**: 実CLIはJSONではなく人間可読なテキストを標準出力する（例: 未ログイン時の`status`は`"You are not logged in\nYou can log in by running \`adguardvpn-cli login\`"`、exit code `11`。ログイン済み・未接続時は`"VPN is disconnected\n..."`、exit code `0`）。テキスト出力のパーサー（`api/src/profile/response-parser.ts`の`parseTextOutput`）は、大文字小文字を無視した単語境界一致で`"connected"`という語の有無のみを判定基準とする（`"disconnected"`は`"connected"`を部分文字列として含むが、単語境界一致では誤検出しない）。**CLIは国コードを出力しない**（`status`は都市名のみ: `Connected to TOKYO in TUN mode, running on tun0`、`connect`は`Successfully Connected to TOKYO`）ため、国コード(country)はCLI出力から取得しない。接続先の都市名は`ConnectionStatus.location`として取れた場合のみ付与する（補助情報。取れなくても接続状態の判定には影響しない）。国コードは下記「接続先国の永続化」で補う。
-- **`login`アクションと`completionPattern`**: `login`はブラウザでのOAuth認証（デバイスコードフロー）完了を待つため、URLを出力した後も認証完了まで（最大約30分、CLI組み込みの制限）プロセスが終了しない。そのため`ActionDef`に`completionPattern`（正規表現文字列）を追加し、プロキシ側はstdoutがこのパターンに一致した時点でプロセスをkillせず応答する（`proxy/src/exec/command-runner.ts`の`runDetachableCommand`、内部プロトコルの`completionPattern`フィールド参照）。実機で確認した実際の出力: `"You need to authorize in your browser. The following link will be available for 1799 seconds: https://auth.adguard.io/device_code?user_code=XXXX-XXXX"`。
-- **`connect`に`-y`フラグを付与**: execFile/spawnで実行するため対話的な確認プロンプトへ入力できない。`-y`（自動でyes回答）を付けないと、プロンプトが発生した場合にtimeoutMsまで応答が返らずタイムアウトする恐れがある。
-- **`countries`一覧の出典と鮮度（Phase 5で廃止。上記「Phase 5における具体プロファイル」参照）**: ログイン済みの実CLIで`adguardvpn-cli list-locations`を実行し、出力された一意なISOコード62件をそのまま採用した（2026-09-06時点）。この一覧はAdGuard側のサーバ増減により変化しうるため、管理者は定期的に`list-locations`を再実行し本ファイルを更新すること。
-- **ログイン情報の永続化**: 実CLIは認証情報を`$HOME/.local/share/adguardvpn-cli`に保存する。プロキシコンテナ再作成のたびに再ログインが必要にならないよう、この配下をnamed volumeでマウントする（`docker-compose.yml`の`adguard-data`ボリューム参照）。
-- **未検証事項（要実機接続検証）**: `connect`実行時に確立されたトンネル経由の実通信、および接続成功時の`status`/`connect`の正確な標準出力文言は、開発環境の制約（後述）によりこの実装時点では未検証。運用開始前に実際の接続で確認すること。
+```mermaid
+sequenceDiagram
+  participant ext_web as Webサーバ
+  participant providers
+  participant provider_switcher as provider-switcher
+  participant proxy_client as proxy-client
+  participant ext_gateway as ゲートウェイ
+  ext_web->>providers: 切替の要求
+  providers->>provider_switcher: 切替の手順
+  provider_switcher->>proxy_client: 状態の確認
+  proxy_client->>ext_gateway: 現在のランナーへ実行
+  alt 切断に成功または未接続
+    provider_switcher->>proxy_client: 接続状態の再確認
+    providers-->>ext_web: 200
+  else 切断に失敗
+    providers-->>ext_web: 422
+  end
+```
 
-開発環境の制約: 本Phase 2の実装は、実際にインストールした実CLI（ログイン済み）に対して`status`・`login`・`list-locations`・`--help`系コマンドを実行し出力を確認した上で行ったが、`connect`（実際にトンネルを確立する操作）は、それを実行する開発環境自体のデフォルトルートを書き換えてしまい作業用ネットワーク接続を切断するリスクがあったため、意図的に実行していない。
+## 3. 設計項目
 
-## Phase 5における具体プロファイル
+### D-1: 起動と構成 (NFR-7, NFR-8)
 
-Phase 5で、静的な`countries`と`enumFrom`による許可値検証を廃止し、接続先を実CLIの`list-locations`から都度取得する方式へ変更した（`countries`が陳腐化する問題、および国コード指定では米国の12都市などを選べない問題の解消）。
+| 環境変数                               | 内容                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------------- |
+| `ENABLED_PROVIDERS`                    | 有効なベンダーID（カンマ区切り）。必須で、未設定・空なら起動に失敗する |
+| `VENDORS_DIR`                          | バンドルの置き場（読み取り専用）。`<ID>/profile.json` を読む           |
+| `STATE_DIR`                            | 永続化の基点。ベンダー別の状態は `providers/<ID>/` の下                |
+| `GATEWAY_HOST` `GATEWAY_PORT`          | ゲートウェイの接続先。既定は `host.docker.internal` と8443             |
+| `GATEWAY_TLS_*_FILE` `GATEWAY_PKI_DIR` | 相互TLSのCA・クライアント証明書・秘密鍵                                |
+| `API_TLS_CERT_FILE` `API_TLS_KEY_FILE` | 待受のサーバ証明書                                                     |
+| `PROVIDER_CACHE_DIR`                   | CLIのサーバ一覧のキャッシュ（読み取り専用）の置き場                    |
+| `SETTINGS_RESYNC_INTERVAL_MS`          | 設定の再通知の間隔。既定10000                                          |
+
+- 起動時に全プロファイルを検証し、1つでも不正なら起動に失敗する。ベンダーIDは `^[a-z][a-z0-9]{0,31}$`。
+- 起動後、永続化済みの設定を数回リトライしてゲートウェイへ通知し、以後10秒周期で再通知する。通知は何度行っても結果が同じで、失敗は無視して次の周期で再試行する。ゲートウェイだけが再起動しても、最大約10秒で設定が戻る。
+- 接続状態の復元は、起動を妨げないよう非同期で行う。
+- OpenAPIはTypeBoxのスキーマから生成して公開し、Webのクライアント生成の唯一の入力とする。ゲートウェイとの内部通信はOpenAPIの対象に含めない。
+
+### D-2: プロファイル (FR-1, FR-2)
 
 ```json
 {
-  "vendor": "adguardvpn",
-  "binary": "/usr/local/bin/adguardvpn-cli",
-  "outputFormat": "text",
+  "vendor": "<ID>", "displayName": "<表示名>", "binary": "/usr/local/bin/<CLI>",
+  "outputFormat": "text", "loginMethod": "deviceUrl | credentials",
+  "output": { "connectedPattern": "<正規表現>", "locationPattern": "<正規表現>" },
+  "features": { "changeLocation": true, "locationPing": true },
   "actions": {
-    "connect": {
-      "argv": ["connect", "-l", "%LOCATION%", "-y"],
-      "placeholders": {
-        "LOCATION": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\x00-\\x1f\\x7f]{0,62}$", "source": "locations" }
-      },
-      "timeoutMs": 30000
-    },
-    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 15000 },
-    "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 8000 },
-    "login": { "...": "変更なし" },
-    "listLocations": { "argv": ["list-locations"], "placeholders": {}, "timeoutMs": 15000 }
+    "connect": { "argv": ["connect", "-l", "%LOCATION%"],
+      "placeholders": { "LOCATION": { "pattern": "<正規表現>", "source": "locations" } },
+      "timeoutMs": 30000, "restrictedPattern": "<正規表現>", "successPattern": "<正規表現>" },
+    "login": { "completionPattern": "<正規表現>", "stdin": ["%PASSWORD%", "%TWO_FACTOR_CODE%"] },
+    "listLocations": { "table": { "iso": "ISO", "country": "COUNTRY", "city": "CITY", "ping": "PING" },
+      "connectName": { "from": "city | iso", "stripPattern": "<正規表現>" } },
+    "account": { "notLoggedInPattern": "<正規表現>", "plans": [], "defaultPlan": { "id": "", "label": "" } }
   }
 }
 ```
 
-- `countries`フィールドを削除した。
-- `placeholders.<KEY>.source`に`"locations"`を追加した。値が、直前に`listLocations`アクションで取得した接続先から導出した「接続時の指定名」（下記「接続先の識別と接続時の指定名」）のいずれかに一致することを検証する。（`"enum"`（`enumFrom`）はPhase 10で廃止した。）許可値はプロファイルではなく実行時に決まるため、`resolveArgv`は呼び出し元から許可値の集合（プレースホルダー名→値の配列）を受け取る。
-- `pattern`は許可値検証の前段の防御（先頭が`-`でないこと＝CLIオプションとして解釈されない、制御文字・空白のみでない、長さ上限）であり、都市名の文字種は制限しない（`São Paulo`等の非ASCII都市名が実在し、実CLIも接続できることを実機確認した）。argvはシェルを経由しないため、記号を許してもコマンド注入にはならない。
-- `listLocations`のアクション名は、他のアクション名（`connect`等）と同様のキャメルケースとし、実CLIのサブコマンド名（`list-locations`）とは`argv`で対応付ける。
-- 管理者向け設定の`countries`を手動で定期更新していた運用は不要になる。
+| 項目           | 規則                                                                                                                                                                                                  |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| コマンド       | 引数配列で保持する。シェル文字列にしない                                                                                                                                                              |
+| 必須           | `disconnect` `status`、`connect` と `connectAuto` の少なくとも一方、`loginMethod`、text形式の `output`、`listLocations` の `table` と `connectName`。欠けていれば起動に失敗し、暗黙の既定値を持たない |
+| `source`       | `locations`（直前の一覧に含まれる指定名）・`input`（`pattern` のみで検証）・`secret`（`pattern` のみで検証し、引数に置けない）                                                                        |
+| `pattern`      | 先頭が `-` でないこと（CLIのオプションと解釈させない）を必須とする。`secret` は制御文字を許さない                                                                                                     |
+| 値の検証       | Web UIの選択に限っていても、APIが毎回再検証する。不一致は400                                                                                                                                          |
+| ベンダー非依存 | コードはベンダーのID・名称・出力書式を持たない。分岐は `loginMethod` のような宣言された機構に対してだけ行う                                                                                           |
 
-## Phase 7における具体プロファイル（プロバイダ抽象化・プラン制限）
+### D-3: ゲートウェイとの通信 (FR-1, NFR-5, NFR-7)
 
-Phase 7で、プロバイダごとの機能差・プラン制限をデータで表現するため、プロファイルを以下のように拡張する。（**Phase 10で、ベンダー固有の暗黙の既定値を廃止し、下記の項目の一部を必須にした。「Phase 10におけるプロファイルの明示化」参照。以降の表の「既定」「省略時は従来のAdGuard形式」は、Phase 10で廃止された記述である**。）設計の全体像は../design.md「プロバイダ抽象化アーキテクチャ」。
+| 用途               | 要求                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| CLIの実行          | `POST /runners/<ID>/exec` `{vendor, binary, resolvedArgv, timeoutMs, completionPattern?, stdin?}` |
+| ランナーの確認     | `GET /runners/<ID>/health`                                                                        |
+| 設定・状態・再確認 | `POST /net/settings`、`GET /net/status`、`POST /net/connection-checks`                            |
+| 検証・再起動       | `POST /net/checks`、`/net/check-nonces`、`POST /net/host-reboot`                                  |
 
-```json
-{
-  "vendor": "protonvpn",
-  "binary": "/usr/bin/protonvpn",
-  "outputFormat": "text",
-  "loginMethod": "credentials",
-  "output": { "locationPattern": "^(?:Server:|Connected to)\\s+(.+?)\\.?\\s*$" },
-  "features": { "changeLocation": true, "locationPing": false },
-  "actions": {
-    "connect": {
-      "argv": ["connect", "--country", "%LOCATION%"],
-      "placeholders": { "LOCATION": { "pattern": "^[A-Za-z]{2}$", "source": "locations" } },
-      "timeoutMs": 90000,
-      "restrictedPattern": "not available on the free plan"
-    },
-    "connectAuto": { "argv": ["connect"], "placeholders": {}, "timeoutMs": 90000 },
-    "disconnect": { "argv": ["disconnect"], "placeholders": {}, "timeoutMs": 30000 },
-    "status": { "argv": ["status"], "placeholders": {}, "timeoutMs": 15000 },
-    "login": {
-      "argv": ["signin", "--totp", "%USERNAME%"],
-      "placeholders": { "USERNAME": { "pattern": "^[^\\-\\s\\x00-\\x1f\\x7f][^\\s\\x00-\\x1f\\x7f]{0,127}$", "source": "input" } },
-      "timeoutMs": 60000
-    },
-    "logout": { "argv": ["signout"], "placeholders": {}, "timeoutMs": 30000 },
-    "listLocations": {
-      "argv": ["countries", "list"],
-      "placeholders": {},
-      "timeoutMs": 30000,
-      "table": { "iso": "Code", "country": "Country" },
-      "connectNameFrom": "iso",
-      "restrictedPattern": "not available on the free plan"
-    },
-    "account": {
-      "argv": ["config", "list"],
-      "placeholders": {},
-      "timeoutMs": 15000,
-      "notLoggedInPattern": "Authentication required",
-      "plans": [
-        {
-          "id": "free",
-          "label": "Free",
-          "pattern": "Upgrade to enable|To upgrade to VPN Plus",
-          "restricts": ["connectToLocation", "locationList"],
-          "restrictionMessage": "無料プランでは接続先を選べません。最速の無料サーバへ自動接続します。"
-        }
-      ],
-      "defaultPlan": { "id": "paid", "label": "Paid" }
-    }
-  }
-}
+| 失敗                                            | HTTPステータス                                               |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| 入力・プレースホルダー・未知のベンダー          | 400                                                          |
+| 未認証                                          | 401                                                          |
+| プラン制限（`restrictedPattern` 一致）          | 403 `operation_restricted`                                   |
+| プロファイルに操作が無い                        | 501 `operation_unsupported`                                  |
+| ベンダー切替中・作成済み・検証実行中            | 409                                                          |
+| CLIの非ゼロ終了                                 | 422 `{exitCode, stderr}`。標準エラーが空なら標準出力を載せる |
+| 回数制限の超過                                  | 429                                                          |
+| ゲートウェイへ到達できない・相互TLSの検証に失敗 | 502                                                          |
+| 想定外の形状の応答                              | 500                                                          |
+| タイムアウト                                    | 504                                                          |
+
+- 送信は `undici` の `Agent({connect: {ca, cert, key}})` で行い、証明書の検証失敗はエラーとする。平文や検証省略へのフォールバックを持たない。接続はゲートウェイ1台につき1つのkeep-aliveプールを共有する。
+- 全コマンドの要求と結果を、構造化した監査ログへ記録する。入力は秘密情報を除いた項目だけ、各エントリに操作対象のベンダーIDを付ける。
+
+### D-4: ベンダーの選択と切替 (FR-3, NFR-2)
+
+| 項目                       | 内容                                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/providers`        | `[{id, displayName, active, available, unavailableReason?}]`。利用可否はランナーの確認を並行して行い、2秒で打ち切る |
+| `PUT /v1/providers/active` | ボディ `{providerId}`。成功で `{id, displayName}`                                                                   |
+| 選択の保存                 | `$STATE_DIR/active-provider.json`。無い・壊れている・無効なIDなら有効なベンダーの先頭                               |
+| ベンダー別の状態           | `providers/<ID>/` の接続状態・最後の接続先・お気に入り。判定のキャッシュと学習した制限はIDをキーに保持              |
+
+切替の手順を示す。
+
+| 順  | 内容                                                                                                            |
+| --- | --------------------------------------------------------------------------------------------------------------- |
+| 1   | 無効なIDは400。選択中と同じなら何もせず200                                                                      |
+| 2   | 切替先のランナーが利用不可なら502                                                                               |
+| 3   | 切替と接続・ログインの操作をAPI内で直列化する。切替中の操作は409 `provider_switching`。読み取りは影響を受けない |
+| 4   | 現在のランナーが応答するなら `status` を実行し、接続中なら `disconnect` する。失敗したら切り替えず422           |
+| 5   | 現在のランナーが応答しないときは、切断せずに切替を許可する                                                      |
+| 6   | 選択を保存し、`switch-provider` を監査ログへ記録する                                                            |
+| 7   | ゲートウェイへ接続状態の再確認を通知する。失敗しても切替は成功とする                                            |
+
+- 選択中のランナーが後から止まっても、他のベンダーへ自動で切り替えない。
+
+### D-5: 操作の実行可否 (FR-4, NFR-1)
+
+操作の語彙は `login` `logout` `connectToLocation` `connectAuto` `changeLocation` `disconnect` `locationList` `locationFavorites` `pingMeasurement` で固定する。次の順に評価し、先に該当した原因を採用する。
+
+| 順  | 原因             | 条件                                                                                                   |
+| --- | ---------------- | ------------------------------------------------------------------------------------------------------ |
+| 1   | `unsupported`    | 必要なアクションがプロファイルに無い。`changeLocation` と `pingMeasurement` は `features` の宣言も見る |
+| 2   | `notLoggedIn`    | 未ログインと判定されたとき。`disconnect` と `login` は常に可。判定不能なら制限しない                   |
+| 3   | `planRestricted` | 判定したプランの `restricts` に含まれる、または実行失敗から学習した                                    |
+
+- `changeLocation` は `connectToLocation` に、`locationFavorites` と `pingMeasurement` は `locationList` に従う。`connectToLocation` と `locationList` は相互に依存し、片方だけ不可なら他方も同じ原因と理由文にする。
+- 応答は操作ごとに `{available, reason?, message?}` で、全てのキーを常に返す。`message` は利用者向けの日本語で、判定不能でも200を返す。
+
+| 判定                 | 内容                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `account` アクション | 副作用のない読み取り専用コマンド。未ログインのパターンに一致すれば未ログイン、非ゼロ終了なら不明、0なら `plans` を先頭から評価する         |
+| キャッシュ           | 結果は30秒保持し、同時の要求は1回にまとめる。不明はキャッシュしない。ログイン・ログアウトの成功と学習の変化で破棄する                      |
+| 失敗からの学習       | `connect` `connectAuto` `listLocations` の失敗出力が `restrictedPattern` に一致すれば、403で通知して対応する操作をプラン制限として記憶する |
+| 学習の解除           | ログイン・ログアウトの成功とAPIの再起動                                                                                                    |
+
+- プラン制限を理由に実行前の拒否はしない。CLIが最終の判断者であり、30秒古い判定でアップグレード直後の操作を塞がないためである。有料機能を試して判定することもしない。
+
+### D-6: ログイン (FR-5, NFR-5)
+
+| 方式          | `POST /v1/session` の入力と動作                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| `deviceUrl`   | 本文なし。`completionPattern` に一致するまでの出力から認証URLを抜き出し `{loginUrl?, message}` を返す |
+| `credentials` | `{username, password, twoFactorCode?}`。本文が無ければ400。成功で `{message}`                         |
+
+| 項目                 | 規則                                                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 検証                 | ユーザー名は `USERNAME` の `pattern`、パスワードは1〜512文字で改行・NUL・制御文字を含まない、2段階認証コードは `^[0-9A-Za-z]{4,32}$`            |
+| 受け渡し             | `login.stdin` のテンプレートに従って行を組み立て、実行要求の `stdin` に入れる。値が空の任意の行は出さない                                       |
+| 秘匿                 | 監査ログの入力は `{username}` だけ。失敗時の標準エラーは応答へ入れる前にパスワードと2段階認証コードを伏字にする。リクエストログに本文を出さない |
+| `GET /v1/session`    | `{loginMethod, loggedIn?, plan?: {id, label, usageNote?}}`。判定できなければ `loggedIn` を省く                                                  |
+| `DELETE /v1/session` | ログアウトを実行し、保存済みの接続状態を消去する                                                                                                |
+
+### D-7: 接続先 (FR-6)
+
+| 項目       | 内容                                                                                                                                             |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 取得       | `listLocations` を呼び出しごとに実行し、キャッシュしない。ヘッダ行から各列の開始位置を求めて固定幅の表を切り出し、ANSIを除去する                 |
+| 並び       | 応答時間の昇順。取れない行は末尾。同値は元の順を保つ                                                                                             |
+| ID         | `<国コード小文字>-<都市名のslug>`。slugはNFD正規化して分音記号を除き、小文字化し、英数字以外の連続を `-` 1つにする。何も残らなければ `location`  |
+| 指定名     | プロファイルの `connectName` に従う（都市名または国コード。`stripPattern` に一致する部分を除く）                                                 |
+| 解決       | 接続の要求は `locationId` を受け、その場で一覧を再取得して該当する行から指定名を得る。クライアントから都市名を受け取らない                       |
+| お気に入り | `PUT/DELETE /v1/connection/locations/{id}/favorite` は何度行っても結果が同じ。形式 `^[a-z]{2}-[a-z0-9-]{1,64}$` のみ検証し、不正は400。上限200件 |
+| 保存       | ベンダー別の単一JSON。無い・壊れているときは空として扱い、例外にしない                                                                           |
+| 失敗       | 表の見出しが見つからない出力は想定外として500にする（書式の変更を空の一覧にしない）                                                              |
+
+### D-8: 接続と復元 (FR-7)
+
+| 要求                                                | 動作                                                                                                |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `PUT /v1/connection` `connect=true` と `locationId` | `connectToLocation` が不可なら501。指定名を解決して実行する。接続中に別のIDで呼ぶと接続先を変更する |
+| `connect=true` で `locationId` なし                 | `connectAuto` があれば実行する。成功しても接続先IDは保存せず、最後の接続先も更新しない。無ければ400 |
+| `connect=false`                                     | 切断する。失敗は422                                                                                 |
+| `GET /v1/connection`                                | `status` を実行して `{status, location?, country?, locationId?}` を返す                             |
+
+- 成功したら、接続状態（接続先ID・国・都市名）と最後の接続先を保存する。自動接続は空の内容で保存し、「接続中だったこと」自体を残す。
+- 状態の取得時、実際の都市名が保存時と異なれば国と接続先を返さず保存内容を消す。切断の観測と切断の成功でも消す。最後の接続先は切断しても消さない。
+- `status` の非ゼロ終了も、`successPattern` に一致すれば成功として扱う（未ログイン時に非ゼロで終わるCLIのため）。
+- 接続・切断・ログアウトの実行後とベンダー切替後に、ゲートウェイへ接続状態の再確認を通知する。失敗は握りつぶす。
+- 起動時の復元: 選択中のベンダーの保存内容を読み、無ければ何もしない。ランナーの起動を数回リトライして待ち、現在の `status` が接続中なら何もせず、そうでなければ保存済みのIDで（自動接続だったなら指定なしで）接続する。失敗は警告にとどめ、起動を妨げない。
+
+### D-9: ユーザ向け設定 (FR-8, NFR-8)
+
+| 項目                                                         | 型・規則                                                                                                         |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `killSwitch`                                                 | 真偽。既定は真                                                                                                   |
+| `transparentGatewayEnabled`                                  | 真偽。既定は真                                                                                                   |
+| `explicitProxyEnabled` `explicitProxyAllowedCidrs`           | 真偽と、`a.b.c.d/n` のIPv4 CIDRの配列。違反は400                                                                 |
+| `excludedDomains`                                            | `example.com`（完全一致）か `*.example.com`（サブドメインのみ）。ラベルは英数字とハイフンで63文字以内、最大200件 |
+| `dnsRelayEnabled` `dnsUpstreamUrl` `dnsUpstreamCaPem`        | 真偽、`https://` のみ（クエリ・認証情報・フラグメント不可）、PEMは最大16KB                                       |
+| `dnsFailureMode` `dnsFallbackServers` `dnsClientNameServers` | `failClosed                                                                                                      | fallback`、IPv4アドレス最大3件、IPv4アドレス最大3件 |
+| `dnsRedirectEnabled` `dnsRedirectExcludedCidrs`              | 真偽、IPv4 CIDRの配列                                                                                            |
+| `verifyEchoUrl`                                              | `https://` のURL。既定 `https://api.ipify.org`。ゲートウェイへの反映には含めない                                 |
+
+- 透過ゲートウェイと明示的プロキシの両方が無効な設定、明示的プロキシを有効にして許可元が空の設定、中継を有効にして上流も公開DNSも空の設定、`fallback` で公開DNSが空の設定は400。項目の欠けた既存の設定ファイルは既定値で補う。
+- 更新のたびに設定の全体を `POST /net/settings` で送る。通知に失敗しても更新自体は成功とし、再通知に委ねる。
+- `GET /v1/connection/gateway` はゲートウェイの `GET /net/status` を中継する。到達できなければ502、応答が遅ければ504、想定外の形状の応答は500とする。状態はAPIが持たない。
+
+### D-10: 利用者の認証 (FR-9, NFR-3, NFR-4)
+
+| メソッド・パス                | 認証         | 内容                                                                                       |
+| ----------------------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `GET /v1/operator`            | 不要         | `{configured}`。有効なセッションがあれば `username` も含める                               |
+| `POST /v1/operator`           | 未作成時のみ | 初回作成。作成済みなら409。成功でセッションを発行する                                      |
+| `PUT /v1/operator`            | 必要         | `{currentPassword, username?, newPassword?}`。現在のパスワードが誤りなら401、変更なしは400 |
+| `POST /v1/operator/session`   | 不要         | ログイン。不一致と未作成はいずれも401                                                      |
+| `GET /v1/operator/session`    | 必要         | `{authenticated: true}`                                                                    |
+| `DELETE /v1/operator/session` | 必要         | セッションを破棄してCookieを失効させる                                                     |
+
+```text
+Set-Cookie: vpngwgui_session=<id>; HttpOnly; SameSite=Lax; Path=/   （HTTPSで受けた接続には Secure も付く）
+保存        $STATE_DIR/operator-account.json  {username, algorithm: "scrypt", salt, hash}
+セッション  プロセスのメモリ（再起動で失効）
+認可        上表の不要なもの以外の全 /v1/* へ preHandler を適用  -> 未認証は 401 {error: "unauthenticated"}
+回数制限    POST /v1/operator/session と PUT /v1/operator の失敗を送信元IPごとに集計し、1分に5回を超えると 429
 ```
 
-### 追加・変更する項目
-
-| 項目 | 内容 |
-|---|---|
-| `loginMethod` | `"deviceUrl"`（`login`が認証URLを出力する）／`"credentials"`（ユーザー名・パスワード・2FAコードの入力型）。**Phase 10で必須**（既定なし）。 |
-| `actions.connect` | **省略可**に変更（接続先を指定する接続）。`%LOCATION%`を含み、`listLocations`と組で「接続先を指定した接続」（`connectToLocation`）になる。 |
-| `actions.connectAuto` | 新規・省略可。接続先を指定しない接続（プロバイダが最速・既定のサーバを選ぶ）。 |
-| `actions.login` / `listLocations` | **省略可**に変更（プロバイダ非対応を表す）。`disconnect`・`status`は必須。`connect`と`connectAuto`は少なくとも一方が必須（ロード時に検証し、満たさなければ起動失敗）。 |
-| `actions.logout` | 新規・省略可。`DELETE /v1/session`が実行する。 |
-| `actions.account` | 新規・省略可。ログイン状態・プランを判定する**副作用のない読み取り専用**コマンド。詳細は下記「ログイン状態・プランの判定」。 |
-| `actions.<name>.restrictedPattern` | 新規・省略可。コマンドが失敗したとき、標準出力・標準エラーがこの正規表現に一致すればプラン制限による失敗とみなす（下記「実行失敗からの学習」）。 |
-| `actions.<name>.successPattern` | 新規・省略可。終了コードが0以外でも、標準出力・標準エラーがこの正規表現（複数行モード）に一致すれば成功とみなす。CLIの終了コードが実態と合わないベンダー向け（Proton VPN CLIの`disconnect`は、実際の接続を切断したときだけ終了コード1で`Disconnected.`と出力する）。`PUT /v1/connection`とベンダー切替時の切断で使う（`api/src/profile/command-success.ts`）。 |
-| `actions.listLocations.table` | 出力表の列名の対応（`iso`・`country`は必須、`city`・`ping`は省略可）。**Phase 10で`listLocations`があるとき必須**（既定なし）。 |
-| `actions.listLocations.connectName` | **Phase 10で`connectNameFrom`を置き換え、`listLocations`があるとき必須**。`{ "from": "city"\|"iso", "stripPattern"?: 正規表現 }`。`%LOCATION%`へ代入する接続時の指定名の出典（`city`＝都市名、`iso`＝ISO国コード）と、指定名から取り除く部分（`stripPattern`に一致する部分を空にする。例: 表示にだけ付く注記）。 |
-| `placeholders.<KEY>.source` | `"locations"`（実行時に決まる許可値）・`"input"`（利用者入力を`pattern`のみで検証。ログインのユーザー名）・`"secret"`（Phase 10。秘密の入力。`pattern`のみで検証し、**argvに置けず**標準入力（`login.stdin`）にだけ使う。ログ・エラー応答では伏字にする）。`"enum"`・`enumFrom`はPhase 10で廃止した。`pattern`は先頭が`-`でない（CLIオプションと解釈されない）ことを必ず要求する。 |
-| `output` | **Phase 10でtext形式のとき必須**。`connectedPattern`（正規表現。フラグ`i`。標準出力が一致すれば接続中）と`locationPattern`（正規表現。フラグ`im`。第1キャプチャが接続先の表示名。一致しなければ接続先は不明）。json形式では使わない。 |
-| `displayName` | 新規・省略可（Phase 8）。画面に出すベンダー名。省略時は`vendor`。 |
-| `features.changeLocation` / `features.locationPing` | 新規・省略可（既定`true`）。プロバイダが「接続中の接続先変更」「ping値の提供」に対応するか。`false`なら`unsupported`として扱う。 |
-
-`plans`の各要素: `id`（プラン識別子）、`label`（画面表示名）、`pattern`（`account`の出力に対する正規表現）、`restricts`（そのプランで制限するオペレーションの配列）、`restrictionMessage`（省略可。制限理由として画面に出す文）。
-
-## Phase 10におけるプロファイルの明示化（ベンダー非依存）
-
-要件は`../requirements.md`「ベンダー非依存性」、設計の全体は`../design.md`「ベンダー非依存の設計原則」。APIのコードが暗黙に持っていたベンダー固有の既定値を、プロファイルの必須項目へ移す。**動作は変えない**（既存2プロファイルは、従来の既定値と同じ値を明示する）。旧形式（必須項目が欠けたプロファイル）は、欠けた項目を示して起動を失敗させる。互換のための既定値は残さない。
-
-```json
-{
-  "vendor": "<ID>",
-  "loginMethod": "deviceUrl",
-  "output": {
-    "connectedPattern": "(?<![a-zA-Z])connected(?![a-zA-Z])",
-    "locationPattern": "(?<![a-zA-Z])Connected to (.+?)(?: in \\S+ mode|\\s*$)"
-  },
-  "actions": {
-    "listLocations": {
-      "argv": ["..."], "placeholders": {}, "timeoutMs": 15000,
-      "table": { "iso": "ISO", "country": "COUNTRY", "city": "CITY", "ping": "PING" },
-      "connectName": { "from": "city", "stripPattern": "\\s*\\(Virtual\\)\\s*$" }
-    },
-    "login": {
-      "argv": ["signin", "--totp", "%USERNAME%"],
-      "placeholders": {
-        "USERNAME": { "pattern": "...", "source": "input" },
-        "PASSWORD": { "pattern": "^[^\\x00-\\x1f\\x7f]{1,512}$", "source": "secret" },
-        "TWO_FACTOR_CODE": { "pattern": "^[0-9A-Za-z]{4,32}$", "source": "secret", "optional": true }
-      },
-      "stdin": ["%PASSWORD%", "%TWO_FACTOR_CODE%"],
-      "timeoutMs": 60000
-    }
-  }
-}
-```
-
-- **`connectedPattern`・`locationPattern`**: 従来は`response-parser.ts`が既定の正規表現を持っていた。text形式では両方を必須にする（json形式は、`status`・`country`を持つ内部規約のまま、ベンダー中立）。
-- **`table`・`connectName`**: 従来は`location-list-parser.ts`が列名の既定を、`location-id.ts`が`(Virtual)`の除去を持っていた。`connectName`はロード時に`stripPattern`の正規表現の妥当性を検証する。
-- **`loginMethod`**: 必須。`GET /v1/session`は宣言された値を返す。
-- **Proton VPNの`login.argv`の`--totp`**: 公式CLI 1.0.5の`signin`は、2段階認証が必要なアカウントで`--totp`が無いと、認証アプリのコードではなくセキュリティキーを待ち、キー確認のプロンプトが標準入力のEOFで`Abort!`になる（標準入力のコードは読まれない）。本システムは標準入力でコードを渡す方式のため、`--totp`を常に付ける。2段階認証が無いアカウントでは`--totp`は無視され（`Ignoring --totp`）、ログインは成功する。
-- **`login.stdin`とsecret**: `credentials`方式のとき、`login`は`stdin`（行のテンプレートの配列）を持つ。各行は、固定の文字列か、`source: "secret"`のプレースホルダー（`%PASSWORD%`・`%TWO_FACTOR_CODE%`）。`optional: true`のプレースホルダーは、値が未指定・空のとき、その行を出さない。`PASSWORD`・`TWO_FACTOR_CODE`・`USERNAME`は、APIの`POST /v1/session`のボディのキー（`password`・`twoFactorCode`・`username`）に対応する固定の語彙である。値は`pattern`で検証する（従来コードが固定で持っていたパスワードの長さ・制御文字の禁止・2FAの形式は、プロファイルの`pattern`へ移る。改行・制御文字を許す`pattern`は、標準入力への余分な行の混入を招くため、ロード時に`\x00-\x1f`を許さない`pattern`だけを`secret`に受理する）。`secret`のプレースホルダーを`argv`に置くプロファイルは、ロード時に失敗させる。
-- **`enum`の廃止**: `source: "enum"`・`enumFrom`・`resolveEnumFrom`を削除した。
-
-## オペレーションと実行可否（capability）
-
-オペレーションは固定の語彙（../design.md）で、UIの操作と1対1に対応する。各オペレーションの実行可否は、次の順で評価する（先に該当した原因を採用する）。
-
-| 順 | 原因（`reason`） | 条件 |
-|---|---|---|
-| 1 | `unsupported` | プロファイルに必要なアクションが無い。`login`＝`login`定義あり、`logout`＝`logout`定義あり、`connectToLocation`＝`connect`と`listLocations`の定義あり、`connectAuto`＝`connectAuto`定義あり、`disconnect`＝常に可、`locationList`＝`listLocations`定義あり、`changeLocation`＝`connectToLocation`可かつ`features.changeLocation!==false`、`locationFavorites`＝`locationList`可、`pingMeasurement`＝`locationList`可かつ`features.locationPing!==false` |
-| 2 | `notLoggedIn` | ログイン状態が「未ログイン」と判定された場合の`logout`・`connectToLocation`・`connectAuto`・`locationList`（`disconnect`と`login`は常に可能）。判定不能（不明）のときは制限しない |
-| 3 | `planRestricted` | 判定されたプランの`restricts`に含まれる、または実行失敗から学習した制限（下記） |
-
-依存するオペレーションは原因ごと継承する: `changeLocation`は`connectToLocation`に、`locationFavorites`・`pingMeasurement`は`locationList`に従う（プランの`restricts`へ列挙しなくてよい）。`connectToLocation`と`locationList`は**相互に依存**する（接続先を指定できないなら一覧を選べても意味が無く、一覧を取得できないなら接続先を解決できない）。一方だけが実行不可なら、もう一方も同じ原因・理由文で実行不可にする（例: 実行失敗から`connectToLocation`の制限を学習したとき、一覧も理由の枠に置き換わる）。
-
-各オペレーションの応答は`{ "available": boolean, "reason"?: "unsupported"|"notLoggedIn"|"planRestricted", "message"?: string }`。`message`は利用者向けの理由文（日本語。`planRestricted`ではプランの`restrictionMessage`、無ければ「現在のプラン（<label>）では利用できません」。`unsupported`は「このVPNプロバイダでは利用できません」、`notLoggedIn`は「ログインしてください」）。Web UIは文をそのまま表示する。
-
-## ログイン状態・プランの判定（`account`アクション）
-
-実装: `api/src/session/session-probe.ts`。
-
-1. `account`が未定義なら判定しない（ログイン状態・プランとも不明）。
-2. `account`を実行する。標準出力・標準エラーをANSI除去して連結した文字列に対して:
-   - `notLoggedInPattern`に一致すれば**未ログイン**（終了コードは問わない。Proton VPNは未ログイン時に終了コード2で失敗する）。
-   - 終了コードが0以外（上記に該当しない）なら**不明**（プロキシ未応答・タイムアウトも不明）。
-   - 終了コードが0なら**ログイン済み**とし、`plans`を先頭から評価して最初に`pattern`に一致した要素をプランとする。どれにも一致しなければ`defaultPlan`。
-3. 結果は**30秒間キャッシュ**する（プロセス内メモリ。同時要求は1回の実行にまとめる）。Web UIが5秒周期で取得してもCLIの起動は最大30秒に1回になる。失敗（不明）はキャッシュせず、次の要求で再判定する。ログイン・ログアウトの成功時、および学習した制限の変化時にキャッシュを破棄する。
-4. `account`はプラン判定のために有料機能を実行してはならない（../design.md）。読み取り専用のコマンドを選ぶ。
-
-**Proton VPN**: `protonvpn config list`。未ログインは`Error: Authentication required to view feature status.`（終了コード2）。ログイン済みの無料版は、有料機能の値が`Upgrade to enable`になり末尾に`To upgrade to VPN Plus visit: ...`が出る（公式CLI 1.0.3のソース・実機で確認）。有料版にはどちらも現れない。**AdGuard VPN**: `license`。実機（CLI 1.7.12）で確認した出力: ログイン済み（PREMIUM）は`Logged in as <メール>`／`You are using the PREMIUM version`（終了コード0）、未ログインは`Please log in to view your license info`（終了コード11）、無料版は`You are using the FREE version`（Phase 13で実機確認）。プロファイルは`premium`・`free`・既定`unknown`（プラン名「不明」）の3通りで判定する。AdGuard VPN無料版の接続先・分割トンネルは制限を受けないため`restricts`は空（Phase 13の調査結果、下記「プランの補足情報の参考表示」参照）。`logout`は`adguardvpn-cli logout`。
-
-## 実行失敗からの学習（`restrictedPattern`）
-
-`account`で判定できない制限（判定コマンドが無い、出力に現れない制限）への備え。`connect`・`connectAuto`・`listLocations`が非ゼロで終了し、その出力が当該アクションの`restrictedPattern`に一致した場合、通常の422ではなく**`403 { "error": "operation_restricted", "message", "exitCode", "stderr" }`**で応答し、対応するオペレーション（`connect`→`connectToLocation`、`connectAuto`→`connectAuto`、`listLocations`→`locationList`）を`planRestricted`として記憶する（`api/src/capabilities/restriction-learner.ts`。プロセス内メモリ。理由文は出力の要約）。記憶は、ログイン・ログアウトの成功、およびAPIの再起動で消える（プラン変更後の再ログインで自然に解除される。Proton VPNもプラン変更後の再サインインを案内している）。
-
-**APIは実行前にプラン制限を理由として操作を拒否しない**（プロファイルにアクションが無い`unsupported`のみ`501`で事前に拒否する）。CLIが実行可否の最終判断者であり、キャッシュした判定（最大30秒古い）でアップグレード直後の操作を誤って塞がないため。capabilityはUIの利便のための表示である。
-
-## 接続（`PUT /v1/connection`）の変更
-
-- `connect=true`で`locationId`を指定した場合: `connectToLocation`が`unsupported`なら`501`。指定は従来どおり`listLocations`で解決する（`connectNameFrom`に従い`%LOCATION%`へ代入）。
-- `connect=true`で`locationId`が無い場合: `connectAuto`が定義されていればそれを実行する。成功時は接続先IDを保存せず（接続状態の`locationId`・`country`なし。`location`はCLI出力から取れれば付与）、「最後に接続した接続先」も更新しない。`connectAuto`が無ければ従来どおり`400`。
-- 失敗時のプラン制限の扱いは上記「実行失敗からの学習」。
-
-## セッション（`/v1/session`）の変更
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `GET` | `/v1/session` | ログイン方式・ログイン状態・プランを取得する。`{ "loginMethod": "deviceUrl"\|"credentials", "loggedIn"?: boolean, "plan"?: { "id", "label" } }`。`loggedIn`は不明（`account`なし・判定失敗）のとき省略。`plan`はログイン済みで判定できたときのみ。判定失敗でも`200`（不明として返す。CLIの障害は`GET /v1/connection`等が別途報告する） |
-| `POST` | `/v1/session` | ログインする。`loginMethod=deviceUrl`は従来どおり（ボディなし。`{ loginUrl?, message }`）。`credentials`はボディ`{ "username", "password", "twoFactorCode"? }`が必須（無ければ`400`）で、成功時は`{ message }`。`login`が未定義なら`501` |
-| `DELETE` | `/v1/session` | ログアウトする（`logout`アクション。成功時`{ message }`。`logout`が未定義なら`501`）。接続状態の保存内容（`connection-state`）を消去する |
-
-`POST /v1/session`の`credentials`方式の入力検証と受け渡し:
-
-- `username`はプレースホルダー`USERNAME`の`pattern`で検証し、argvへ代入する（メールアドレスは秘密ではない）。
-- `password`は1〜512文字で、**改行（`\r`・`\n`）・NUL・制御文字を含まない**こと（含むと標準入力へ余分な行が混入し、2FA入力の偽装等になるため`400`）。`twoFactorCode`は`^[0-9A-Za-z]{4,32}$`。
-- `password`（と`twoFactorCode`）は、プロファイルの`login.stdin`（行のテンプレート。下記「Phase 10におけるプロファイルの明示化」）に従って行を組み立て、プロキシの`POST /exec`の`stdin`フィールドへ渡す。値が空の行（未指定の2FAコード）は出さない。行の順序・2FAコードの形式は、ベンダーのCLIの入力仕様であり、プロファイルが持つ（コードは持たない。2FAが必要なアカウントでコードが無い場合はCLIが失敗し、422で利用者に再入力を促す）。
-- **秘密情報を残さない**: 監査ログの`input`は`{ username }`のみ（パスワード・2FAコードは記録しない）。プロキシ側の監査ログもstdinの内容は記録せず、`stdinProvided: true`のみ記録する。失敗時の`stderr`（422）は、応答へ入れる前にパスワード・2FAコードの部分文字列を伏字にする（CLIが入力を出力へ反映した場合の保険）。Fastifyのリクエストログはボディを出力しない設定のまま維持する。
-- 経路の秘匿: ブラウザ〜Webサーバ間はHTTP（TLSなし、LAN限定運用）のため、パスワードはLAN内で平文になる。**既知の制約**として受容する（認証・TLSはPhase 15の課題。`specs/requirements.md`「認証・認可」）。
-
-## 接続先一覧の汎用化
-
-`listLocations.table`・`connectNameFrom`により、`location-list-parser.ts`は列名（ヘッダ行）をプロファイルから受け取って固定幅の表を読む。追加の書式対応:
-
-- ヘッダ直下の区切り行（`-`と空白のみ。Proton VPNの`tabulate`出力）は読み飛ばす。
-- `city`列が無い表（Proton VPNの`countries list`は国のみ）では、`city`を持たない接続先とする。`id`は`<国コード小文字>-<slug(国名)>`（例: `us-united-states`）、`connectName`は`connectNameFrom`が`iso`なら国コード（例: `US`。Proton VPNの`--country`は大文字小文字を区別しない）。
-- データ行の判定は、従来の「行頭がISO国コード」ではなく、ヘッダで特定したISO列が英字2文字であることとする。
-- `LocationSchema.city`は省略可能にする（`city`列が無いプロバイダ用）。
-
-## エンドポイント（Phase 7で追加）
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `GET` | `/v1/providers` | 有効なベンダーの一覧（選択中・利用可否を含む）を取得する（Phase 8） |
-| `PUT` | `/v1/providers/active` | 使うベンダーを切り替える。接続中なら現在のVPNを切断してから切り替える（Phase 8） |
-| `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否を取得する。`{ "capabilities": { "login": {...}, "logout": {...}, "connectToLocation": {...}, "connectAuto": {...}, "changeLocation": {...}, "disconnect": {...}, "locationList": {...}, "locationFavorites": {...}, "pingMeasurement": {...} } }`。全キーを常に返す。ログイン状態・プランは`account`判定（30秒キャッシュ）を使う。判定不能でも`200`（制限しない） |
-| `GET` | `/v1/session` | 上記 |
-| `DELETE` | `/v1/session` | 上記 |
-
-`locationList`が不可のときの`GET /v1/connection/locations`は、実行前拒否をしない方針（上記）に従い、`unsupported`のみ`501`、他はCLIの結果に従う。
-
-## ファイル配置（AGENTS.mdの規約）
-
-プロバイダ抽象化のドメイン知識は責務ごとのディレクトリに置く: `api/src/capabilities/`（オペレーションの語彙・実行可否の評価・失敗からの学習）、`api/src/session/`（`account`判定・キャッシュ・ログイン入力の検証）。ドメイン非依存の文字列処理（秘密の伏字化）は`lib/`（`lib/redact.ts`）に置く。プロファイルのスキーマ拡張は`profile/profile.schema.ts`。
-
-## ベンダーの選択（Phase 8）
-
-Web UI利用者が、管理者の有効化したベンダーの中から使うベンダーを選ぶ（`specs/requirements.md`「VPNベンダーの選択（Web UI）」、`specs/design.md`「ベンダーの選択と実行基盤」）。**Phase 7までの「ベンダーは1台につき1種類」を改め、APIは複数ベンダーのプロファイルを持ち、選択中の1つを操作の対象とする**。ベンダーロックインを防ぐ手段（実行コマンドを管理者向け設定として外だしする）は変えない。利用者が選べるのは管理者が有効化したベンダーの識別子だけで、コマンド内容には関与できない。
-
-### 設定と読み込み
-
-| 項目 | 内容 |
-|---|---|
-| `ENABLED_PROVIDERS`（環境変数） | 有効なベンダーIDのカンマ区切り。**必須（Phase 10で既定を廃止。未設定・空なら起動失敗）**。compose側は`.env`の`VPN_PROVIDERS`から渡す |
-| `VENDORS_DIR`（環境変数） | ベンダーバンドルのディレクトリ（既定`/etc/vpngwgui/vendors`。`./vendors`を`:ro`でマウント）。`<ベンダーID>/profile.json`を読む。プロファイル内の`vendor`とディレクトリ名（＝ベンダーID）が一致しなければ起動失敗（Phase 10で旧`VPN_PROFILES_DIR`を置き換え） |
-| `CTL_SOCKET_DIR`（環境変数） | UDSのディレクトリ（既定`/var/run/vpngw-ctl`）。ネットワークコンテナは`net.sock`、ランナーは`runner-<ベンダーID>.sock` |
-| `STATE_DIR`（環境変数） | 永続化の基点（既定`/var/lib/vpngwgui`）。ベンダー別の状態は`$STATE_DIR/providers/<ベンダーID>/`以下 |
-| プロファイルの`displayName`（新規・省略可） | 画面に出すベンダー名（例 `AdGuard VPN`）。省略時は`vendor` |
-
-- 起動時に、有効な全ベンダーのプロファイルを読み込み検証する（1つでも不正なら起動失敗。従来の`VPN_PROFILE_PATH`は廃止）。IDは`^[a-z][a-z0-9]{0,31}$`。有効なベンダーが0個なら起動失敗。
-- **選択中のベンダー**は`$STATE_DIR/active-provider.json`（`{ "id": "adguardvpn" }`）に永続化する。無い・壊れている・有効でないIDが入っている場合は、有効なベンダーの先頭を選択中とする（例外にしない）。
-- **ベンダー別の状態**（`$STATE_DIR/providers/<ID>/`）: `connection-state.json`（接続先ID・国・都市名）、`last-location.json`、`favorite-locations.json`。ログイン状態・プランの判定キャッシュ、学習した制限は、プロセス内でベンダーIDをキーに別々に保持する。**ユーザ向け設定（`settings.json`）・監査ログはベンダーに依存しないため従来の場所のまま**。
-- **旧形式からの移行は行わない**（Phase 10で廃止）。Phase 9より前の旧パス（`$STATE_DIR`直下の`connection-state.json`等）は読まない。未リリースで、実機はPhase 8の起動時に移行済みのため。
-
-### エンドポイント
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `GET` | `/v1/providers` | 有効なベンダーの一覧を取得する。`[ { "id", "displayName", "active": boolean, "available": boolean, "unavailableReason"?: string } ]`（有効化された順）。`available`はそのランナーが応答するか（下記）。応答に時間がかかるランナーで一覧が遅くならないよう、各ランナーへの問い合わせは並行・短いタイムアウト（2秒）で行う |
-| `PUT` | `/v1/providers/active` | 使うベンダーを切り替える。ボディ`{ "providerId": string }`。成功時`{ "id", "displayName" }`。詳細は下記「切替の手順」 |
-
-`GET /v1/connection`等の既存エンドポイントは、パス・スキーマを変えず、選択中のベンダーを対象にする（`GET /v1/connection`の応答に、選択中のベンダーIDは含めない。ベンダーは`GET /v1/providers`で取得する。ベンダーを識別するためにパスへベンダーを含めない方針は変えない: 操作の対象は「選択中のベンダー」という状態で表す）。
-
-### ランナーの利用可否
-
-`GET /health`（ランナーの内部エンドポイント。../runner/design.md）が`200`を返せば`available: true`。ソケットが無い・接続拒否・タイムアウトなら`available: false`（`unavailableReason`は「ランナーが起動していません」）。**`available: false`のベンダーへは切り替えられない**（`PUT /v1/providers/active`は`502`）。選択中のベンダーのランナーが後から止まった場合、既存のエンドポイントは従来どおり`502`/`504`を返す（自動で他のベンダーへ切り替えない。意図しないベンダーへの接続を避けるため）。
-
-### 切替の手順（`PUT /v1/providers/active`）
-
-1. `providerId`が有効なベンダーでなければ`400`。選択中と同じなら何もせず`200`。
-2. 切替先のランナーが利用不可なら`502`（切替えない）。
-3. 他の切替・接続操作と競合しないよう、API内で直列化する（切替中に来た他のベンダー操作系リクエスト（`PUT /v1/connection`・`/v1/session`）は`409 provider_switching`。読み取り（GET）は影響しない）。
-4. 現在のベンダーのランナーが応答する場合、`status`を実行し、接続中なら`disconnect`を実行する。**切断に失敗したら切り替えず`422`**（VPNが繋がったまま別ベンダーを選ぶ状態を作らない）。現在のランナーが応答しない（`502`/`504`）場合は、切断できないが切替は許可する（止まったランナーに縛られて他のベンダーを使えなくならないため）。
-5. 選択中のベンダーを`active-provider.json`へ保存し、監査ログに`{ action: "switch-provider", input: { from, to }, exitCode }`を記録する。
-6. ネットワークコンテナへ接続状態の再確認を通知する（`POST /connection-checks`。Kill Switchの状態を即時に更新する）。失敗しても切替自体は成功とする（接続監視ループが追従する）。
-
-切替では、ベンダー別の保存内容（お気に入り・最後の接続先等）は消さない。切替先のベンダーの接続状態は、切替後の`GET /v1/connection`（`status`の実行）で取得する（切替直後は切断中のはずだが、API外で接続されていれば接続中と出る）。
-
-### ネットワークコンテナへの通知（`POST /connection-checks`）
-
-従来は、ベンダーCLIを実行するproxyが、接続・切断のコマンド実行直後にゲートウェイルールを即時に再構成していた（../runner/design.md「ランナーの内部HTTP」）。ランナー分離により、実行するコンテナとルールを持つコンテナが別になったため、**接続・切断・ログアウトのコマンド実行後、および切替後に、APIがネットワークコンテナへ`POST /connection-checks`を送る**（ボディなし。応答`{ "checked": true }`）。失敗（`502`/`504`相当）は握りつぶす（ルールの反映は接続監視ループがいずれ追従するため、操作の成否には影響させない）。
-
-### 監査ログ・エラー
-
-- 監査ログの各エントリに、操作の対象だったベンダーIDを`provider`として付ける（`switch-provider`以外の従来の操作も。旧形式のエントリは`provider`なし）。
-- `PUT /v1/providers/active`: `400`（未知・無効なID）、`409`（切替中）、`422`（現在のVPNの切断に失敗。`exitCode`・`stderr`を含む）、`502`（切替先のランナーが利用不可）。
-
-### 内部プロトコルの変更（Phase 25で、UDSからmTLS TCPへ変更）
-
-- `executeVendorCommand`は、ベンダーIDを受け取り、ゲートウェイの`https://$GATEWAY_HOST:$GATEWAY_PORT/runners/<ID>/exec`へ送る（接続はゲートウェイ1台に対し1つのHTTP/1.1 keep-aliveプールで共有し、ベンダーごとの個別プールは持たない。パスでランナーを識別する）。リクエストボディは従来（`vendor`・`binary`・`resolvedArgv`・`timeoutMs`・`completionPattern`・`stdin`）のまま。
-- `notifySettings`・`fetchProxyStatus`（`POST /settings`・`GET /status`）・`POST /connection-checks`は`https://$GATEWAY_HOST:$GATEWAY_PORT/net/settings`・`/net/status`・`/net/connection-checks`へ送る。
-- 送信には`undici`の`Agent({ connect: { ca, cert, key } })`等でmTLSクライアントを構成する（`ca`＝ゲートウェイのCA証明書、`cert`・`key`＝ペアリングで取得したAPIサーバのクライアント証明書・秘密鍵。`specs/design.md`「証明書の生成・配布」）。証明書検証に失敗する接続はエラーとし、平文・検証省略へのフォールバックは行わない。
-- ランナーの`POST /exec`のレスポンスと、ネットワークコンテナの`/settings`・`/status`の形状は変えない。Phase 24までの`$CTL_SOCKET_DIR/runner-<ID>.sock`・`$CTL_SOCKET_DIR/net.sock`は廃止する（APIサーバはゲートウェイに対しUDSを一切使わない）。
-
-### ファイル配置（AGENTS.mdの規約）
-
-ベンダーの管理は`api/src/providers/`にまとめる（`provider-registry.ts`＝有効なプロファイルの読み込み・検証、`active-provider-store.ts`＝選択の永続化、`provider-switcher.ts`＝切替の手順、`provider-state-paths.ts`＝ベンダー別の状態ファイルのパス・旧形式からの移行）。従来のモジュール（`profile-loader`・`connection-state-store`・`last-location-store`・`favorite-locations-store`・`session-probe`・`restriction-learner`・`proxy-client`）は、ベンダーIDを受け取る（または選択中のベンダーを`provider-registry`から取得する）形へ改める。
-
-## Web UI利用者の認証（`/v1/operator`・`/v1/operator/session`。Phase 25で追加）
-
-設計方針は`specs/design.md`「認証・認可の設計方針」、要件は`requirements.md`「Web UI利用者の認証」。単一の管理者アカウント（ユーザー名・パスワード）を表す`/v1/operator`と、ブラウザのログイン状態を表すそのサブリソース`/v1/operator/session`に分ける。アカウントはインストーラではなくWeb UIの初回アクセス時に利用者自身が作成し、以後は設定画面から変更する（2026-09-22改訂: 当初案の「インストーラの引数でパスワードを指定」から変更）。
-
-### エンドポイント
-
-| メソッド | パス | 認証 | 説明 |
-|---|---|---|---|
-| `GET` | `/v1/operator` | 不要 | アカウントの作成状態を取得する（有効なセッションCookieがあれば`username`も含める） |
-| `POST` | `/v1/operator` | 不要（未作成時のみ許可） | アカウントを初回作成する |
-| `PUT` | `/v1/operator` | 必要 | ユーザー名・パスワードを変更する |
-| `POST` | `/v1/operator/session` | 不要 | ログインする |
-| `GET` | `/v1/operator/session` | 必要 | ログイン状態を取得する |
-| `DELETE` | `/v1/operator/session` | 必要 | ログアウトする |
-
-### 各エンドポイントの詳細
-
-- `GET /v1/operator`: `{ "configured": boolean }`を返す（有効なセッションCookieがある場合のみ`username`も含める）。Web UIはこれで初期設定画面／ログイン画面を出し分ける。
-- `POST /v1/operator`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`に既にアカウントがあれば`409 { "error": "already_configured" }`。無ければ作成し、`POST /v1/operator/session`と同様にセッションを発行して`200`（初回設定後にそのままログイン状態にする）。`username`は空文字不可、`password`は最小文字数（実装時に決定、既定4文字以上）を満たさなければ`400`。
-- `PUT /v1/operator`: ボディ`{ "currentPassword": string, "username"?: string, "newPassword"?: string }`。`currentPassword`が現在の保存内容と一致しなければ`401`。`username`・`newPassword`のいずれも指定しなければ`400`。成功時は`operator-account-store.ts`を更新し`200`。現在のセッションは維持する（強制的な再ログインは要求しない）。
-- `POST /v1/operator/session`: ボディ`{ "username": string, "password": string }`。`api/src/auth/operator-account-store.ts`（`scrypt`によるハッシュの読み込み・検証）で照合する。一致すれば`api/src/auth/session-store.ts`（プロセスメモリのMap。`sessionId → { createdAt }`）にセッションを作成し、`Set-Cookie: vpngwgui_session=<sessionId>; HttpOnly; Secure; SameSite=Lax; Path=/`を返す。不一致・アカウント未作成のいずれも`401`（未作成であること自体は`GET /v1/operator`の`configured`で判別させ、ログイン失敗の応答からは区別できないようにする）。
-- `GET /v1/operator/session`: Cookieのセッションが有効なら`200 { "authenticated": true }`、無効・無ければ`401`。
-- `DELETE /v1/operator/session`: セッションストアから削除し、Cookieを`Max-Age=0`で失効させ`200`を返す。
-
-### 認可・レート制限・保存
-
-- **`preHandler`フック（`api/src/auth/require-operator-session.ts`）**: `GET /v1/operator`・`POST /v1/operator`（未作成時のみ）・`POST /v1/operator/session`を除く全ての`/v1/*`ルートへ適用する（`PUT /v1/operator`も対象）。Cookie欠如・不正・期限切れは`401 { "error": "unauthenticated" }`。
-- **レート制限**: `POST /v1/operator/session`・`PUT /v1/operator`は、送信元IPごとに直近1分間の失敗回数を数え、一定回数（既定5回）を超えると一時的に`429`を返す（`api/src/auth/login-rate-limiter.ts`。プロセスメモリ保持、APIコンテナ再起動でリセットされる）。
-- **アカウントの保存**: `$STATE_DIR/operator-account.json`（`{ "username": string, "algorithm": "scrypt", "salt": "...", "hash": "..." }`）。`operator-account-store.ts`が読み込み・作成・更新（`crypto.scrypt`によるハッシュ化）を担う。ファイルが無ければ`configured: false`として扱う。
-- **ファイル配置（AGENTS.mdの規約）**: `api/src/auth/`にまとめる（`operator-account-store.ts`・`session-store.ts`・`require-operator-session.ts`・`login-rate-limiter.ts`、ルートは`api/src/routes/operator.ts`・`api/src/routes/operator-session.ts`）。
-
-# ユーザ向け設定の具体スキーマ
-
-Web UIから変更可能な運用設定（目的・意味は../requirements.md参照）。APIサーバが永続化（設定ファイルまたは軽量DB、例 SQLite）し、プロキシサーバへの反映が必要なものはUDS経由で通知する。
-
-| 設定項目 | 型 | 説明 |
-|---|---|---|
-| `killSwitch` | boolean | ONの場合、VPN切断検知時にLAN側通信を遮断する（デフォルト: true） |
-| `excludedDomains` | string[] | VPNトンネルを経由させない宛先ドメイン（split-tunnel除外リスト）。要素は`example.com`（完全一致のみ）または`*.example.com`（サブドメインのみ。`example.com`自体は含まない）。ホスト名のラベル（英数字・ハイフン、各63文字以内、全体253文字以内）のみ許可し、先頭の`*.`以外の`*`・空白・制御文字は400で拒否する。最大200件 |
-| `transparentGatewayEnabled` | boolean | 透過ゲートウェイモードの有効/無効 |
-| `explicitProxyEnabled` | boolean | 明示的SOCKS5/HTTPプロキシモードの有効/無効 |
-| `explicitProxyAllowedCidrs` | string[] | 明示的プロキシモードで接続を許可するLAN側CIDR |
-| `dnsRelayEnabled` | boolean | DNS中継リゾルバの有効/無効（既定: false） |
-| `dnsUpstreamUrl` | string | 上流（自宅DNSサーバ）のDoH URL。空文字は未設定。`https://`のURLのみ許可（クエリ・フラグメント・認証情報は不可）。ゲートウェイがクライアントごとのClientIDをパスへ追記して転送する（既定: 空） |
-| `dnsUpstreamCaPem` | string | 上流のサーバ証明書を検証するCA（PEM。任意。最大16KB）。空文字はシステムのCAのみ |
-| `dnsFailureMode` | `"failClosed"` \| `"fallback"` | 上流障害時の挙動（既定: `failClosed`） |
-| `dnsFallbackServers` | string[] | `fallback`時の転送先（IPv4アドレス。最大3件） |
-| `dnsClientNameServers` | string[] | クライアント名の取得先（DHCPサーバ・ルータのDNS。IPv4アドレス、最大3件）。クライアントIPの逆引きで得た名前を、上流のClientIDにする。空ならIPベースのClientID（既定: 空） |
-| `dnsRedirectEnabled` | boolean | 手動DNS指定のクライアントを含め、宛先ポート53の通信を中継リゾルバへ誘導する（既定: false） |
-| `dnsRedirectExcludedCidrs` | string[] | リダイレクトしない宛先のIPv4 CIDR（例: LAN内のDNSサーバ） |
-
-`dnsRelayEnabled=true`のとき、`dnsUpstreamUrl`が空で`dnsFallbackServers`も空の設定は400で拒否する。`dnsFailureMode=fallback`で`dnsFallbackServers`が空の設定も400で拒否する。既存の設定ファイルにこれらの項目が無い場合は既定値で補完する。
-
-`defaultCountry`はPhase 5で廃止した（接続処理に使われておらず、「最後に接続した接続先」の記憶がその役割を担うため。下記「接続先（ロケーション）」）。既存の設定ファイルに`defaultCountry`が残っていても、読み込み時に無視して次回の保存で消える。
-
-# APIエンドポイント一覧（例）
-
-AGENTS.mdのAPI設計原則（パスに動詞を含めない、HTTPメソッドで操作の意味を表現する、リソースを明確に特定する）に従う。
-
-ベンダー（VPNクライアント操作プロファイル）は、Phase 8以降、管理者が有効化した複数のベンダーからWeb UI利用者が選ぶ（下記「ベンダーの選択」）。ただし操作の対象は「選択中のベンダー」という**状態**で表し、既存のエンドポイントのパスにベンダーは含めない（操作ごとにベンダーを指定させると、クライアントが実行環境の違いを意識する必要が生じるため）。`connection` をリソースの単位とする。ベンダーの一覧・切替は専用のリソース（`/v1/providers`）で扱う。
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `GET` | `/v1/connection` | 現在の接続状態を取得（接続中は`country`・`location`・`locationId`を含みうる。下記「接続先国の永続化」参照） |
-| `PUT` | `/v1/connection` | 接続/切断を制御する（bodyに `connect`（boolean）と、接続時は `locationId`（接続先ID）を指定。接続中に別の`locationId`で呼ぶと接続先を変更する。Phase 5で`country`から変更） |
-| `GET` | `/v1/connection/locations` | 選択可能な接続先（国・都市・ping値。お気に入り・前回接続の別を含む）をping昇順で取得（Phase 5。`GET /v1/connection/countries`を置換） |
-| `PUT` | `/v1/connection/locations/{locationId}/favorite` | 接続先をお気に入りに登録する（冪等。Phase 5） |
-| `DELETE` | `/v1/connection/locations/{locationId}/favorite` | 接続先のお気に入りを解除する（冪等。Phase 5） |
-| `GET` | `/v1/connection/config` | ユーザ向け設定を取得 |
-| `PUT` | `/v1/connection/config` | ユーザ向け設定を更新 |
-| `GET` | `/v1/connection/log` | 接続・操作履歴（監査ログ）を取得 |
-| `GET` | `/v1/connection/gateway` | 透過ゲートウェイ／Kill Switch（Phase 6以降は明示的プロキシも）の実際の稼働状況を取得（Phase 4で追加。下記「稼働状況取得」参照） |
-| `POST` | `/v1/session` | VPNクライアントへのログインを代行する（`loginMethod=deviceUrl`は`cli login`実行時に払い出されるログインURL等を返却する。`credentials`はユーザー名・パスワード等を受け取りCLIの標準入力へ渡す。Phase 7で拡張） |
-| `GET` | `/v1/session` | ログイン方式・ログイン状態・プランを取得する（Phase 7） |
-| `DELETE` | `/v1/session` | VPNクライアントからログアウトする（Phase 7） |
-| `GET` | `/v1/connection/capabilities` | オペレーションごとの実行可否（プロバイダ非対応・未ログイン・プラン制限）を取得する（Phase 7） |
-
-ベンダーの一覧・切替（`/v1/providers`、Phase 8）、Web UI利用者の認証（`/v1/operator`・`/v1/operator/session`、Phase 25）は、それぞれ専用の節（「ベンダーの選択」「Web UI利用者の認証」）のエンドポイント表を参照。
-
-# OpenAPI仕様の生成・公開方針
-
-- Fastify + TypeBox でリクエスト/レスポンスのスキーマを定義し、`@fastify/swagger` によりOpenAPI仕様を自動生成する。
-- 手書きのOpenAPI YAMLやサーバスタブの生成・同期は行わない（スキーマがそのまま実装かつ仕様書の唯一の情報源となる）。
-- 生成されたOpenAPI仕様は `/openapi.json`（または同等のパス）で公開し、orvalがこれを読み込んでWeb側クライアントを生成する。
-- 後述のゲートウェイとの内部通信経路（mTLS TCP）は、このOpenAPI仕様の対象に含めない。
-- **【Phase 25】APIサーバ自身のTLS**: Fastifyを`https`オプション（証明書は`specs/design.md`「証明書の生成・配布」でインストーラが配置したサーバ証明書・秘密鍵）で起動する。Webサーバ（同一ホスト構成では`api`という名前でのDocker内部名前解決、分離構成では相手ホストのアドレス経由）はこの証明書をCA経由で検証してから接続する。証明書・秘密鍵の読み込みは`api/src/tls-options.ts`の`loadApiServerTlsOptions()`が行う（環境変数`API_TLS_CERT_FILE`・`API_TLS_KEY_FILE`。省略時は`GATEWAY_PKI_DIR`配下の`api-server.crt`・`api-server.key`。ゲートウェイ制御チャネル用の証明書読み込み（`api/src/proxy-client/gateway-tls-options.ts`）と同じ規約）。単一ホスト構成でもapiのポート（既定`3000`）はホストへ公開する（`compose/api.yml`の`ports`。分離構成でweb側から到達できるようにするため。TLS＋CA検証が実質的な境界）。
-
-# ゲートウェイとの内部通信仕様（Phase 25で、UDSからmTLS TCPへ変更）
-
-- 通信経路: ゲートウェイの`proxy`が単一の窓口として公開する、mTLS TCP（既定ポート`8443`。環境変数`GATEWAY_PORT`）。ベンダーCLIの実行は`/runners/<ベンダーID>/exec`（`proxy`が`runner-<ベンダーID>.sock`へUDSで転送）、設定反映（`/net/settings`）・稼働状況（`/net/status`）・接続状態の再確認（`/net/connection-checks`）は`proxy`自身が処理する。以下の`POST /exec`相当（`/runners/<ID>/exec`）はランナー、`/net/settings`・`/net/status`は`proxy`の仕様である（詳細は`specs/proxyserver/design.md`「ゲートウェイ制御チャネル」）。Phase 24までの「コンテナごとに1つのUDS」（`ctl-socket`ボリューム上の`net.sock`・`runner-<ベンダーID>.sock`）は廃止した。
-- APIサーバ側は `undici` の `Agent({ connect: { ca, cert, key } })` 等でmTLS TCP経由のHTTPSリクエストを送信する。
-- リクエストボディ（内部プロトコル、OpenAPI対象外）:
-
-```json
-{
-  "vendor": "adguardvpn",
-  "binary": "/usr/bin/adguardvpn-cli",
-  "resolvedArgv": ["connect", "-l", "jp", "-y"],
-  "timeoutMs": 15000,
-  "completionPattern": "https://auth\\.adguard\\.io/device_code\\?user_code=[A-Z0-9-]+"
-}
-```
-
-- `resolvedArgv` は、プレースホルダー検証済みの値を代入した最終的なargv配列（`binary` を含まない、コマンド本体のみ）。
-- `stdin`（省略可、Phase 7で追加）: 指定された場合、プロキシ側は子プロセスの標準入力へこの文字列を書き込んで閉じる（ユーザー名・パスワード入力型のログイン用。最大4096バイト）。**秘密情報を含みうるため、プロキシ・APIのいずれもログへ内容を出力しない。**
-- `completionPattern`（省略可、Phase 2で追加）: 指定された場合、プロキシ側はプロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、プロセス自体はkillせずバックグラウンドで実行を継続させる。ログイン代行（`login`アクション）のように、ブラウザでの認証完了まで数分かかる長時間プロセスに対応するための拡張点（proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
-- レスポンスボディには `exitCode`、`stdout`、`stderr`（要約または全量、ログサイズに応じて要検討）を含める。`completionPattern`に一致し応答した場合、`exitCode`は`null`（プロセスは実行継続中で終了コード未確定）になる。
-- リクエスト/レスポンスは軽量なランタイムスキーマ検証（zod/TypeBox等）を行い、不正形式のリクエストでプロキシ側プロセスがクラッシュしないようにするが、これはOpenAPI仕様としては公開しない。
-
-## 設定反映（`POST /settings`）内部プロトコル仕様（Phase 3で追加）
-
-`/runners/<ベンダーID>/exec`とは別の待受パス（`/net/settings`。proxyserver/design.md「Phase 1における縮小構成」参照、`/exec`のパスをPhase 1時点で固定していたのはこの追加のため）。`/runners/<ベンダーID>/exec`同様OpenAPI非公開・`proxy`が公開する同一のmTLS TCPリスナー上で待ち受ける（Phase 24までは同一UDSソケット上）。
-
-- 送信タイミング: `PUT /v1/connection/config`でユーザ向け設定が更新されるたび（`api/src/routes/connection-config.ts`）。当初案では`killSwitch`変更時のみの通知を想定していたが、`transparentGatewayEnabled`もプロキシ側のnftables再構成（テーブルの適用/撤去）を要するため、更新後の設定全体を毎回送信する方式に変更した。加えて、APIサーバ起動時にも永続化済みの現在設定を一度送信する（`api/src/server.ts`）。これは、プロキシコンテナが自身では設定を永続化せず本エンドポイントでの通知のみに依存するため、APIコンテナは再作成されずプロキシコンテナのみが再作成された場合に生じうる「再起動後、次の設定変更まで最後に永続化された設定が反映されない」空白期間を緩和するための措置（起動順序の都合上、数回リトライする）。さらに、起動時1回では「APIコンテナは動き続けたままプロキシコンテナだけが再起動された」場合を救えないため、10秒周期（`SETTINGS_RESYNC_INTERVAL_MS`環境変数で変更可）で現在設定を再通知する（`api/src/server.ts`。通知は冪等で、失敗は無視して次周期で再試行する。実機検証で、これが無いとプロキシ単体の再起動後にKill Switchが再構成されずリークすることを確認した）。
-- リクエストボディ: `UserSettings`（`api/src/schemas/settings.ts`）をそのまま送信する。
-
-```json
-{
-  "killSwitch": true,
-  "excludedDomains": [],
-  "transparentGatewayEnabled": true,
-  "explicitProxyEnabled": false,
-  "explicitProxyAllowedCidrs": [],
-  "dnsRelayEnabled": false,
-  "dnsUpstreamUrl": "",
-  "dnsUpstreamCaPem": "",
-  "dnsFailureMode": "failClosed",
-  "dnsFallbackServers": [],
-  "dnsClientNameServers": [],
-  "dnsRedirectEnabled": false,
-  "dnsRedirectExcludedCidrs": []
-}
-```
-
-- プロキシ側は`killSwitch`・`transparentGatewayEnabled`でnftablesルールセットを、`explicitProxyEnabled`・`explicitProxyAllowedCidrs`で3proxyを再構成する（`excludedDomains`・`dns*`はPhase 14でDNS中継リゾルバが参照する。proxyserver/design.md「透過ゲートウェイモードの実現方式」「Kill Switch」「明示的プロキシモードの実現方式」「ドメイン迂回とDNS中継」参照）。
-- `explicitProxyAllowedCidrs`の各要素はIPv4 CIDR（`a.b.c.d/n`）でなければならず、違反は`PUT /v1/connection/config`が400で拒否し保存しない（3proxyの設定ファイルへ埋め込まれるため、設定行の注入による許可範囲の拡大を入口で防ぐ）。
-- レスポンスボディ: `{ "applied": boolean }`。`transparentGatewayEnabled=false`、またはLAN側インターフェース名が未設定（インストールスクリプト未実行環境）の場合は`false`（ルール撤去のみ実施、適用は行わない）。
-- 通知が失敗（プロキシ未起動等でProxyUnavailableError/ProxyTimeoutError）した場合でも、`PUT /v1/connection/config`自体は失敗させない（設定の永続化は既に成功しているため）。失敗はログにのみ記録し、プロキシ復旧後の次回設定変更または接続状態監視ループでの再構成に委ねる。
-
-## 稼働状況取得（`GET /v1/connection/gateway`、Phase 4で追加）
-
-Web UIのダッシュボードが「設定値」ではなく「実際に適用されている状態」を表示するための読み取り専用エンドポイント。`GET /v1/connection/config`（永続化された設定値）とは別リソースとして扱う（設定はONだがLAN_IFACE未設定で未構成、といった乖離を利用者に示すため）。APIサーバは状態を保持せず、ゲートウェイの内部エンドポイント`GET /net/status`（proxyserver/design.md参照）へmTLS TCP経由で問い合わせた結果を中継する。
-
-```json
-{
-  "transparentGateway": {
-    "state": "active",
-    "vpnInterface": "tun0",
-    "killSwitchBlocking": false
-  }
-}
-```
-
-- `transparentGateway.state`: `"active"`（nftablesルール適用中）／`"stopped"`（`transparentGatewayEnabled=false`）／`"unconfigured"`（有効設定だが`LAN_IFACE`未設定でルールを構成できない）／`"error"`（有効設定だが直近のnft適用が失敗、または再構成の完了前でルールの実態が不明。実装時に追加）。
-- `vpnInterface`: 検出中のVPNトンネルIF名。未接続時は省略。
-- `killSwitchBlocking`: Kill Switchによりforwardが遮断中（VPN未接続かつ`killSwitch=true`）か。
-- **`explicitProxy`（Phase 6で追加）**: `{ "state", "socksPort"?, "httpPort"?, "restartCount" }`。`state`は`"active"`（稼働中。`socksPort`・`httpPort`はこの状態のみ付く）／`"stopped"`（`explicitProxyEnabled=false`）／`"unconfigured"`（有効設定だが`explicitProxyAllowedCidrs`が空で起動しない）／`"crashLoop"`（3proxyが起動直後の異常終了を連続して繰り返している）／`"error"`（3proxy設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数。`crashLoop`等のproxy側の異常は本エンドポイントの中継で利用者へ届く（proxyserver/design.md「`GET /status`」参照）。
-- **`dnsRelay`（Phase 14で追加。省略可）**: `{ "state", "upstream", "bypassEntries" }`。`state`は`"active"`（待受中）／`"stopped"`（`dnsRelayEnabled=false`）／`"unconfigured"`（有効設定だが上流もフォールバック先も空）／`"error"`（待受に失敗。ポート衝突等）。`upstream`は`"ok"`／`"failing"`（直近の上流への転送が失敗）／`"unknown"`（未転送・待受していない）。`bypassEntries`は保持中（期限内）の迂回対象IPv4アドレス数。`dnsRelay`を持たない旧ゲートウェイでも読めるよう、レスポンス・検証とも省略可能とする。
-- proxyが`explicitProxy`を含まない旧形式で応答した場合は、形状不一致として例外（502相当）になる（api・proxyは同時にデプロイすること）。
-- proxy未応答時は既存方針どおり`502`／`504`（下記エラーハンドリング方針）。
-
-## 接続先国の永続化（Phase 4で追加）
-
-実CLIは国コードを出力しないため、`GET /v1/connection`が接続国を返せず、Web UIの再読み込み（クライアント側の状態の消失）で「接続国」表示が失われた（Phase 4初期実装ではクライアントのメモリ保持による暫定対応で、再読み込みで消える不具合だった）。クライアントに保持させると再読み込み・別端末・別ブラウザで再現しないため、APIサーバ側で保持する（`api/src/connection-state/connection-state-store.ts`）。
-
-- **【Phase 5での変更】** 要求は国コードではなく`locationId`になった。保存するのは`locationId`と、そこから導出した国コード（`country`）と、`connect`出力から読み取った都市名（`location`）で、`GET /v1/connection`は`locationId`も返す（Webが「現在の接続先」を特定するため）。以下の「国」は「接続先（`locationId`）と国」と読み替える。
-- **保存**: `PUT /v1/connection`の接続（`connect=true`）が成功し接続中と判定された時点で、要求した`country`と、`connect`出力から読み取った接続先の都市名（`location`）を`CONNECTION_STATE_FILE`（既定`/var/lib/vpngwgui/connection-state.json`、`api-data`ボリューム上。コンテナ再作成でも保持）へ保存する。接続コマンドが失敗した場合は保存しない。
-- **返却**: `PUT`の応答と`GET /v1/connection`は、接続中かつ保存内容が実際の接続先と整合する場合に`country`を付与する。`location`（実CLIが報告する都市名）も併せて返す。
-- **整合性（古い国を返さない）**: `status`の都市名が保存時の`location`と異なる場合（VPNがAPI外で再接続された等）は`country`を返さず保存内容を消去する。都市名が保存時・観測時のどちらかで不明な場合は判定できないため保存内容を信頼する。
-- **消去**: 切断（`connect=false`）の成功時、`GET /v1/connection`で切断を観測した時（VPN断・proxy再起動を含む）、接続先の不一致を検知した時。保存ファイルが破損・形状不正の場合は例外とせず国なしとして扱う。
-- **既知の限界**: 接続先の都市名が同一のまま別経路で国のみ異なる指定で再接続された場合は検知できない（`-l`に対し同じ都市が選ばれる場合のみ。実害は表示のみ）。API外から接続した場合（保存なし）は`country`が返らない（`location`のみ）。
-
-## 接続先（ロケーション）（Phase 5で追加）
-
-### 取得（`GET /v1/connection/locations`）
-
-`listLocations`アクションを実行し、標準出力（表形式）をパースして返す。キャッシュはしない（呼び出しごとに実CLIを実行する。約1秒。ping値の鮮度を利用者の「再計測」操作で決めるため）。
-
-```
-ISO   COUNTRY              CITY                           PING ESTIMATE
-JP    Japan                Tokyo                          4
-US    United States        Las Vegas                      111
-CN    China                Shanghai (Virtual)             59
-```
-
-```json
-[
-  { "id": "jp-tokyo", "country": "jp", "countryName": "Japan", "city": "Tokyo", "pingMs": 4, "favorite": false, "lastConnected": true },
-  { "id": "cn-shanghai-virtual", "country": "cn", "countryName": "China", "city": "Shanghai (Virtual)", "pingMs": 59, "favorite": true, "lastConnected": false }
-]
-```
-
-- **パース**: 実CLIの出力は固定幅の表である。国名（`United States`）・都市名（`Las Vegas`）が空白を含むため空白区切りでは分割できず、ヘッダ行（`ISO`/`COUNTRY`/`CITY`/`PING`）の各列の開始位置を基準に切り出す。ANSIエスケープは除去する。ヘッダ行に一致しない行（空行・末尾の案内文）は読み飛ばす。ヘッダが見つからない出力は想定外の出力として例外にする（500。CLIの書式変更を黙って空リストにしないため）。ping値が数値でない行は`pingMs`を省略する。
-- **並び順**: `pingMs`昇順（`pingMs`なしは末尾）。同値は元の出力順を保つ（安定ソート）。Web UIはこの順序をそのまま表示する（並べ替えロジックをWebに持たせない）。
-- **失敗**: コマンドが非ゼロ終了（未ログイン等）は既存方針どおり422（`stderr`にstdoutを格納、`lib/failure-output.ts`）、プロキシ未応答は502/504。
-- **`favorite`**: お気に入りストアに`id`が含まれるか。**`lastConnected`**: 最後に接続した接続先の`id`と一致するか（高々1件）。
-
-### 接続先の識別と接続時の指定名
-
-- **`id`**: `<国コード小文字>-<都市名のslug>`。slugは、都市名をNFD正規化して分音記号（結合文字）を除去し、小文字化し、英数字以外の連続を`-`1つに置換して前後の`-`を除いたもの（例: `Las Vegas` → `las-vegas`、`São Paulo` → `sao-paulo`、`Shanghai (Virtual)` → `shanghai-virtual`）。英数字が残らない場合は`location`とする。URLパスへそのまま置ける文字（`a-z0-9-`）のみで構成する。ベンダーCLIの表示名の揺れに依存しない安定したキーとして、お気に入り・最後の接続先の永続化にも使う。
-- **接続時の指定名**: `connect -l`へ渡す文字列は、表示の都市名から末尾の`(Virtual)`（前の空白を含む）を除いたもの。実機で、`Shanghai (Virtual)`のままでは接続に失敗し（`Mumbai (Virtual)`は「There is no location」）、`Shanghai`／`Mumbai`で接続できることを確認した（2026-09-21）。都市名は国名・ISOコードとも衝突しない（実CLIは都市名・国名・ISOコードのいずれでも解釈するが、この一覧では都市名を渡す）。
-- 接続先の`id`は`PUT /v1/connection`へ渡され、APIが**その場で`listLocations`を再実行して**該当する行を特定し、その接続時の指定名を`%LOCATION%`へ代入する（許可値＝現在の一覧の全指定名。一覧に存在しない`id`は400）。クライアントから都市名を直接受け取らないことで、任意の文字列がCLIへ渡ることを防ぎつつ、サーバ増減にも追従する。この再取得により、接続操作が約1秒長くなる。
-
-### 接続（`PUT /v1/connection`）の変更
-
-- リクエスト: `{ "connect": true, "locationId": "us-las-vegas" }`／`{ "connect": false }`。`connect=true`で`locationId`がなければ400。`country`は廃止した。
-- 接続中に別の`locationId`で呼ぶと接続先を変更する（実CLIの`connect -l`は接続中でも呼べ、現在の接続先を切断してから接続する。実機で確認。Web UIの「接続先を変更」ボタンはこの呼び出しを行う）。
-- 成功（接続中と判定）時: (1)接続状態（`connection-state-store`）へ`locationId`・`country`・`location`を保存、(2)**最後に接続した接続先**（`last-location-store`）へ`locationId`を保存する。最後の接続先は切断しても消さない。
-- 監査ログの`input`には`{ connect, locationId }`が入る（接続先の国は`locationId`の先頭から読める）。
-
-### 永続化
-
-いずれも`api-data`ボリューム（`/var/lib/vpngwgui/`）上の単一JSONファイル。read-modify-write、競合は考慮しない（`settings-store.ts`と同方針）。ファイルが無い・壊れている場合は空として扱い、例外にしない（お気に入り・前回の接続先を失うだけで動作は継続する）。
-
-| ストア | 環境変数（既定パス） | 内容 |
-|---|---|---|
-| お気に入り（`locations/favorite-locations-store.ts`） | `FAVORITE_LOCATIONS_FILE`（`favorite-locations.json`） | `{ "ids": ["jp-tokyo", ...] }`。上限200件 |
-| 最後の接続先（`locations/last-location-store.ts`） | `LAST_LOCATION_FILE`（`last-location.json`） | `{ "id": "jp-tokyo" }` |
-
-- お気に入りの登録・解除は、`id`が現在の`list-locations`に存在するかを確認しない（CLIを実行せず即応答するため）。形式（`^[a-z]{2}-[a-z0-9-]{1,64}$`）のみ検証し、不正なら400。一覧に存在しない`id`は`GET /v1/connection/locations`に現れないだけで、サーバの再追加時に復活する。
-- お気に入りの上限超過は400。
-
-### 配置（AGENTS.mdの規約）
-
-接続先のドメイン知識（表のパース、ID・指定名の導出、お気に入り・最後の接続先の保存）は`api/src/locations/`にまとめる（`location-list-parser.ts`・`location-id.ts`・`favorite-locations-store.ts`・`last-location-store.ts`）。ドメイン非依存の文字列処理（NFD正規化によるslug化）は`lib/`に置く（`lib/slugify.ts`）。
-
-# エラーハンドリング方針
-
-- **【Phase 5】** Fastifyのスキーマ検証エラー（不正なbody・パスパラメータ）も`400`（`invalid_input`）で返す。従来は500になっていた。
-- プレースホルダー検証失敗、未知のベンダー指定等の入力エラー: `400 Bad Request`。
-- ゲートウェイへの接続失敗（mTLS TCP未応答・証明書検証エラー等）: `502 Bad Gateway`。
-- **【Phase 25】** 未認証（セッションCookie欠如・不正・期限切れ）: `401 Unauthorized`（`GET /v1/operator`・`POST /v1/operator`（未作成時）・`POST /v1/operator/session`を除く）。アカウント作成済みなのに`POST /v1/operator`を呼んだ場合: `409 Conflict`。ログイン試行・パスワード変更のレート制限超過: `429 Too Many Requests`。
-- プロキシサーバ側でのコマンド実行失敗（非ゼロexit）: `422 Unprocessable Entity` とし、bodyに `exitCode`・`stderr` 要約を含める。実CLIはエラーメッセージをstderrではなくstdoutへ出力するため（例: 接続していない時の`disconnect`は`Failed to disconnect. Process is not running`をstdoutへ出し exit code 14）、`stderr`が空の場合はstdoutを同フィールドへ格納する（`lib/failure-output.ts`。ANSIエスケープ除去・前後空白除去）。
-  - **`GET /v1/connection`（`status`アクション）の非ゼロexitも、`successPattern`が定義されていれば`isCommandSuccess`（`profile/command-success.ts`）により成功とみなす**（`PUT /v1/connection`・接続復元と同じ判定関数を使う。バグ修正、2026-09-22）。AdGuard VPN CLIは未ログイン時`status`がexit code 11で終了する（本ファイル「実機検証で判明した点」参照）のに対し、ProtonVPN CLIは未ログインでもexit 0で「切断中」を返すため、修正前はAdGuardVPNだけ未ログイン時に422（Web UIへ「接続状態の取得に失敗しました」エラーが表面化）していた。AdGuardVPNの`vendors/adguardvpn/profile.json`の`status`に`"successPattern": "You are not logged in|not logged in"`を追加し、この出力を成功として扱う（`parseConnectionOutput`は`connectedPattern`に一致しないため自然に`disconnected`と判定する）。
-- タイムアウト: `504 Gateway Timeout`。
-- **【Phase 8】** ベンダー切替中の競合: `409 Conflict`（`error: "provider_switching"`）。
-- **【Phase 7】** プラン制限によるコマンド失敗（`restrictedPattern`一致）: `403 Forbidden`（`error: "operation_restricted"`。`exitCode`・`stderr`要約を含む）。プロファイルがその操作に対応していない（アクション未定義）: `501 Not Implemented`（`error: "operation_unsupported"`）。
-
-## プランで接続できる接続先の参考一覧（Phase 12）
-
-要件は`requirements.md`「プランで接続できる接続先の参考一覧」。
-
-### プロファイルの拡張（`account.plans[].availableLocations`、省略可）
-
-```json
-"availableLocations": {
-  "file": "VPN/serverlist.json",
-  "list": "LogicalServers",
-  "country": "ExitCountry",
-  "city": "City",
-  "where": [ { "field": "Tier", "equals": 0 }, { "field": "Status", "equals": 1 } ],
-  "countryAliases": { "UK": "GB" }
-}
-```
-
-| 項目 | 内容 |
-|---|---|
-| `file` | サーバ一覧（JSON）のパス。`<PROVIDER_CACHE_DIR>/<ベンダーID>/`からの相対。この配下の外を指す指定（`..`・絶対パス）は無効（空の一覧になる）。 |
-| `list` | サーバの配列を持つ最上位のキー。 |
-| `country` / `city` | 各サーバの、国コード（文字列）・都市名（文字列。省略可・欠けたサーバは都市なしとして数える）の項目名。 |
-| `where` | 当該プランで使えるサーバの条件（全て満たすもの）。`field`が`equals`と等しい（数値・文字列）。 |
-| `countryAliases` | 国コードの読み替え（ISO 3166-1と異なる独自コードのため。省略可）。名称の解決にだけ使い、返す`code`は元の値。 |
-
-- 読み込み時の検証: `list`・`country`・`file`が空でないこと。
-
-### エンドポイント（`GET /v1/connection/available-locations`）
-
-- 選択中のベンダーの現在のプラン（`account`の判定結果。30秒キャッシュ）の`availableLocations`を読む。プランが不明・未ログイン・`availableLocations`が無い場合は空。
-- 応答: `{ "locations": [ { "code": "JP", "name": "日本", "cities": ["Osaka", "Tokyo"] } ] }`。`name`は`Intl.DisplayNames`（ja）で解決し、解決できなければ`code`。国名の日本語順に並べる。`cities`は重複を除き昇順。
-- ファイルの読み取り失敗（無い・壊れている・置き場の外）は空の一覧（`200`）。サーバのドメイン・IP・IDは応答に含めない。
-- ファイルはリクエストごとに読む（数MBのJSON。Web UIは、制限表示の間、ベンダー切替・プラン変更時にだけ取得するため頻度は低い）。
-
-### 参照するキャッシュの置き場
-
-- `PROVIDER_CACHE_DIR`（既定`/var/lib/vpngwgui-provider-cache`）配下に、ベンダーごとの読み取り専用のキャッシュを`<ベンダーID>/`として置く。ランナーがCLIのキャッシュに使うボリュームを、APIコンテナへ読み取り専用でマウントする（ランナーの実行部は変更しない。APIはCLIを起動せずファイルだけを読む）。マウントの記述はベンダー固有のため、そのバンドルのcompose.yml（`services.api.volumes`。composeの合成で`docker-compose.yml`の`api`へ加わる）に置く（Phase 10。`vendors/protonvpn/compose.yml`）。
-- APIは非rootで起動し、ランナーのキャッシュファイルと同じUID/GID（10001）で読む。
-
-### ファイル配置（AGENTS.mdの規約）
-
-- `api/src/locations/plan-locations.ts`（抽出。純粋関数＋ファイル読み取り）、`api/src/routes/connection-available-locations.ts`（ルート）、`api/src/profile/profile.schema.ts`（スキーマ）。
-
-## プランの補足情報の参考表示（Phase 13）
-
-要件は`requirements.md`「プランの補足情報の参考表示」。契約プランには、実行可否とは別に、利用者向けの補足情報（例: 今月分の残りデータ通信量）が付随する場合がある（`specs/requirements.md`「プラン制限のバリエーション」）。`account`の出力から抽出し、追加のコマンド実行を要求しない。
-
-### プロファイルの拡張（`account.plans[].usageNote`、省略可）
-
-```json
-"usageNote": {
-  "pattern": "(You have .+ left for this month)"
-}
-```
-
-| 項目 | 内容 |
-|---|---|
-| `pattern` | `account`の出力（標準出力・標準エラーの連結、ANSI除去済み）に対する正規表現（フラグ`im`）。**第1キャプチャグループ**の文字列を、そのまま利用者向けの表示文として使う。単位・文言はベンダーの出力そのものであり、APIサーバは意味を解釈しない（数値への変換・比較・警告の判定はしない）。 |
-
-- マッチしない場合は補足情報なし（省略）。プラン判定自体（`pattern`によるプランの特定）には影響しない。
-
-### `evaluateAccountOutput`の拡張
-
-- プランが確定した後、そのプランの`usageNote.pattern`を同じ出力に対して評価し、一致すればキャプチャを`SessionInfo.plan.usageNote`に設定する。`usageNote`が省略されている、または一致しなければ`SessionInfo.plan.usageNote`は省略する。
-
-### `GET /v1/session`の応答拡張
-
-- `plan`に`usageNote`（省略可の文字列）を追加する: `{ "loginMethod", "loggedIn"?, "plan"?: { "id", "label", "usageNote"? } }`。
-
-### 検討し、採用しなかった案
-
-- **`connect`・`listLocations`の`restrictedPattern`で「無料プランの接続先制限」を検出する案**: AdGuard VPNの実機検証（2026-09-22）で、無料プランで一覧に無い接続先を指定した`connect`の失敗は`Failed to start the VPN service in the background: Disconnected`（exit 13）であり、Proton VPNの`not available on the free plan`のような、プラン制限に固有の文言を持たない。他の失敗理由（一時的なサーバ障害等）と区別できないため、`restrictedPattern`として宣言しない。接続先の選択はWeb UIが`listLocations`の結果（無料プランでは既に絞り込まれた一覧）からのみ行わせる設計のため、一覧に無い接続先を指定する操作自体が通常のUI操作では発生しない。
-
-## 起動時の接続状態の復元（Phase 16）
-
-要件は`requirements.md`「起動時の接続状態の復元」。VPN接続中にホスト・apiコンテナが意図せず再起動された場合、再起動後に元の接続状態へ自動的に戻す。
-
-### 接続の実行の切り出し（`connection-state/apply-connection.ts`）
-
-- `PUT /v1/connection`ルートハンドラに書かれていた「接続先の解決・コマンド実行・成否判定・永続化」を`applyConnectionChange(provider, body)`として切り出した。ルートハンドラと、起動時の復元処理（下記）の両方から呼ぶ（重複を避けるため）。
-- 例外・監査ログ・永続化の方針はPhase 15までと変わらない。`assertNotSwitching()`（ベンダー切替中の排他）は呼び出し側の責務のまま据え置く（起動時は切替が発生し得ないため確認不要）。
-
-### 接続状態の永続化の拡張（`connection-state/connection-state-store.ts`）
-
-- 従来、`saveConnectedLocation`は接続先を指定した接続（`locationId`あり）のときのみ呼ばれ、自動接続（接続先を選べないプラン等）では呼ばれなかった。Phase 16で、自動接続の成功時にも`country`・`locationId`を持たない空の内容（`{}`）で保存するようにした。「接続中であったこと自体」が、起動時に再接続すべきかを判定する唯一の手がかりになるため。
-- `StoredConnection.country`を必須から省略可へ変更した。空の内容で保存されたファイルは、`GET /v1/connection`の表示（`reconcileLocation`）には影響しない（`country`が無ければ何も付与しない、従来どおり）。
-
-### 復元処理（`connection-state/restore-connection.ts`）
-
-- apiサーバ起動時（`server.ts`）に、他の起動時処理（プロキシへの設定通知）と同じ方針（非同期・失敗してもサーバ起動を妨げない・数回リトライ）で実行する。
-- 手順: ①選択中のベンダーの保存済み接続情報を読む。無ければ何もしない（直前が切断中だった、または一度も接続していない）。②ランナーの起動を待つ（`checkRunnerHealth`を数回リトライ。ランナーは`api`の`depends_on`に含まれないため起動直後は間に合わないことがある）。起動しなければ警告を記録して終える。③現在の`status`を確認し、既に接続中なら何もしない（apiコンテナ単体の再起動等でトンネル自体は生きていた場合）。④保存済みの`locationId`があれば`applyConnectionChange`へ`{ connect: true, locationId }`を、無ければ（自動接続だった）`{ connect: true }`を渡して再接続する。
-- 失敗（ランナー起動待ちの超過、未ログイン、CLIの一時的な失敗等）はすべて警告としてログに記録し、例外を投げない。利用者は手動で接続し直せる。
-- 対象は選択中のベンダーのみ（複数ベンダー同時稼働は対象外。`specs/requirements.md`「システム要件」）。
-
-# 設定の動作検証（Phase 27）
-
-全体方針は`../design.md`「設定の動作検証の設計方針」。以降は`api`の実装詳細（一次情報）。
-
-## 設定項目（`UserSettings`への追加）
-
-| 設定項目 | 型 | 説明 |
-|---|---|---|
-| `verifyEchoUrl` | string | 出口IPを取得するIP確認サービスのURL（既定: `https://api.ipify.org`）。ゲートウェイ（`proxy`）とブラウザの双方が同じURLで取得する。`https://`のURLのみ許可（認証情報・フラグメントは不可）。空文字の更新は400で拒否する |
-
-IP確認サービスは、次を満たさなければならない。(1) 応答本文が**IPv4アドレスのみのテキスト**（改行は許容）である。(2) ブラウザからのクロスオリジンのfetchが許可されている（`Access-Control-Allow-Origin`を返す）。(3) IPv4で応答する（IPv6を返すサービスでは、IPv6を扱わないゲートウェイの検証にならない）。(2)は、ブラウザ側の取得（`client-egress`）のために必要で、CORSを許可しないサービス（例: `https://inet-ip.info`）は使えない。この項目は`proxy`への設定反映（`POST /net/settings`）のボディへは含めない（検証の実行依頼で個別に渡す）。検証は、**保存済みの設定**に対して行う。
-
-## 検証項目（`api/src/verification/`）
-
-各項目は「ID・タイトル・グループ・層・適用条件（設定と稼働状況から導出）・期待値・観測値・状態・ヒント」を持つ。**グループ**は`config`（L1）・`gateway`（L2）・`client`（L3）の3つで、項目はこの順、グループ内は下表の順に並べる（＝実行順）。
-
-状態は`pending`（待機中）／`running`（実行中）／`pass`（合格）／`fail`（不合格）／`unconfirmed`（未確認。前提を満たさない、または端末側の事情で判定できない。理由を付ける）／`notApplicable`（設定で無効のため対象外。実行しない。理由を付ける）。適用条件は**設定のみ**から導く（VPNの接続状態は適用条件にしない。VPN未接続で確認できない項目は`unconfirmed`とする）。項目の一覧・適用条件の一次情報は`api/src/verification/check-catalog.ts`。
-
-| ID | グループ | 適用条件 | 合格の条件 |
-|---|---|---|---|
-| `gateway-rules` | config | `transparentGatewayEnabled` | `inet vpngwgui`のnat・forward構成が設定（VPN接続の有無、Kill Switch、迂回）に対応した形で存在し、`ip_forward=1`である |
-| `kill-switch-rules` | config | `transparentGatewayEnabled`かつ`killSwitch` | forward末尾にLAN発のdropがあり、VPN切断時にLAN発をWAN側へ許すフォールバックが無い |
-| `dns-relay-listening` | config | `dnsRelayEnabled` | リゾルバの状態が`active`で、UDP・TCPのLAN側アドレスと127.0.0.1に待受している |
-| `dns-redirect-rules` | config | `dnsRelayEnabled`かつ`dnsRedirectEnabled` | nat preroutingにリダイレクトのルール（誘導した送信元を記録するsetへの追記を含む）が、除外CIDR・ゲートウェイ自身を除く形で存在する |
-| `explicit-proxy-listening` | config | `explicitProxyEnabled` | 3proxyが稼働し、SOCKS5・HTTPのポートが待受している |
-| `tunnel-egress` | gateway | `transparentGatewayEnabled`または`explicitProxyEnabled` | トンネルのインターフェース経由でIP確認サービスから出口IPを取得できる（VPN未接続は`unconfirmed`） |
-| `dns-relay-resolve` | gateway | `dnsRelayEnabled` | 中継リゾルバへ、IP確認サービスのホスト名（IPアドレスで指定されていれば`example.com`）を問い合わせ、応答（NOERRORまたは上流のNXDOMAIN）が得られる。検証専用のClientID（`vpngw-selfcheck`）で上流へ転送され、上流の状態が`ok`である（上流が未設定でフォールバック先のみの場合は応答だけで判定する） |
-| `bypass-set` | gateway | `dnsRelayEnabled`かつ`excludedDomains`が空でない | 迂回対象の名前（完全一致はその名前、ワイルドカードは`www.`を付けた名前。先頭から最大3件を順に試す）を中継へ問い合わせ、応答のIPv4が`bypass4`へ投入される。どの名前も解決できなければ`unconfirmed` |
-| `bypass-routing` | gateway | 同上 | 迂回対象の宛先に印を付けるルールがあり、上記IPに対し`ip route get <IP> mark 0x100`の出力インターフェースが実回線側であり、印の無い同じIPはVPN接続中ならトンネルである |
-| `bypass-isolation` | gateway | 同上 | 迂回対象ではないドメイン（`example.com`・`example.net`・`example.org`のうち、迂回ドメインに含まれない先頭のもの）を問い合わせても、そのIPが`bypass4`へ新たに投入されない。そのIPが問い合わせ前から`bypass4`にある（迂回ドメインとIPを共有している）場合は`unconfirmed` |
-| `explicit-proxy-egress` | gateway | `explicitProxyEnabled` | ゲートウェイのLAN側アドレスから、SOCKS5・HTTPの両方を経由して取得した出口IPが、`tunnel-egress`と一致する。LAN側アドレスが許可元CIDRに含まれない場合は`unconfirmed`とする（許可元CIDRは通常LANの範囲であるため、127.0.0.1ではなくLAN側アドレスから接続する。許可リストは検証のために変更しない） |
-| `client-egress` | client | `transparentGatewayEnabled` | 操作中の端末の出口IPが`tunnel-egress`の出口IPと一致する（異なれば`fail`。ブラウザが取得できない・トンネルの出口IPが無い場合は`unconfirmed`） |
-| `dns-redirect-path` | client | `dnsRelayEnabled`かつ`dnsRedirectEnabled` | 下記の判定に従い、リダイレクトが動作している |
-
-`client-egress`に加え、迂回対象のドメインが操作中の端末で実際に迂回されるかは、`bypass-set`・`bypass-routing`（IPと経路の構成）で確認する。L3で迂回の出口IPは取得しない（IP確認サービスのホスト名が迂回対象でないため）。
-
-### `dns-redirect-path`の判定
-
-検証の開始時に、使い捨ての名前（`vpngw-<乱数>.example.com`。実在するドメイン配下の存在しない名前。`.invalid`・`.test`等は、OSのリゾルバが問い合わせを出さずにローカルで応答することがあるため使わない）を発行して`proxy`へ登録する（有効60秒）。ブラウザがその名前へアクセスして名前解決を起こし、`proxy`が受信（送信元IP・誘導されたか）を記録する。項目の順番が来た時点で、`proxy`の記録を取得して判定する（まだ受信していなければ、最大10秒待つ）。
-
-| 記録の内容 | 状態 |
-|---|---|
-| 受信し、その問い合わせが誘導されたものである | `pass`（この端末の問い合わせが誘導されたことを確認） |
-| 受信していない、または誘導されたものでないが、直近10分に端末（この端末を含め1台以上）の問い合わせが誘導された実績がある | `pass`（実績によりリダイレクトの動作を確認。観測値に「実績あり」と記す） |
-| 受信したが誘導されたものでなく、実績もない | `unconfirmed`（この端末はゲートウェイをDNSサーバに直接指定しており、リダイレクトを通らない。中継リゾルバへの到達は確認できている） |
-| 受信しておらず、実績もない | `unconfirmed`（暗号化DNS〔DoH・DoT・プライベートDNS〕の利用、除外CIDR宛のDNS、ブラウザが名前解決を行わなかった、等でこの端末の問い合わせが53番を通らなかった可能性。ヒントで確認事項を示す） |
-
-`client-egress`は出口IPの一致で判定するため、同じVPNの出口IPを共有する別の経路（別のVPNゲートウェイ等）を通る端末は区別できない（既知の制約）。
-
-不合格（`fail`）にしないのは、リダイレクトの故障と端末側の事情を、ブラウザからは区別できないため（構成の故障は`dns-redirect-rules`が検出する）。
-
-## エンドポイント
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `POST` | `/v1/verifications` | 検証を開始する。適用条件を評価して対象項目を決め、順に実行する。202で、開始直後の検証（`GET`と同じ形状。全項目が待機中または対象外）を返す。実行中の検証があれば409（`verification_running`）。要operator認証 |
-| `GET` | `/v1/verifications/{id}` | 検証の進行・結果を取得する。保持していないIDは404 |
-| `PUT` | `/v1/verifications/{id}/client-observations/egress-ip` | ブラウザが取得した出口IPを提出する。ボディは`{ "ip": "a.b.c.d" }`、取得に失敗した場合は`{ "ip": null }`（`client-egress`は`unconfirmed`）。最初の提出のみ採用し、`200 { "accepted": boolean }`を返す。IPv4以外の文字列は400、保持していないIDは404 |
-
-`GET /v1/verifications/{id}`の応答は`{ id, state: "running"|"completed", startedAt, finishedAt?, checks: [{ id, title, group, status, expected?, observed?, hint?, reason? }], clientProbe?: { dnsName } }`。`checks`は実行順に並ぶ。`clientProbe.dnsName`は、ブラウザが名前解決を起こす検証用の名前（開始の応答〔`POST`の202〕と`GET`のどちらでも返す。ゲートウェイへの登録に失敗した場合は含めず、`dns-redirect-path`は`unconfirmed`になる）。スキーマの一次情報は`api/src/schemas/verification.ts`。
-
-## 実行
-
-- 項目は、上表の順に**1項目ずつ**実行する。実行中の項目は`running`にし、確定したら結果にする。前の項目が`fail`・`unconfirmed`でも、後続の項目は続行する（不具合の全体像を一度に把握するため）。
-- L1・L2の項目は、`proxy`へ項目ごとに実行を依頼する（`POST /net/checks`。応答は最大20秒待つ）。`tunnel-egress`の出口IP・`bypass-set`の迂回対象のIP（応答の`value`）を保持し、後続の項目の依頼（`expectedEgressIp`・`bypassProbeIp`）へ渡す。依頼が失敗した（到達不能・タイムアウト）項目は、`fail`ではなく`unconfirmed`とし、理由に到達不能を示す。
-- 短時間で終わる項目でも、画面で進行が分かるよう、各項目は最低400ms`running`を保ってから結果にする（検証の内容は待たせず、結果の公開だけを遅らせる）。
-- L3の`client-egress`は、ブラウザから提出された出口IP（提出が先に届いていれば保持しておく）で判定する。順番が来てから最大15秒待っても提出がなければ`unconfirmed`（理由: ブラウザから結果が届かなかった）とする。
-- 結果はメモリ上に直近5件のみ保持し、永続化しない（出口IPを保存しない）。
-- 監査ログに`verification_run`（`input`: 対象項目数・結果ごとの件数）を記録する。IP・名前・問い合わせ内容は記録しない。
-- 認証は他の`/v1/*`と同じ（`require-operator-session`）。実行は同時に1件までに制限する（操作系エンドポイントのレート制限は無い。`tasks.md`「将来課題」）。
-- 実装は`api/src/verification/`（項目の一覧: `check-catalog.ts`、L3の判定: `client-judgements.ts`、実行と保持: `verification-service.ts`）、ルートは`api/src/routes/verifications.ts`。
-
-# ゲートウェイ機の再起動
-
-## エンドポイント（`POST /v1/gateway/reboot`）
-
-- ボディ`{ "password": "<利用者のパスワード>" }`。認証は他の`/v1/*`と同じ（`require-operator-session`）に加え、ボディのパスワードを現在の利用者アカウントに対して検証する。誤りは`401`（ログインと同じ失敗回数の制限を共有し、超過は`429`）。成功すると`proxy`の`POST /net/host-reboot`へ依頼し、`202 { "requested": true }`を返す。`proxy`が依頼を受け付けられない場合は、既存の内部通信と同じ分類で`502`/`504`、ホスト側の仕組みが無い（`503`相当）場合は`503`とする。
-- 監査ログに`gateway_reboot`（成功は`exitCode: 0`、失敗は`error`）を記録する。パスワードは記録しない。
-- 実装は`api/src/routes/gateway-reboot.ts`、`proxy-client`の`requestGatewayReboot()`。
+- 利用者のアカウントと、ベンダーのログイン状態は別のものとして、`/v1/operator` と `/v1/session` に分ける。
+
+### D-11: プランの補足情報と参考一覧 (FR-12)
+
+| 宣言（`account.plans[]`）                   | 内容                                                                                                                              |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `usageNote.pattern`                         | `account` の出力（ANSI除去済み）への正規表現。第1キャプチャをそのまま補足情報として `plan.usageNote` に入れる。一致しなければ省く |
+| `availableLocations.file`                   | `<PROVIDER_CACHE_DIR>/<ID>/` からの相対パス。`..` や絶対パスは無効（空の一覧）                                                    |
+| `availableLocations.list` `country` `city`  | サーバ配列のキー、各サーバの国コードと都市名の項目名                                                                              |
+| `availableLocations.where` `countryAliases` | 使えるサーバの条件（全て満たす）と、国コードの読み替え（名称の解決だけに使う）                                                    |
+
+- `GET /v1/connection/available-locations` は、選択中のベンダーの現在のプランの宣言を読み、`{locations: [{code, name, cities}]}` を返す。`name` は日本語の国名で、解決できなければ国コード。都市は重複を除いて昇順、国は国名順。
+- プラン不明・未ログイン・宣言なし・ファイルが読めないときは、200で空の一覧を返す。サーバのドメイン・IP・IDは含めない。ファイルは要求のたびに読む。
+- 補足情報の取得に追加のコマンドは実行しない。ベンダー固有の文言や単位をコードに持たない。
+
+### D-12: 設定の動作検証 (FR-10, NFR-6)
+
+| ID                                                                   | 層   | 適用条件（設定のみから導く）                  | 実行場所     |
+| -------------------------------------------------------------------- | ---- | --------------------------------------------- | ------------ |
+| `gateway-rules`                                                      | 設定 | 透過ゲートウェイ                              | ゲートウェイ |
+| `kill-switch-rules`                                                  | 設定 | 透過ゲートウェイかつKill Switch               | ゲートウェイ |
+| `dns-relay-listening`                                                | 設定 | DNS中継                                       | ゲートウェイ |
+| `dns-redirect-rules`                                                 | 設定 | DNS中継かつ53番の誘導                         | ゲートウェイ |
+| `explicit-proxy-listening`                                           | 設定 | 明示的プロキシ                                | ゲートウェイ |
+| `tunnel-egress`                                                      | 通信 | 透過ゲートウェイまたは明示的プロキシ          | ゲートウェイ |
+| `dns-relay-resolve` `bypass-set` `bypass-routing` `bypass-isolation` | 通信 | DNS中継（迂回の3項目は迂回ドメインが1件以上） | ゲートウェイ |
+| `explicit-proxy-egress`                                              | 通信 | 明示的プロキシ                                | ゲートウェイ |
+| `client-egress`                                                      | 端末 | 透過ゲートウェイ                              | ブラウザ     |
+| `dns-redirect-path`                                                  | 端末 | DNS中継かつ53番の誘導                         | ブラウザ     |
+
+| 状態                                                            | 意味                                                                       |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `pending` `running` `pass` `fail` `unconfirmed` `notApplicable` | 待機中・実行中・合格・不合格・未確認（前提が崩れたか端末側の事情）・対象外 |
+
+- `POST /v1/verifications` は項目を決めて順に実行し、202で全項目が待機中または対象外の状態を返す。実行中があれば409 `verification_running`。`GET /v1/verifications/{id}` で進行と結果を取得し、`PUT .../client-observations/egress-ip` でブラウザが取得した出口IP（`{ip}`。失敗は `{ip: null}`。最初の提出だけを採用）を受け取る。
+- 項目は1件ずつ実行する。前の項目が不合格・未確認でも続行する。各項目は最低400ミリ秒 `running` を保つ。ゲートウェイへの依頼が失敗した項目は不合格にせず、到達不能の理由で未確認とする。
+- 端末の項目: `client-egress` はブラウザの出口IPがトンネルの出口IPと一致するかで判定する。順番が来てから15秒待っても提出が無ければ未確認。`dns-redirect-path` は使い捨ての名前を登録し、ブラウザが解決した記録（誘導された、または直近10分の誘導の実績）で合格、受信したが誘導されていなければ未確認、受信が無く実績もなければ未確認とする。故障と端末の事情を区別できないため、不合格にしない。
+- 結果は直近5件だけをメモリに保持し、永続化しない。監査ログには対象項目数と結果ごとの件数だけを記録する。同時に1件までで、認証は他のAPIと同じである。
+
+### D-13: ゲートウェイ機の再起動 (FR-11)
+
+| 項目                      | 内容                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| `POST /v1/gateway/reboot` | ボディ `{password}`。認証に加えて、ボディのパスワードを現在のアカウントに対して検証する    |
+| 誤ったパスワード          | 401。ログインと同じ失敗回数の制限を共有し、超過は429                                       |
+| 成功                      | ゲートウェイの `POST /net/host-reboot` へ依頼して `202 {requested: true}`                  |
+| 依頼の失敗                | 到達不能・タイムアウトは502・504、ホスト側の仕組みが無いときは503                          |
+| 監査                      | `gateway_reboot`（成功は `exitCode: 0`、失敗は `error`）を記録する。パスワードは記録しない |
+
+## 4. エラー処理
+
+| 事象                                    | 処理                                             |
+| --------------------------------------- | ------------------------------------------------ |
+| スキーマ検証の失敗                      | 400 `invalid_input`                              |
+| プロファイルの不備・有効なベンダーが0個 | 起動に失敗する                                   |
+| 状態ファイルが無い・壊れている          | 空として扱い、例外にしない                       |
+| ログイン状態の判定に失敗                | 制限せず、操作はCLIの結果に従う                  |
+| 設定の通知に失敗                        | 設定の更新は成功とし、再通知で再試行する         |
+| 復元時のランナーの起動待ちが超過        | 警告を記録し、利用者が手動で接続できる状態を保つ |

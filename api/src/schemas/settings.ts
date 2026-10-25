@@ -1,5 +1,5 @@
 // 責務: ユーザ向け設定（Web UIから変更可能な運用設定）のTypeBoxスキーマ定義。
-// apiserver/design.md「ユーザ向け設定の具体スキーマ」に対応する。
+// apiserver/design.md D-9に対応する。
 // Phase 1ではプロキシへの実反映は行わないが、design.mdの全項目をスキーマとして持たせる。
 
 import { Type, type Static } from "@sinclair/typebox";
@@ -10,7 +10,7 @@ export const UserSettingsSchema = Type.Object({
   transparentGatewayEnabled: Type.Boolean(),
   explicitProxyEnabled: Type.Boolean(),
   explicitProxyAllowedCidrs: Type.Array(Type.String()),
-  // DNS中継・ドメイン迂回（Phase 14。apiserver/design.md「ユーザ向け設定の具体スキーマ」）。
+  // DNS中継・ドメイン迂回（Phase 14。apiserver/design.md D-9）。
   dnsRelayEnabled: Type.Boolean(),
   dnsUpstreamUrl: Type.String(),
   dnsUpstreamCaPem: Type.String(),

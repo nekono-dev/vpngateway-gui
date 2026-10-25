@@ -1,6 +1,6 @@
 // 責務: 「接続時に要求した接続先（接続先IDと国コード）」の永続化と、実際の接続状態との突き合わせ。
 // 実CLIの`status`は国コードではなく都市名しか出力しないため（例: "Connected to TOKYO in TUN mode"）、
-// APIが接続成功時に要求した接続先を保存し、`GET /v1/connection`で返す（apiserver/design.md「接続先国の永続化」）。
+// APIが接続成功時に要求した接続先を保存し、`GET /v1/connection`で返す（apiserver/design.md D-8）。
 // Web UIのリロード・別端末からの閲覧でも接続先を表示できるよう、クライアントではなくAPI側（データボリューム）に保存する。
 // 切断で消える「現在の接続先」であり、切断後も残る「最後に接続した接続先」は locations/last-location-store.ts が担う。
 // 単一JSONファイルへのread-modify-write（低頻度更新のため。settings-store.tsと同方針で競合は考慮しない）。

@@ -1,193 +1,45 @@
-# 実装タスク
+# APIサーバ タスク一覧
 
-## プロジェクトセットアップ
+## Phase 1: プロファイルとゲートウェイとの通信
 
-- [x] Fastify + TypeBox + `@fastify/swagger` によるプロジェクト初期化
-- [x] Dockerfile作成（APIコンテナ）
-- [x] lint / test 基盤の整備（2026-09-14: ESLint（`typescript-eslint`のrecommended構成）を導入し`npm run lint`を追加。テストは下記各項目参照）
+- 対応: D-1, D-2, D-3
+- [x] T-1.1: プロファイルのスキーマと、検証付きの読み込み、必須項目の欠落時の起動失敗を実装する。
+- [x] T-1.2: プレースホルダーの検証と、引数配列への解決を実装する。
+- [x] T-1.3: 相互TLSのクライアントと、エラーのHTTPステータス対応を実装する。
+- [x] T-1.4: 起動処理と、設定の通知・再通知を実装する。
+- [x] T-1.5: 操作と通信の受け入れテストを追加する。
+- 検証: `npm run test -w api && npx vitest run --config tests/vitest.config.ts tests/apiserver/operations.test.ts tests/apiserver/settings.test.ts`
 
-## 管理者向け設定（VPNクライアント操作プロファイル）
+## Phase 2: ベンダー・実行可否・ログイン
 
-- [x] プロファイルJSONのTypeBoxスキーマ定義
-- [x] プロファイル読み込み処理（`:ro` マウント想定）の実装
-- [x] プレースホルダー検証ロジック（正規表現・`enumFrom`）の実装
+- 対応: D-4, D-5, D-6
+- [x] T-2.1: 有効なベンダーの保持と、切替の手順、ベンダー別の状態の分離を実装する。
+- [x] T-2.2: 操作の実行可否の算出と、ログイン状態・プランの判定、失敗からの学習を実装する。
+- [x] T-2.3: 二つのログイン方式と、秘密情報の伏字化を実装する。
+- [x] T-2.4: ベンダー・実行可否・ログインの受け入れテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/apiserver/providers.test.ts tests/apiserver/capabilities.test.ts tests/apiserver/login.test.ts`
 
-## ユーザ向け設定
+## Phase 3: 接続先・接続・設定
 
-- [x] ユーザ向け設定の永続化実装（設定ファイルまたはSQLite等の軽量DB）（Phase1は単一JSONファイル）
-- [x] `GET /v1/connection/config` 実装
-- [x] `PUT /v1/connection/config` 実装
-- [x] `excludedDomains` 等の形式検証実装
+- 対応: D-7, D-8, D-9
+- [x] T-3.1: 接続先の表の解析、IDと指定名の導出、お気に入りと最後の接続先の永続化を実装する。
+- [x] T-3.2: 接続・切断・接続状態の保存と、起動時の復元を実装する。
+- [x] T-3.3: ユーザ向け設定の検証・永続化・反映と、稼働状況の中継を実装する。
+- [x] T-3.4: 接続と設定の受け入れテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/apiserver/operations.test.ts tests/apiserver/settings.test.ts`
 
-## 接続制御API
+## Phase 4: 利用者の認証とプランの情報
 
-- [x] `GET /v1/connection` 実装
-- [x] `PUT /v1/connection` 実装（`connect`/`country` 検証・コマンド解決・UDS送信）
-- [x] `GET /v1/connection/countries` 実装（**Phase 5で`GET /v1/connection/locations`へ置換**）
+- 対応: D-10, D-11
+- [x] T-4.1: 利用者アカウントの作成・変更、ログイン・ログアウト、認可フック、回数制限を実装する。
+- [x] T-4.2: プランの補足情報と、接続先を選べないプランの参考一覧を実装する。
+- [x] T-4.3: 認証とプラン情報の受け入れテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/apiserver/operator.test.ts tests/apiserver/capabilities.test.ts`
 
-## 接続先（ロケーション）API (Phase 5)
+## Phase 5: 動作検証と再起動の依頼
 
-設計は`design.md`「接続先（ロケーション）」。
-
-- [x] プロファイル: `listLocations`アクション追加、`countries`・`enumFrom`方式の廃止、`%LOCATION%`（`source: "locations"`）の動的な許可値検証（`profile.schema.ts`・`placeholder-resolver.ts`・`api/config/vpn-profile.json`）
-- [x] `list-locations`出力パーサー・接続先ID・接続時指定名（`(Virtual)`除去）（`locations/location-list-parser.ts`・`locations/location-id.ts`・`lib/slugify.ts`）
-- [x] お気に入りストア・最後の接続先ストア（`locations/favorite-locations-store.ts`・`locations/last-location-store.ts`）
-- [x] `GET /v1/connection/locations`（ping昇順・`favorite`・`lastConnected`付き）。`GET /v1/connection/countries`を廃止
-- [x] `PUT`/`DELETE /v1/connection/locations/{locationId}/favorite`
-- [x] `PUT /v1/connection`を`locationId`指定へ変更（接続時に`listLocations`を再実行して`id`を解決、成功時に最後の接続先・接続状態を保存）。`GET /v1/connection`に`locationId`を含める
-- [x] 設定スキーマから`defaultCountry`を除去（既存設定ファイルの残存値を無視）
-- [x] スキーマ検証エラーを400で返す（`app.ts`）
-- [x] テスト（パーサー・ストア・各エンドポイント・プレースホルダー）
-
-## ログイン代行API
-
-- [x] `POST /v1/session` 実装（`login` アクション解決・実行結果からログインURL抽出）（Phase2で実装）
-
-## 稼働状況取得API (Phase 4)
-
-- [x] `proxy-client.ts`に`fetchProxyStatus()`追加（ExecResult同様、TypeBoxで応答形状を検証。2026-09-21）
-- [x] `GET /v1/connection/gateway` 実装（TypeBoxスキーマ・OpenAPI公開。`routes/connection-gateway.ts`・`schemas/gateway.ts`。2026-09-21）
-- [x] 上記の統合テスト（プロキシ疎通はモック化。200/502/504。`routes/connection-gateway.test.ts`・`proxy-client.test.ts`。2026-09-21）
-- [x] 稼働状況へ`explicitProxy`（`state`: active/stopped/unconfigured/crashLoop/error、`socksPort`/`httpPort`/`restartCount`）を追加（Phase 6。`schemas/gateway.ts`。2026-09-21）
-- [x] `explicitProxyAllowedCidrs`のIPv4 CIDR形式検証（不正は400で保存しない。3proxy設定ファイルへの行注入対策。`settings/settings-store.ts`・`lib/ipv4-cidr.ts`。Phase 6。2026-09-21）
-
-## 監査ログ
-
-- [x] コマンド実行要求・結果の構造化ログ記録実装
-- [x] `GET /v1/connection/log` 実装
-
-## プロキシサーバとの内部通信
-
-- [x] UDSクライアント実装（`undici`の`Pool("http://localhost", {socketPath})`を使用。design.md記載の`Agent({socketPath})`と同等の目的を満たす）
-- [x] 内部プロトコルのランタイムスキーマ検証実装（TypeBox）（2026-09-14: `proxy-client.ts`にExecResultのTypeBoxスキーマ検証を追加、期待と異なる形状の応答は例外を投げるよう変更。プロキシ側の受信リクエストは既に検証済み）
-- [x] UDS未応答・タイムアウト時のハンドリング実装
-
-## エラーハンドリング
-
-- [x] 入力エラー（`400`）のハンドリング実装
-- [x] プロキシ接続失敗（`502`）のハンドリング実装
-- [x] プロキシ実行失敗（`422`、`exitCode`/`stderr`要約含む）のハンドリング実装
-- [x] 接続先国の永続化（接続成功時に要求した国＋接続先の都市名を保存し、`GET /v1/connection`・`PUT`の応答へ`country`/`location`を付与、切断・接続先不一致で消去。`connection-state/connection-state-store.ts`。2026-09-21。Web UI再読み込みで接続国が消える不具合の修正）
-- [x] 422の`stderr`が空の場合はstdoutを診断として返す（実CLI `adguardvpn-cli`はエラーをstdoutへ出力するため。Phase 4のE2Eで判明。`lib/failure-output.ts`。2026-09-21）
-- [x] タイムアウト（`504`）のハンドリング実装（2026-09-14: 実機で`proxy`コンテナを`docker compose pause`により意図的に無応答化し、`GET /v1/connection`が`504 {"error":"proxy_timeout",...}`を返すことをE2Eで確認済み）
-
-## OpenAPI公開
-
-- [x] `/openapi.json` 公開設定
-- [x] orvalによるWeb側クライアント生成の疎通確認
-
-## テスト
-
-- [x] プレースホルダー検証ロジックのユニットテスト（`profile/placeholder-resolver.test.ts`）
-- [x] APIエンドポイントの統合テスト（プロキシ疎通はモック化）（`routes/session.test.ts`で`POST /v1/session`の200/422/502/504を検証。他エンドポイントは未着手）
-
-## プロバイダ抽象化・プラン制限（Phase 7）
-
-- [x] プロファイルスキーマ拡張（`loginMethod`・`output.locationPattern`・`features`・省略可アクション・`connectAuto`・`logout`・`account`・`restrictedPattern`・`table`・`connectNameFrom`・`source: "input"`）と、必須アクションの組合せ検証（`profile/profile.schema.ts`・`profile-loader.ts`）
-- [x] プロファイルを`api/config/profiles/<プロバイダ>.json`へ移動し、`docker-compose.yml`の参照を`VPN_PROVIDER`で切り替える
-- [x] オペレーションの語彙・実行可否の評価（`capabilities/`。原因の優先順・依存継承）と単体テスト
-- [x] `account`判定（`session/session-probe.ts`。30秒キャッシュ・同時要求の集約・失敗非キャッシュ）と単体テスト
-- [x] 実行失敗からの学習（`capabilities/restriction-learner.ts`。`restrictedPattern`一致→`403 operation_restricted`）と単体テスト
-- [x] `GET /v1/connection/capabilities`
-- [x] `GET /v1/session`・`DELETE /v1/session`、`POST /v1/session`の`credentials`方式（入力検証・stdin受け渡し・秘密の伏字化・監査ログに秘密を残さない）と統合テスト
-- [x] `PUT /v1/connection`の`connectAuto`対応（`locationId`省略時）、`501`（未対応操作）
-- [x] `location-list-parser`の汎用化（列名のプロファイル指定・区切り行の読み飛ばし・`city`なし・`connectNameFrom`）と単体テスト
-- [x] 接続状態のテキスト出力解釈のプロファイル化（`output.locationPattern`）と単体テスト
-- [x] `lib/redact.ts`（秘密の伏字化。汎用ヘルパー）と単体テスト
-- [x] AdGuard VPNプロファイルへ`account`（`license`）と`logout`を追加（PREMIUM・未ログインの出力は実機で確認。**無料版の出力（`using the FREE version`）は未確認**。2026-09-21）
-
-## ベンダーの選択（Phase 8）
-
-- [x] 複数プロファイルの読み込み・検証（`providers/provider-registry.ts`。`ENABLED_PROVIDERS`・`VPN_PROFILES_DIR`・ファイル名＝ベンダーID・`displayName`。従来の`VPN_PROFILE_PATH`の廃止）
-- [x] 選択中のベンダーの永続化（`providers/active-provider-store.ts`）
-- [x] ベンダー別の状態（`providers/provider-state-paths.ts`。接続状態・最後の接続先・お気に入りを`providers/<ID>/`へ。旧形式からの移行）と、ログイン状態キャッシュ・学習した制限のベンダー別化
-- [x] `proxy-client`のベンダー別ランナー宛（`runner-<ID>.sock`）・ネットワークコンテナ宛（`net.sock`）への分離、ランナーの`GET /health`による利用可否
-- [x] `GET /v1/providers`・`PUT /v1/providers/active`（切替の手順・競合の直列化・`409`/`422`/`502`）と統合テスト
-- [x] 接続・切断・ログアウト・切替後のネットワークコンテナへの`POST /connection-checks`通知
-- [x] 監査ログへのベンダーID（`provider`）の付与
-- [x] 既存の各ルートを選択中のベンダー対象へ改修（単体・統合テスト: api 214件。実VPNで旧形式の状態の移行・ログイン保持・既存E2Eを確認。2026-09-21）
-
-## プランで接続できる接続先の参考一覧（Phase 12）
-
-- [x] プロファイルスキーマ（`account.plans[].availableLocations`）と読み込み時の検証
-- [x] `plan-locations.ts`（宣言に従った抽出・置き場の外の拒否・空の一覧へのフォールバック）と単体テスト
-- [x] `GET /v1/connection/available-locations`と統合テスト（無料/有料/未ログイン・ファイル無し）
-- [x] `docker-compose.yml`の`api`へキャッシュボリュームの読み取り専用マウントと`PROVIDER_CACHE_DIR`
-- [x] Proton VPNプロファイルへの宣言の追加
-
-## プランの補足情報の参考表示（Phase 13、検証完了）
-
-- [x] `profile.schema.ts`の`PlanDefSchema`へ`usageNote`（`{ pattern: string }`、省略可）を追加
-- [x] `session-probe.ts`の`evaluateAccountOutput`で、確定したプランの`usageNote.pattern`を出力に対して評価し、一致すれば`SessionInfo.plan.usageNote`へキャプチャを設定
-- [x] `schemas/session.ts`（`SessionStateSchema`）・`routes/session.ts`（`GET /v1/session`）へ`plan.usageNote`を反映
-- [x] `vendors/adguardvpn/profile.json`の`free`プランへ`usageNote.pattern`を追加（実機確認済みの出力形式に基づく）
-- [x] `vendors/adguardvpn/samples.json`へ無料版の実出力サンプル（`license`のFREE版出力）を追加。`list-locations`の10件・`connect`失敗（一覧外指定）のサンプルは、`vendor-samples.test.ts`が扱う`kind`（`status`/`listLocations`/`account`）に対応する検証手段が無く、`connect`失敗は`restrictedPattern`として宣言しない方針（`specs/apiserver/design.md`「検討し、採用しなかった案」）のためコードからも参照されないので追加しなかった。
-- [x] 単体テスト: `session-probe.test.ts`（`usageNote`の抽出・不一致時の省略）、`profile-loader.test.ts`（不正な`usageNote.pattern`の拒否）、`vendor-samples.test.ts`（AdGuard VPNの無料版サンプル）
-
-## ベンダー非依存化（Phase 10）
-
-- [x] プロファイルスキーマの明示化: `loginMethod`必須、text形式で`output.connectedPattern`・`output.locationPattern`必須、`listLocations.table`・`connectName`必須、`login.stdin`と`source: "secret"`（`optional`）。`enum`・`enumFrom`の削除。ロード時の検証（正規表現の妥当性、`secret`をargvに置かない、`secret`の`pattern`が制御文字を許さない）
-- [x] コードから既定値・固有処理を除去: `location-list-parser.ts`（`DEFAULT_TABLE`）、`location-id.ts`（`(Virtual)`除去→`stripPattern`）、`response-parser.ts`（既定の判定・書式）、`profile-loader.ts`（`loginMethod`の既定）、`login-input.ts`（`login.stdin`の解決）、`placeholder-resolver.ts`（`enumFrom`）
-- [x] 有効ベンダーの既定値の廃止（`provider-registry.ts`）、旧形式の状態移行（`migrateLegacyState`）の廃止
-- [x] プロファイルの読み込みを`VENDORS_DIR/<ID>/profile.json`へ変更（`VPN_PROFILES_DIR`の廃止）
-- [x] 既存2プロファイル（動作は不変）の明示化と、単体テストの追随
-- [x] バンドルの適合テスト（`vendor-samples.test.ts`・各バンドルの`samples.json`）
-- [x] コメント・エラーメッセージ例のベンダー固有名の除去
-
-## 起動時の接続状態の復元（Phase 16、検証完了）
-
-- [x] `PUT /v1/connection`の実行本体を`connection-state/apply-connection.ts`（`applyConnectionChange`）へ切り出し、ルートハンドラから呼ぶ
-- [x] `connection-state-store.ts`: 自動接続の成功時にも空の内容（`{}`）で保存するよう拡張、`StoredConnection.country`を省略可に変更
-- [x] `connection-state/restore-connection.ts`（`restoreConnectionOnStartup`）: ランナー起動待ち（リトライ）・既接続時のスキップ・保存済み接続先への再接続・失敗時の警告ログ
-- [x] `server.ts`から起動時に呼び出す（設定通知と同方針。起動をブロックしない）
-- [x] 単体テスト（`restore-connection.test.ts`。保存なし・接続先指定あり/自動接続・既接続・ランナー未起動の各ケース）、既存テスト（`connection-state-store.test.ts`・ルート統合テスト）の回帰確認
-- [x] 検証環境（実機）での検証（Proton VPN無料プラン。意図しない切断→APIコンテナ再起動→自動的に再接続されることを確認）。**未検証**: ホスト全体の再起動（ランナー・proxyも同時に起動し直す場合）、AdGuard VPN側での確認
-
-## デプロイメント構成の分離（Phase 25）
-
-- [x] Web UI利用者の認証: アカウントのハッシュ保存（`api/src/auth/operator-account-store.ts`）、`GET/POST/PUT /v1/operator`（`api/src/routes/operator.ts`）、`POST/GET/DELETE /v1/operator/session`（`api/src/routes/operator-session.ts`）、`preHandler`フックによる認可（`require-operator-session.ts`）、レート制限（`login-rate-limiter.ts`）
-- [x] ゲートウェイとの内部通信をUDSからmTLS TCPへ変更（`executeVendorCommand`・`notifySettings`・`fetchProxyStatus`等を`undici`のmTLSクライアントへ置き換え）
-- [x] APIサーバ自身のHTTPS化（Fastifyの`https`オプション。`api/src/tls-options.ts`）
-- [x] インストーラ（オーケストレーター）が配置した証明書の読み込み
-- [x] 単体・結合テスト（api 294件。証明書検証失敗時の拒否、`/v1/operator`系ルート、mTLSクライアント設定）
-- [x] 実機検証: 単一ホスト構成で、curlによる初期設定→未認証401→Cookie付き200→ログアウト→旧Cookieで401→正しいパスワードでログイン200→誤ったパスワードで401を確認。3台に分離した構成で、Web UI利用者アカウント作成→ログイン→`GET /v1/providers`→`GET /v1/connection/gateway`（web→api→gatewayの3ホップがTLS/mTLSで疎通）をcurlで確認
-- [x] Web UI利用者認証の専用E2E（`e2e/phase28/webgui-operator-auth.mjs`。初回アクセス時の設定画面、パスワード確認不一致、正誤ログイン、ログアウト、セッション切れ〔セッションCookie無効化からの再ログイン導線〕、アカウント変更の成功・失敗）。単一ホスト構成の実機（検証サーバ）で全項目PASSを確認
-- [x] 3台分離構成での実VPN接続操作（接続・切断・国変更）の検証: `e2e/lxc/setup-roles.sh`（新規、web役・api役・gateway役のLXCコンテナ3台とLAN端末役コンテナを冪等に構築し、install.shのオーケストレーター実行に必要なSSH鍵認証・パスワード無しsudoを設定する）で構築した3台分離構成に対し、`PUT /v1/connection`（web役経由）でAdGuard VPNへ接続（`kr-seoul`）→LAN端末役の出口IPが実回線と異なるVPN経由のIPになることを確認→切断→gateway役のnftのtun向けルールが撤去されKill Switchで遮断されることを確認→別国（`us-dallas`）へ再接続→出口IPが変わり、masqueradeルールが重複しない（1件のまま）ことを確認
-- [x] `--rotate-pairing`の実機での再配布確認: 3台分離構成で`--rotate-pairing`付き再実行後、各ホストの証明書（フィンガープリント）が入れ替わり、mTLS通信（ログイン→`GET /v1/providers`・`GET /v1/connection/gateway`）が継続することを確認。検証中に見つけた2件の不具合を修正済み: (1)オーケストレーターを`sudo`経由で実行した場合、証明書生成の作業用ディレクトリがroot所有・700のままだとリモートホストへの`scp`配布が`Permission denied`で必ず失敗する不具合（`generate_role_pki`の末尾で`$SSH_USER`へ`chown`するよう修正）。(2)複数リモートホストの導入順序がIPアドレスの文字列順（`sort -u`）になっており、webロールの配置先がapiロールより先に処理されるとwebの起動確認（web→api疎通）がタイムアウトして失敗する不具合（`distinct_remote_hosts`をgateway→api→webの優先順に修正）。詳細は`specs/design.md`「証明書の生成・配布」「オーケストレーション型インストーラ」、単体テストは`installer/tests/run.sh`
-
-## ドメイン迂回とDNS中継の設定（Phase 14）
-
-設計は`design.md`「ユーザ向け設定の具体スキーマ」「設定反映」。
-
-- [x] `UserSettings`（`schemas/settings.ts`）へ`dns*`を追加し、既定値で補完
-- [x] 形式検証（`excludedDomains`のワイルドカード表記、`dnsUpstreamUrl`、`dnsFallbackServers`、`dnsRedirectExcludedCidrs`、項目間の整合）と単体テスト
-- [x] ゲートウェイへの反映（`/net/settings`のボディ）と、稼働状況の中継（`dnsRelay`）
-- [x] OpenAPI・orval生成物の更新
-
-検証: 単体テスト（設定の形式検証・項目間の整合・稼働状況の中継）と、検証サーバのLXDラボでの通しの動作（`e2e/phase14/scenarios.sh`。設定の保存→ゲートウェイへの反映→稼働状況の取得）で確認。
-
-## 設定の動作検証（Phase 27、実装完了・検証完了）
-
-設計は`design.md`「設定の動作検証」。
-
-- [x] `UserSettings`へ`verifyEchoUrl`を追加（既定値補完・形式検証・`/net/settings`ボディからの除外）と単体テスト
-- [x] 検証項目の定義（ID・項目名・グループ・順序）と適用条件の導出（`api/src/verification/check-catalog.ts`）
-- [x] 項目の順次実行（`pending`→`running`→結果、最低400msの実行中表示、後続の続行）と、`proxy`への項目ごとの実行依頼（`POST /net/checks`）。依頼失敗は`unconfirmed`
-- [x] L3の判定: `client-egress`（ブラウザの提出・15秒の待ち）、`dns-redirect-path`（検証名の発行・登録・最大10秒の待ち・4区分の判定）
-- [x] `POST /v1/verifications`・`GET /v1/verifications/{id}`・`PUT .../client-observations/egress-ip`、同時実行の排他、直近5件の保持、監査ログ
-- [x] OpenAPI・orval生成物の更新
-
-検証: 単体・結合テスト（api 345件。`verification-service.test.ts`・`client-judgements.test.ts`・`routes/verifications.test.ts`）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
-
-## ゲートウェイ機の再起動（Phase 29、実装完了・検証完了）
-
-- [x] `POST /v1/gateway/reboot`（パスワード再入力の検証、ログインと共通の失敗回数制限、`proxy`への依頼、`401`/`409`/`429`/`502`/`503`/`504`、監査ログ`gateway_reboot`。`api/src/routes/gateway-reboot.ts`・`proxy-client`の`requestGatewayReboot()`）
-- [x] 統合テスト（`routes/gateway-reboot.test.ts`。誤パスワード・未ログイン・429・503/409・監査ログにパスワードが無いこと）
-
-検証: 単体・結合テスト（api 350件）。実機での通しの動作は`../proxyserver/tasks.md`「ゲートウェイ機の再起動」。
-
-# 将来課題
-
-- レート制限の閾値のチューニング（Web UIログイン以外の操作系エンドポイントへの適用要否を含む）。
-- 監査ログの長期保存・ローテーション方針。
-- ユーザ向け設定ストアの単純read-modify-write方式（同時書き込み競合を考慮しない）の見直し要否の判断。
+- 対応: D-12, D-13
+- [x] T-5.1: 検証項目の導出と、1件ずつの実行、端末の項目の判定を実装する。
+- [x] T-5.2: ゲートウェイ機の再起動の依頼を実装する。
+- [x] T-5.3: 動作検証と再起動の受け入れテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/apiserver/verification.test.ts`

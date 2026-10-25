@@ -13,7 +13,7 @@
   /* 入力欄の枠線色（Phase 22）。
      【Phase 23】紫（#6e40c9）は他のUI（枠線・アクセント色）と系統が異なり一貫性を欠くため、グレー系へ変更した。
      【Phase 24】そのグレーが濃すぎるという指摘を受け、ボタンの枠線色（--border）と同程度の薄さへ変更する
-     （webserver/requirements.md「入力欄の枠線色をボタン同等の薄さへ」）。 */
+     （webserver/requirements.md FR-7）。 */
   --input-border: #d0d7de;
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
   color: #1f2328;
@@ -44,7 +44,7 @@ body {
 
 /* 画面の縦幅をビューポートに収める（Phase 21）。接続先リストの内部スクロール
    （.location-scroll）以外はページ全体をスクロールしない
-   （webserver/design.md「画面の縦幅をビューポートに収める」）。 */
+   （webserver/design.md D-14）。 */
 main {
   height: 100dvh;
   max-width: 640px;
@@ -61,7 +61,7 @@ main {
 
 /* スマートフォン幅（Phase 23）: カードの余白・行間を詰め、ベンダー選択カードの
    プルダウン＋ボタンの行を縦に積んで、狭い画面でも折り返し・はみ出しでスクロールが
-   発生しないようにする（webserver/requirements.md「スマートフォンでのスクロール防止」）。 */
+   発生しないようにする（webserver/requirements.md FR-3）。 */
 @media (max-width: 420px) {
   main {
     padding-top: max(10px, env(safe-area-inset-top, 0px));
@@ -131,7 +131,7 @@ h2 {
 }
 
 /* ボタンは、狭い画面幅でも文字を折り返さず・縮めず（大きさを保ち）、複数のボタンを並べる親の
-   flex-wrap: wrapでボタンごと折り返す（webserver/requirements.md「ボタンの折り返し」）。 */
+   flex-wrap: wrapでボタンごと折り返す（webserver/requirements.md FR-7）。 */
 button {
   font: inherit;
   white-space: nowrap;
@@ -337,7 +337,7 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
 }
 
 /* タブ・［接続先を変更］・［再計測］は1行に並べ、幅を超えるときは折り返さず横スクロール（スワイプ）で
-   表示できるようにする（webserver/requirements.md「接続先リストのツールバー」。他のボタン列の
+   表示できるようにする（webserver/requirements.md FR-7。他のボタン列の
    「ボタンごとの折り返し」の例外）。 */
 .location-toolbar {
   display: flex;
@@ -431,7 +431,7 @@ dialog .location-tabs::-webkit-scrollbar {
 
 .location-scroll {
   /* 固定の上限は持たず、残り高さいっぱいまで伸ばして内部だけをスクロールさせる（Phase 21。狭い画面では
-     flexの最小サイズにより縮む。webserver/design.md「画面の縦幅をビューポートに収める」）。 */
+     flexの最小サイズにより縮む。webserver/design.md D-14）。 */
   flex: 1 1 auto;
   min-height: 6rem;
   padding-right: var(--scrollbar-gap);
@@ -624,7 +624,7 @@ dialog {
   padding: 16px 20px;
 }
 
-/* 画面の左右の余白は、ページと同じ--page-gutterで連続的に変える（webserver/requirements.md「設定ダイアログの横幅」）。
+/* 画面の左右の余白は、ページと同じ--page-gutterで連続的に変える（webserver/requirements.md FR-9）。
    ブラウザ既定の`dialog:modal { max-width: calc(100% - 6px - 2em) }`を外し、幅で余白を決める。 */
 dialog {
   max-width: none;
@@ -735,7 +735,7 @@ dialog textarea:disabled {
 }
 
 /* 設定ダイアログのタブ列は、幅に収まらないとき折り返さず、タブ列だけが横スクロール（スワイプ）する
-   （ダイアログ全体は横スクロールさせない。webserver/requirements.md「設定ダイアログのタブ化」）。 */
+   （ダイアログ全体は横スクロールさせない。webserver/requirements.md FR-9）。 */
 dialog .location-tabs {
   min-width: 0;
   max-width: 100%;
@@ -815,7 +815,7 @@ dialog [role="alert"] {
 }
 
 /* スマートフォン幅（他の@media (max-width: 420px)と同じ境界）では、通知を画面下部に表示する
-   （webserver/requirements.md「通知の表示位置」）。ホームインジケータ等のセーフエリアを避ける。
+   （webserver/requirements.md FR-4）。ホームインジケータ等のセーフエリアを避ける。
    PC幅は上記（右上）のまま。 */
 @media (max-width: 420px) {
   .toast-region {
@@ -940,7 +940,7 @@ dialog [role="alert"] {
    【Phase 23】ラジオボタンの並び（利用不可の分岐を除きベンダー数ぶんの行を必要とし、画面のデッドスペースが
    目立っていた）からプルダウンへ変更する。プルダウンの隣にログイン/ログアウトボタンを並べ、
    その下にアカウント状態・ログインフォーム等を続けることで、カード内の空白を減らす
-   （webserver/requirements.md「ベンダー選択のプルダウン化」）。
+   （webserver/requirements.md FR-5）。
    `.provider-card`はCSS Gridで2行（1行目: プルダウンとボタン、2行目: 状態・フォーム）に分け、
    `ProviderSelector`（`select`）と`SessionCard`（`session-action`・`session-extra`）という別コンポーネントの
    直接の子（section要素の子）をgrid-areaで並べ替える。DOM上の親子構造を変えずに済むため、
@@ -1121,7 +1121,7 @@ dialog [role="alert"] {
 }
 
 /* 設定の動作検証（Phase 27。設定ダイアログの「動作検証」タブ）。状態は文字色・円形のアイコン（実行中は回転表示）・
-   状態の文字で示す（webserver/design.md「設定の動作検証の実装方針」）。項目は3つのグループにまとめ、既定では折りたたむ。 */
+   状態の文字で示す（webserver/design.md D-11）。項目は3つのグループにまとめ、既定では折りたたむ。 */
 .verify-panel {
   display: flex;
   flex-direction: column;

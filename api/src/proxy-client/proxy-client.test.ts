@@ -121,6 +121,13 @@ describe("fetchProxyStatus", () => {
     requestMock.mockRejectedValue(Object.assign(new Error("x"), { code: "UND_ERR_HEADERS_TIMEOUT" }));
     await expect(fetchProxyStatus()).rejects.toThrow(/did not respond/);
   });
+
+  it("サーバ証明書の検証失敗・クライアント証明書の拒否による切断も、到達不能（ProxyUnavailableError）として扱う", async () => {
+    for (const code of ["SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "CERT_HAS_EXPIRED", "UND_ERR_SOCKET"]) {
+      requestMock.mockRejectedValue(Object.assign(new Error("x"), { code }));
+      await expect(fetchProxyStatus(), code).rejects.toThrow(/failed to connect/);
+    }
+  });
 });
 
 describe("宛先のパス（Phase 25: ゲートウェイ1台のmTLS TCPを共有し、パスでランナーを識別する）", () => {

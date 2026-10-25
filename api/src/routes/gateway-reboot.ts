@@ -1,4 +1,4 @@
-// 責務: ゲートウェイ機（ベアメタル）の再起動の依頼。apiserver/design.md「ゲートウェイ機の再起動」に対応する。
+// 責務: ゲートウェイ機（ベアメタル）の再起動の依頼。apiserver/design.md D-13に対応する。
 // 利用者のパスワードを再入力させ、検証したうえで`proxy`へ依頼する（再起動の実行はホスト側が行う）。
 
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";

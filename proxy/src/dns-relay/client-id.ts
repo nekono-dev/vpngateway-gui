@@ -1,13 +1,13 @@
 // 責務: 上流のDNSサーバ（自宅のDNSサーバ）がクライアントを識別するためのClientIDを、LANクライアントのIP、または
 // 名前（DHCPサーバ・ルータが配る`macmini.lan`のような名前。逆引きで得る）から生成する。
-// ClientIDの制約（小文字英数字とハイフン、63文字以内）に合わせる。proxyserver/design.md「DNS中継リゾルバ」のClientID参照。
+// ClientIDの制約（小文字英数字とハイフン、63文字以内）に合わせる。proxyserver/design.md D-6のClientID参照。
 
 // ゲートウェイ自身（3proxyからの問い合わせ）を表す固定のClientID。
 export const LOCAL_CLIENT_ID = "explicit-proxy";
 // ゲートウェイが、クライアントの名前を得るために自分で行う問い合わせ（上流への逆引き等）を表す固定のClientID。
 export const GATEWAY_CLIENT_ID = "gateway";
 // 設定の動作検証が中継リゾルバへ行う問い合わせの送信元アドレスと、そのClientID。上流（自宅DNSサーバ）の履歴で、
-// 検証由来の問い合わせを区別できるようにする（proxyserver/design.md「設定の動作検証」）。
+// 検証由来の問い合わせを区別できるようにする（proxyserver/design.md D-11）。
 export const SELF_CHECK_SOURCE_ADDRESS = "127.0.0.2";
 export const SELF_CHECK_CLIENT_ID = "vpngw-selfcheck";
 const POSITIVE_CACHE_MS = 10 * 60_000;

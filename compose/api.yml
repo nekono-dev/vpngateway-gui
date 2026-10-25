@@ -1,5 +1,5 @@
 # 責務: apiロール（VPNベンダー操作・設定管理・利用者認証）のcompose fragment。
-# specs/design.md「デプロイメント構成の分離とロール別インストール」参照。パスの解決についてはcompose/web.yml冒頭の注記を参照。
+# specs/installer/design.md参照。パスの解決についてはcompose/web.yml冒頭の注記を参照。
 services:
   api:
     restart: always
@@ -16,7 +16,7 @@ services:
       - "${API_PORT:-3000}:3000"
 
     # proxy（ゲートウェイ）・ランナーは分離構成では別ホストのため、depends_on（同一Compose project内限定）は
-    # 指定しない（起動していないランナーは、APIが「利用不可」として扱う。specs/apiserver/design.md「ランナーの利用可否」）。
+    # 指定しない（起動していないランナーは、APIが「利用不可」として扱う。specs/apiserver/design.md D-4）。
     # 単一ホスト構成では、network_mode: hostのproxyが公開するGATEWAY_PORTへ、ホストのゲートウェイIP経由で
     # 到達する（apiはブリッジネットワーク上のため、コンテナから見た「ホスト自身」を名前解決する必要がある）。
     # 分離構成ではGATEWAY_HOSTを相手ホストのアドレスへ上書きするため、この行は無害。

@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証の内部エンドポイント（`POST /net/checks`・`POST /net/check-nonces`）のリクエストボディの検証（純粋関数）。
-// 形状はproxyserver/design.md「設定の動作検証」の「内部エンドポイント」に対応する。
+// 形状はproxyserver/design.md D-11に対応する。
 
 import { GATEWAY_CHECK_IDS, type GatewayCheckId } from "./check-outcome.js";
 import type { GatewayCheckRequest } from "./gateway-checks.js";

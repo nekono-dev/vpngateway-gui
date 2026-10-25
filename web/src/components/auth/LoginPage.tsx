@@ -1,5 +1,5 @@
 // 責務: ログイン画面。アカウント作成済みで未ログインの場合に表示する。
-// webserver/design.md「利用者認証の実装方針」参照。API呼び出しは生成クライアント以外を使わない。
+// webserver/design.md D-2参照。API呼び出しは生成クライアント以外を使わない。
 
 import { useState } from "react";
 import { postV1OperatorSession } from "../../generated/api/default/default";

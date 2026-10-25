@@ -1,5 +1,5 @@
 // 責務: ゲートウェイ制御チャネル（APIサーバ⇄proxy、mTLS TCP）のクライアント証明書読み込み。
-// apiserver/design.md「内部プロトコルの変更」: undiciのAgent({ connect: { ca, cert, key } })へ渡す。
+// apiserver/design.md D-3: undiciのAgent({ connect: { ca, cert, key } })へ渡す。
 // 証明書一式はinstall.shの`setup_gateway_pki`が/etc/vpngwgui/pki/へローカル生成する
 // （単一ホスト構成向け。分離構成でのSCP配布はStage3で対応）。
 

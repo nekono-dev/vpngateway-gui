@@ -8,7 +8,7 @@ import { runCommand, runDetachableCommand } from "./command-runner.js";
 import { logAuditEvent } from "../lib/audit-event.js";
 import { readRequestBody, sendJson } from "../lib/http-json.js";
 
-// 内部プロトコルのリクエスト形状（OpenAPI非公開）。apiserver/design.md「プロキシとの内部通信仕様」参照。
+// 内部プロトコルのリクエスト形状（OpenAPI非公開）。apiserver/design.md D-3参照。
 export interface ExecRequestBody {
   vendor: string;
   binary: string;

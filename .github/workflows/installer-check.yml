@@ -1,6 +1,9 @@
 # 責務: インストーラの頒布（release-installer.yml）の前に通す、このプロジェクト固有の検査。失敗すると install.sh は生成・頒布されない。
 #   - 本体インストーラ（installer/setup.sh）と検査スクリプトの構文・shellcheck
 #   - 単体テスト・ベンダー中立性の検査・インストーラの検査（npm test）
+#   - 受け入れテスト（tests/ の vitest。npm run test:acceptance）
+#   - 仕様書の検査（spec-lint。GitHub Packages の取得に Secret SPEC_LINT_TOKEN を使う）
+#   - 実ブラウザの受け入れテスト（tests/e2e の Playwright。npm run test:e2e）
 name: installer-check
 
 on:
@@ -8,6 +11,13 @@ on:
 
 permissions:
   contents: read
+  packages: read
+
+env:
+  # 実ブラウザのテストが使う Playwright の版（リポジトリの依存には含めず、グローバルに導入する）
+  PLAYWRIGHT_VERSION: 1.63.0
+  # 仕様書の検査（spec-lint）の版の範囲
+  SPEC_LINT_RANGE: "1"
 
 jobs:
   check:
@@ -30,3 +40,71 @@ jobs:
           npm ci
           npm run generate:api-client
           npm test
+
+      - name: 受け入れテスト（vitest）
+        run: npm run test:acceptance
+
+  spec-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: "@nekono-dev"
+
+      - name: 仕様書の検査
+        run: npx --yes "@nekono-dev/spec-lint@${SPEC_LINT_RANGE}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.SPEC_LINT_TOKEN }}
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 依存の導入とAPIクライアントの生成
+        run: |
+          npm ci
+          npm run generate:api-client
+
+      # ブラウザ本体は Playwright の版ごとにキャッシュする（依存のライブラリは毎回入れる）
+      - name: Playwright の導入
+        run: npm install -g "playwright@${PLAYWRIGHT_VERSION}"
+
+      - name: ブラウザのキャッシュを復元
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}
+
+      - name: ブラウザの導入
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            playwright install-deps chromium
+          else
+            playwright install --with-deps chromium
+          fi
+
+      - name: 実ブラウザの受け入れテスト（Playwright）
+        run: npm run test:e2e
+        env:
+          CI: "true"
+
+      - name: 結果の保存
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore

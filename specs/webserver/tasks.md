@@ -1,287 +1,43 @@
-# 実装タスク
-
-## プロジェクトセットアップ
-
-- [x] Vite + React（SPA）プロジェクト初期化
-- [x] Fastify配信サーバセットアップ
-- [x] Dockerfile作成（Webコンテナ）
-
-## APIクライアント生成基盤
-
-- [x] orval設定・`src/generated/api/` への生成確認
-- [x] APIサーバのOpenAPI仕様変更時における再生成運用の整備（Dockerビルド内でapiビルド→openapi.json出力→orval生成を連結）
-
-## リバースプロキシ
-
-- [x] `@fastify/http-proxy` による `/api/*` → APIコンテナ（`http://api:3000`等）のリバースプロキシ実装
-
-## 画面: 接続状態ダッシュボード
-
-- [x] 接続状態（接続中/切断/エラー）・国表示実装（ベンダー表示は実装しない。設計方針上APIがベンダーを識別・選択可能にしないため、Web UIも1ベンダー運用を前提とし表示しない）
-- [x] 透過ゲートウェイ稼働状況表示実装（`GET /v1/connection/gateway`。稼働中/停止/Kill Switch遮断中/未構成/ルール適用エラー。接続状態と1つの5秒ポーリングに合流。`GatewayStatusCard.tsx`・`useDashboardPolling.ts`。2026-09-21実装、実機E2E確認済み）
-- [x] 明示的プロキシ稼働状況欄: 「未対応（Phase 6で対応予定）」暫定表示（2026-09-21実装）→ Phase 6で実状態表示（稼働中＋待ち受けポート/停止/未構成/起動失敗の繰り返し/設定ファイル生成エラー）へ置換済み（`GatewayStatusCard.tsx`）
-- [x] 接続国表示（`GET /v1/connection`の`country`／`location`を表示。当初はクライアントのメモリ保持による暫定対応としたが、再読み込みで消える不具合のため、API側の永続化（apiserver/tasks.md）へ移行しクライアント保持は撤去。2026-09-21）
-- [x] 最小限のスタイル適用（`styles.css`。レイアウト・状態の色分け・ボタンの視認性のみ。2026-09-21実装）
-- [x] 設定ダイアログ起動ボタン実装（2026-09-14: 設定ダイアログ本体と合わせて実装。下記「画面: 設定ダイアログ」参照）
-- [x] ログイン代行ボタン実装（`POST /v1/session`呼び出し・返却されたログインURL/メッセージの表示。Phase2で前倒し実装。ログイン完了後の状態反映は既存の接続状態ポーリングに委ね、待機処理は持たない）
-
-## 画面: 接続操作
-
-- [x] 接続国ドロップダウン実装（プロファイル定義の選択肢のみ、自由入力不可。**Phase 5で接続先リストへ置換**）。ベンダー選択UIは実装しない（1サーバー1ベンダーの設計方針、apiserver/requirements.md参照）
-- [x] 接続/切断ボタン実装（二重送信防止・ローディング表示）
-
-## 画面: 接続操作の刷新 (Phase 5)
-
-設計は`design.md`「接続先リストの実装方針（Phase 5）」。
-
-- [x] orval再生成（`GET /v1/connection/locations`・`PUT/DELETE .../favorite`・`PUT /v1/connection`の`locationId`反映）
-- [x] `useLocations`フック（取得・再取得・★の楽観的更新・`lastConnected`のローカル更新）
-- [x] 接続先リスト（`LocationList`／`LocationRow`。タブ「すべて」「お気に入り」、絞り込み、ping表示、選択、★、「接続中」「前回」バッジ、再計測、取得失敗のインライン表示）
-- [x] 接続／切断／「接続先を変更」ボタン（`ConnectionActions`）。`ConnectDisconnectButton`・`CountrySelect`を置換・削除
-- [x] 設定ダイアログから`defaultCountry`を削除
-- [x] 接続ログの接続先表示を`locationId`対応にする
-- [x] コンポーネントテスト
-
-検証: コンポーネントテストと、実ブラウザ（`e2e/phase14/webgui-phase14.mjs`）で設定の入力・保存前チェック・保持・稼働状況の表示を確認。
-- [x] 実VPNでのE2E（`e2e/phase5/`。2026-09-21実施、46項目PASS）
-
-## 画面: 設定ダイアログ (Phase 2で前倒し実装済み)
-
-2026-09-14実装。`SettingsDialog.tsx`（ネイティブ`<dialog>`要素によるモーダル）を追加し、`GET`/`PUT /v1/connection/config`と接続した。ヘッドレスChromium（Playwright）でダイアログの開閉・トグル連動・保存後の永続化と再読込での反映を確認済み。
-
-- [x] `killSwitch` トグルスイッチ実装
-- [x] `excludedDomains` リスト編集UI実装（複数行入力→配列変換。`LineListEditor.tsx`として`explicitProxyAllowedCidrs`と共通化）
-- [x] ~~`defaultCountry` ドロップダウン~~（**Phase 5で廃止**。下記参照）実装（ダッシュボードの接続国選択と同じ`GET /v1/connection/countries`の一覧を再利用。1サーバー1ベンダー運用のため`GET /v1/vendors/{vendor}/countries`は実装しない）
-- [x] `transparentGatewayEnabled` トグルスイッチ実装
-- [x] `explicitProxyEnabled` トグルスイッチ実装
-- [x] `explicitProxyAllowedCidrs` リスト編集UI実装（`explicitProxyEnabled` OFF時disabled連動）
-- [x] ダイアログ内保存ボタンによる一括 `PUT` 実装
-- [x] 明示的プロキシ／`excludedDomains`項目への「未対応（反映されません）」暫定表示（2026-09-21追加）。明示的プロキシ分はPhase 6で除去済み。`excludedDomains`分はPhase 14で除去する（webserver/requirements.md「未実装機能の暫定表示」参照）
-
-## 画面: 接続ログ (Phase 4)
-
-- [x] 監査ログ取得・履歴表示実装（`ConnectionLogDialog.tsx`。モーダルで新しい順に日時・操作・接続国・結果を表示。2026-09-21実装）
-  - 履歴に残るのは「プロキシまで到達しCLIを実行した操作」のみ（`POST /v1/session`と`PUT /v1/connection`）。プロキシ未応答（502/504）で実行に至らなかった操作は記録されない（apiserver側の仕様）。
-
-## 状態管理・エラー表示
-
-- [x] 状態のポーリング実装（デフォルト5秒間隔・画面表示中のみ）
-- [x] APIエラーレスポンスのトースト表示実装（要約を通常表示、詳細（stderr等）は`<details>`折りたたみ。エラーは手動で閉じるまで残し、成功通知は4秒で消える。`notifications/`。2026-09-21実装）
-  - 例外: 設定ダイアログ・接続ログダイアログ内の操作エラーは、モーダル表示中はダイアログ外のトーストが操作不能になるため、ダイアログ内のインライン表示（`role="alert"`）に留める。
-
-## テスト
-
-- [x] 画面単位のコンポーネントテスト（vitest＋jsdom＋Testing Library。`App.test.tsx`等。2026-09-21実装）
-- [x] Web⇄API（実API・実VPN）でのE2E動作確認（`e2e/phase4/`。2026-09-21実施、25項目PASS）
-
-## 操作の制限表示（Phase 7）
-
-- [x] orval再生成（`capabilities`・`session`）
-- [x] `capabilities/capability-state.ts`と単体テスト
-- [x] `useDashboardPolling`へ`capabilities`・`session`を追加（独立した成否・取得失敗時は制限なし）
-- [x] `SessionCard`・`LoginForm`・`RestrictionNote`の実装とコンポーネントテスト（`deviceUrl`／`credentials`の切替、秘密の欄の消去、ログアウト）
-- [x] `LocationList`・`ConnectionActions`の`capabilities`対応（無効化＋理由、`connectAuto`の［接続］、リスト全体の理由表示）と`useLocations`の`enabled`
-- [x] `403 operation_restricted`／`501`のトースト文言（`describe-api-error.ts`）と、403後の`capabilities`再取得
-- [x] Web⇄API（モックプロバイダCLI）でのE2E（`e2e/phase7/`。Playwright。36項目PASS。2026-09-21）
-
-## ベンダーの選択（Phase 8）
-
-- [x] orval再生成（`providers`）
-- [x] `useDashboardPolling`へ`providers`を追加（独立した成否・取得失敗時は選択部品なし）
-- [x] `ProviderSelector`（1つのときは名前のみ・利用不可の無効化＋理由・接続中の確認ダイアログ・送信中の無効化）とコンポーネントテスト
-- [x] ベンダー切替時の状態の入れ替え（`key`による再マウント・`useLocations`の再取得・`selectedId`の消去）
-- [x] `ConnectionStatusCard`へのベンダー名の表示、`409`のトースト文言（`describe-api-error.ts`）
-- [x] Web⇄API（AdGuard VPN＋モックプロバイダ）でのE2E（`e2e/phase8/`。Playwright。27項目PASS。2026-09-21）
-
-## プランで接続できる接続先の参考表示（Phase 12）
-
-- [x] orval再生成（`GET /v1/connection/available-locations`）
-- [x] `useAvailableLocations`（取得・世代管理・失敗時は表示なし）と単体テスト
-- [x] `AvailableLocations`と`LocationList`への組み込み、コンポーネントテスト
-- [ ] Web⇄API（Proton VPN相当のモック）でのE2E（コンポーネントテストで代替。実機のブラウザ表示は利用者の目視待ち）
-
-## プランの補足情報の参考表示（Phase 13、検証完了）
-
-- [x] orval再生成（`GET /v1/session`の`plan.usageNote`）
-- [x] `SessionCard.tsx`へ、プラン名への`usageNote`の併記を実装（無ければ何も追加しない）
-- [x] コンポーネントテスト（`usageNote`あり/なし）
-- [x] 実機（検証環境・AdGuard VPN無料アカウント）でのブラウザ表示確認
-
-## 接続・切断ボタンの配置・強調（Phase 16、検証完了）
-
-- [x] `DisconnectButton.tsx`を切り出し、`ConnectionActions.tsx`からは切断ボタンを除去（当初は接続／接続先を変更のみ残した）
-- [x] `SessionCard.tsx`が`disconnectAction`（`ReactNode`）を受け取り、アカウント状態表示の左（`session-top-row`）に描く。ログイン状態の判定に表示を左右させない
-- [x] `App.tsx`から接続中のみ`DisconnectButton`を渡すよう配線
-- [x] `styles.css`に`button.danger`（`--danger`を背景色に使う強調色）を追加
-- [x] 既存コンポーネントテスト（`App.test.tsx`等）の回帰確認
-- [x] 検証環境（実機）のブラウザ（Playwright）での配置・配色の確認（`e2e/phase16/webgui-phase16.mjs`）
-- [x] **【2026-09-22追記】** 実機確認で、接続先リストが多数のとき［接続］ボタンが依然リストの下に取り残される不具合を発見。`ConnectButton.tsx`を同様に切り出し、`SessionCard.tsx`の`connectAction`として同じ位置へ配置。`ConnectionActions.tsx`は［接続先を変更］のみを扱うよう更新し、単体テスト（`current-available-location.test.ts`は影響なし、既存コンポーネントテストの回帰確認）と実機（Playwright）で接続⇄切断のたびに正しい一方だけが表示されることを確認
-
-## 参考一覧での現在の接続先の表示（Phase 16、検証完了）
-
-- [x] `locations/current-available-location.ts`（`findCurrentAvailableLocation`）と、接続先リストと同じ行形式への`AvailableLocations.tsx`の書き換え（選択・お気に入りは常に無効化）
-- [x] `capabilities/capability-state.ts`に`supportsLocationPing`を追加（`pingMeasurement`の`reason`が`"unsupported"`のときだけping列を出さない。プラン制限からの継承とプロバイダ非対応を区別）
-- [x] `LocationList.tsx`・`App.tsx`への組み込み（`currentAvailableLocation`・`availableLocationsShowPing`の配線）
-- [x] コンポーネントテスト（`App.provider.test.tsx`: 現在の接続先のバッジ表示、選択・お気に入り操作ができないことの確認、ping非対応時に列が出ないことの確認）
-- [x] 検証環境（実機。Proton VPN無料アカウント）での接続中の表示確認（`e2e/phase16/webgui-phase16.mjs`）。検証中に判定ロジックの不具合（CLIの複合表記に一致しない）を発見・修正（`current-available-location.test.ts`追加）
-
-## ダッシュボードのカード構成・レイアウトの整理（Phase 21、不具合修正・再検証完了）
-
-- [x] `SessionCard.tsx`から`disconnectAction`・`connectAction`を削除し、ログイン導線のみの責務へ戻す
-- [x] `ConnectionStatusCard.tsx`・`GatewayStatusCard.tsx`から外枠（`.card`）を除去し、`connectionCardClassName`を切り出す
-- [x] `App.tsx`の組み立てを変更（VPNベンダーカードにログイン導線、接続状態カードに接続状態・接続/切断ボタン・稼働状況を統合、接続操作カードは接続先リストのみ）
-- [x] `LocationList.tsx`に固定id（`location-list-restriction`）、`ConnectButton.tsx`で同じ理由のときの重複表示回避
-- [x] `styles.css`を`100dvh`・flexの連鎖でビューポートに収まるレイアウトへ変更
-- [x] 既存コンポーネントテストの回帰確認、重複表示なしの新規テスト追加
-- [x] 検証環境（実機）のブラウザ（Playwright）でのカード配置・重複表示なし・画面が1画面に収まることの確認
-- [x] 【不具合修正】「接続できる国（参考）」一覧がページ全体を突き破る不具合を修正（`.location-list`の外枠漏れ）。回帰防止のコンポーネントテスト・実機E2E（`e2e/phase21/webgui-phase21.mjs`）を追加
-
-## モバイル表示・入力欄の視認性改善（Phase 22、実装完了・検証完了）
-
-- [x] `specs/webserver/requirements.md`「モバイル表示・入力欄の視認性改善（Phase 22）」に要件を追記
-- [x] `specs/webserver/design.md`に実装方針を追記
-- [x] `styles.css`の入力欄スタイルを`input`全体へ拡大し、`--input-border`・`font-size: 1rem`・`padding`拡大を適用
-- [x] `SessionCard.tsx`の「アカウント: 未ログイン」表示を削除し、ログイン済み時は`badge badge-ok`で色分け表示
-- [x] `App.tsx`に`.controls`の展開判定（`controls-expanded`）を追加し、`styles.css`の`.controls`既定を`flex: 0 0 auto`へ変更
-- [x] `components/icons/GithubIcon.tsx`（インラインSVG）とフッター（`App.tsx`・`styles.css`）を追加
-- [x] 既存コンポーネントテスト（`App.provider.test.tsx`）の回帰確認・追従修正
-- [x] 検証環境（実機）のブラウザ（Playwright）で、①入力欄の見た目（枠線色・文字サイズ・padding）、②「アカウント: 未ログイン」が表示されないこと、③ログイン済み時の色分け表示、④接続先が0件・制限時に接続操作カードが余分な高さを取らないこと、⑤フッターのGitHubリンクを確認（`e2e/phase22/webgui-phase22.mjs`）
-
-## ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善（Phase 23、検証完了）
-
-- [x] `specs/webserver/requirements.md`「ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善（Phase 23）」に要件を追記
-- [x] `specs/webserver/design.md`に実装方針を追記
-- [x] `ProviderSelector.tsx`をラジオボタンの並びからプルダウン（`<select>`）へ変更
-- [x] `SessionCard.tsx`を`Fragment`化し、単発ボタン（ログアウト／URL提示型ログイン）を`session-action`、それ以外（状態表示・フォーム・制限理由）を`session-extra`として分離
-- [x] `styles.css`に`.provider-card`（CSS Grid）・プルダウンのテキストボックス風装飾（`appearance: none`＋自前の矢印）・`--input-border`のグレー化・モバイル幅での余白詰め・縦積み・`overscroll-behavior-y: none`を追加
-- [x] PWA資材（`web/public/manifest.webmanifest`・`sw.js`・アイコン一式）を追加し、`index.html`・`main.tsx`から参照・登録
-- [x] 既存コンポーネントテスト（`App.providers.test.tsx`）をプルダウン操作へ追従修正
-- [x] 検証環境（実機）のブラウザ（Playwright、デスクトップ幅・モバイル幅）で、プルダウン化・装飾・行内配置・枠線色・レイアウト崩れなし・PWA資材の配信を確認（`e2e/phase23/webgui-phase23.mjs`）。**既知の制約**: PWAのService Workerは、配信がHTTP（`window.isSecureContext`が`false`）のセキュアコンテキスト要件により実機では有効化されない。配信のHTTPS化は本機能のスコープ外（manifest・アイコンによる基本的な識別は機能する）
-
-## ログインボタンの配置・入力欄の枠線色の調整（Phase 24、検証完了）
-
-- [x] `specs/webserver/requirements.md`「ログインボタンもプルダウンの隣へ・入力欄の枠線色をボタン同等の薄さへ（Phase 24）」に要件を追記
-- [x] `specs/webserver/design.md`に実装方針を追記
-- [x] `SessionCard.tsx`に`showCredentialsForm`状態を追加し、資格情報入力型ログインも「ログイン」ボタンをプルダウンの隣（`session-action`）に表示、押すまでフォームを表示しないよう変更
-- [x] `styles.css`の`--input-border`をボタンの枠線色（`--border`、`#d0d7de`）と同じ値へ変更
-- [x] 既存コンポーネントテスト（`App.provider.test.tsx`）を「ログイン」ボタンのクリックを挟むよう追従修正
-- [x] 検証環境（実機）のブラウザ（Playwright）で、資格情報入力型ログインのボタン化・クリック前後のフォーム表示切替・枠線色（`rgb(208, 215, 222)`）を確認（`e2e/phase24/webgui-phase24.mjs`）
-
-## デプロイメント構成の分離（Phase 25）
-
-- [x] ログイン画面（`components/auth/LoginPage.tsx`）・認証状態コンテキスト（`AuthContext.tsx`）・401時の遷移
-- [x] `API_ORIGIN`のHTTPS対応（CA証明書の検証設定。`web/server/tls-options.ts`の`loadApiCaCertificate()`）
-- [x] Webサーバ自身のHTTPS化（Fastifyの`https`オプション。`web/server/tls-options.ts`）
-- [x] 実機検証: 単一ホスト構成で、既存の実ブラウザE2E（phase21・phase22）が認証ゲートを自動突破してPASSすることを確認（Playwrightの共通ヘルパーが初期設定・ログインを自動で済ませる）。分離構成でも、Web UI（`https://<webのIP>`）からのアカウント作成・ログイン・ベンダー一覧取得・ゲートウェイ稼働状況取得をcurlで確認
-- [x] Web UI利用者認証専用のE2Eシナリオ（`e2e/phase28/webgui-operator-auth.mjs`。未ログイン時の遷移、ログイン・ログアウト、セッション切れ、アカウント変更）。既存の`launch()`（E2E共通アカウントで認証を自動突破）とは別に、認証を素通りしない`launchWithoutSignIn()`（`e2e/lib/playwright.mjs`）を追加した
-- [x] 既存E2E（phase1〜24相当）の網羅的な再実行によるリグレッション確認: mTLS化・3台分離構成の影響範囲（`gateway-scenarios`のC以降）に絞って再実行した（詳細・結果は`specs/proxyserver/tasks.md`「デプロイメント構成の分離」参照）。この範囲外のphase（transparent gateway・実VPN操作を伴わないphase）の全件一括再実行は対象外のまま
-
-## ドメイン迂回とDNS中継の設定UI（Phase 14）
-
-設計は`design.md`・`requirements.md`「設定ダイアログの入力項目」。
-
-- [x] 設定ダイアログへ「DNS中継」グループを追加（トグル・URL・PEM・ラジオ・リスト編集）と無効化条件
-- [x] `excludedDomains`の「未対応」暫定表示の除去と、DNS中継OFF時の注意表示への置換
-- [x] 稼働状況欄へ`dnsRelay`（状態・上流の疎通・迂回IP数）を表示
-- [x] コンポーネントテスト
-
-## 設定ダイアログのタブ化（Phase 26）
-
-- [x] `specs/webserver/requirements.md`・`design.md`に要件・実装方針を追記
-- [x] `SettingsDialog.tsx`を「通信制御」「ゲートウェイ」「上位DNSリゾルバ」「DNS詳細」のタブ表示へ変更（「DNS詳細」はDNS中継ON時のみ表示。当初、`main`のPhase 14（DNS中継）取り込み前のブランチで2タブとして実装しDNS中継の設定が抜けていたため、`main`へリベースして統合し、DNS中継のタブを上位DNSリゾルバ／DNS詳細へ分割した）
-- [x] コンポーネントテスト（タブ切替・未保存入力の保持・保存不可時の警告印）
-- [x] 既存E2E（`e2e/phase6/webgui-explicit-proxy.mjs`）を「ゲートウェイ」タブの操作を挟むよう追従
-- [x] ラジオボタンの独自スタイル（チェックボックスと同系統。接続先リストのラジオは除外）
-- [x] 複数行入力欄のスタイル（ログインフォームに合わせた幅・リサイズ・無効時の背景）（横スクロールはしない）。全てのボタンを、狭い画面幅でボタンごと折り返す（文字は折り返さず大きさを保つ）
-- [x] 接続先リストのツールバー: ［接続先を変更］を［再計測］の左へ入れ替え、収まらない幅では横スクロール（スワイプ）
-- [x] スマートフォン幅（420px以下）で通知を画面下部に表示（PC幅は右上のまま）
-- [x] 検証環境（実機）のブラウザ（Playwright、`e2e/phase26/webgui-settings-tabs.mjs`）で、タブ表示・切替・未保存入力の保持・保存後の永続化・保存不可時の警告印・アカウント情報ダイアログの起動を確認。既存の`e2e/phase6/webgui-explicit-proxy.mjs`・`e2e/phase14/webgui-phase14.mjs`もタブ対応後にPASS
-
-## 設定の動作検証（Phase 27、実装完了・検証完了）
-
-設計は`design.md`「設定の動作検証の実装方針」。
-
-- [x] 生成クライアントの更新（`/v1/verifications`）
-- [x] 設定ダイアログの「動作検証」タブ: 実行ボタン・全体の進捗バー・結果の要約・ポーリング（500ms）
-- [x] 3グループの折りたたみ（既定は閉じる、代表行の選択規則、件数バッジ、開閉）・項目の状態表示（待機中・実行中〔円形の回転表示〕・OK・NG・未確認）・対象外の折りたたみ
-- [x] `verifyEchoUrl`の入力欄（保存はダイアログ全体の保存）と、未保存時の注記・空の場合の保存不可
-- [x] ブラウザ側の観測: 出口IPの取得と提出、検証用の名前の解決（利用者の操作は不要）
-- [x] 実機検証で見つかった不具合の修正: 開いている設定ダイアログが、ダッシュボードの定期取得（許可CIDRの初期値の変化）のたびに設定を読み直し、タブ・未保存の入力・動作検証の表示が初期化されていた。読み込みはダイアログを開いたときだけにした（`SettingsDialog.test.tsx`に再発防止のテスト）
-- [x] 検証環境のブラウザ（Playwright、`e2e/phase27/webgui-phase27.mjs`）で、実行・進行表示・折りたたみと代表行・NGの表示・スマートフォン幅を確認
-
-検証: 単体テスト（web 168件。`verification-view.test.ts`・`VerificationPanel.test.tsx`）。実機での通しの動作は`../tasks.md`「設定の動作検証」。
-
-## ゲートウェイ機の再起動（Phase 29、実装完了・検証完了）
-
-- [x] ヘッダーの「接続ログ」の隣に「ゲートウェイ再起動」ボタンと`RebootDialog`（確認文・パスワード再入力・エラー/成功のダイアログ内表示）を追加
-- [x] 接続ログの操作名に「ゲートウェイ再起動」を追加
-- [x] 生成クライアントの再生成
-
-検証: 単体テスト（web 172件。`RebootDialog.test.tsx`）。実ブラウザ（Playwright、`e2e/phase29/webgui-phase29.mjs`）でボタンの配置・警告・誤パスワードのエラー・依頼成功の表示を確認。
-
-## スマートフォン幅でのヘッダータイトル非表示（Phase 30、実装完了・検証完了）
-
-- [x] カード幅569px未満（画面幅601px未満）で`.app-header h1`を非表示にし、ボタンを右寄せにする
-- [x] ページ・設定ダイアログの左右余白を、境界での切り替えをやめ`--page-gutter`（`clamp`）で16px→10pxへ連続的に変える
-
-検証: 単体テスト・`npm test`PASS。検証サーバへ反映のうえ、実ブラウザ（Playwright、`e2e/phase30/webgui-narrow-layout.mjs`）で幅1024・640・601・600・589・500・375pxのタイトル表示・ボタンの右寄せ・余白の連続変化・ダイアログの幅・横スクロールなしを確認。
-# 将来課題
-
-- 多言語対応。
-- WebSocket等によるリアルタイム状態通知への切替（ポーリング間隔・サーバ負荷が問題になった場合）。
-
-## ヘッダーの操作ボタンの横スクロール（Phase 31、実装完了・検証完了）
-
-- [x] `.app-header`・`.header-actions`を折り返さず（`nowrap`）、ボタン列だけを`overflow-x: auto`で横スクロールにする
-- [x] `requirements.md`・`design.md`の「ボタンの折り返し」規則へ、ヘッダーの操作ボタンを例外として反映する
-
-検証: `npm test`PASS。検証サーバへ反映のうえ、実ブラウザ（Playwright、`e2e/phase30/webgui-narrow-layout.mjs`を拡張）で幅1024〜320pxのボタン非折り返し・幅超過時のみ横スクロール・ページ全体の横スクロールなしを確認。
-
-## 設定ダイアログへのメンテナンスタブの追加（Phase 32、実装完了・検証完了）
-
-- [x] 設定ダイアログに「メンテナンス」タブを追加し、「アカウント情報を変更」「ゲートウェイ再起動」のボタンを置く（ダイアログ下部の「アカウント情報を変更」とヘッダーの「ゲートウェイ再起動」は廃止）
-- [x] 単体テスト（`SettingsDialog.test.tsx`）・E2E（phase26・28・29・30）を新しい配置へ更新
-- [x] 実機検証
-
-検証: 単体テスト（web 173件）・`npm test`PASS。検証サーバへ反映のうえ、実ブラウザ（Playwright）でphase26（タブ・メンテナンスタブのボタン・保存/キャンセルの配置）・phase28（アカウント変更）・phase29（誤パスワードで再起動されない。実際の再起動依頼は未実施）・phase30をPASS。phase26の期待値のうち、Phase 27・30の変更で古くなっていた箇所（タブ数・ダイアログ余白）も更新した。
-
-## 設定ダイアログの縦スクロールバー非表示（Phase 33、実装完了・検証完了）
-
-- [x] `dialog`の縦スクロールバーを非表示にする（`styles.css`）
-
-検証: `npm test`PASS。検証サーバへ反映（`scripts/deploy-verify.sh web`）のうえ、実ブラウザ（Playwright）で高さ300pxの画面でダイアログがスクロールでき、バーの幅が0であることを確認。
-追補: Safariでタブ列自体に縦スクロールバーが出る不具合を、タブ列の`overflow-y: hidden`で修正（Chromiumで計算値を確認。Safariの実機確認は利用者側）。
-
-## スクロールバーがボタンを隠さないための余白（Phase 34、実装完了・検証完了）
-
-- [x] 共通の余白`--scrollbar-gap`を定義し、縦スクロールする領域（接続先リスト・接続ログ・トースト詳細）の右（と下）へ付ける
-
-検証: `npm test`PASS。検証サーバへ反映（`scripts/deploy-verify.sh web`）のうえ、Playwright（phase26・phase30）がPASS。Safariでの見た目は利用者側で確認。
-
-追補（Safariでタブ列のボタンの高さが崩れ、他の要素をクリックするまで直らない不具合）: 横スクロールするボタン列・タブ列はバーを表示したまま（マウス操作でスクロールできるよう）、ボタンを引き伸ばさず、バーの太さ以上の余白をとる。Linux版WebKit（Playwright）では再現せず、Safariの実機確認は利用者側。
-追補2（マウス操作でスクロールできるようバーを再表示）: 余白は大きすぎたため、横スクロールの領域には付けない（ボタンを引き伸ばさず、縦スクロールは出さない）。phase30のE2Eに余白・縦スクロールの検査を追加。Safariの実機確認は利用者側。
-
-## 操作者認証フォームのパスワードマネージャ対応（Phase 35、実装完了・検証完了）
-
-- [x] ログイン・初期設定・アカウント変更・ゲートウェイ再起動の`autocomplete`を`username`・`current-password`・`new-password`にする
-- [x] アカウント変更・再起動のダイアログを非モーダルにし、閉じている間はフォームを描画しない
-- [x] アカウント変更・再起動のフォームにユーザー名欄を置き、アカウント変更の「新しいユーザー名」別欄を廃止する
-
-検証: `npm test`PASS。検証サーバへ反映（`scripts/deploy-verify.sh web`）のうえ、Proton Pass（利用者の実ブラウザ）で、アカウント変更の現在のパスワードの自動入力・新パスワードの生成提案、再起動のパスワードの自動入力を確認。
-追補（ベンダーログイン）: 要件「資格情報を保存せず自動入力は使う」に合わせ、`LoginForm.tsx`を自動入力対応にした。
-
-- [x] ベンダーログインの`autocomplete`を`username`・`current-password`にする
-- [x] 2段階認証欄は、ボタンを押したときだけ`<form>`へ追加する（同じ`<form>`に最初から置くとProton Passが反応しない）
-
-検証: `npm test`PASS（173件）。検証サーバへ反映のうえ、実ブラウザ（Proton Pass）で、ユーザー名・パスワードの自動入力、ログイン後に「保存しますか？」の通知が出ないことを確認。2段階認証欄を出した後はProton Passのフォームは出ない（先に自動入力してからボタンを押す）。
-
-## 行リストエディタへの換装（Phase 36、実装完了・検証完了）
-
-- [x] 仕様（`requirements.md`・`design.md`）の追記
-- [x] 選択・追加位置・削除・並べ替えの純関数（`web/src/lib/list-selection.ts`）と単体テスト
-- [x] `LineListEditor.tsx`の再実装と`styles.css`
-- [x] `SettingsDialog.tsx`の5か所（`maxItems`を「最大3件」の2か所へ）・`SettingsDialog.test.tsx`の追従
-- [x] E2E（phase6・phase14・phase26）を新UIへ追従し、`e2e/phase36/webgui-line-list.mjs`を追加
-- [x] 検証サーバへ反映（`scripts/deploy-verify.sh web`）
-
-検証: `npm test`PASS。実ブラウザ（Playwright・Chromium）で、`LineListEditor`単体の一時ページ（検証後に削除）に`webgui-line-list.mjs`と同じ操作を実行し、全項目PASS（選択・編集・追加位置・削除・並べ替え・配色・スマートフォン幅）。検証サーバのWeb UIは、利用者のアカウントが設定済みでE2E共通アカウントではログインできないため、Playwrightでの設定ダイアログの通し確認は行っていない（実ブラウザでの確認は利用者側）。
+# Webサーバ タスク一覧
+
+## Phase 1: 配信・認証の画面・通知
+
+- 対応: D-1, D-2, D-13
+- [x] T-1.1: 画面の配信とAPIサーバへの転送（証明書の検証つき）を実装する。
+- [x] T-1.2: 初期設定画面・ログイン画面・認証状態の保持・認証切れ時の復帰を実装する。
+- [x] T-1.3: 通知の表示と、APIのエラーの要約への変換を実装する。
+- [x] T-1.4: 配信と認証の受け入れテストと、認証の画面の実ブラウザのテストを追加する。
+- 検証: `npm run test -w web && npx vitest run --config tests/vitest.config.ts tests/webserver/server.test.ts tests/webserver/auth.test.tsx`
+- E2E: `tests/e2e/auth.spec.ts` 未認証でページを開く → 初期設定画面、続いてログイン画面に切り替わり、認証後にダッシュボードが表示される
+
+## Phase 2: ダッシュボード
+
+- 対応: D-3, D-4, D-5, D-6, D-7, D-8
+- [x] T-2.1: 状態の定期取得と、取得失敗の部分ごとの分離を実装する。
+- [x] T-2.2: 実行可否に従う部品の無効化と理由文の表示を実装する。
+- [x] T-2.3: ベンダーの選択と、ベンダーへのログインの導線を実装する。
+- [x] T-2.4: 接続先リストと、接続・接続先の変更・切断の操作を実装する。
+- [x] T-2.5: 参考の国・都市の一覧を実装する。
+- [x] T-2.6: ダッシュボードの受け入れテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/webserver/dashboard.test.tsx tests/webserver/login.test.tsx tests/webserver/locations.test.tsx`
+- E2E: `tests/e2e/dashboard.spec.ts` 接続先を選んで接続を押す → 接続中の表示に変わり、ベンダーの切替では確認を経て接続先の一覧が入れ替わる
+
+## Phase 3: 設定ダイアログ・動作検証・メンテナンス
+
+- 対応: D-9, D-10, D-11, D-12
+- [x] T-3.1: タブ付きの設定ダイアログと、一括の保存、入力不備の警告を実装する。
+- [x] T-3.2: 行リストエディタと、その純粋関数を実装する。
+- [x] T-3.3: 動作検証の表示、ブラウザ側の観測、進行の取得を実装する。
+- [x] T-3.4: アカウント情報の変更とゲートウェイ再起動のダイアログを実装する。
+- [x] T-3.5: 設定・検証・メンテナンスの受け入れテストと、実ブラウザのテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/webserver/settings.test.tsx tests/webserver/verification.test.tsx`
+- E2E: `tests/e2e/settings.spec.ts` 設定ダイアログを開いてタブを切り替え、迂回ドメインの行を追加する → 保存ボタンの押下で設定が一括で送信され、動作検証の実行で各項目の結果が表示される
+
+## Phase 4: レイアウトとホーム画面への追加
+
+- 対応: D-14
+- [x] T-4.1: 入力欄・ヘッダ・縦幅・余白・横スクロールの列・ボタンの折り返しのスタイルを実装する。
+- [x] T-4.2: マニフェスト・アイコン・Service Workerと、その登録を実装する。
+- [x] T-4.3: レイアウトと資材の受け入れテストと、スマートフォン幅の実ブラウザのテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/webserver/layout.test.ts`
+- E2E: `tests/e2e/dashboard.spec.ts` スマートフォン幅でダッシュボードを開く → ヘッダのタイトルが非表示になり、ページが横にスクロールしない

@@ -1,7 +1,7 @@
 // 責務: 「1行に1値」の入力を文字列配列として編集するための汎用UI部品（行リストエディタ）。
 // テキストボックスを縦に並べたリストで、追加・削除・複数選択・並べ替えができる。
 // `excludedDomains`・`explicitProxyAllowedCidrs`など、値の妥当性検証は持たず表示・編集のみを行う
-// （webserver/requirements.md「行リストエディタ（Phase 36）」、design.md「行リストエディタの実装方針」参照。
+// （webserver/requirements.md FR-10、webserver/design.md D-10参照。
 // 保存時の前後の空白・空行の除去は呼び出し元が行う）。
 
 import { useEffect, useId, useRef, useState } from "react";

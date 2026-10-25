@@ -1,5 +1,5 @@
 // 責務: ゲートウェイ制御チャネル（APIサーバ⇄proxy、mTLS TCP）のTLSサーバオプションの組み立て。
-// proxyserver/design.md「ゲートウェイ制御チャネル」: サーバ証明書はgateway-caが署名したもの、
+// proxyserver/design.md D-9: サーバ証明書はgateway-caが署名したもの、
 // クライアント証明書の検証（requestCert: true・rejectUnauthorized: true）でAPIサーバを認証する。
 // 証明書一式はinstall.shの`setup_gateway_pki`が/etc/vpngwgui/pki/へローカル生成する
 // （単一ホスト構成向け。分離構成でのSCP配布はStage3で対応）。

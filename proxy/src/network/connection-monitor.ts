@@ -1,7 +1,7 @@
 // 責務: VPNトンネル経路の消失（＝切断）を定期的に検知し、GatewayControllerへ現在の接続状態を伝える。
 // 明示的な`connect`/`disconnect`実行時（server.tsの/exec完了フック）に加え、VPN側の予期しない切断
 // （ネットワーク瞬断・ベンダー側都合の切断等、APIサーバ経由のコマンド実行を伴わない切断）にも追従するための
-// 独立した監視処理（proxyserver/design.md「VPN接続状態監視」「障害時の挙動」参照）。
+// 独立した監視処理（proxyserver/design.md D-3「障害時の挙動」参照）。
 
 import { getEgressInterface } from "./tunnel-interface.js";
 import type { GatewayController } from "./gateway-controller.js";

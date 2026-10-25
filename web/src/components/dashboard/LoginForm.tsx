@@ -1,9 +1,9 @@
 // 責務: ユーザー名・パスワード入力型のログイン（`loginMethod: "credentials"`）のフォーム表示と送信のみを行う。
 // パスワード・2段階認証コードは秘密情報のため、送信の成否にかかわらず送信直後に入力欄から消す。
 // 画面・トーストにも表示しない
-// （webserver/requirements.md「秘密情報の扱い」、design.md「credentialsログインの実装上の注意」）。
+// （webserver/requirements.md FR-6、webserver/design.md D-6）。
 // パスワードマネージャによる自動入力を使えるよう、autoCompleteはusername・current-passwordを指定する
-// （offでは種別を判定できず反応しないため。design.md「操作者認証フォームのパスワードマネージャ対応」）。
+// （offでは種別を判定できず反応しないため。webserver/design.md D-6）。
 // 2段階認証欄は、最初は表示せず、ボタンを押したときに<form>へ追加する（ユーザー名・パスワードと同じ
 // <form>に最初から2段階認証欄があると、パスワードマネージャがパスワード欄へ自動入力しなかったため。実機検証による）。
 import { useState, type FormEvent } from "react";

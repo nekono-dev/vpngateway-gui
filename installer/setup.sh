@@ -2,8 +2,8 @@
 # 責務: クリーンなDebian系ベアメタル（Debian・Raspberry Pi OS・Ubuntu）へ、プラットフォーム（web・api・proxy）と、有効にしたVPNベンダーの
 # ランナーを導入・起動する本体インストーラ。1本で完結し、冪等（再実行は更新・ベンダーの変更・修復を兼ねる）。
 # 通常は頒布されるブートストラップ（install/install.sh.tmpl）が、ソースの取得後にこのスクリプトを呼ぶ。手動でcloneした場合は直接実行してよい。
-# 設計: specs/design.md「インストーラと頒布（Phase 13）」「デプロイメント構成の分離とロール別インストール（Phase 25）」、
-#       要件: specs/requirements.md「インストール」「デプロイメント構成の分離」「通信路の保護」。
+# 設計: specs/installer/design.md、
+#       要件: specs/installer/requirements.md。
 #
 # 処理の概要（利用者が実行する1回の呼び出しで完結する。--api・--web・--gatewayでロールを別ホストへ分離できる）:
 #   0. トポロジーの決定（--api・--web・--gatewayから、ロール→配置先ホストを決める）・
@@ -59,23 +59,23 @@ ENV_FILE="$REPO_ROOT/.env"
 VENDORS_DIR="$REPO_ROOT/vendors"
 SYSCTL_FILE="/etc/sysctl.d/99-vpngwgui.conf"
 GUARD_UNIT="/etc/systemd/system/vpngwgui-boot-guard.service"
-# ホスト再起動の依頼用ディレクトリと、依頼ファイルを検知して再起動するsystemdユニット（specs/proxyserver/design.md「ホストの再起動依頼」）。
+# ホスト再起動の依頼用ディレクトリと、依頼ファイルを検知して再起動するsystemdユニット（specs/proxyserver/design.md D-12）。
 HOST_CTL_DIR="/var/lib/vpngwgui-host-ctl"
 REBOOT_PATH_UNIT="/etc/systemd/system/vpngwgui-reboot.path"
 REBOOT_SERVICE_UNIT="/etc/systemd/system/vpngwgui-reboot.service"
 WEB_PORT_DEFAULT=443
-# 通信路の保護に使う証明書一式の置き場（specs/design.md「証明書の生成・配布」）。
+# 通信路の保護に使う証明書一式の置き場（specs/installer/design.md）。
 # ゲートウェイ制御チャネル（api⇄gateway、mTLS）・web⇄api（片方向TLS）・ブラウザ⇄web（片方向TLS）のいずれも、
 # 同じ置き場へまとめて配置する（各サーバは自分に必要なファイル名だけを読む）。
 PKI_DIR="/etc/vpngwgui/pki"
 # コンテナ（api・proxyとも user: "10001:10001"）がread-onlyマウント越しに読めるよう所有者を合わせる。
 PKI_UID=10001
 PKI_GID=10001
-# リモートロールを配置する際のソース転送先（specs/design.md「オーケストレーション型インストーラ」）。
+# リモートロールを配置する際のソース転送先（specs/installer/design.md）。
 REMOTE_INSTALL_DIR=/opt/vpngwgui
-# 新規構築インフラで known_hosts が空であることを前提とした割り切り（specs/design.md参照。能動的なMITMへの耐性は持たない）。
+# 新規構築インフラで known_hosts が空であることを前提とした割り切り（specs/installer/design.md参照。能動的なMITMへの耐性は持たない）。
 SSH_OPTS="-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10"
-# リモートホストへのSSH/SCPは、このコマンドを実行したユーザーと同じユーザー名で行う（specs/design.md
+# リモートホストへのSSH/SCPは、このコマンドを実行したユーザーと同じユーザー名で行う（specs/installer/design.md
 # 「オーケストレーション型インストーラ」）。uninstallやローカルにロールがある場合は`sudo`で再実行されるため、
 # その場合は`$SUDO_USER`（sudoを呼び出した元のユーザー）を使う（rootユーザー自身での直接ログインは
 # 前提にしない）。
@@ -101,7 +101,7 @@ WEB_HOST_ARG=""
 GATEWAY_HOST_ARG=""
 ROTATE_PAIRING=0
 # 内部専用（利用者向けの公開インターフェースではない）。オーケストレーターが、リモートホストへ限定実行を
-# 指示するために使う（specs/design.md「オーケストレーション型インストーラ」「ロールごとの実行」）。
+# 指示するために使う（specs/installer/design.md）。
 ONLY_ROLES_ARG=""
 GATEWAY_HOST_OVERRIDE_ARG=""
 API_ORIGIN_OVERRIDE_ARG=""
@@ -424,7 +424,7 @@ build_san() {
   printf 'subjectAltName=%s' "$san"
 }
 
-# 目的: 通信路の保護に使う証明書一式（specs/design.md「証明書の生成・配布」の表）を、オーケストレーター
+# 目的: 通信路の保護に使う証明書一式（specs/installer/design.mdの表）を、オーケストレーター
 #      （このコマンドを実行したホスト）のローカルで、作業用ディレクトリへ生成する。
 # 入力: グローバル変数 ROLE_HOST_web・ROLE_HOST_api・ROLE_HOST_gateway（各ロールの配置先。ローカルなら空）。
 # 出力: グローバル変数 PKI_STAGING（生成した*.crt・*.key一式のディレクトリ。CA秘密鍵は含まない＝配布しない）。
@@ -514,7 +514,7 @@ distribute_pki_remote() {
 }
 
 # 目的: --api・--web・--gatewayの指定から、ロール→配置先ホストの対応（トポロジー）を決める。再実行時は、
-#      記録済みのトポロジー（.envのTOPOLOGY_*_HOST）と一致することを検証する（specs/design.md「トポロジーの固定」）。
+#      記録済みのトポロジー（.envのTOPOLOGY_*_HOST）と一致することを検証する（specs/installer/design.md）。
 # 出力: グローバル変数 ROLE_HOST_web・ROLE_HOST_api・ROLE_HOST_gateway（値は指定ホスト名。ローカルなら空文字列）。
 # 失敗時: 記録済みのトポロジーと異なる場合は、変更前に終了する（構成変更は--uninstall後の再インストールを要求する）。
 determine_topology() {
@@ -566,7 +566,7 @@ roles_assigned_to_host() {
 }
 
 # 目的: トポロジーで指定されたすべてのリモートホストへのSSH/SCP到達性を、変更を加える前にまとめて検証する
-#      （specs/design.md「事前検証（接続性チェック）」。分離構成の一部だけが適用された中途半端な状態を作らない）。
+#      （specs/installer/design.md。分離構成の一部だけが適用された中途半端な状態を作らない）。
 # 失敗時: 1つでも到達できなければ、どのホストにも変更を加える前に終了する。
 preflight_remote_hosts() {
   for host in $(distinct_remote_hosts); do
@@ -639,7 +639,7 @@ start_stack() {
     *,web,*)
       log "Web UIの応答を待機"
       waited=0
-      # webは自己署名証明書のHTTPSで待ち受ける（specs/webserver/design.md「Webサーバ自身のTLS」）。
+      # webは自己署名証明書のHTTPSで待ち受ける（specs/webserver/design.md D-1）。
       # このヘルスチェックは同一ホスト内の疎通確認に限るため、証明書検証は行わない（-k）。
       # /v1/operatorは未認証でも応答するルート（api/src/auth/require-operator-session.ts）のため、
       # 利用者アカウントの有無に関わらずweb→apiの疎通確認に使える。
@@ -654,7 +654,7 @@ start_stack() {
 
 # 目的: このホストへ配置された1つ以上のロールを導入する。ローカル配置ならオーケストレーター（orchestrate_main）から
 #      直接呼ばれ、リモート配置ならssh経由で「sh installer/setup.sh --only-roles <roles> ...」として呼ばれる
-#      （どちらも同じこの関数を実行する。specs/design.md「ロールごとの実行」）。
+#      （どちらも同じこの関数を実行する。specs/installer/design.md）。
 # 入力: roles(このホストへ配置するロールのカンマ区切り。例"web,api"・"gateway")。
 #      グローバル変数 GATEWAY_HOST_OVERRIDE_ARG（apiロールを含む場合、gatewayの接続先を上書き。空ならcomposeの既定）、
 #      API_ORIGIN_OVERRIDE_ARG（webロールを含む場合、apiの接続先を上書き。空ならcomposeの既定）。
@@ -701,7 +701,7 @@ install_roles() {
   fi
 }
 
-# 目的: リモートホストへ、ソース一式の転送とロールの導入を行う（specs/design.md「ロールごとの実行」）。
+# 目的: リモートホストへ、ソース一式の転送とロールの導入を行う（specs/installer/design.md）。
 # 入力: host(配置先)、roles(そのホストへ配置するロールのカンマ区切り)。
 # 副作用: `git archive`によるソース転送（リモートにDocker・Node.js等の事前導入は要求しない）、
 #         リモートでの「sh installer/setup.sh --only-roles ...」実行。
@@ -786,7 +786,7 @@ finish_summary() {
 }
 
 # 目的: インストールの全体（オーケストレーター側）。トポロジーの決定・証明書の生成配布・ロールごとの実行をまとめる
-#      （specs/design.md「オーケストレーション型インストーラ」）。
+#      （specs/installer/design.md）。
 orchestrate_main() {
   determine_topology
   preflight_remote_hosts
@@ -915,7 +915,7 @@ uninstall_host_hooks() {
 }
 
 # 目的: アンインストールの全体。記録済みのトポロジーに基づき、このホストがオーケストレーターであれば
-#      リモートホストの後始末も行ってから、このホスト自身の後始末を行う（specs/design.md「アンインストール（分離構成）」）。
+#      リモートホストの後始末も行ってから、このホスト自身の後始末を行う（specs/installer/design.md）。
 # 挙動: トポロジー記録（.envのTOPOLOGY_RECORDED）が無いホストで実行した場合は、警告のうえローカルの後始末のみ行う
 #      （他ホストへの認証情報・到達性を前提にできないため）。
 uninstall_main() {

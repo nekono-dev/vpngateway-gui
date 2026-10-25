@@ -1,5 +1,5 @@
 // 責務: 最後に接続に成功した接続先ID（location-id.ts）の永続化。次回の既定選択に使う（Phase 8で廃止した
-// `defaultCountry`設定の代替。apiserver/design.md「接続先（ロケーション）」）。
+// `defaultCountry`設定の代替。apiserver/design.md D-7）。
 // 接続状態（connection-state-store.ts）と異なり、切断しても消さない（「最後に接続した先」であるため）。
 // 単一JSONファイルへの上書き保存。ファイルが無い・壊れている場合は未保存として扱い例外にしない。
 

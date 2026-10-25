@@ -1,6 +1,6 @@
 // 責務: ドメイン迂回の対象IPv4アドレスと期限をメモリ上に保持する。nftのsetはルールセットの再構成（原子的な置換）で
 // 内容が失われるため、有効な要素をここで保持しておき、再構成のたびに新しいテーブルへ引き継ぐ
-// （proxyserver/design.md「ドメイン迂回とDNS中継」の「nft set・ポリシールーティング」）。
+// （proxyserver/design.md D-7）。
 
 // 応答のTTLに加える猶予（秒）。クライアント側のキャッシュがTTLを超えて保持される場合の取りこぼしを減らす。
 export const BYPASS_GRACE_SECONDS = 60;

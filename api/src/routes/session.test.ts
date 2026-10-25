@@ -1,6 +1,6 @@
 // 責務: POST /v1/session（ログイン代行）のAPIエンドポイント統合テスト。
 // プロキシとの実通信（UDS経由）はproxy-clientモジュールをモックし、Fastifyアプリ全体
-// （ルーティング・エラーハンドラ）を通した挙動を検証する（specs/apiserver/tasks.md「将来課題」参照）。
+// （ルーティング・エラーハンドラ）を通した挙動を検証する（specs/apiserver/design.md D-6）。
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";

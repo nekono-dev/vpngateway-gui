@@ -1,5 +1,5 @@
 // 責務: Webサーバ自身のHTTPS listen用サーバ証明書と、APIサーバへのプロキシ時に検証するCA証明書の読み込み。
-// webserver/design.md「ブラウザ⇄Webサーバ」「TLS検証」: ブラウザ⇄webは自己署名サーバ証明書による片方向TLS、
+// webserver/design.md D-1: ブラウザ⇄webは自己署名サーバ証明書による片方向TLS、
 // web⇄api間は`api-ca`でAPIサーバのサーバ証明書を検証する（rejectUnauthorizedを無効化しない）。
 // 証明書一式はinstall.shが/etc/vpngwgui/pki/へ配置する（単一ホスト構成はローカル生成、分離構成は
 // オーケストレーターがscpで配布する）。

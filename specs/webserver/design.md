@@ -1,406 +1,356 @@
-# SPEC-WEBUI: Webサーバ（GUI）基本設計
-
-サービス全体設計（../design.md）で定義されたWebサーバの詳細設計を示す。
-
-本プロジェクトはVPN接続状態の常時監視・操作を行う管理パネルであり、静的コンテンツ配信ではなく状態を持つインタラクティブなUIが中心となるため、SSG（Static Site Generation）ではなくSPA（Vite + React、クライアントサイドレンダリング）を採用する。
-
-コンポーネント配置・命名規約はAGENTS.mdの規約に従う。
-
-# Webサーバ自身のTLS（Phase 25）
-
-ブラウザ⇄Webサーバ間をHTTPSにする（`specs/requirements.md`「通信路の保護」）。`web/server/index.ts`のFastifyを`https`オプション（証明書はインストーラが配置する自己署名証明書・秘密鍵。`specs/design.md`「証明書の生成・配布」）で起動する。証明書はWebサーバのホスト名・IPを対象に発行され、ブラウザは初回アクセス時に自己署名警告を表示する（運用者が手動で信頼する運用を前提とし、Let's Encrypt等の自動化は対象外）。
-
-証明書・秘密鍵の読み込みは`web/server/tls-options.ts`の`loadWebServerTlsOptions()`が行う。環境変数`WEB_TLS_CERT_FILE`・`WEB_TLS_KEY_FILE`（省略時は`GATEWAY_PKI_DIR`（既定`/etc/vpngwgui/pki`）配下の`web-server.crt`・`web-server.key`）から読み込む、既存のゲートウェイ制御チャネル（`proxy/src/gateway-channel/tls-options.ts`等）と同じ規約に従う。
-
-# APIクライアント生成方針
-
-- APIサーバがFastify + TypeBox + `@fastify/swagger` から自動生成するOpenAPI仕様を、orvalの入力として利用する。
-- 生成先ディレクトリは `src/generated/api/` とし、手動編集しない（`.gitignore` 対象外としてコミットするか、ビルド時生成のみとするかはCI構成時に決定する）。
-- APIサーバ側のスキーマ変更時は、orvalの再生成コマンドを実行してからWeb側の実装を行う運用とする。
-- Webサーバの実装コードは、この生成クライアント以外の手段でAPIサーバへリクエストを送信してはならない。
-
-# Web⇄API通信経路の実装
-
-- ブラウザは常にWebサーバの単一オリジンにのみアクセスし、Webサーバが `/api/*` パス配下のリクエストを、`API_ORIGIN`（既定`https://api:3000`。分離配置時はインストーラが`https://<APIサーバのホスト名/IP>:<ポート>`を`.env`へ書く）へリバースプロキシする。単一ホスト構成でもAPIサーバ自身のTLSは常に有効なため、`API_ORIGIN`は常に`https://`になる。
-- 実装は Fastify の `@fastify/http-proxy` を用いる。
-- **【Phase 25】TLS検証**: `@fastify/http-proxy`（既定でundiciを使って上流へ接続する）の`undici.connect.ca`オプションへ、インストーラが配布したAPIサーバのCA証明書（`api-ca`。`specs/design.md`「証明書の生成・配布」）を渡し、検証を行う。CA証明書の読み込みは`web/server/tls-options.ts`の`loadApiCaCertificate()`（環境変数`API_TLS_CA_FILE`、省略時`GATEWAY_PKI_DIR`配下の`api-ca.crt`）が行う。証明書検証を無効化するオプション（`rejectUnauthorized: false`等）は使わない。
-- **Cookieの透過転送**: ブラウザ⇄API間のセッションCookie（`vpngwgui_session`。下記「利用者認証の実装方針」）は、リバースプロキシがそのまま転送する。Webサーバ自身はCookieの中身を解釈・検証しない（検証はAPIサーバの責務）。同一オリジン構成のため、追加のCORS設定・`credentials`指定は不要。
-
-# 利用者認証の実装方針（Phase 25）
-
-設計方針は`specs/design.md`「認証・認可の設計方針」、要件は`../webserver/requirements.md`「利用者認証の要件」。
-
-- **未認証時の誘導**: アプリ起動時（`App`のマウント時）に`GET /v1/operator`を呼ぶ。`configured: false`なら初期設定画面（`components/auth/SetupPage.tsx`）を表示する。`configured: true`の場合は続けて`GET /v1/operator/session`を呼び、`401`ならログイン画面（`components/auth/LoginPage.tsx`）を表示する。いずれもダッシュボードはレンダリングしない。以後、いずれかのAPI呼び出しが`401`を返した場合も、その場でログイン画面へ切り替える（実行中の操作はエラートーストで失敗を通知する）。
-- **初期設定画面（`SetupPage.tsx`）**: ユーザー名・パスワード（確認用に再入力を含む）の入力フォーム。送信は`postOperator`（orval生成）を呼ぶ。成功時はそのままログイン済みとしてダッシュボードへ遷移する（`POST /v1/operator`が併せてセッションを発行するため、続けてログイン画面を経由させない）。`409`（作成済み）の場合はログイン画面へ切り替える（他の利用者が先に設定した場合を想定）。
-- **ログイン画面（`LoginPage.tsx`）**: ユーザー名・パスワード入力欄と送信ボタンを持つフォーム。送信は`postOperatorSession`（orval生成）を呼ぶ。成功時はダッシュボードへ遷移し、以後のポーリング等を開始する。失敗（`401`）時は「ユーザー名またはパスワードが正しくありません」を表示する。`429`（レート制限）時は専用の文言を表示する。
-- **アカウント設定（設定ダイアログ内、`components/dashboard/SettingsDialog.tsx`に追加）**: 現在のパスワード・新しいユーザー名（省略可）・新しいパスワード（省略可）の入力欄を持つフォーム。送信は`putOperator`（orval生成）を呼ぶ。成功時はダイアログ内に完了を表示する（再ログインは不要）。`401`（現在のパスワード不一致）はダイアログ内にインライン表示する（`specs/webserver/design.md`「エラー通知の実装方針」の方針に合わせる）。
-- **ログアウト**: 既存のヘッダー等に配置するログアウト操作から`DELETE /v1/operator/session`を呼び、成功したらログイン画面へ戻る。
-- **状態の持ち方**: 認証状態（未設定／未ログイン／ログイン済み・ユーザー名）はReactのコンテキスト（`contexts/AuthContext.tsx`）で保持する。Cookie自体はブラウザが管理するため、Web UI側で別途トークンを保持しない。
-
-# 状態管理の実装方針
-
-- VPN接続状態、Kill Switch状態等は、APIサーバの状態取得エンドポイントを一定間隔（デフォルト5秒程度、画面表示中のみ）でポーリングして取得する。WebSocket等のプッシュ型通信は、初期実装では採用せず、必要になった時点で再検討する。
-- 接続状態（`GET /v1/connection`）と稼働状況（`GET /v1/connection/gateway`）は1つのポーリングで並行取得する（`hooks/useDashboardPolling.ts`。汎用の`hooks/usePolling.ts`を利用）。各部分は独立に成否を持ち、片方の失敗がもう片方の表示に影響しない。取得に失敗した部分は古い値を残さず取得失敗を表示する（proxy障害時に「稼働中」が表示され続けるのを避けるため）。ただし接続/切断ボタンは、接続状態の取得が一時的に失敗しても最後に取得できた状態で操作可能とする。
-
-# エラー通知の実装方針
-
-- 操作（接続/切断/ログイン）のAPIエラーは、`notifications/`のトーストで通知する。`describe-api-error.ts`がHTTPステータス（400/422/502/504）を要約へ変換し、stderr等の生出力は「詳細」（`<details>`折りたたみ）にのみ入れる。エラートーストは利用者が閉じるまで残す（読み終える前に消えるのを避ける）。
-- 設定ダイアログ・接続ログダイアログ内のエラーは、モーダル表示中はダイアログ外が操作不能でトーストを閉じられないため、ダイアログ内にインライン表示する。
-
-# 接続国の表示方針
-
-- 接続国はクライアントで保持せず、常に`GET /v1/connection`の`country`（と`location`）を表示する（apiserver/design.md「接続先国の永続化」）。クライアント側のメモリに保持すると、再読み込み・別端末・別ブラウザで表示が失われるため（Phase 4初期実装の不具合）。
-
-# 接続先リストの実装方針（Phase 5）
-
-要件は`requirements.md`「接続先リスト」。API（`specs/apiserver/design.md`「接続先（ロケーション）」）が並び順（ping昇順）・お気に入り・前回接続の別を決めて返し、Webはそれを表示・操作するだけとする（並べ替えロジック・お気に入りの保持をWebに置かない）。
-
-## コンポーネントと責務
-
-| ファイル | 責務 |
-|---|---|
-| `hooks/useLocations.ts` | `GET /v1/connection/locations`の取得状態（読み込み中・成功・失敗）と、再取得、★の登録/解除（`PUT`/`DELETE .../favorite`）、接続成功後の`lastConnected`のローカル更新を管理する。★操作は楽観的に反映し（並び順を変えないため再取得しない）、APIエラー時は元へ戻してエラーを通知する |
-| `components/dashboard/LocationList.tsx` | タブ（すべて／お気に入り）・絞り込み入力・行リスト・再計測ボタン・取得失敗表示の組み立て |
-| `components/dashboard/LocationRow.tsx` | 1行の表示（国コードのバッジ・国名・都市・ping・★ボタン・「接続中」「前回」バッジ）と選択 |
-| `components/dashboard/ConnectionActions.tsx` | 接続／切断／「接続先を変更」ボタンの出し分け（従来の`ConnectDisconnectButton.tsx`を置換） |
-| `locations/location-filter.ts` | 絞り込み・タブ切替の純粋関数（接続先の型に依存するドメイン処理のため、汎用の`lib/`ではなく責務ディレクトリ`locations/`に置く。AGENTS.mdのポータビリティテスト参照） |
-| `locations/current-location.ts` | 現在の接続先ID・実効選択の決定（接続状態の`locationId`／`location`と一覧の突き合わせ）の純粋関数 |
-
-## 選択・ボタンの状態遷移
-
-- `selectedId`（利用者が明示的に選んだ接続先ID）を`App`が保持する。実効選択`effectiveId`は、`selectedId` → 接続中なら現在の接続先ID → 切断中なら`lastConnected`の接続先ID の優先順で決める。実効選択が一覧に存在しなければ未選択（接続不可）。
-- 現在の接続先ID: `GET /v1/connection`の`locationId`。無い場合（API外の接続・保存内容なし）は、`location`（CLIが報告する都市名、大文字小文字は区別しない）と一覧の`city`の一致で補う（一致しなければ現在の接続先不明として扱い、どの行にも「接続中」を付けない）。
-- ボタン: 切断中は［接続］（`effectiveId`があるとき有効）。接続中は［切断］を常に表示し、`effectiveId`が現在の接続先と異なるときだけ［接続先を変更］を併せて表示する（`PUT /v1/connection`の`connect=true`＋`locationId`。接続と同じ経路）。
-- 操作（接続・変更・切断）の成功後は`selectedId`を消去する（以後は接続中の接続先が実効選択になる）。ボタンは送信中、二重押下できない。
-
-## 取得のタイミング
-
-画面表示時に1回、以降は利用者が「再計測」（取得失敗時は「再取得」）を押したときのみ。接続状態のポーリング（5秒）には含めない（`list-locations`はCLIを起動し約1秒かかる。また並び順が勝手に変わるのを避けるため）。取得中は再計測ボタンを無効化する。
-
-## エラー表示
-
-リスト取得の失敗は、トーストではなくリスト領域のインライン（`role="alert"`）に、`describeApiError`の要約と再取得ボタンで表示する（画面表示時に自動で発生するエラーであり、閉じるまで残るトーストが積み重なるのを避けるため。また利用者が原因を解消して再取得するまで領域に残るべきなため）。★の登録・解除失敗は操作エラーとしてトースト通知する。
-
-## 設定ダイアログ
-
-`defaultCountry`ドロップダウンと、それに使っていた`countries`の受け渡しを削除する（`CountrySelect.tsx`も削除）。
-
-## 接続先リストのツールバーの実装方針（Phase 26）
-
-要件は`requirements.md`「接続先リストのツールバー」。`LocationList.tsx`のツールバーで`changeAction`を［再計測］の前に描画する。`styles.css`の`.location-toolbar`は`flex-wrap: nowrap`＋`overflow-x: auto`とし、`.location-tabs`・`.location-toolbar-actions`は`flex: none`で縮めず、幅を超えた分を横スクロールにする（`.location-tabs`等の`flex-wrap: wrap`は他の場所のボタン列向けで、このツールバーでは使わない）。
-
-## 通知の表示位置の実装方針（Phase 26）
-
-要件は`requirements.md`「通知の表示位置」。`styles.css`の`.toast-region`は`position: fixed`で右上（`top`・`right`）に置き、幅420px以下のメディアクエリで`top`・`right`を解除して`bottom`（`env(safe-area-inset-bottom)`を考慮）・`left`へ切り替える。メディアクエリは、上書き対象の`.toast-region`の定義より後ろに置く（前に置くと通常ルールに上書きされるため）。
-
-## 設定ダイアログのタブ化の実装方針（Phase 26）
-
-要件は`requirements.md`「設定ダイアログのタブ化」。
-
-- `SettingsDialog.tsx`に、`role="tablist"`のボタン群（`.location-tabs`のスタイルを共用し、選択中は`tab-active`・`aria-selected`）と`role="tabpanel"`を置く。選択中のタブは`useState`で保持する。ダイアログを開くたびに先頭のタブへ戻す。
-- 設定値（`settings`）・保存・エラー表示・ボタン列は従来どおり`SettingsDialog`が1つだけ持ち、タブはフォームの入力部品の表示を切り替えるだけとする（タブごとに状態・保存処理を分けない）。非選択のタブのパネルは`hidden`で残すのではなく描画しないが、値は親の`settings`にあるため失われない。
-- タブは「通信制御」「ゲートウェイ」「上位DNSリゾルバ」「DNS詳細」「動作検証」「メンテナンス」。ただし「メンテナンス」は設定値を持たず、ボタンだけを置く。ダイアログ下部の`.dialog-actions`は保存・キャンセルのみ。DNS中継の設定は、従来の枠線付きグループ（`fieldset`）をやめ、上位DNSリゾルバ（有効化・DoH URL・CA）とDNS詳細（失敗時の挙動・公開DNS・クライアント名の取得先・リダイレクト）の2タブへ分けて表示する。「DNS詳細」は`dnsRelayEnabled`がONのときだけ`tablist`に含め、OFFの間は描画しない（選択中のタブが消えた場合は`activeTab`が「上位DNSリゾルバ」へ落ちる）。DNS詳細の入力は、タブが見えない間に保存を妨げないよう、`dnsFallbackNeedsServers`を`dnsRelayEnabled`がONのときだけ有効にする（`dnsFailureMode`等の値自体は保持して送信する）。
-- 保存不可条件（`explicitProxyNeedsCidr`・`hasIncompleteDnsSettings`）は従来どおりダイアログ全体の保存ボタンの`disabled`に使い、該当タブ（ゲートウェイ・上位DNSリゾルバ・DNS詳細）のラベル末尾に`!`を付ける。
-- ラジオボタンは`styles.css`の`input[type="radio"]:not(.visually-hidden)`で、チェックボックスと同様に`appearance: none`の自前デザインにする（`.visually-hidden`の接続先リストのラジオは除外する）。
-- 複数行入力欄（CAのPEM。1行1値のリストは`LineListEditor`が行リストエディタとして別に扱う）のスタイルは`styles.css`の`dialog textarea`に置く（`width: 100%`・`box-sizing: border-box`・`resize: vertical`・無効時の背景）。複数行入力欄は既定の折り返し（横スクロールなし）とする。
-- 設定ダイアログのボタン列（`.dialog-actions`）は、「保存」「キャンセル」を`.dialog-actions-group`（折り返さない`flex`）で囲み、組ごと折り返す。
-- ページと設定ダイアログの左右余白は、`:root`の`--page-gutter: clamp(10px, calc((100vw - 569px) / 2), 16px)`で連続的に決める（`main`は`padding: 16px var(--page-gutter)`）。`dialog`は、ブラウザ既定の`max-width: calc(100% - 6px - 2em)`を`max-width: none`で外し、`width: min(602px, calc(100vw - 2 * var(--page-gutter)))`とする。
-- スクロールする領域の余白は、`:root`の`--scrollbar-gap`（14px）で共通にする。縦にスクロールする領域（`.location-scroll`は`padding-right`、`.log-scroll`・`.toast pre`は右と下）に付ける。横スクロールの領域（`.header-actions`・`.location-toolbar`・`dialog .location-tabs`）は、標準のスクロールバーを使わず、`components/HorizontalScroll.tsx`が自前のバー（`.hscroll-track`・`.hscroll-thumb`。列の下に通常のレイアウトで置き、はみ出したときだけ表示。つまみのドラッグ・トラックの押下に対応）を描く。縦ホイールは横スクロールへ変換し、端では変換せずページへ譲る。標準のバーは、Safariで表示の有無・太さが初回レイアウト後に変わり、ボタンに被る・高さが崩れて他の要素をクリックするまで直らなかったため。列の標準バーは`scrollbar-width: none`・`::-webkit-scrollbar { display: none }`で隠し、ボタンは`align-items: flex-start`で引き伸ばさず、縦は`overflow-y: hidden`とする。横スクロールの領域を新設するときは`HorizontalScroll`で包む。
-- 設定ダイアログ（`dialog`）の縦スクロールバーは、`scrollbar-width: none`と`dialog::-webkit-scrollbar { display: none }`で非表示にする（スクロール自体はできる）。
-- 設定ダイアログのタブ列（`dialog .location-tabs`）は`flex-wrap: nowrap`・`overflow-x: auto`・`min-width: 0`・`overflow-y: hidden`（`overflow-x`だけを`auto`にすると`overflow-y`も`auto`に計算され、バーを常時表示する環境で縦スクロールバーが出るため）とし、タブ列だけを横スクロールさせる（バーは`HorizontalScroll`の自前のバー）（`.location-tabs`の共通定義は`flex-wrap`を持たないため、折り返しを戻すとダイアログ全体が横に溢れる）。
-- ボタンの折り返しは、`styles.css`の`button`に`white-space: nowrap`・`flex: none`を与え（文字を折り返さず大きさを保つ）、ボタンを並べる親（`.dialog-actions`・`.location-tabs`・`.session-action`・`.connect-row`・`.location-toolbar(-actions)`）に`flex-wrap: wrap`を与えて、ボタンごと折り返す。新しくボタンを並べる親を追加するときも`flex-wrap: wrap`を付ける。ヘッダーのボタン列（`.header-actions`）は例外で、`flex-wrap: nowrap`・`overflow-x: auto`・`min-width: 0`とし、`.app-header`も`nowrap`にして、幅を超えた分をボタン列だけの横スクロールにする。
-- 高さは、タブの内容で最も高いものに合わせ固定せず、選択中のタブの内容に従う。
-- 設定の読み込み（`GET /v1/connection/config`）とタブの初期化は、ダイアログを開いたときだけ行う。明示的プロキシの許可CIDRの初期値（ダッシュボードの稼働状況の`lanCidr`）は開いた時点の値を使い、読み込みの契機にしない（定期取得の失敗等で値が変わるたびに読み直すと、開いているダイアログのタブ・未保存の入力・動作検証の表示が初期化されるため。Phase 27の実機検証で発見）。
-
-# ベンダーの選択の実装方針（Phase 8）
-
-要件は`requirements.md`「ベンダーの選択」。ベンダーの保持・切替・切断の手順はAPI（`specs/apiserver/design.md`「ベンダーの選択」）が行い、Webは一覧の表示と切替の要求だけを行う。
-
-- **状態の取得**: `hooks/useDashboardPolling.ts`の並行取得に`GET /v1/providers`を加える（各部分が独立に成否を持つ）。取得に失敗した場合はベンダー選択部品を出さず、従来どおり動作する（APIが古い・応答しない場合の後方互換）。
-- **`components/dashboard/ProviderSelector.tsx`**: ラジオ入力のグループ（各ベンダーの表示名。`available: false`は`disabled`＋理由表示）。有効なベンダーが1つのときは名前のみ表示。選択時、接続中なら`window.confirm`で確認（文言に、切断されること・Kill Switchでの遮断を含める）してから`PUT /v1/providers/active`を呼ぶ。送信中は`disabled`（二重送信防止）。失敗（`409`/`422`/`502`）は`describeApiError`でトースト通知（`409`は「ベンダーの切替中です」、`422`は「現在のVPNを切断できませんでした」等）。成功後は`refresh()`。
-- **ベンダー切替時の状態の入れ替え**: `App`は、選択中のベンダーID（`providers`のうち`active`のもの）を`key`として、接続操作カード（`SessionCard`・`LocationList`・`ConnectionActions`）へ与える。IDが変わるとこれらが再マウントされ、ローカルの状態（絞り込み・タブ・URL提示型ログインの結果・入力中のフォーム）が捨てられる。`useLocations`も同じIDで取得し直す（`enabled`に加え、IDが変わったら一覧・エラー・「前回」を空へ戻して再取得する）。`selectedId`（明示的に選んだ接続先ID）もIDが変わったら消す。
-- **接続状態の表示**: `ConnectionStatusCard`に選択中のベンダー名を渡し、「接続中（<ベンダー名>）」の形で表示する。ベンダーが1つだけのときは従来の表示のまま。
-
-# プロバイダ機能差・プラン制限への対応の実装方針（Phase 7）
-
-要件は`requirements.md`「操作の制限表示」。制限の判定はAPI（`specs/apiserver/design.md`「オペレーションと実行可否（capability）」）が行い、Webは受け取った`capabilities`を部品へ配るだけとする。
-
-## 状態の取得
-
-- `hooks/useDashboardPolling.ts`の並行取得に、`GET /v1/connection/capabilities`と`GET /v1/session`を加える（既存の接続状態・稼働状況と同様、各部分が独立に成否を持つ）。APIは`account`判定を30秒キャッシュするため、5秒周期でもCLIは頻繁に起動されない。
-- 取得失敗時は`capabilities`を「全て可」とみなす（制限をかけない）。初回取得が完了する前は「読み込み中」として、接続先リスト（`useLocations`）の取得を開始しない（`useLocations`は`enabled`引数を受け取り、`locationList`が可のときだけ取得する）。
-- `403 operation_restricted`を受けたら、`refresh()`で`capabilities`を即時再取得する（学習した制限がすぐUIへ反映される）。
-
-## コンポーネントと責務
-
-| ファイル | 責務 |
-|---|---|
-| `capabilities/capability-state.ts` | `capabilities`の型と、操作の可否・理由文の参照・「全て可」の既定値・`connectAuto`を表示するかの判定（純粋関数。API応答の型に依存するドメイン処理のため責務ディレクトリ`capabilities/`に置く） |
-| `components/dashboard/SessionCard.tsx` | ログイン状態（ログイン済み・プラン名・未ログイン・不明）の表示、ログイン導線（`loginMethod`で切替）、ログアウトの組み立て（従来の`VpnLoginButton.tsx`を置換） |
-| `components/dashboard/LoginForm.tsx` | `credentials`方式のフォーム（ユーザー名・パスワード・2FAコード）。送信後に秘密の欄を必ず空にする |
-| `components/dashboard/RestrictionNote.tsx` | 制限理由の表示（`role="note"`）。無効化した部品の`aria-describedby`の参照先になる |
-| `components/dashboard/LocationList.tsx` / `ConnectionActions.tsx` | `capabilities`に従う部品の無効化・非表示・理由の表示（上表のとおり） |
-
-## `credentials`ログインの実装上の注意
-
-- 入力欄は`type="password"`。パスワードマネージャ（Proton Pass）の自動入力を使えるよう、`autoComplete`はユーザー名`username`・パスワード`current-password`とする（`off`では反応しない。下記「操作者認証フォームのパスワードマネージャ対応」の「ベンダーログインのフォーム」）。実機では、ログイン後の「保存しますか？」の通知は出なかった。
-- `POST /v1/session`の生成クライアント呼び出しの`finally`で、成否にかかわらず`password`・`twoFactorCode`の状態を空にする。エラー応答（422）の`stderr`は詳細（折りたたみ）にのみ入る既存方針のまま（APIが伏字化済み）。
-- 送信中はフォーム全体を無効化し、二重送信を防ぐ。
-
-## 操作者認証フォームのパスワードマネージャ対応（Phase 35）
-
-操作者認証のフォーム（ログイン・初期設定・アカウント変更・ゲートウェイ再起動）は、パスワードマネージャ（Proton Pass）が自動入力・保存できる作りとする。実機（Proton Pass）で次の点が判明した。
-
-- **`autocomplete`属性**: `username`・`current-password`・`new-password`を指定する（`off`では種別を判定できず反応しない）。
-- **ダイアログは非モーダル**: モーダル（`showModal()`）の`<dialog>`はトップレイヤーに描画され、拡張機能の候補表示が隠れて自動入力できない。パスワード入力欄を持つアカウント変更・再起動のダイアログは`show()`で開き（`useDialogOpen(open, false)`）、`styles.css`の`dialog.non-modal`で画面中央へ固定し、背面は`box-shadow`で暗くする。Escで閉じる処理は`onKeyDown`で補う。設定ダイアログ（モーダル）はこれらを覆うため、開いている間だけ表示を閉じる（状態は保持し、`onClose`は呼ばない）。
-- **閉じている間はフォームを描画しない**: 閉じた`<dialog>`内のフォームは幅・高さが0で、ダイアログを開いた後も拡張機能に再検出されなかった。開いたときにフォームをDOMへ追加する（`open ? <Form /> : null`）と検出される。
-- **ユーザー名欄を置く**: アカウント変更・再起動のフォームは、先頭に`autocomplete="username"`の可視のtext欄（再起動は「ログイン中のユーザー名」、アカウント変更は書き換えると変更になる「ユーザー名」）を置く。非表示（opacity 0・1px・`readOnly`・`aria-hidden`）の欄は検出されなかった。
-- **パスワード変更フォームの欄順**: 「ユーザー名・現在のパスワード・新しいパスワード」の3欄とする。「新しいユーザー名」の別のtext欄を足すと（位置・`autocomplete`によらず）現在のパスワード欄へ新パスワードが入るため置かず、ユーザー名欄の書き換えでユーザー名を変更する（`PUT /v1/operator`には書き換えた場合のみ`username`を送る）。
-- **ラベル文言**: 再起動のパスワード欄のラベルに「確認」「再入力」を含めない（確認欄と判定されうるため。現在は「ログインパスワード」）。
-
-# 暫定表示の実装方針（Phase 4）
-
-- `excludedDomains`（Phase 14）は、DNS中継が有効な間だけ通信へ反映される。「未対応」の暫定表示はPhase 14で除去し、`dnsRelayEnabled`がOFFのときの注意表示（`webserver/requirements.md`「設定ダイアログの入力項目」）に置き換える。稼働状況欄は`GET /v1/connection/gateway`の`dnsRelay`（状態・上流の疎通・迂回中のIP数）を表示する。DNS中継の設定項目は、`SettingsDialog.tsx`に「上位DNSリゾルバ」「DNS詳細」のタブ（Phase 26でグループ表示から変更）として追加する（ラジオボタン・複数行入力は既存のUI部品規約に従う）。明示的プロキシはPhase 6で実装済みのため、稼働状況欄は実状態（`GET /v1/connection/gateway`の`explicitProxy`）を表示し、設定ダイアログの暫定表示は除去した。
-- 稼働状況カードの各行（透過ゲートウェイ・明示的プロキシ）は、テスト（単体・E2E）が行を特定できるよう`dd`に`data-testid`を付ける（`dd`はARIA上アクセシブルネームを付けられず、`aria-labelledby`が実ブラウザで機能しないことがE2Eで判明したため）。取得失敗の理由（`role="alert"`）は1行目にだけ全文を出し、2行目は「取得失敗」のみとする（同一文言の重複読み上げを避ける）。
-
-## プランで接続できる接続先の参考表示の実装方針（Phase 12）
-
-要件は`requirements.md`「プランで接続できる接続先の参考表示」。
-
-- **取得**: `useAvailableLocations(enabled, providerId)`（`hooks/useAvailableLocations.ts`）が`GET /v1/connection/available-locations`を取得する。`enabled`は「接続先リストが制限されている（`locationList`が使えない）」のとき。ベンダー切替・`enabled`がtrueになったときに取得する（ポーリングしない）。ベンダー切替で前のベンダーの結果を捨てる（世代管理は`useLocations`と同じ）。失敗・空は「表示なし」として扱い、通知しない。
-- **表示**: `AvailableLocations`（`components/dashboard/AvailableLocations.tsx`）が、国名と都市の一覧を、選択・お気に入りを無効化した行（接続先リストと同じ見た目。下記「参考一覧での現在の接続先の表示の実装方針（Phase 16）」参照）として描く。`LocationList`は、`unavailableReason`の理由文（`RestrictionNote`）の直後に、渡された一覧があればこれを描く。
-- 一覧が変わるのはプラン変更（再ログイン）時のため、ログイン状態（`GET /v1/session`のプラン）が変わったときにも再取得する。
-
-## プランの補足情報の参考表示の実装方針（Phase 13）
-
-要件は`requirements.md`「ログイン導線」（プラン名への補足併記）。追加の取得は行わず、`SessionCard.tsx`が既に持つ`GET /v1/session`の応答（`plan.usageNote`）をそのまま使う。
-
-- `SessionCard.tsx`が、プラン名の表示に`plan.usageNote`があれば括弧書きで併記する（例: 「Free（残り3.00 GBです ...）」のように、CLIの文言をそのまま出す。Webサーバは意味を解釈・翻訳しない）。無ければ何も追加しない。
-
-## 接続・切断ボタンの配置・強調の実装方針（Phase 16）
-
-要件は`requirements.md`「接続・切断ボタンの配置・強調」。
-
-- `ConnectionActions.tsx`が持っていた［接続］［切断］ボタンを、それぞれ独立した部品`ConnectButton.tsx`・`DisconnectButton.tsx`（`components/dashboard/`）へ切り出した。`ConnectionActions.tsx`に残るのは［接続先を変更］のみ（接続中に別の接続先が選ばれているときだけ表示）。
-- `App.tsx`が、接続状態（`connection?.status`）に応じてどちらか一方（未接続時は`ConnectButton`、接続中は`DisconnectButton`）を組み立て、`SessionCard`へ`connectAction`・`disconnectAction`（どちらも`ReactNode`）として渡す。`SessionCard.tsx`は、渡された部品をアカウント状態表示（`session-top-row`）の左に描くだけで、接続・切断の実行自体には関与しない（責務は従来どおりログイン状態の表示のみ）。
-- ログイン状態（`loggedIn`）の判定結果に表示を左右させない（`loggedIn`が未確定・falseでも、接続中なら`disconnectAction`は表示され続ける）。Kill Switch運用中に、ログイン状態の一時的な取得失敗・未確定によって切断操作自体が失われないようにするため。
-- 配色は、切断のみ`button.danger`（`--danger`を背景色に使う。`styles.css`）とする。接続は従来どおり`button.primary`。
-- **【2026-09-22追記・実機検証で判明】** ［切断］ボタンのみを移設した最初の実装では、［接続］ボタンが`ConnectionActions.tsx`の`connect-row`（接続先リストの下）に残ったままだった。接続先リストが多数（数十件）になる構成の実機で、接続先リストの下までスクロールしないと［接続］ボタンへ到達できない問題が判明し、`ConnectButton.tsx`として同様に切り出した。
-
-## 参考一覧での現在の接続先の表示の実装方針（Phase 16）
-
-要件は`requirements.md`「参考一覧での現在の接続先の表示」。
-
-- **現在の接続先の特定**: `locations/current-available-location.ts`の`findCurrentAvailableLocation(connection, availableLocations)`が、`connection.location`（CLIが報告した接続先の表記）の中に、参考一覧の各国の`cities`のいずれかが含まれるかを、大文字小文字を区別せず判定する純粋関数。`locations/current-location.ts`の`findCurrentLocationId`（接続先リスト向け）と同じ考え方を、接続先IDを持たない参考一覧向けに行う。**都市名の完全一致ではなく部分一致とする**: 実機確認（2026-09-22、Proton VPN無料プラン）で、自動接続時にCLIが報告する`location`が都市名のみ（例: `Tokyo`）ではなく、「サーバ名 in 都市名, 国名」の複合表記（例: `US-FREE#5 in Seattle, United States`）になることが判明したため。
-- **表示**: `AvailableLocations.tsx`は、接続先リストの行（`LocationRow.tsx`が使う`location-item`・`location-row`・`location-iso`・`location-name`・`badge`等のクラス）と同じマークアップ・CSSクラスを再利用して行を描く。ただし選択（ラジオ入力）は置かず、非活性のクリックできない行として描く。★（お気に入り）も常に無効化した`<button disabled>`のみを置き、実際の登録操作は行わない（`LocationRow.tsx`本体は再利用せず、見た目のクラスのみ共有する。参考一覧はIDを持たず、`LocationItem`型に合わせる意味が無いため）。
-- **ping列の出し分け**: `capabilities/capability-state.ts`の`supportsLocationPing(capabilities)`が、`pingMeasurement`capabilityの`reason`が`"unsupported"`のときだけ非対応と判定する。`pingMeasurement`は`locationList`に従属するcapabilityのため（`apiserver/design.md`「オペレーションと実行可否（capability）」）、参考一覧が表示される状況（`locationList`がプラン制限で使えない）では、素の`isAvailable(capabilities, "pingMeasurement")`は常にfalseになってしまい判定に使えない。`reason`で「非対応（`unsupported`）」と「プラン制限の継承（`planRestricted`）」を区別することで、CLIそのものの対応可否のみを見る。
-- 参考一覧は生存確認を伴わない静的なサーバ一覧が出典のため、対応していても実際のping値は持たず、列は「-」のまま表示される。
-- 単なるテキスト表示のため、独立したフックやコンポーネントは設けない（`AvailableLocations`のような専用取得・専用部品は不要）。
-
-# ダッシュボードのカード構成・レイアウトの整理の実装方針（Phase 21）
-
-要件は`requirements.md`「ダッシュボードのカード構成・レイアウトの整理」。
-
-## ログイン導線をVPNベンダーのカードへ移す
-
-- `SessionCard.tsx`から接続/切断ボタンの受け渡し（`disconnectAction`・`connectAction`props）を削除する。責務をログイン状態の表示・ログイン導線・ログアウトのみに戻す（Phase 16以前の責務）。
-- `App.tsx`が、VPNベンダーのカード（`aria-label="VPNベンダー"`）の中で`ProviderSelector`の直後に`SessionCard`を描く（従来は接続操作カードの中にあった）。
-
-## 接続状態・稼働状況・接続/切断ボタンを1枚のカードにまとめる
-
-- `ConnectionStatusCard.tsx`と`GatewayStatusCard.tsx`は、それぞれが持っていた外枠（`<div className="card...">`・`<section className="card" aria-label="稼働状況">`）を取り除き、カード内側の表示（接続状態の文言／稼働状況の`dl`）だけを返すようにする。外枠は`App.tsx`側で1つにまとめて持つ（1つの`<section className="card">`に両方の内容と接続/切断ボタンを並べる）。
-- 接続状態に応じた枠色（`card-connected`・`card-disconnected`・`card-danger`）の判定は、`ConnectionStatusCard.tsx`から`connectionCardClassName(connection, isLoading, error)`として切り出し、`App.tsx`がこれを外枠の`className`に使う（従来`ConnectionStatusCard`内部で完結していた枠色の決定を、外枠を持つ側へ移すだけで判定ロジック自体は変えない）。
-- `App.tsx`は、接続状態の直後に`ConnectButton`／`DisconnectButton`（Phase 16で切り出し済み。押しやすい位置に置く目的は維持しつつ、置き場所をSessionCardからこのカードへ変更）を置き、その下に稼働状況の内容を続ける。
-
-## 「ログインしてください」等の制限理由の重複表示の解消
-
-- 未ログイン等で［接続］が無効化される理由（`connectBlockedReason`）は、`connectToLocation`と`locationList`が常に同じ理由へ同期される（`apiserver/capability-evaluator.ts`の仕様。一方が実行不可なら他方も同じ原因を継承する）ため、［接続］ボタンが無効化される場面では接続先リスト側の制限表示（`LocationList.tsx`の`unavailableReason`）にも常に同じ理由文が表示される。
-- `LocationList.tsx`は、`unavailableReason`を表示する`RestrictionNote`に固定id（`location-list-restriction`）を付ける。
-- `ConnectButton.tsx`は、`connectBlockedReason(capabilities)`が`reasonOf(capabilities, "locationList")`と一致するとき（＝接続先リスト側に同じ理由文が既に表示される、または表示されうるとき）は、自身の`RestrictionNote`を描かず、`aria-describedby`だけを`location-list-restriction`へ向ける。一致しない場合（稀なケース。プロバイダの対応可否がオペレーションごとに異なる等）は、従来どおり自身の`RestrictionNote`（`connect-restriction`）を描く。
-- これにより、画面上に同じ理由文が視覚的に重複することはなく、支援技術からは常にいずれかの理由文を`aria-describedby`で辿れる。
-
-## 画面の縦幅をビューポートに収める
-
-- `styles.css`で、`html`・`body`・`#root`の高さを100%とし、`main`の高さを`100dvh`（動的ビューポート高さ）に固定して`overflow: hidden`にする。
-- `main`はflexの縦積みのまま、接続操作カード（`.controls`）と接続先リスト（`.location-list`・`.location-scroll`）に`flex: 1; min-height: 0;`を連鎖させ、他のカード（VPNベンダー・接続状態）の実高さぶんを差し引いた残りの高さを接続先リストの内部スクロール領域が吸収する（`.location-scroll`の`max-height`固定値は廃止する）。
-- ページ全体としてはスクロールせず、接続先リストが多い場合のみ`.location-scroll`の内部だけがスクロールする（Phase 16での「接続/切断ボタンをスクロールなしで押せる位置に置く」という意図を、カード構成が変わった後も引き続き満たす）。
-- **【2026-09-22追記・実機検証で判明】** 接続先リストが使えない（`locationList`が制限されている）ときの分岐（`LocationList.tsx`）は、通常時の`.location-list`（flexの縦積み、`flex: 1; min-height: 0;`）の外枠を使わずFragmentを返していたため、この分岐で表示される「接続できる国（参考）」一覧（`AvailableLocations.tsx`）が高さの制約を受けず、国数の多いベンダー・プラン（実機確認: Proton VPN無料版、10か国）でページ全体がビューポートを超えて表示される不具合が生じた（利用者からの指摘で発覚）。`LocationList.tsx`のこの分岐を`.location-list`で囲み、`AvailableLocations`のラッパー（`.available-locations`）にも同じflexの縦積み（`flex: 1; min-height: 0;`）を与え、内部の`.location-scroll`まで残り高さのflex連鎖を通すことで修正した。回帰防止のため、コンポーネントテストに「参考一覧が`.location-list`に囲まれていること」の構造チェックを追加し、実機E2E（`e2e/phase21/webgui-phase21.mjs`）にページ全体がビューポートを超えないことの確認を追加した。
-
-# モバイル表示・入力欄の視認性改善の実装方針（Phase 22）
-
-要件は`requirements.md`「モバイル表示・入力欄の視認性改善」。
-
-## フォーカス時の意図しない拡大の防止
-
-- iOS Safari等は、フォーカスした入力欄のフォントサイズが16px未満のとき、そのフォントサイズが画面に収まるよう自動的にページ全体を拡大する。`viewport`メタタグの`maximum-scale`固定・`user-scalable=no`によるピンチズーム自体の禁止は、拡大操作を必要とする利用者のアクセシビリティを損なうため行わない。
-- 代わりに、`styles.css`が入力欄（`input`・`select`・`textarea`）のフォントサイズを`16px`以上に統一する。次項「入力欄の視認性向上」で文字サイズを拡大する対応と合わせて満たされる。
-
-## 入力欄の視認性向上
-
-- `styles.css`の入力欄セレクタ（従来`select, textarea, input[type="search"]`のみに限定していたものを、`input`全体（`type`を問わない。`LoginForm.tsx`のユーザー名・パスワード・2段階認証コード欄を含む）へ拡大する）に、以下をまとめて適用する。
-  - `font-size`: `1rem`（16px。「フォーカス時の意図しない拡大の防止」と両立）
-  - `border`: 既定の`var(--border)`（灰色、ボタン等と共通）ではなく、入力欄専用の新しいCSSカスタムプロパティ`--input-border`（`:root`に追加。ブラウザ・OS既定の枠線色と区別できる、システムで意図的に定めた色）を使う
-  - `padding`: `8px 10px`程度（従来の`6px`のみから拡大し、枠線内に余白を持たせる）
-- フォーカス時は`outline`を`--input-border`と同系色で表示し、枠線色とフォーカス表示の一貫性を保つ（既存の`.location-row:has(input:focus-visible)`等、個別に`outline`を定義している箇所とは独立に扱い、干渉しない）。
-
-## アカウントのログイン状態表示の簡素化
-
-- `SessionCard.tsx`の状態表示（`session-status`）は、ログイン済み（`loggedIn === true`）のときのみ描画する。未ログイン（`loggedIn === false`）のときは、従来表示していた「アカウント: 未ログイン」を描画しない（ログインフォーム・ログインボタン自体が未ログインであることを示すため）。ログイン状態が未確定（`loggedIn === undefined`）のときも同様に何も描画しない（従来どおり）。
-- ログイン済みの表示は、他のカードの状態表示（`LocationRow.tsx`の「接続中」バッジ等）と同じ`badge badge-ok`クラスを使い、プラン名（あれば`usageNote`併記）とともに緑色の背景で示す。接続状態の表示（`connectionCardClassName`による枠色）と同様に、色で状態が分かるようにする狙いを、既存の`badge`という共通の仕組みで満たす（ログイン状態専用の新しい配色ルールは設けない）。
-
-## 接続先設定フォームの高さ
-
-- `App.tsx`が、接続操作カード（`.controls`）に実際に表示する行があるかどうか（`locations.locations.length > 0`、または参考一覧が使われる状況で`availableLocations`に1件以上あるか）を判定し、あるときだけ`.controls`へ`controls-expanded`クラスを追加する。
-- `styles.css`は、`.controls`の既定を`flex: 0 0 auto`（内容に必要な高さのみ）とし、`.controls-expanded`のときのみ従来どおり`flex: 1 1 auto; min-height: 0;`（画面の残り高さいっぱいに広がり、内部の`.location-scroll`がスクロールを吸収する。Phase 21「画面の縦幅をビューポートに収める」の実装をそのまま流用する）を適用する。
-- 取得中・0件・制限理由のみ（参考一覧も空）のときは`.controls`が内容に応じた高さのみを占めるため、画面下部に不要な空白が生じない。
-
-## フッターの追加
-
-- `App.tsx`の`<main>`直下、既存の各カードの後ろに`<footer className="app-footer">`を追加し、本リポジトリのGitHubページ（`https://github.com/nekono-dev/vpngateway-gui`）へのリンクを、GitHubのロゴ（インラインSVG。外部画像・アイコンフォントへの追加の依存を避けるため`components/icons/GithubIcon.tsx`として置く）とともに表示する。
-- `styles.css`の`main`はflexの縦積み（`display: flex; flex-direction: column;`）のため、フッターは他のカードと同じ流れの末尾に置くだけで追加のレイアウト変更は不要。ただし画面の縦幅をビューポートに収める制約（Phase 21）と両立させるため、フッターは小さく（アイコン+リンクの1行程度）に留め、`.controls`が`controls-expanded`でない（内容が少ない）ときに画面内に収まるようにする。
-
-# ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善の実装方針（Phase 23）
-
-要件は`requirements.md`「ベンダー選択のプルダウン化・PWA対応・モバイル表示の改善」。
-
-## VPNベンダー選択のプルダウン化とログイン/ログアウト導線の同じ行への配置
-
-- `ProviderSelector.tsx`は、複数ベンダーのときの部品を`<fieldset><div role="radiogroup">`（ラジオボタンの並び）から`<select>`（プルダウン）へ変更する。選択中の値は`value={active?.id}`（controlled）とし、`onChange`で選ばれたベンダーを`handleSwitch`（既存の確認・切替ロジック。変更なし）へ渡す。利用不可ベンダーは`<option disabled>`にし、理由（`unavailableReason`）は選択肢の文言に括弧書きで含める（従来はラジオの横に別要素で表示していたが、プルダウンの各選択肢はテキストのみのため文言に含めるほかない）。
-- ベンダーが1つだけのとき（`providers.length <= 1`）の名前のみ表示（`.provider-name`）は変更しない。
-- プルダウンの隣にログイン/ログアウトボタンを並べるため、`ProviderSelector`（`select`を含む要素）と`SessionCard`は、従来どおり`App.tsx`の同じ`<section className="card provider-card">`の直接の子（DOM上の兄弟）のまま維持し、CSSのみで行内配置を実現する。`SessionCard.tsx`は返り値を単一の`<div className="session-card">`から`Fragment`へ変更し、「単発ボタンで済む導線（ログアウトボタン、またはURL提示型ログインのボタン）」を`<div className="session-action">`、「それ以外（アカウント状態のバッジ、資格情報入力型のログインフォーム、ログインURL提示の結果、制限理由）」を`<div className="session-extra">`として、それぞれ独立した要素で返す。資格情報入力型のログイン（`loginMethod === "credentials"`）は、フォーム自体をボタンだけに切り出せないため`session-action`には何も置かず、`session-extra`側にフォームごと表示する。
-- `styles.css`の`.provider-card`をCSS Grid（`grid-template-areas: "select action" / "extra extra"`）にし、`.provider-select-row`・`.provider-name`（ベンダー1つのときの名前表示）を`select`領域、`.session-action`を`action`領域、`.session-extra`を`extra`領域に割り当てる。DOM上の親子構造（`ProviderSelector`・`SessionCard`という別コンポーネントの出力）を変えずに、CSSのgrid-areaだけで見た目の行を組み替えられるため、両コンポーネントの既存ロジック（ログイン状態の保持、切替の確認等）には手を入れない。`session-extra`が空（何も表示するものが無い、例: URL提示型ログインで未クリック）のときは`:empty`セレクタで`display: none`にし、余分な行の高さを持たない。
-
-## プルダウンの装飾（テキストボックス風）
-
-- `styles.css`の`.provider-select`に`appearance: none`を適用してブラウザ・OS既定の矢印等を消し、他の入力欄と同じ枠線色（`--input-border`）・padding・フォーカス時のoutlineを適用する（既存の`select, textarea, input:not(...)`の共通ルールをそのまま継承し、`.provider-select`では`padding-right`（自前の矢印ぶんの余白）のみ上書きする）。矢印は`.provider-select-wrap::after`（絶対配置した疑似要素、border-right/border-bottomで作る三角形）で自前に描画する。
-
-## 入力欄の枠線色のグレー化
-
-- `styles.css`の`:root`の`--input-border`を、紫（`#6e40c9`）からグレー系（`#6e7781`。`--muted`と同系統でブラウザ既定の`--border`より濃く、視認性は維持する）へ変更する。この変数を参照している箇所（入力欄全般、プルダウン）はすべて自動的に追従するため、他のファイルの変更は不要。
-
-## スマートフォンでのスクロール防止
-
-- `styles.css`に`@media (max-width: 420px)`を追加し、`main`・`.card`の余白（padding・gap）を詰める。`.provider-card`は、この幅では`grid-template-columns: 1fr`・`grid-template-areas: "select" / "action" / "extra"`へ切り替え、プルダウンとボタンを縦に積む（狭い画面でベンダー名が長い場合でも折り返し・はみ出しでスクロールが発生しないようにするため）。
-- `body`に`overscroll-behavior-y: none`を追加し、iOS Safari等のラバーバンドスクロール（ページ全体を引っ張って伸縮させる挙動）による意図しないスクロールを防ぐ。`main`のpaddingに`env(safe-area-inset-top/bottom)`を加味し、ノッチ・ホームインジケータのある端末でも内容が隠れないようにする。
-- Phase 21・22で確立した「`main`は`100dvh`固定・`overflow: hidden`、`.controls-expanded`のみ残り高さを内部スクロール（`.location-scroll`）へ渡す」という縦幅の制御方針自体は変更しない。
-
-## PWA対応
-
-- `web/public/manifest.webmanifest`（Webアプリマニフエスト）を追加し、アプリ名・アイコン（`/icons/icon-192.png`・`icon-512.png`・`icon-maskable-512.png`・`apple-touch-icon.png`。外部の画像編集ツールに依存せず、Node標準の`zlib`のみでPNGを生成するビルド前のワンショットスクリプトで作成し、リポジトリには生成済みのPNGを配置する）・`display: standalone`・`theme_color`等を定義する。`index.html`に`<link rel="manifest">`・`<meta name="theme-color">`・`<link rel="apple-touch-icon">`等を追加する。
-- `web/public/sw.js`（Service Worker）を追加し、`/api/*`は常に最新の状態を扱う必要があるためキャッシュ対象から除外し、アプリの静的シェル（`index.html`・`manifest.webmanifest`等）のみをキャッシュ優先（取得後に裏で更新）で扱う。`main.tsx`が`window`の`load`イベントで`navigator.serviceWorker.register("/sw.js")`を呼ぶ（`"serviceWorker" in navigator`で対応環境のみ）。
-- **制約**: Service Workerの登録（`navigator.serviceWorker`自体の存在）は、ブラウザのセキュアコンテキスト要件により、配信がHTTPSまたは`localhost`でなければ有効化されない。検証環境（`http://192.168.3.240:8080`、LAN IPへの素のHTTP配信）で確認したところ、`window.isSecureContext`が`false`となり`navigator.serviceWorker`自体が存在しない（実機確認、2026-09-22）。本フェーズはこの制約を認識のうえ、資材（manifest・アイコン・Service Worker本体・登録コード）を用意することまでをスコープとし、配信のHTTPS化は別途の判断（利用者へ確認のうえ、スコープ外とした）とする。
-
-# ログインボタンもプルダウンの隣へ・入力欄の枠線色をボタン同等の薄さへの実装方針（Phase 24）
-
-要件は`requirements.md`「ログインボタンもプルダウンの隣へ・入力欄の枠線色をボタン同等の薄さへ」。
-
-## 資格情報入力型ログインのボタン化
-
-- `SessionCard.tsx`に、資格情報入力型ログインでフォームを開いたかを保持するローカル状態`showCredentialsForm`（既定`false`）を追加する。ベンダーが替わったときは`App.tsx`側の`key={`provider-${activeProviderId}`}`による再マウントで自動的に初期化される（Phase 21以来の既存の仕組みをそのまま使う。専用のリセット処理は追加しない）。
-- `session-action`（プルダウンと同じ行）に表示する「ログイン」ボタンの押下時の挙動を、`loginMethod`で分岐する: URL提示型（`deviceUrl`）は従来どおり`handleLogin()`を直接呼ぶ。資格情報入力型（`credentials`）は`setShowCredentialsForm(true)`のみを行い、実際のログイン要求（`POST /v1/session`）は呼ばない（フォーム自身の送信で行う。既存の`LoginForm.tsx`・`handleLogin(credentials)`は変更しない）。
-- ボタンの表示文言は、資格情報入力型は「ログイン」（フォームの送信ボタンと同じ表示だが、フォームを開いた後はこのボタン自体を消すため、画面上で表示名が重複することはない）、URL提示型は従来どおり「VPNベンダーへログイン」のまま維持する（過去のE2Eスクリプト・仕様書内の参照文言との互換のため、あえて統一しない）。
-- `session-extra`側の`LoginForm`の表示条件に`showCredentialsForm`を追加し、ボタンを押すまでフォーム（ユーザー名・パスワード等の入力欄）を表示しないようにする。
-
-## 入力欄の枠線色をボタン同等の薄さへ
-
-- `styles.css`の`:root`の`--input-border`を、Phase 23で定めたグレー（`#6e7781`）から、ボタンの枠線色である`--border`（`#d0d7de`）と同じ値へ変更する。他の箇所（入力欄全般、プルダウン）への変更は不要（CSS変数を参照しているため自動的に追従する）。
-
-# 設定の動作検証の実装方針（Phase 27）
-
-全体方針は`../design.md`「設定の動作検証の設計方針」、API契約は`../apiserver/design.md`「設定の動作検証」。ダッシュボードにカードは置かず、**設定ダイアログの「動作検証」タブの中で完結する**（既存のタブ構成は「設定ダイアログのタブ化の実装方針（Phase 26）」）。
-
-## タブの構成
-
-上から順に、次を置く。
-
-1. 説明文（有効な機能が実際に動作しているかを確認する。VPNの接続・設定は変更しない）
-2. 実行ボタンと結果の要約
-3. 全体の進捗バー
-4. 3つのグループ（設定の確認・ゲートウェイの通信確認・この端末からの確認）
-5. 対象外の項目（折りたたみ）
-6. IP確認サービスのURL（`verifyEchoUrl`）の入力欄。CORSの許可とIPv4での応答が必要である旨の補足を添える
-
-- **設定値と保存**: `verifyEchoUrl`は、他のタブと同じくダイアログ全体の保存ボタンで保存する（タブごとに状態・保存処理を分けない）。空の間は保存できず、タブのラベル末尾に`!`を付ける。検証は保存済みの設定に対して行うため、未保存の変更があるときは、実行ボタンの近くに「保存済みの設定で検証します」と表示する。
-- **状態はダイアログを閉じると破棄する**。検証の実行中にダイアログを閉じた場合、検証はAPI側で最後まで進むが、ブラウザ側の観測（出口IPの提出）は行われないため、`client-egress`は`unconfirmed`になる。
-
-## 実行ボタンと全体の状態
-
-| 状態 | 実行ボタン | 表示 |
-|---|---|---|
-| 開始前 | 「検証を実行」 | 進捗バーは空。項目は待機中 |
-| 実行中 | 無効（円形の回転表示と「実行中 n/N」） | 進捗バーが伸びる |
-| 完了 | 「もう一度実行」 | 結果の要約（OK n件・NG n件・未確認 n件） |
-
-実行前は、各グループに「未実行」とだけ表示する（対象の項目は検証を開始するまで決まらないため、件数バッジも出さない）。他の操作者が検証を実行中で409になった場合は、タブ内のエラー表示（設定ダイアログの他のエラーと同じ`role="alert"`）で示す。`POST /v1/verifications`の後、`GET /v1/verifications/{id}`を500ms間隔でポーリングし、`state=completed`まで進行を表示する。検証の操作と状態は`hooks/useVerification.ts`が持ち、設定ダイアログ（`SettingsDialog`）で呼ぶ（タブを切り替えても結果を保つため）。表示は`components/dashboard/verification/`（`VerificationPanel.tsx`・`StatusIcon.tsx`、表示規則の純粋関数`verification-view.ts`）。
-
-## 項目の状態の表示
-
-3つの状態と、結果の3種を、文字色・アイコン・状態の文字で示す。
-
-| 状態 | 文字色 | アイコン | 状態の文字 |
-|---|---|---|---|
-| 待機中（`pending`） | 灰色 | 中空の円 | 待機中 |
-| 実行中（`running`） | 青・太字 | 円形に並んだ8つの点が順に光る回転表示 | 確認中… |
-| 合格（`pass`） | 本文色 | 緑の円にチェック | OK |
-| 不合格（`fail`） | 赤・太字 | 赤の円に× | NG |
-| 未確認（`unconfirmed`） | 黄土色 | 中空の円に横線 | 未確認 |
-
-- 回転表示は`prefers-reduced-motion`のときは動かさず、点の濃淡だけの静止表示にする。
-- 合格の項目は、観測値を薄い文字で1行表示する。不合格は、期待値・観測値・対処のヒントを赤い背景で、未確認は、状況・対処のヒントを黄土色の背景で、項目の下に展開する。
-- 状態の名称・観測値・ヒントは、`GET`の応答の内容を表示する（Web側で判定文言を持たない。グループの表示名だけWeb側に持つ）。
-
-## グループと折りたたみ
-
-- 項目は、`group`（`config`・`gateway`・`client`）ごとに1つの枠にまとめる。枠のヘッダは「グループの状態アイコン・グループ名・件数バッジ・開閉の矢印」で、ヘッダ全体が開閉ボタン（`aria-expanded`）である。**既定はすべて閉じる。実行中のグループも自動では開かない。** 開閉は利用者が枠ごとに行う。
-- **グループの状態**: 実行中の項目があれば実行中、全項目が確定していれば不合格あり→NG、未確認あり→未確認、すべて合格→OK、どれも始まっていなければ待機中とする。
-- **件数バッジ**: 「完了数 / 項目数」を常に表示する。不合格・未確認が1件以上あれば、その件数（「NG n」「未確認 n」）をバッジで追加する（実行中のグループで、閉じていると先に出たNGが見えないため）。
-- **閉じているときに見える行（代表行）**:
-
-| グループの状態 | 見える行 |
-|---|---|
-| 未実行（検証の開始前） | 「未実行」の1行 |
-| 対象の項目が無い | 「対象の項目はありません」の1行 |
-| 待機中 | 「待機中（n項目）」の1行 |
-| 実行中 | 実行中の項目のみ |
-| 完了・不合格あり | グループ内で最初に不合格になった項目 |
-| 完了・不合格なし・未確認あり | 最初の未確認の項目 |
-| 完了・すべて合格 | 「すべてOK（n/n）」の1行 |
-
-  開いているときは、グループ内のすべての項目を並べる。
-- 対象外の項目は、「対象外の項目（n件）」の折りたたみ（`details`）にまとめ、理由（機能が無効であること）を添える。
-- 「すべて開く」「すべて閉じる」の操作は設けない。
-
-## ブラウザ側の観測（L3）
-
-検証の開始（`POST`の応答）の直後に、次の2つを**利用者の操作なしで**先行して行う。
-
-- **出口IP**: `client-egress`が対象のときだけ、保存済みの`verifyEchoUrl`へfetchし（8秒で打ち切る）、IPv4の本文を`PUT /v1/verifications/{id}/client-observations/egress-ip`で提出する。失敗（CORS拒否・タイムアウト・IPv4以外の本文）は`{ "ip": null }`で提出し、その項目は未確認になる。結果は「この端末の経路」であり、VPN・LAN外からWeb UIを開いている場合はゲートウェイを通らない端末の結果になる。
-- **検証用の名前の解決**: 応答の`clientProbe.dnsName`へ`fetch("https://<名前>/", { mode: "no-cors", cache: "no-store" })`を発行して名前解決を起こす（成否・応答は使わない。名前は解決できず失敗するのが正常）。`https`にするのは、Web UIがHTTPSで配信される場合の混在コンテンツの遮断を避けるため。
-
-`dns-redirect-path`の実行中の表示は、他の項目と同じ「確認中…」とする（利用者の操作を求める表示・案内は設けない）。
-
-# ゲートウェイ機の再起動の実装方針
-
-- 設定ダイアログの「メンテナンス」タブ（`SettingsDialog.tsx`）へ「ゲートウェイ再起動」「アカウント情報を変更」のボタンを置く（`.maintenance-actions`）。`RebootDialog`・`AccountSettingsDialog`は、`<dialog>`の入れ子を避けるため設定ダイアログの兄弟要素とする。押下で`RebootDialog`（`components/dashboard/RebootDialog.tsx`）を開く。
-- ダイアログは、警告文・パスワード入力・「再起動」「キャンセル」で構成する。「再起動」は生成クライアントの`POST /v1/gateway/reboot`を呼ぶ。エラーはダイアログ内に表示する（モーダル中はトーストが操作できないため。接続ログのダイアログと同じ方針）。成功したら、依頼を受け付けた旨と、接続できなくなる旨を同じダイアログに示し、閉じるまでパスワードは保持しない。
-
-## スマートフォン幅でのヘッダータイトル非表示
-
-要件は`requirements.md`「スマートフォン幅でのヘッダータイトル非表示」。`styles.css`に`@media (max-width: 600px)`（カード幅569px＋余白16px×2）を追加し、`.app-header h1`を`display: none`、`.app-header`を`justify-content: flex-end`にする（メディアクエリは`.app-header`の通常定義より後ろに置く）。
-- **ベンダーログインのフォーム（`LoginForm.tsx`）**: ベンダー（Proton VPN）のCLIには、AdGuard VPNのようなURL提示型のログイン（ブラウザで認証）が無い（公式CLI 1.0.5のソースで確認。`signin`はユーザー名とパスワード、2段階認証コード、セキュリティキーのみ）。そのためアプリ内で資格情報を入力する。パスワードマネージャの自動入力に対応し、実機で次の点が判明した。
-  - `autocomplete`は`username`・`current-password`とする（`off`ではフォームが出ない）。
-  - **同じ`<form>`に2段階認証欄があると、`autocomplete`の値によらず、Proton Passがログインフォームとして反応しない**。そこで2段階認証欄は最初は出さず、「2段階認証を設定している場合」ボタンで`<form>`へ追加する（静的ページでは、追加後も入力済みの値は残る。追加後はProton Passのフォームは出ない）。
-  - 2段階認証欄と送信ボタンを`<form>`の外に置き`form`属性で関連付ける構成は、静的なテストページでは自動入力できたが、アプリ内ではユーザー名のみ入りパスワードが入らなかった（Proton Passが`<main>`全体をフォーム扱いした）。`<form>`にユーザー名・パスワード・送信ボタンだけを置く構造にする。
-  - React制御の入力欄、送信ボタンの`disabled`、`placeholder`・`inputMode`、アプリのCSS、URL、`<head>`、スクリプトの有無は、原因ではなかった。
-
-## 行リストエディタの実装方針（Phase 36）
-
-要件は`webserver/requirements.md`「行リストエディタ（Phase 36）」。
-
-- `LineListEditor.tsx`は、従来のpropsの形（`label`・`value: string[]`・`onChange`・`disabled`・`placeholder`）を保ったまま内部を作り直し、`maxItems`（任意）を加える。保存時の変換は`SettingsDialog.tsx`の`handleSave`が従来どおり行うため、呼び出し側の値の型・APIの契約は変えない。
-- 各行に、内部で振る安定したID（`{id, text}[]`）を持たせる。`value`には重複・空文字がありうるため、行の識別・フォーカス・選択状態を値や添字に依存させないためである。外部の`value`が自分の`onChange`の結果と異なるとき（設定の読み込み等）だけIDを振り直す。
-- 選択の決定（単独・`Ctrl`の追加解除・`Shift`の範囲・全選択・矢印キー）、追加位置（選択行のうち最下行の直後。選択なしは先頭）、削除後の選択先、並べ替え後の配列は、DOMに依存しない純関数として`web/src/lib/list-selection.ts`に置き、単体テストで検証する（ポータビリティテストを満たすためlibに置く）。
-- 選択は`mousedown`で確定する（`click`で確定すると、すでに選択中の行の2回目のクリックと区別できない）。選択の変更では行を再描画せず見た目だけを更新する（再描画すると、ドラッグ開始が壊れる）。編集の開始は`click`で行う。
-- 行の並べ替えはHTML5のドラッグ＆ドロップを使う。行の`draggable`は掴み部の`mousedown`の間だけ有効にし、テキストの選択と競合させない。編集中の行は掴めない。
-- リストは`role="listbox"`・`aria-multiselectable="true"`、行は`role="option"`・`aria-selected`とし、見出しは`aria-labelledby`で結ぶ（入力欄が複数になるため`<label>`で包まない）。非編集の行のテキストボックスは`readOnly`・`tabIndex=-1`・`pointer-events: none`とし、クリックは行が受ける。
-- スタイルは`styles.css`の`.line-list`系に置く。枠・行の区切り・ホバー・選択行は`.location-items`・`.location-selected`の配色に揃える。入力欄は16px以上（Phase 22）。内部スクロールする最大高さを設け、スクロールバーの余白は`--scrollbar-gap`を使う。
+# Webサーバ 設計書
+
+## 1. 構成
+
+| パス                                                              | 責務                                                      |
+| ----------------------------------------------------------------- | --------------------------------------------------------- |
+| `web/server/index.ts`                                             | 画面の配信と、APIサーバへの転送                           |
+| `web/server/tls-options.ts`                                       | 待受のサーバ証明書と、APIサーバを検証する認証局の読み込み |
+| `web/src/main.tsx`                                                | 起点。各プロバイダの組み立てとService Workerの登録        |
+| `web/src/Root.tsx`                                                | 認証状態による画面の出し分け                              |
+| `web/src/App.tsx`                                                 | ダッシュボードの組み立て                                  |
+| `web/src/contexts/AuthContext.tsx`                                | 認証状態の保持                                            |
+| `web/src/components/auth/SetupPage.tsx`                           | 初期設定画面                                              |
+| `web/src/components/auth/LoginPage.tsx`                           | ログイン画面                                              |
+| `web/src/components/dashboard/ProviderSelector.tsx`               | ベンダーの選択と切替                                      |
+| `web/src/components/dashboard/SessionCard.tsx`                    | ベンダーへのログイン・ログアウトとアカウント状態          |
+| `web/src/components/dashboard/LoginForm.tsx`                      | 資格情報入力型のログインフォーム                          |
+| `web/src/components/dashboard/ConnectButton.tsx`                  | 接続ボタン                                                |
+| `web/src/components/dashboard/DisconnectButton.tsx`               | 切断ボタン                                                |
+| `web/src/components/dashboard/LocationList.tsx`                   | 接続先リスト                                              |
+| `web/src/components/dashboard/LocationRow.tsx`                    | 接続先の1行                                               |
+| `web/src/components/dashboard/AvailableLocations.tsx`             | 参考の国・都市の一覧                                      |
+| `web/src/components/dashboard/SettingsDialog.tsx`                 | 設定ダイアログ                                            |
+| `web/src/components/dashboard/LineListEditor.tsx`                 | 行リストエディタ                                          |
+| `web/src/components/dashboard/RebootDialog.tsx`                   | ゲートウェイ機の再起動ダイアログ                          |
+| `web/src/components/dashboard/AccountSettingsForm.tsx`            | アカウント情報の変更フォーム                              |
+| `web/src/components/dashboard/verification/VerificationPanel.tsx` | 動作検証の表示                                            |
+| `web/src/components/dashboard/verification/verification-view.ts`  | 動作検証の表示規則                                        |
+| `web/src/components/dashboard/verification/browser-probes.ts`     | ブラウザ側の観測                                          |
+| `web/src/hooks/useDashboardPolling.ts`                            | 状態の定期取得                                            |
+| `web/src/hooks/useLocations.ts`                                   | 接続先リストの取得とお気に入りの操作                      |
+| `web/src/hooks/useVerification.ts`                                | 動作検証の開始と進行の取得                                |
+| `web/src/capabilities/capability-state.ts`                        | 実行可否の参照                                            |
+| `web/src/lib/list-selection.ts`                                   | 行リストの選択・追加・削除・並べ替えの純粋関数            |
+| `web/src/notifications/ToastProvider.tsx`                         | 通知の表示                                                |
+| `web/src/notifications/describe-api-error.ts`                     | APIのエラーの要約                                         |
+| `web/src/styles.css`                                              | 配色・レイアウト・入力欄・レスポンシブ                    |
+| `web/public/sw.js`                                                | Service Worker                                            |
+
+## 2. 関係図・ワークフロー
+
+画面の組み立てと依存方向を示す。
+
+```mermaid
+flowchart LR
+  main["main"] --> root["Root"]
+  main --> auth_context["AuthContext"]
+  main --> toast_provider["ToastProvider"]
+  root --> auth_context
+  root --> setup_page["SetupPage"]
+  root --> login_page["LoginPage"]
+  root --> app["App"]
+  setup_page --> auth_context
+  login_page --> auth_context
+  login_page --> describe_error["describe-api-error"]
+  app --> polling["useDashboardPolling"]
+  app --> use_locations["useLocations"]
+  app --> provider_selector["ProviderSelector"]
+  app --> session_card["SessionCard"]
+  app --> connect_button["ConnectButton"]
+  app --> disconnect_button["DisconnectButton"]
+  app --> location_list["LocationList"]
+  app --> settings_dialog["SettingsDialog"]
+  app --> capability_state["capability-state"]
+  provider_selector --> polling
+  session_card --> login_form["LoginForm"]
+  session_card --> capability_state
+  connect_button --> capability_state
+  disconnect_button --> capability_state
+  location_list --> location_row["LocationRow"]
+  location_list --> available_locations["AvailableLocations"]
+  use_locations --> describe_error
+  toast_provider --> describe_error
+```
+
+設定ダイアログ・動作検証・配信まわりの依存方向を示す。
+
+```mermaid
+flowchart LR
+  main2["main"] --> styles["styles"]
+  main2 --> sw["sw"]
+  server["index"] --> tls_options["tls-options"]
+  settings_dialog2["SettingsDialog"] --> line_list_editor["LineListEditor"]
+  settings_dialog2 --> reboot_dialog["RebootDialog"]
+  settings_dialog2 --> account_form["AccountSettingsForm"]
+  settings_dialog2 --> verification_panel["VerificationPanel"]
+  settings_dialog2 --> use_verification["useVerification"]
+  line_list_editor --> list_selection["list-selection"]
+  reboot_dialog --> auth_context2["AuthContext"]
+  account_form --> auth_context2
+  verification_panel --> verification_view["verification-view"]
+  use_verification --> verification_view
+  use_verification --> browser_probes["browser-probes"]
+```
+
+起動時の認証状態による画面の出し分けを示す。
+
+```mermaid
+sequenceDiagram
+  participant ext_browser as ブラウザ
+  participant root as Root
+  participant auth_context as AuthContext
+  participant ext_api as APIサーバ
+  ext_browser->>root: 画面を開く
+  root->>auth_context: 認証状態の確認
+  auth_context->>ext_api: アカウント状態の取得
+  alt アカウント未作成
+    root-->>ext_browser: 初期設定画面
+  else 作成済みで認証切れ
+    root-->>ext_browser: ログイン画面
+  else 認証済み
+    root-->>ext_browser: ダッシュボード
+  end
+```
+
+動作検証の開始から結果の表示までの流れと、完了による分岐を示す。
+
+```mermaid
+sequenceDiagram
+  participant ext_user as 利用者
+  participant settings_dialog as SettingsDialog
+  participant use_verification as useVerification
+  participant browser_probes as browser-probes
+  participant ext_api as APIサーバ
+  ext_user->>settings_dialog: 検証の実行
+  settings_dialog->>use_verification: 開始
+  use_verification->>ext_api: 検証の開始
+  use_verification->>browser_probes: 出口IPと名前解決の観測
+  browser_probes->>ext_api: 出口IPの提出
+  alt 実行中
+    use_verification->>ext_api: 500ミリ秒後に進行の取得
+  else 完了
+    use_verification-->>settings_dialog: 結果
+  end
+```
+
+## 3. 設計項目
+
+### D-1: 配信とリバースプロキシ (FR-1)
+
+| 項目         | 内容                                                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| 待受         | HTTPS。サーバ証明書は `WEB_TLS_CERT_FILE` と `WEB_TLS_KEY_FILE`（既定は `$GATEWAY_PKI_DIR/web-server.*`）。コンテナ内は8080 |
+| 転送         | `/api/*` を `API_ORIGIN`（既定 `https://api:3000`）へ、接頭辞 `/api` を除いて転送する。`@fastify/http-proxy` を使う         |
+| 証明書の検証 | 上流の接続に `undici.connect.ca` として `API_TLS_CA_FILE`（既定 `api-ca.crt`）を渡す。検証を無効にするオプションは使わない  |
+| Cookie       | 転送がそのまま渡す。Webサーバは中身を解釈しない。同一オリジンのためCORSの設定は要らない                                     |
+| 静的配信     | `dist` を配信し、`/api` 以外で一致しないGETは `index.html` に戻す（クライアント側のルーティング）                           |
+| 分離配置     | `API_ORIGIN` を任意ホストのHTTPS URLにするだけで、ブラウザからは常に単一オリジンに見える                                    |
+
+- 画面はSPA（Vite + React）とする。状態を持つ操作画面が中心で、静的生成に向かないためである。
+- APIの呼び出しは、OpenAPIから `orval` で生成したクライアントだけを使う。
+
+### D-2: 認証の画面 (FR-2)
+
+| 画面・操作   | 内容                                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 起動時       | `GET /v1/operator` の `configured` で分岐する。作成済みなら `GET /v1/operator/session` を呼び、401ならログイン画面を表示する        |
+| 初期設定画面 | ユーザー名、パスワード、確認用のパスワード。成功でそのままダッシュボードへ進む。409（他の利用者が先に作成）はログイン画面へ         |
+| ログイン画面 | ユーザー名とパスワード。401は「ユーザー名またはパスワードが正しくありません」、429は専用の文言を表示する                            |
+| 認証切れ     | どのAPI呼び出しが401を返しても、その場でログイン画面へ切り替え、実行中の操作はエラーとして通知する                                  |
+| ログアウト   | ヘッダのボタンから `DELETE /v1/operator/session` を呼び、ログイン画面へ戻る                                                         |
+| 状態の保持   | 認証状態（未設定・未ログイン・ログイン済みとユーザー名）をReactのコンテキストで持つ。トークンは保持しない（Cookieはブラウザが管理） |
+
+- 認証のフォームはパスワードマネージャが扱える作りにする。`autocomplete` は `username`・`current-password`・`new-password` を使う。
+- パスワードの入力欄を持つダイアログは非モーダル（`show()`）で開く。モーダルは拡張機能の候補をトップレイヤーの背後に隠す。閉じている間はフォームを描画せず、開いたときにDOMへ追加する。
+
+### D-3: 状態の取得と表示 (FR-3, NFR-1)
+
+| 取得                                                     | 契機                                                                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 接続状態・稼働状況・ベンダー一覧・実行可否・ログイン状態 | 画面の表示中に5秒間隔で並行して取得する。各部分が独立に成否を持つ                                                  |
+| 接続先リスト                                             | 画面の表示時と、「再計測」「再取得」の操作時だけ。CLIを起動して並び順が変わるため、定期取得に含めない              |
+| 実行可否の取得失敗                                       | 全ての操作を可とみなす（判定できないことを理由に操作を塞がない）。初回の取得が済むまで接続先リストの取得を始めない |
+
+- 取得に失敗した部分は、古い値を残さず取得失敗を表示する。ただし接続・切断のボタンは、最後に取得できた接続状態で操作できる。
+- 接続国は、クライアントで保持せず、常に接続状態の応答（国と都市）を表示する。再読み込みや別端末でも同じ表示になる。
+- 接続状態・稼働状況・接続と切断のボタンは、1枚のカードにまとめる。枠色は接続中・切断・エラーで変える。
+
+### D-4: 実行可否に従う部品 (FR-4)
+
+| 操作                | 部品                       | 制限時                                                       |
+| ------------------- | -------------------------- | ------------------------------------------------------------ |
+| `login`             | ログイン導線               | 導線ごと出さず理由を表示                                     |
+| `logout`            | ログアウトボタン           | 無効化し理由を表示                                           |
+| `locationList`      | 接続先リスト               | リスト全体を出さず、理由文の枠を表示する（一覧を取得しない） |
+| `locationFavorites` | お気に入りボタン           | 無効化し理由を表示                                           |
+| `pingMeasurement`   | 「再計測」                 | 無効化し理由を表示                                           |
+| `connectToLocation` | 選択した接続先への［接続］ | 無効化し理由を表示                                           |
+| `connectAuto`       | ［接続］（指定なし）       | `connectToLocation` が使えないときだけ［接続］として表示する |
+| `changeLocation`    | ［接続先を変更］           | 無効化し理由を表示                                           |
+| `disconnect`        | ［切断］                   | 無効化し理由を表示（通常は常に可）                           |
+
+- 部品は画面から消さず無効にする。理由文はAPIの `message` をそのまま表示し、無効な部品から `aria-describedby` で辿れるようにする。
+- ［接続］が無効になる理由は接続先リストの制限表示に出るため、ボタン側には重ねて表示せず、`aria-describedby` だけでリスト側の理由を参照させる。
+- 403の `operation_restricted` は専用の文言でトースト通知し、直後に実行可否を再取得して反映する。
+- Webは判定ロジックを持たない。ベンダーの名前や出力書式も持たず、名前はAPIの `displayName` を表示するだけである。
+
+### D-5: ベンダーの選択 (FR-5)
+
+| 項目     | 内容                                                                                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 部品     | 複数のとき `select`（枠線・余白・フォーカスは他の入力欄と揃える）。1つだけのときは名前のみ                                                              |
+| 利用不可 | 選択肢を無効にし、理由を文言に含める                                                                                                                    |
+| 切替     | 切断中は即座に `PUT /v1/providers/active`。接続中は `window.confirm`（切断されること、Kill Switch有効の間は通信が遮断されること）を経て、承諾時だけ呼ぶ |
+| 切替中   | ベンダーの選択、接続、ログインの操作を無効にする                                                                                                        |
+| 失敗     | 選択は元のまま。409は「切替中」、422は「現在のVPNを切断できませんでした」としてトースト通知する                                                         |
+| 入れ替え | 選択中のベンダーIDを `key` として接続操作の部品へ与え、IDが変わると再マウントする。接続先リストとお気に入りと選択中の接続先を捨てて取得し直す           |
+
+- 選択はサーバが保持するため、別の端末で開いても同じベンダーが選ばれ、定期取得で他所からの切替にも追従する。
+- ログイン・ログアウトの導線は、ベンダー選択のカードにまとめる。
+
+### D-6: ベンダーへのログイン (FR-6, NFR-4)
+
+| ログイン方式  | 導線                                                                                                                                                 |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deviceUrl`   | 未ログイン時はプルダウンの隣に［ログイン］。押下で認証URLを表示する                                                                                  |
+| `credentials` | 未ログイン時はプルダウンの隣に［ログイン］。押下でプルダウンの下にフォームを展開する。2段階認証の欄は「2段階認証を設定している場合」ボタンで追加する |
+
+- 秘密情報の欄は `type="password"` とし、送信の成否にかかわらず送信直後に値を空にする。ブラウザの記憶領域へ保存せず、トーストにも画面にも出さない。
+- 送信中はフォーム全体を無効にして二重送信を防ぐ。422の標準エラーは詳細（折りたたみ）にだけ入る。
+- フォームには、ユーザー名・パスワード・送信ボタンだけを同じ `form` に置く。2段階認証の欄が同じ `form` にあると、パスワードマネージャがログインフォームとして反応しない。
+- ログイン済みの表示は緑のバッジでプラン名を示し、プランの補足情報があれば括弧書きで併記する。未ログインのときは何も表示しない。
+
+### D-7: 接続先リストと接続操作 (FR-7, NFR-3)
+
+| 項目         | 内容                                                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 表示         | 1行が1つの接続先。国コード・国名・都市・応答時間（無ければ「-」で末尾）。並びはAPIが返した順で、Webで並べ替えない                        |
+| タブ         | 「すべて」と「お気に入り」。星印でお気に入りを登録・解除する。操作は楽観的に反映し、失敗したら戻してトースト通知する                     |
+| 絞り込み     | 国名・都市名・国コードの入力で表示中のタブを絞る。大文字小文字を区別せず、並びは変えない                                                 |
+| 選択         | 実効選択 = 明示的に選んだもの、なければ接続中の接続先、なければ前回の接続先。「接続中」「前回」のバッジを付ける                          |
+| 現在の接続先 | 接続状態の `locationId`。無いときは `location` と都市名を大文字小文字を区別せず突き合わせる                                              |
+| ボタン       | 切断中は［接続］。接続中は［切断］を常に表示し、実効選択が現在と異なるときだけ［接続先を変更］を併せて表示する。確認ダイアログは設けない |
+| 送信中       | 接続・変更・切断のボタンは送信中に無効になる。成功後は明示的な選択を消す                                                                 |
+| 取得の失敗   | リスト領域にエラー要約と［再取得］を表示する（トーストにしない）。切断はできる                                                           |
+
+- ［接続］と［切断］は、接続状態に応じてどちらか一方を、スクロールせず押せる位置に置く。［切断］は強調色（赤系）にする。ログイン状態の判定で切断の操作を塞がない。
+- ツールバー（タブと操作ボタン）は折り返さず、画面幅を超えたら横スクロールにする。［接続先を変更］は［再計測］の左に置く。
+
+### D-8: 参考の国・都市の一覧 (FR-8)
+
+| 項目     | 内容                                                                                                                                                  |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 条件     | `locationList` がプラン制限で使えないときだけ、理由文の枠に続けて `GET /v1/connection/available-locations` の結果を表示する。空・失敗は何も表示しない |
+| 行       | 接続先リストと同じ行の見た目で、選択とお気に入りは常に無効にする。「自動接続で、次のいずれかの国のサーバに接続されます」と、選べないことを説明する    |
+| 現在地   | 接続状態の `location` に参考一覧の都市名のいずれかが含まれるとき（大文字小文字を区別しない部分一致）、その国に「接続中」を付ける                      |
+| 応答時間 | `pingMeasurement` の不可の理由が非対応のときだけ列を出す。値が無ければ「-」                                                                           |
+
+- 取得はベンダーの切替とプランの変化のときだけ行い、定期取得はしない。
+
+### D-9: 設定ダイアログ (FR-9)
+
+| タブ            | 項目                                                                                                             |
+| --------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 通信制御        | `killSwitch`、`excludedDomains`                                                                                  |
+| ゲートウェイ    | `transparentGatewayEnabled`、`explicitProxyEnabled`、`explicitProxyAllowedCidrs`                                 |
+| 上位DNSリゾルバ | `dnsRelayEnabled`、`dnsUpstreamUrl`、`dnsUpstreamCaPem`                                                          |
+| DNS詳細         | `dnsFailureMode`、`dnsFallbackServers`、`dnsClientNameServers`、`dnsRedirectEnabled`、`dnsRedirectExcludedCidrs` |
+| 動作検証        | 検証の実行と、`verifyEchoUrl`                                                                                    |
+| メンテナンス    | ［アカウント情報を変更］、［ゲートウェイ再起動］。設定値は持たない                                               |
+
+- ダイアログは1つの状態と1つの保存処理を持ち、タブは入力部品の表示を切り替えるだけとする。保存は全タブの内容を一括で `PUT /v1/connection/config` し、タブを切り替えても未保存の入力を失わない。
+- 「DNS詳細」のタブは `dnsRelayEnabled` が有効なときだけ表示し、無効にした時点で表示中なら「上位DNSリゾルバ」へ戻す。DNS中継の項目は無効の間は編集できない。
+- 保存できない入力（明示的プロキシが有効で許可元が空、DNS中継が有効で上流も切り替え先も空、切り替えるのに切り替え先が空、検証用URLが空）は、保存ボタンを無効にし、該当タブのラベル末尾に `!` を付けて理由を表示する。
+- 迂回ドメインがあるのにDNS中継が無効なときは「DNS中継が無効なため、迂回ドメインは反映されません」と表示する。
+- 設定の読み込みとタブの初期化は、ダイアログを開いたときだけ行う。定期取得で値が変わるたびに読み直すと、未保存の入力と検証の表示が消える。
+- エラーはダイアログ内に表示する（モーダルの間はトーストを操作できないため）。ラジオボタンは独自の見た目にし、複数行入力は幅を揃えて折り返す。
+
+### D-10: 行リストエディタ (FR-10)
+
+| 項目       | 内容                                                                                                                                |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 構成       | 見出し、枠で囲んだリスト、枠上端のツールバー（件数・［追加］・［削除］）。各行の先頭に並べ替え用の掴み部を置く                      |
+| 選択       | 1回目のクリックで単独選択。`Ctrl`（Macは`⌘`）で追加と解除、`Shift` で範囲選択。すでに単独選択の行をもう一度クリックすると編集に入る |
+| 編集       | `Enter` で確定、`Esc` で取り消す。フォーカスが外れた空欄の行は削除する                                                              |
+| 追加       | 選択行のうち最も下の行の直後。選択がなければ先頭。追加した行は選択し、すぐ編集できる                                                |
+| 削除       | 選択行をまとめて削除し、削除した最上行の位置（なければ直前）の行を選択する。選択がなければ押せない                                  |
+| 並べ替え   | 掴み部のドラッグ。複数選択中は選択行を相対順序を保って移動する。タッチ端末でのドラッグは対象外                                      |
+| キーボード | `↑` `↓` で移動、`Shift` を併用して範囲選択、`Ctrl+A` で全選択、`Enter` と `F2` で編集、`Delete` で削除                              |
+| 上限・無効 | 上限のある項目は上限で［追加］を押せなくする。無効のときは全ての操作を受け付けず、背景を薄くする                                    |
+
+- 各行は内部の安定したIDを持つ（値の重複や空文字があるため）。選択・追加位置・削除後の選択先・並べ替え後の配列は、DOMに依存しない純粋関数にまとめて単体で検証する。
+- 選択は `mousedown` で確定し、編集の開始は `click` で行う。リストは `role="listbox"` と `aria-multiselectable`、行は `role="option"` と `aria-selected` を持つ。
+- 保存時の変換（前後の空白の除去と空行の除外）は、設定ダイアログの保存処理が行う。
+
+### D-11: 動作検証の画面 (FR-11, NFR-7)
+
+| 状態   | 文字色   | アイコン                  | 文字    |
+| ------ | -------- | ------------------------- | ------- |
+| 待機中 | 灰色     | 中空の円                  | 待機中  |
+| 実行中 | 青・太字 | 8つの点が順に光る回転表示 | 確認中… |
+| 合格   | 本文色   | 緑の円にチェック          | OK      |
+| 不合格 | 赤・太字 | 赤の円に×                 | NG      |
+| 未確認 | 黄土色   | 中空の円に横線            | 未確認  |
+
+- 回転表示は `prefers-reduced-motion` のときは動かさず、点の濃淡だけにする。合格の観測値は薄い文字で1行、不合格は期待値・観測値・対処を赤い背景、未確認は状況と対処を黄土色の背景で、項目の下に展開する。文言はAPIの応答の内容を表示し、判定の文言はWebに持たない。
+- 項目は `config`・`gateway`・`client` の3グループの枠にまとめる。枠のヘッダ全体が開閉ボタン（`aria-expanded`）で、既定は全て閉じ、実行中のグループも自動では開かない。
+- グループの状態: 実行中の項目があれば実行中、全項目が確定していれば不合格あり→NG、未確認あり→未確認、すべて合格→OK、どれも始まっていなければ待機中。
+- 件数バッジは「完了数 / 項目数」を常に出し、不合格か未確認があればその件数（「NG n」「未確認 n」）を追加する。
+- 閉じているときの代表行: 未実行は「未実行」、対象なしは「対象の項目はありません」、待機中は「待機中（n項目）」、実行中は実行中の項目、不合格ありは最初の不合格、未確認ありは最初の未確認、全て合格は「すべてOK（n/n）」。
+- 対象外の項目は「対象外の項目（n件）」の折りたたみにまとめ、理由を添える。
+- ブラウザ側の観測は、開始の応答の直後に、利用者の操作なしで行う。出口IPは `client-egress` が対象のときだけ、`verifyEchoUrl` へ8秒でfetchして `PUT .../client-observations/egress-ip` で提出し、失敗は `{ip: null}` にする。検証用の名前は `fetch("https://<名前>/", {mode: "no-cors", cache: "no-store"})` で解決だけを起こす（失敗が正常）。
+- 開始後は500ミリ秒間隔で進行を取得し、完了まで表示する。ダイアログを閉じると状態を破棄する。409はタブ内のエラー表示（`role="alert"`）で示す。
+
+### D-12: メンテナンス (FR-12)
+
+| 操作                 | 内容                                                                                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| アカウント情報の変更 | 先頭にユーザー名、現在のパスワード、新しいパスワードの欄を置く。別のダイアログで開き、現在のパスワードを必須にする。401はダイアログ内に表示する          |
+| ゲートウェイ再起動   | 警告文、パスワード入力、［再起動］［キャンセル］。`POST /v1/gateway/reboot` を呼ぶ。誤りと失敗はダイアログ内に示し、成功したら受付と通信が止まる旨を示す |
+
+- 両ダイアログは、設定ダイアログの入れ子にならない兄弟要素とする。設定ダイアログは、これらが開いている間だけ表示を閉じる（状態は保持する）。
+- パスワード欄のラベルに「確認」「再入力」を含めない（確認欄と判定されるため）。ユーザー名の欄を可視で置き、非表示の欄は使わない。
+- パスワードは閉じるまで保持しない。
+
+### D-13: エラーの通知 (NFR-6)
+
+| 事象                               | 通知                                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 操作（接続・切断・ログイン）の失敗 | トースト。400・422・502・504を要約へ変換し、標準エラーの生の出力は詳細の折りたたみにだけ入れる |
+| トーストの寿命                     | エラーは利用者が閉じるまで残す                                                                 |
+| ダイアログ内の失敗                 | ダイアログ内にインライン表示する（モーダルの間はトーストを閉じられない）                       |
+| 接続先リストの取得失敗             | リスト領域に表示する                                                                           |
+| プラン制限（403）                  | 専用の文言でトーストし、実行可否を再取得する                                                   |
+
+- PCの幅ではトーストを画面右上に、幅420ピクセル以下では下部に、セーフエリアを避けて幅を画面に収めて表示する。
+
+### D-14: レイアウトとホーム画面への追加 (NFR-2, NFR-5, NFR-8)
+
+| 項目                     | 内容                                                                                                                                            |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 入力欄                   | `input` `select` `textarea` は文字サイズ `1rem` 以上、枠線は専用の変数（ボタンの枠線と同じ薄さ）、余白 `8px 10px`。フォーカス時にズームさせない |
+| ヘッダ                   | 画面幅600ピクセル以下では、タイトルを非表示にして操作ボタンだけを右寄せで表示する                                                               |
+| 縦幅                     | ページ全体はスクロールさせず（`100dvh` 固定）、接続先リストの内部だけがスクロールする。表示する行があるときだけリストが残りの高さへ広がる       |
+| 余白                     | 左右の余白は `clamp(10px, (100vw − 569px) / 2, 16px)` で連続的に決める。ダイアログも同じ                                                        |
+| 横スクロールする列       | ヘッダのボタン列・タブ列・接続先のツールバーは折り返さず、画面幅を超えたら列だけが横スクロールする。標準のバーは使わず自前のバーを描く          |
+| ボタン                   | 文字を折り返さず大きさを保ち、並びきらないときはボタンごと次の行へ折り返す（上記の横スクロールする列を除く）                                    |
+| ダイアログの縦スクロール | バーを表示せず、ホイールとスワイプで行う                                                                                                        |
+| フッタ                   | GitHubのページへのリンクを、ロゴとともに控えめに表示する                                                                                        |
+
+| 資材           | 内容                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| マニフェスト   | `display: standalone`、名前、テーマ色、アイコン（192・512・マスカブル512・Apple用）                        |
+| Service Worker | `/api/*` はキャッシュしない。画面の静的な殻は、キャッシュ優先で裏で更新する。`window` の `load` で登録する |
+| 制約           | 登録はセキュアコンテキスト（HTTPS）でだけ有効になる。配信はHTTPSで行う                                     |
+
+## 4. エラー処理
+
+| 事象                     | 処理                                                       |
+| ------------------------ | ---------------------------------------------------------- |
+| 証明書ファイルが読めない | 起動時に例外で終了する（検証の省略へフォールバックしない） |
+| APIサーバへ到達できない  | 502を返す                                                  |
+| 認証切れ（401）          | ログイン画面へ切り替える                                   |
+| 一部の取得の失敗         | その部分だけ取得失敗を表示し、他は表示を続ける             |
+| 実行可否の取得の失敗     | 制限をかけない                                             |
+| 検証の取得・提出の失敗   | 提出の失敗は出口IPなしで提出し、該当の項目を未確認にする   |

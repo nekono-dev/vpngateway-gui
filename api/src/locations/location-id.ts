@@ -1,5 +1,5 @@
 // 責務: 接続先（ロケーション）の安定ID・接続時の指定名を、CLIの表示名から導出する。
-// IDはお気に入り・最後の接続先の永続化キーとURLパスに使う（apiserver/design.md「接続先の識別と接続時の指定名」）。
+// IDはお気に入り・最後の接続先の永続化キーとURLパスに使う（apiserver/design.md D-8）。
 
 import { slugify } from "../lib/slugify.js";
 

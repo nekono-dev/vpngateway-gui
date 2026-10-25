@@ -4,7 +4,7 @@
 // 書き換えず、ポリシールーティング（`ip rule`で専用テーブルを優先参照）で全通信をトンネルへ向けるため、
 // `ip route show default`（メインテーブルのみ参照）では接続を検知できない。`ip route get <公開IP>`は
 // ポリシールーティングを含めたカーネルの実際の経路選択結果を返すため、どちらの方式のベンダーにも対応できる
-// （proxyserver/design.md「透過ゲートウェイモードの実現方式」参照）。
+// （proxyserver/design.md D-2参照）。
 
 import { spawn } from "node:child_process";
 

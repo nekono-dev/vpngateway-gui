@@ -2,7 +2,7 @@
 // 実行する内部専用HTTPサーバ。コンテナ外部（LAN含む）から一切到達不能なUnixドメインソケット上でのみlistenする。
 // 正式なAPI（OpenAPI公開対象）ではなく、テキスト化された解決済みコマンドをそのまま実行させるための内部チャネル。
 // ネットワーク制御（nftables・3proxy・接続監視）は持たない（それはネットワークコンテナ`server.ts`の責務。
-// specs/proxyserver/design.md「コンテナ構成（Phase 11）」）。
+// specs/proxyserver/design.md D-1）。
 //   POST /exec  : 解決済みコマンドの実行（自ベンダーのバイナリのみ許可。exec/exec-handler.ts）
 //   GET  /health: 利用可否の確認（APIの`GET /v1/providers`が使う。CLIは起動しない副作用なしの応答）
 

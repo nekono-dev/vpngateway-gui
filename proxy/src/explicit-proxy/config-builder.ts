@@ -1,6 +1,6 @@
 // 責務: 3proxyの設定ファイル文字列を組み立てる（純粋関数）。プロセス起動・監視は
 // explicit-proxy-controller.tsが担い、本ファイルは「どの設定内容を書くか」のみを決める。
-// proxyserver/design.md「明示的プロキシモードの実現方式」参照。
+// proxyserver/design.md D-5参照。
 
 import { isIpv4Cidr } from "../lib/ipv4-cidr.js";
 

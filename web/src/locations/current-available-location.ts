@@ -1,7 +1,7 @@
 // 責務: 「プランで接続できる接続先の参考一覧」の中から、現在接続中の国を特定する純粋関数のみを行う。
 // 参考一覧（AvailableLocation）は接続先を選べないプランのため接続先IDを持たず、CLIが報告する接続先の
 // 表記（ConnectionState.location）の中に、一覧の各国が持つ都市名（cities）のいずれかが現れるかで突き合わせる
-// （webserver/requirements.md「参考一覧での現在の接続先の表示」、locations/current-location.tsの
+// （webserver/requirements.md FR-8、locations/current-location.tsの
 // findCurrentLocationIdと同じ考え方を参考一覧向けに行う）。
 // 【実機確認（2026-09-22）】自動接続時、CLIは都市名のみではなく「サーバ名 in 都市名, 国名」のような
 // 複合表記（例: "US-FREE#5 in Seattle, United States"）を報告することがある。都市名の完全一致ではなく、

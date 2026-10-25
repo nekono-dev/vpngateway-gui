@@ -1,5 +1,5 @@
 // 責務: 初期設定画面。アカウント未作成時に表示し、ユーザー名・パスワードの初回作成を行う。
-// webserver/design.md「利用者認証の実装方針」参照。API呼び出しは生成クライアント以外を使わない。
+// webserver/design.md D-2参照。API呼び出しは生成クライアント以外を使わない。
 
 import { useState } from "react";
 import { postV1Operator } from "../../generated/api/default/default";

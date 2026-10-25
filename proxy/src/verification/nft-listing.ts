@@ -1,6 +1,6 @@
 // 責務: nftの読み取り結果（`nft list table`のテキスト、`nft -j list set`のJSON）を、設定の動作検証が照合しやすい形へ
 // 変換する純粋関数群。nftは数値・集合の順序・CIDRの表記を正規化して出力するため（例: `256`→`0x00000100`、`/32`の省略）、
-// ルール文字列の完全一致ではなく、チェーンごとのルール行として扱う（proxyserver/design.md「設定の動作検証」）。
+// ルール文字列の完全一致ではなく、チェーンごとのルール行として扱う（proxyserver/design.md D-11）。
 
 export interface SetElement {
   address: string;

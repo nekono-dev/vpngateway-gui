@@ -1,5 +1,5 @@
 // 責務: セッションCookieによる`/v1/*`全体の認可（`preHandler`フック）。
-// apiserver/design.md「Web UI利用者の認証」: `GET/POST /v1/operator`（未作成時のみ許可、実際の409判定は
+// apiserver/design.md D-10: `GET/POST /v1/operator`（未作成時のみ許可、実際の409判定は
 // ルート側）・`POST /v1/operator/session`を除く全ての`/v1/*`ルートへ適用する。
 
 import type { FastifyRequest, FastifyReply } from "fastify";

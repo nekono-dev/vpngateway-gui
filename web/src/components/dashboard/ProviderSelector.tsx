@@ -1,8 +1,8 @@
 // 責務: 有効なVPNベンダーの選択部品（プルダウン）と、選択時の確認・切替の要求のみを行う
-// （webserver/requirements.md「ベンダーの選択」、design.md「ベンダーの選択の実装方針」）。ベンダーの保持・切断の手順はAPIが行う。
+// （webserver/requirements.md FR-5、webserver/design.md D-5）。ベンダーの保持・切断の手順はAPIが行う。
 // 有効なベンダーが1つのときは選択肢を出さず名前のみ表示する（従来の画面と同じ操作感）。
 // 【Phase 23】ラジオボタンの並び（画面のデッドスペースが目立つ）からプルダウンへ変更する
-// （webserver/requirements.md「ベンダー選択のプルダウン化」）。プルダウンの隣にログイン/ログアウトボタンを
+// （webserver/requirements.md FR-5）。プルダウンの隣にログイン/ログアウトボタンを
 // 並べられるよう、このコンポーネントは選択部品のみを返し、親（App）がCSS Gridで同じ行へ配置する。
 import { useState } from "react";
 import type { ProviderItem } from "../../hooks/useDashboardPolling";

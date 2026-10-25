@@ -1,5 +1,5 @@
 // 責務: 接続先（ロケーション）の一覧取得と、お気に入りの登録・解除。
-// apiserver/design.md「接続先（ロケーション）」に対応する。一覧はベンダーCLIの`list-locations`をその都度実行して返す。
+// apiserver/design.md D-7に対応する。一覧はベンダーCLIの`list-locations`をその都度実行して返す。
 
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ErrorResponseSchema } from "../schemas/connection.js";
@@ -51,7 +51,7 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
   );
 
   // 登録・解除は冪等。`id`が現在の一覧に存在するかは確認しない（CLIを実行せず即応答するため。
-  // 形式不正・上限超過のみ400。apiserver/design.md「永続化」）。
+  // 形式不正・上限超過のみ400。apiserver/design.md D-9）。
   fastify.put(
     "/v1/connection/locations/:locationId/favorite",
     {

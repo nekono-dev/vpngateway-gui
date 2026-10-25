@@ -1,6 +1,6 @@
 // 責務: APIコンテナから、ゲートウェイ（`proxy`が単一の窓口として公開するmTLS TCP、既定ポート8443・
 // 環境変数GATEWAY_PORT）へ、ベンダー別のランナー宛（コマンド実行・利用可否）とネットワークコンテナ宛
-// （設定反映・稼働状況・接続状態の再確認）の要求を送信する。apiserver/design.md「内部プロトコルの変更」
+// （設定反映・稼働状況・接続状態の再確認）の要求を送信する。apiserver/design.md D-3
 // 「ゲートウェイとの内部通信仕様」参照。この経路はOpenAPI非公開の内部チャネル。
 // Phase 25で、Phase 11以来のUDS（`ctl-socket`ボリューム上の`net.sock`・`runner-<ベンダーID>.sock`）を廃止し、
 // mTLS TCP（`undici`の`Agent({ connect: { ca, cert, key } })`）へ変更した。ゲートウェイ1台に対し1つの
@@ -98,7 +98,7 @@ const SettingsResultSchema = Type.Object({
 /**
  * 目的: ユーザ向け設定の最新値をネットワークコンテナの`/net/settings`へ通知し、nftables等への実反映を要求する。
  *      `executeVendorCommand`（VPNベンダーCLI実行系）とは別の内部プロトコルのため、最初から関数を分離する
- *      （proxyserver/design.md「内部プロトコル拡張」参照）。
+ *      （proxyserver/design.md D-9参照）。
  * 入力: settings(UserSettings全体。プロキシ側が実際に用いるのはkillSwitch/transparentGatewayEnabledのみだが、
  *      将来のPhase 4（explicitProxyEnabled等）に備え全体を送信する)。
  * 出力: プロキシがルール再構成を実際に適用できたか（applied）。
@@ -204,7 +204,7 @@ export async function requestConnectionCheck(): Promise<boolean> {
   }
 }
 
-// 設定の動作検証（Phase 27）: ゲートウェイで実行する1項目の結果（proxyserver/design.md「設定の動作検証」の内部エンドポイント）。
+// 設定の動作検証（Phase 27）: ゲートウェイで実行する1項目の結果（proxyserver/design.md D-11の内部エンドポイント）。
 const GatewayCheckResultSchema = Type.Object({
   id: Type.String(),
   status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("unconfirmed")]),
@@ -337,9 +337,33 @@ export async function requestGatewayReboot(): Promise<void> {
   }
 }
 
+// ゲートウェイへ到達できない、または相互TLSの検証に失敗した（サーバ証明書の認証局が異なる・期限切れ・名前の不一致、
+// クライアント証明書の拒否による切断）ことを表すエラーコード。いずれも平文や検証省略へはフォールバックせず、
+// ゲートウェイ到達不能（502）として扱う。
+const GATEWAY_UNAVAILABLE_CODES = new Set([
+  "ENOENT",
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "UND_ERR_SOCKET",
+  "EPROTO",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+]);
+
+/**
+ * 目的: 通信エラーを、呼び出し元がHTTPステータスへ対応付けられる分類へ変換する。
+ * 入力: error(undiciなどが投げた値)。
+ * 出力: 到達不能・相互TLSの検証失敗はProxyUnavailableError（502）、応答タイムアウトはProxyTimeoutError（504）、それ以外は元のエラー。
+ */
 function toProxyClientError(error: unknown): Error {
   const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
-  if (code === "ENOENT" || code === "ECONNREFUSED" || code === "UND_ERR_SOCKET" || code === "EPROTO" || code === "ERR_TLS_CERT_ALTNAME_INVALID") {
+  if (code !== undefined && GATEWAY_UNAVAILABLE_CODES.has(code)) {
     return new ProxyUnavailableError("failed to connect to gateway control channel");
   }
   if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT") {

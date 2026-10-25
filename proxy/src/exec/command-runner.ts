@@ -114,7 +114,7 @@ const DEFAULT_BACKGROUND_TIMEOUT_MS = 30 * 60 * 1000;
  *       - 一致せずtimeoutMsを超過: プロセスをkillしexitCode=-1（runCommandのタイムアウト表現と統一）。
  * 用途: ログイン代行（`login`）のように、ブラウザでの認証完了まで数分かかる長時間プロセスが、
  *      途中でログインURLを出力した時点で呼び出し元に応答を返す必要がある場合
- *      （proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
+ *      （proxyserver/design.md D-1参照）。
  * 実装上の注意: 実機検証で、認証完了後もCLI内部の確認入力待ち処理がstdin終端（`stdio:"ignore"`は
  *             読み取り時に即座にEOFとなる）を正しく扱えず、`ConsoleIOImpl get_char`のエラーを
  *             ログに出し続けるビジーループに陥り、プロセスが自然終了しない不具合を確認した

@@ -52,7 +52,7 @@ export interface BuildAppOptions {
 
 /**
  * 目的: Fastifyアプリケーションのインスタンスを構築する（listenはしない）。
- * 入力: options.https（省略可。APIサーバ自身のTLSサーバ証明書・秘密鍵。apiserver/design.md「APIサーバ自身のTLS」）。
+ * 入力: options.https（省略可。APIサーバ自身のTLSサーバ証明書・秘密鍵。apiserver/design.md D-1）。
  * 出力: ルート登録・エラーハンドラ設定済みのFastifyインスタンス。
  * 例: const app = buildApp({ https: loadApiServerTlsOptions() }); await app.listen({ port: 3000 });
  */
@@ -73,7 +73,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     },
   });
 
-  // apiserver/design.md「エラーハンドリング方針」に基づくエラー種別→HTTPステータスのマッピング。
+  // apiserver/design.md D-3に基づくエラー種別→HTTPステータスのマッピング。
   app.setErrorHandler((error, request, reply) => {
     // スキーマ検証（body・パスパラメータ）の失敗もFastifyが`validation`を付けて渡す。入力エラーとして400にする。
     if (

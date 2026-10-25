@@ -1,6 +1,6 @@
 // 責務: 接続先一覧（`GET /v1/connection/locations`）の取得状態と、お気に入りの登録/解除、
 // 接続成功後の「前回」表示の更新を管理する。API呼び出しは生成クライアントのみを使う。
-// 取得は画面表示時と`refresh()`（再計測）のときだけ行う（ポーリングしない。webserver/design.md「取得のタイミング」）。
+// 取得は画面表示時と`refresh()`（再計測）のときだけ行う（ポーリングしない。webserver/design.md D-7）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {

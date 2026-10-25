@@ -1,5 +1,5 @@
 // 責務: ホスト（ベアメタル）の再起動を依頼する。依頼用ディレクトリ（ホストと共有）へ依頼ファイルを作成するだけで、
-// 再起動そのものは行わない（ホスト側のsystemdのpathユニットが検知して実行する。proxyserver/design.md「ホストの再起動依頼」）。
+// 再起動そのものは行わない（ホスト側のsystemdのpathユニットが検知して実行する。proxyserver/design.md D-12）。
 // コンテナへホストの特権を与えないための分離である。
 
 import { writeFileSync } from "node:fs";

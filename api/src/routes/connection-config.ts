@@ -1,4 +1,4 @@
-// 責務: ユーザ向け設定の取得・更新。apiserver/design.md`GET/PUT /v1/connection/config`に対応する。
+// 責務: ユーザ向け設定の取得・更新。apiserver/design.md D-9の`GET/PUT /v1/connection/config`に対応する。
 // Phase 3以降、更新後にプロキシの内部エンドポイント`POST /settings`へ最新の設定全体を通知し、
 // nftables等への実反映（透過ゲートウェイ・Kill Switch）を即時に要求する（proxyserver/design.md
 // 「内部プロトコル拡張」参照）。

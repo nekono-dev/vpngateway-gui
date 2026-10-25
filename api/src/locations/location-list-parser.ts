@@ -1,7 +1,7 @@
 // 責務: CLIの接続先一覧（固定幅の表）を、接続先（ロケーション）の配列へ変換し、ping昇順に並べる。
 // ベンダー非依存の整形層（profile/response-parser.ts）の兄弟にあたるが、接続状態ではなく接続先一覧を扱うため
 // locations/に置く。列名（ヘッダ行）と接続時の指定名の出典はプロファイル（`listLocations`）から受け取り、
-// どの表も同じ処理で読む（apiserver/design.md「接続先一覧の汎用化」）。
+// どの表も同じ処理で読む（apiserver/design.md D-7）。
 
 import { stripAnsi } from "../lib/strip-ansi.js";
 import { toConnectName, toLocationId } from "./location-id.js";

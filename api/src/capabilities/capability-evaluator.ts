@@ -1,5 +1,5 @@
 // 責務: プロファイル・ログイン状態・プラン・学習した制限から、オペレーションごとの実行可否（capability）を算出する。
-// 純粋関数のみで、I/Oを持たない（apiserver/design.md「オペレーションと実行可否（capability）」）。
+// 純粋関数のみで、I/Oを持たない（apiserver/design.md D-5）。
 
 import type { VendorProfile } from "../profile/profile.schema.js";
 import type { Capability, CapabilityMap, OperationKey } from "./operations.js";

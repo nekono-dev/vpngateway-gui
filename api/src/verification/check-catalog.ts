@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証の項目の一覧（ID・項目名・グループ・実行順）と、利用者の設定から導く適用条件。
-// 一覧と判定はapiserver/design.md「設定の動作検証」の「検証項目」に対応する。この並び順が実行順・表示順である。
+// 一覧と判定はapiserver/design.md D-12に対応する。この並び順が実行順・表示順である。
 
 import type { UserSettings } from "../schemas/settings.js";
 import type { VerificationGroup } from "../schemas/verification.js";

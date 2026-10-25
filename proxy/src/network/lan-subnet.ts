@@ -1,6 +1,6 @@
 // 責務: LAN側インターフェース（LAN_IFACE）に設定されているIPv4アドレスから、そのLANサブネットの
 // ネットワークCIDR（例: 192.168.3.240/24 → 192.168.3.0/24）を検出する。明示的プロキシの許可CIDR欄の
-// 初期値（Web UI側。webserver/requirements.md「明示的プロキシの許可CIDRの初期値」）として使う。
+// 初期値（Web UI側。webserver/requirements.md FR-9）として使う。
 
 import { spawn } from "node:child_process";
 

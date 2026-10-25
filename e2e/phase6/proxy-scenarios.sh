@@ -195,7 +195,7 @@ scenario_G() {
   local via
   via=$(via_socks)
   if [ -n "$via" ]; then
-    echo "INFO: VPN未接続・Kill Switch ONでも、明示的プロキシ経由の通信は直接($via)で抜ける（Kill SwitchはFORWARDのみが対象。specs/proxyserver/tasks.md「将来課題」参照）"
+    echo "INFO: VPN未接続・Kill Switch ONでも、明示的プロキシ経由の通信は直接($via)で抜ける（Kill SwitchはFORWARDのみが対象。specs/proxyserver/design.md D-2）"
   else
     echo "INFO: VPN未接続・Kill Switch ONで、明示的プロキシ経由の通信は遮断された"
   fi

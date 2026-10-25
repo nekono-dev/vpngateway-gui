@@ -1,5 +1,5 @@
-// 責務: APIサーバ自身のHTTPS listen用サーバ証明書の読み込み（apiserver/design.md「APIサーバ自身のTLS」）。
-// Webサーバ⇄APIサーバ間の通信路保護（specs/requirements.md「通信路の保護」）のためのサーバ証明書。
+// 責務: APIサーバ自身のHTTPS listen用サーバ証明書の読み込み（apiserver/design.md D-1）。
+// Webサーバ⇄APIサーバ間の通信路保護（specs/apiserver/requirements.md）のためのサーバ証明書。
 // ゲートウェイ制御チャネル（api/src/proxy-client/gateway-tls-options.ts）とは別経路・別CA（api-ca）。
 // 証明書一式はinstall.shの`setup_gateway_pki`と同様の仕組みで/etc/vpngwgui/pki/へ配置される
 // （単一ホスト構成はローカル生成、分離構成はオーケストレーターがscpで配布）。

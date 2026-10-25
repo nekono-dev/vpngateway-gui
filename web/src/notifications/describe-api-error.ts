@@ -1,6 +1,6 @@
 // 責務: APIのエラーレスポンス（HTTPステータス＋ErrorResponse本文）や例外を、トースト表示用の
 // 「要約（通常表示）」と「詳細（折りたたみ表示）」へ変換する。stderr等の生ログは詳細側にのみ入れる。
-// エラー種別→意味づけは apiserver/design.md「エラーハンドリング方針」に対応する。
+// エラー種別→意味づけは apiserver/design.md D-3に対応する。
 
 export interface ErrorContent {
   summary: string;

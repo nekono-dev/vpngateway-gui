@@ -1,6 +1,6 @@
 // 責務: DNS中継リゾルバの問い合わせ処理。①問い合わせ名を迂回リストと照合 → ②上流へ転送 →
 // ③一致していれば応答のIPv4アドレスを迂回のsetへ登録 → ④応答を返す。上流の障害時は設定に従い
-// フェイルクローズ（SERVFAIL）またはフォールバック。proxyserver/design.md「DNS中継リゾルバ」に対応する。
+// フェイルクローズ（SERVFAIL）またはフォールバック。proxyserver/design.md D-6に対応する。
 
 import { buildNxdomain, buildPtrQuery, buildServfail, parseAnswer, parseQuery } from "./dns-message.js";
 import { createDomainMatcher, type DomainMatcher } from "./domain-matcher.js";
@@ -32,7 +32,7 @@ export interface RelayDependencies {
   onUpstreamStateChange: (state: "ok" | "failing", detail?: string) => void;
   onFallback: () => void;
   // 設定の動作検証用の名前の問い合わせを横取りする。trueを返した問い合わせは、上流へ転送せずNXDOMAINで応答する
-  // （登録済みの使い捨て名の受信を記録するため。proxyserver/design.md「設定の動作検証」）。
+  // （登録済みの使い捨て名の受信を記録するため。proxyserver/design.md D-11）。
   interceptQuery?: (name: string, clientIp: string) => Promise<boolean> | boolean;
   // テスト用フック（既定は実際の転送）。
   doh?: typeof forwardDoh;

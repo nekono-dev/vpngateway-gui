@@ -1,6 +1,6 @@
 // 責務: 設定の動作検証のL2で、IP確認サービス（応答本文がIPv4アドレスのみのサービス）から出口IPを取得する。
 // 経路（VPNトンネルのインターフェースへの束縛、明示的プロキシ経由）を指定して`curl`を実行する
-// （proxyserver/design.md「設定の動作検証」の「L2の通信」）。
+// （proxyserver/design.md D-11）。
 
 import { spawn } from "node:child_process";
 

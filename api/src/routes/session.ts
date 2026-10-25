@@ -1,9 +1,9 @@
 // 責務: VPNクライアントのセッション（ログイン状態の取得・ログイン・ログアウト）。
-// apiserver/design.md「APIエンドポイント一覧」`GET/POST/DELETE /v1/session`と「セッション（`/v1/session`）の変更」に対応する。
+// apiserver/design.md D-6の`GET/POST/DELETE /v1/session`に対応する。
 // ログイン方式はプロファイルの`loginMethod`で切り替える:
 // - deviceUrl: ブラウザでの認証完了を待つ長時間処理のため、ログインURLが出力された時点で応答を返し、
 //   認証待ちのCLIプロセスはプロキシコンテナ側でバックグラウンド実行を継続させる
-//   （proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
+//   （proxyserver/design.md D-1参照）。
 // - credentials: ユーザー名・パスワード（・2FAコード）を受け取り、パスワード等はCLIの標準入力にのみ渡す
 //   （コマンド引数・監査ログ・エラー応答・APIのログに残さない）。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";

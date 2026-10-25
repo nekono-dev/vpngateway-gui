@@ -1,6 +1,6 @@
 // 責務: ドメイン迂回のポリシールーティング（`ip rule`・ルーティングテーブル100）を管理する。fwmarkが付いた通信を、
 // VPNトンネルではなく実回線（LAN側インターフェースのデフォルトゲートウェイ）へ向ける
-// （proxyserver/design.md「ドメイン迂回とDNS中継」の「nft set・ポリシールーティング」）。
+// （proxyserver/design.md D-7）。
 
 import { spawn } from "node:child_process";
 import { isValidInterfaceName } from "../lib/interface-name.js";

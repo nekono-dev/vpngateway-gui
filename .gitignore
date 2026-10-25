@@ -15,3 +15,7 @@ web/src/generated/
 # install/detect-lan-interface.shが対象ホストごとに書き出すLAN側インターフェース設定（環境依存。
 # docker composeが自動読み込みする.envファイル経由でproxyコンテナのLAN_IFACE/WAN_IFACEへ渡す）
 .env
+
+# Playwrightの実ブラウザのテストの出力
+test-results/
+playwright-report/

@@ -1,8 +1,8 @@
 // 責務: Web UIの操作単位を表す「オペレーション」の固定語彙と、実行可否（capability）の型定義。
 // プロバイダが増えても語彙は変えず、プロバイダごとの差は各オペレーションが可能か否かのデータで表す
-// （specs/design.md「プロバイダ抽象化アーキテクチャ」）。
+// （specs/apiserver/design.md）。
 
-// UI操作との対応（webserver/requirements.md「操作の制限表示」）:
+// UI操作との対応（webserver/requirements.md FR-4）:
 //   login=ログイン導線, logout=ログアウト, connectToLocation=接続先を指定した接続,
 //   connectAuto=接続先を指定しない接続, changeLocation=接続中の接続先変更, disconnect=切断,
 //   locationList=接続先一覧の取得, locationFavorites=お気に入り, pingMeasurement=ping値の計測（再計測）。

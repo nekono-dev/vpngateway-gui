@@ -117,14 +117,14 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       expect(group).toHaveTextContent("Ashburn、Chicago");
       expect(group).toHaveTextContent("日本");
       // 接続先リストと見た目を揃えた行形式だが、選択（ラジオ・リンク）はできず、★も非活性のまま
-      // （webserver/requirements.md「Proton VPN無料プラン等の現在の接続先表示」）。
+      // （webserver/requirements.md FR-5）。
       expect(group.querySelector("input, a")).toBeNull();
       for (const button of group.querySelectorAll("button")) {
         expect(button).toBeDisabled();
       }
       // Phase 21で発見した不具合の再発防止: 参考一覧は.location-list（flexの縦積み）に囲まれている必要がある。
       // 囲まれていないと国数の多いベンダーで一覧の高さが伸び切り、画面がビューポートに収まらなくなる
-      // （webserver/design.md「画面の縦幅をビューポートに収める」）。
+      // （webserver/design.md D-14）。
       expect(group.closest(".location-list")).not.toBeNull();
     });
 

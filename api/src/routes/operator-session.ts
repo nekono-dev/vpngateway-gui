@@ -1,5 +1,5 @@
 // 責務: Web UI利用者のログイン状態（`/v1/operator`のサブリソース）。
-// apiserver/design.md「Web UI利用者の認証」`POST/GET/DELETE /v1/operator/session`に対応する。
+// apiserver/design.md D-10`POST/GET/DELETE /v1/operator/session`に対応する。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import { OperatorSessionLoginBodySchema, OperatorSessionStateSchema } from "../schemas/operator.js";

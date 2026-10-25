@@ -1,5 +1,5 @@
 // 責務: 現在の接続状態取得（GET）と接続/切断の制御（PUT）。
-// apiserver/design.md「APIエンドポイント一覧」`GET/PUT /v1/connection`に対応する。
+// apiserver/design.md D-2`GET/PUT /v1/connection`に対応する。
 
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {

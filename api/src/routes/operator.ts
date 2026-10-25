@@ -1,5 +1,5 @@
 // 責務: Web UI利用者の単一管理者アカウント（状態確認・初回作成・変更）。
-// apiserver/design.md「Web UI利用者の認証」`GET/POST/PUT /v1/operator`に対応する。
+// apiserver/design.md D-10`GET/POST/PUT /v1/operator`に対応する。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import { OperatorCreateBodySchema, OperatorStateSchema, OperatorUpdateBodySchema } from "../schemas/operator.js";

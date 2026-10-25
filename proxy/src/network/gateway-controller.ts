@@ -7,7 +7,7 @@ import { runNftScript, type NftResult } from "./nft-client.js";
 import { BYPASS_SET_NAME, GATEWAY_TABLE_NAME, buildGatewayRuleset, buildTeardownScript, type DnsRedirectInput } from "./ruleset.js";
 import { BypassSet, type BypassAddressInput } from "./bypass-set.js";
 
-// ドメイン迂回・DNSリダイレクトに関する設定（proxyserver/design.md「ドメイン迂回とDNS中継」）。
+// ドメイン迂回・DNSリダイレクトに関する設定（proxyserver/design.md D-7）。
 export interface GatewayDnsSettings {
   // 迂回対象のsetとfwmark、ポリシールーティングを構成するか（DNS中継が有効で、迂回ドメインが1件以上）。
   bypassEnabled: boolean;
@@ -45,7 +45,7 @@ export interface ReconcileOutcome {
   apply: NftResult | undefined;
 }
 
-// `GET /status`が返す稼働状況（apiserver/design.md「稼働状況取得」と同形状）。
+// `GET /status`が返す稼働状況（apiserver/design.md D-9と同形状）。
 export interface GatewayStatus {
   // active: nftルール適用中 / stopped: 透過ゲートウェイ無効 / unconfigured: 有効設定だがLAN_IFACE未設定 /
   // error: 有効設定だが直近のnft適用が失敗（ルールの実態が不明）。
@@ -247,7 +247,7 @@ export class GatewayController {
     if (!bypassEnabled) this.bypassSet.clear();
 
     // 再接続・国変更・設定変更のいずれでも、旧ルールが残ったまま新ルールが重複しないよう、毎回テーブル全体を
-    // 組み立て直す（proxyserver/design.md「再接続・国変更時の旧ルール撤去→新IFでの再適用処理」）。
+    // 組み立て直す（proxyserver/design.md D-3）。
     // 撤去と適用は1回のnft呼び出し内の原子的な置換（ruleset.ts参照）で行い、フィルタ不在の瞬間を作らない。
     const script = buildGatewayRuleset({
       lanIface: this.lanIface,

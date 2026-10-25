@@ -1,6 +1,6 @@
 // 責務: apiコンテナ起動時、直前のプロセス終了時点で接続中だった接続先へ自動的に再接続する（状態の復元）。
 // VPN接続中に意図せずホスト・コンテナが再起動された場合でも、再起動後に元の接続状態へ戻すことを目的とする
-// （specs/requirements.md「起動時の接続状態の復元」、apiserver/design.md「起動時の接続復元」）。
+// （specs/apiserver/requirements.md、apiserver/design.md D-8）。
 // server.tsの`pushCurrentSettingsToProxy`と同方針（起動を妨げない・失敗はログのみ）。
 
 import { getActiveProvider } from "../providers/active-provider-store.js";

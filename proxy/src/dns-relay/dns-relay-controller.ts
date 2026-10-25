@@ -1,6 +1,6 @@
 // 責務: DNS中継リゾルバの起動・停止・設定反映と、現在の稼働状況（`GET /net/status`用）の保持。
 // 問い合わせの処理（relay.ts）・待受（listener.ts）とは分離し、本ファイルは「いつ起動・停止・再構成するか」の
-// 調停のみを行う（GatewayController・ExplicitProxyControllerと同じ責務分離）。proxyserver/design.md「設定の反映と状態」参照。
+// 調停のみを行う（GatewayController・ExplicitProxyControllerと同じ責務分離）。proxyserver/design.md D-10参照。
 
 import { DnsListener } from "./listener.js";
 import { DnsRelay, type BypassAddress, type DnsRelayConfig } from "./relay.js";
@@ -13,7 +13,7 @@ export interface DnsRelaySettings extends DnsRelayConfig {
 // active: 待受中 / stopped: 無効 / unconfigured: 有効設定だが上流もフォールバック先も空 / error: 待受に失敗（ポート衝突等）。
 export type DnsRelayState = "active" | "stopped" | "unconfigured" | "error";
 
-// `GET /net/status`が返す稼働状況（apiserver/design.md「稼働状況取得」と同形状）。
+// `GET /net/status`が返す稼働状況（apiserver/design.md D-9と同形状）。
 export interface DnsRelayStatus {
   state: DnsRelayState;
   // 上流の疎通。ok: 直近の転送が成功 / failing: 直近の転送が失敗 / unknown: まだ転送していない。

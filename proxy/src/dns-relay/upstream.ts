@@ -1,5 +1,5 @@
 // 責務: DNS問い合わせの上流への転送。DoH（自宅DNSサーバ。ClientIDをパスに付与）と、平文DNS（フォールバック先の公開DNS）。
-// proxyserver/design.md「DNS中継リゾルバ」の「上流への転送」に対応する。
+// proxyserver/design.md D-6に対応する。
 
 import { request } from "node:https";
 import { rootCertificates } from "node:tls";

@@ -1,7 +1,6 @@
 // 責務: 現在の接続状態（接続中/切断/取得中/エラー）の表示のみを行う。業務ロジックは持たない。
 // 【Phase 21】外枠（.card）は持たず、内容のみを返す。稼働状況・接続/切断ボタンと同じカードに
-// まとめるため、外枠はApp側で1つにまとめて持つ（webserver/design.md「接続状態・稼働状況・
-// 接続/切断ボタンを1枚のカードにまとめる」）。枠色の判定は`connectionCardClassName`を使う。
+// まとめるため、外枠はApp側で1つにまとめて持つ（webserver/design.md D-3）。枠色の判定は`connectionCardClassName`を使う。
 import type { ConnectionState } from "../../hooks/useDashboardPolling";
 
 interface Props {

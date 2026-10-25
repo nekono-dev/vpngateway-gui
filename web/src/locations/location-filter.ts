@@ -1,6 +1,6 @@
 // 責務: 接続先リストの表示対象（タブ・検索語）の絞り込みのみを行う純粋関数。
 // 並び順（ping昇順）はAPIが決めて返すため、ここでは並べ替えず入力順をそのまま保つ
-// （webserver/design.md「接続先リストの実装方針（Phase 8）」）。
+// （webserver/design.md D-7）。
 
 import type { GetV1ConnectionLocations200Item } from "../generated/api/endpoints.schemas";
 

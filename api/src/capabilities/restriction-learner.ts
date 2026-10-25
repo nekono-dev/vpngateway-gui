@@ -1,5 +1,5 @@
 // 責務: 実行失敗の出力から「プラン制限による失敗」を検出し、対応するオペレーションを制限として学習（記憶）する。
-// `account`で判定できない制限への備え（apiserver/design.md「実行失敗からの学習」）。記憶はプロセス内メモリのみで、
+// `account`で判定できない制限への備え（apiserver/design.md D-5）。記憶はプロセス内メモリのみで、
 // ログイン・ログアウトの成功、およびAPIの再起動で消える（プラン変更後の再ログインで自然に解除される）。
 
 import { CommandExecutionError, OperationRestrictedError } from "../errors.js";

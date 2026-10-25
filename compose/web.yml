@@ -1,5 +1,5 @@
 # 責務: webロール（SPA配信・APIへのリバースプロキシ）のcompose fragment。
-# specs/design.md「デプロイメント構成の分離とロール別インストール」: installer/setup.shが、このロールを
+# specs/installer/design.md: installer/setup.shが、このロールを
 # 配置したホストの.envのCOMPOSE_FILEへ、ルートのdocker-compose.yml（アンカー、下記注記）に続けて並べる。
 # パスはリポジトリルート基準の相対（docker-compose.ymlが常にCOMPOSE_FILEの先頭に来るため、
 # docker composeのproject directoryは常にリポジトリルートになる。compose/配下に置くこと自体は

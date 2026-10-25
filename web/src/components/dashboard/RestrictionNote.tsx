@@ -1,6 +1,6 @@
 // 責務: 操作が実行できない理由（APIが返した理由文）を表示するだけの部品。無効化した部品の
 // `aria-describedby`の参照先になり、支援技術からも理由を辿れるようにする
-// （webserver/requirements.md「操作の制限表示」）。表示するかどうかの判断は呼び出し側が行う。
+// （webserver/requirements.md FR-4）。表示するかどうかの判断は呼び出し側が行う。
 
 interface Props {
   // 無効化した部品からaria-describedbyで参照するためのid。

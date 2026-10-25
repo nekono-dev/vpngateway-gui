@@ -1,7 +1,7 @@
 // 責務: ベンダーバンドル（vendors/<ID>/）の適合テスト。全ベンダーのプロファイルを読み込み検証し、`samples.json`の実CLI出力サンプルを、
 // ベンダーに依らない共通の処理（接続状態の判定・接続先一覧のパース・ログイン状態とプランの判定）へ流して期待値と照合する。
 // ベンダーごとの出力の知識はバンドル（プロファイルと`samples.json`）に閉じ、このテストにも共通コードにも書かない
-// （specs/design.md「ベンダー非依存の設計原則」）。バンドルを追加すると、このテストが自動でそのベンダーを対象にする。
+// （specs/runner/design.md）。バンドルを追加すると、このテストが自動でそのベンダーを対象にする。
 //
 // samples.jsonの形式: { description, cases: [ { name, kind: "status"|"listLocations"|"account", exitCode, stdout|output, expect } ] }
 //   status: expect=ConnectionStatus / listLocations: expect=接続先の配列（各要素は期待するフィールドの部分一致）/

@@ -1,5 +1,5 @@
 // 責務: 設定ダイアログ内のアカウント変更フォーム（現在のパスワード確認＋ユーザー名・パスワードの変更）。
-// webserver/design.md「利用者認証の実装方針」参照。接続設定（SettingsDialog本体）とは別のPUT
+// webserver/design.md D-2参照。接続設定（SettingsDialog本体）とは別のPUT
 // （`PUT /v1/operator`）のため、保存・エラー状態を分離した独立フォームとする。
 
 import { useState } from "react";

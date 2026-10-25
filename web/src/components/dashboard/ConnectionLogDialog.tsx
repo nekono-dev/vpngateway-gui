@@ -1,5 +1,5 @@
 // 責務: 接続・操作履歴（`GET /v1/connection/log`）をモーダルダイアログで新しい順に表示する。
-// 履歴の書き込みはAPIサーバが行う（apiserver/design.md「監査ログ」）。ここでは表示のみを行う。
+// 履歴の書き込みはAPIサーバが行う（apiserver/design.md D-6）。ここでは表示のみを行う。
 // エラーはダイアログ内に表示する（モーダル表示中はダイアログ外のトーストが操作不能になるため）。
 
 import { useCallback, useEffect, useState } from "react";

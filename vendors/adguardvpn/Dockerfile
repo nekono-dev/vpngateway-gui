@@ -1,6 +1,6 @@
 # AdGuard VPN用ランナー（`runner-adguardvpn`）のイメージ。AdGuard VPN CLIの実行環境と、実行要求の受け口（`dist/runner.js`）
 # だけを持つ。ネットワーク制御（nftables・3proxy）は持たない（ネットワークコンテナ`proxy`の責務）。
-# Phase 11で、従来のAdGuard用proxyイメージからネットワーク制御を除いて分離した（specs/proxyserver/design.md「コンテナ構成（Phase 11）」）。
+# Phase 11で、従来のAdGuard用proxyイメージからネットワーク制御を除いて分離した（specs/proxyserver/design.md D-1）。
 
 # ビルドステージ: npm workspacesの依存解決のためリポジトリルートをbuild contextとする
 FROM node:22-alpine AS build

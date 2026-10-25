@@ -1,6 +1,6 @@
 // 責務: `POST /net/settings`のリクエストボディの検証と、各コントローラへ渡す設定への変換（純粋関数）。
-// 内部プロトコルの形状はapiserver/design.md「設定反映（`POST /settings`）内部プロトコル仕様」、変換規則は
-// proxyserver/design.md「ドメイン迂回とDNS中継」「設定の反映と状態」に対応する。
+// 内部プロトコルの形状はapiserver/design.md D-3、変換規則は
+// proxyserver/design.md D-7「設定の反映と状態」に対応する。
 
 import { isIpv4Cidr } from "./lib/ipv4-cidr.js";
 import { sanitizeExcludedDomains, type DnsRelaySettings } from "./dns-relay/dns-relay-controller.js";

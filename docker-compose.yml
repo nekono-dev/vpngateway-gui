@@ -1,5 +1,5 @@
 # 責務: docker composeの起点（アンカー）ファイル。実際のサービス定義は compose/web.yml・compose/api.yml・
-# compose/gateway.yml（specs/design.md「デプロイメント構成の分離とロール別インストール」）へ分割されている。
+# compose/gateway.yml（specs/installer/design.md）へ分割されている。
 #
 # このファイル自体はサービスを定義しない。installer/setup.shが`.env`の`COMPOSE_FILE`へ、常にこのファイルを
 # 先頭に置いた上で、配置対象のロールのcompose/*.yml（・有効なベンダーのvendors/<ID>/compose.yml）を並べる

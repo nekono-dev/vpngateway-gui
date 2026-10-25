@@ -1,6 +1,6 @@
 // 責務: ベンダー別の永続化ファイル（接続状態・最後の接続先・お気に入り）のパス導出。
 // ベンダーごとに`$STATE_DIR/providers/<ベンダーID>/`以下へ保存し、ベンダーを切り替えても互いの状態を失わない
-// （apiserver/design.md「ベンダーの選択」）。ユーザ向け設定（settings.json）・監査ログはベンダーに依存しないため対象外。
+// （apiserver/design.md D-4）。ユーザ向け設定（settings.json）・監査ログはベンダーに依存しないため対象外。
 
 import { join } from "node:path";
 

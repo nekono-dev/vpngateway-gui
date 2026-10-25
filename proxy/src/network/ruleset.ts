@@ -1,5 +1,5 @@
 // 責務: 透過ゲートウェイモード・Kill Switchのnftablesルールセット（`nft -f -`へ渡すスクリプト文字列）を
-// 組み立てる。proxyserver/design.md「透過ゲートウェイモードの実現方式」「Kill Switch」に対応する。
+// 組み立てる。proxyserver/design.md D-2「Kill Switch」に対応する。
 // nftコマンドを実際に実行する処理（nft-client.ts）とは分離し、本ファイルは純粋な文字列組み立てのみを行う
 // （実nftバイナリなしに単体テスト可能にするため）。
 
@@ -7,18 +7,18 @@ import { isValidInterfaceName } from "../lib/interface-name.js";
 import { isIpv4Cidr } from "../lib/ipv4-cidr.js";
 
 // ホスト上の既存ルール（ufw等）と衝突・意図せぬ上書きが起きないよう、専用テーブル名で独立管理する
-// （proxyserver/design.md「NAT/FORWARDルール」参照）。
+// （proxyserver/design.md D-2参照）。
 export const GATEWAY_TABLE_NAME = "vpngwgui";
 
 // ドメイン迂回（split-tunnel）: 迂回対象のIPv4アドレスを入れるsetの名前、迂回する通信に付けるfwmark、
 // 迂回経路（実回線のデフォルトゲートウェイ）を置くルーティングテーブルの番号
-// （proxyserver/design.md「ドメイン迂回とDNS中継」の「nft set・ポリシールーティング」）。
+// （proxyserver/design.md D-7）。
 export const BYPASS_SET_NAME = "bypass4";
 export const BYPASS_FWMARK = 0x100;
 export const BYPASS_ROUTE_TABLE = 100;
 
 // 53番リダイレクトで誘導した送信元IPv4アドレスを記録するsetの名前と、要素の保持期間（秒）。設定の動作検証が、
-// 端末の問い合わせが実際に誘導されたかを判定するために使う（proxyserver/design.md「設定の動作検証」）。
+// 端末の問い合わせが実際に誘導されたかを判定するために使う（proxyserver/design.md D-11）。
 export const REDIRECTED_SET_NAME = "redirected4";
 export const REDIRECTED_RECORD_SECONDS = 600;
 
@@ -54,7 +54,7 @@ export interface GatewayRulesetInput {
   lanIface: string;
   // フェイルオープン時（killSwitch=false かつ VPN未接続時）に直接インターネットへ抜けるための
   // 送出インターフェース名。単一NIC構成（対象ターゲットのRaspberry Pi等）ではlanIfaceと同一になりうる
-  // （proxyserver/design.md「明示的プロキシモードの実現方式」の単一ホスト構成前提を参照）。
+  // （proxyserver/design.md D-5の単一ホスト構成前提を参照）。
   wanIface: string;
   // VPN接続中のトンネルインターフェース名。未接続時はundefined。
   vpnIface: string | undefined;
@@ -102,8 +102,7 @@ export function buildGatewayRuleset(input: GatewayRulesetInput): string {
   const transparentGateway = input.transparentGateway ?? true;
 
   // 動的に決まる値（vpnIfaceはip routeの解析結果、lan/wanIfaceは設定ファイル由来）を
-  // ルール文字列へ埋め込む前に必ず形式検証する（proxyserver/design.md「実行可能バイナリの許可リストに
-  // よる内部防御」と同様、内部コンポーネント間の値であっても外部由来の文字列は信用しない方針）。
+  // ルール文字列へ埋め込む前に必ず形式検証する（proxyserver/design.md D-1と同様、内部コンポーネント間の値であっても外部由来の文字列は信用しない方針）。
   for (const iface of [lanIface, wanIface, vpnIface].filter((v): v is string => v !== undefined)) {
     if (!isValidInterfaceName(iface)) {
       throw new Error(`invalid interface name: ${iface}`);
@@ -222,7 +221,7 @@ export function buildGatewayRuleset(input: GatewayRulesetInput): string {
     rule(`forward iifname "${vpnIface}" drop`);
   } else if (!killSwitch) {
     // VPN未接続 かつ killSwitch=false: フェイルオープン。WAN側インターフェースへ直接転送する
-    // （proxyserver/design.md「Kill Switch」参照）。
+    // （proxyserver/design.md D-2参照）。
     rule(`postrouting oifname "${wanIface}" masquerade`);
     rule(`forward iifname "${lanIface}" oifname "${wanIface}" accept`);
     rule(`forward iifname "${wanIface}" oifname "${lanIface}" ct state established,related accept`);

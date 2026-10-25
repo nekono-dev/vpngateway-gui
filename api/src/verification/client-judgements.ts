@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証のL3（この端末からの確認）の判定（純粋関数）。ブラウザが提出した出口IP、中継リゾルバでの検証名の
-// 受信の記録から、項目の結果を決める（apiserver/design.md「設定の動作検証」の`client-egress`・`dns-redirect-path`の判定）。
+// 受信の記録から、項目の結果を決める（apiserver/design.md D-12の`client-egress`・`dns-redirect-path`の判定）。
 
 import type { CheckNonceRecord } from "../proxy-client/proxy-client.js";
 

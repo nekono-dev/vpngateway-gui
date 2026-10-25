@@ -1,4 +1,4 @@
-// 責務: 接続先（ロケーション）とお気に入り操作のTypeBoxスキーマ定義（apiserver/design.md「接続先（ロケーション）」）。
+// 責務: 接続先（ロケーション）とお気に入り操作のTypeBoxスキーマ定義（apiserver/design.md D-7）。
 
 import { Type, type Static } from "@sinclair/typebox";
 import { LOCATION_ID_PATTERN } from "../locations/location-id.js";

@@ -1,4 +1,4 @@
-// 責務: ベンダーの一覧・切替（`/v1/providers`）のTypeBoxスキーマ定義（apiserver/design.md「ベンダーの選択」）。
+// 責務: ベンダーの一覧・切替（`/v1/providers`）のTypeBoxスキーマ定義（apiserver/design.md D-4）。
 import { Type, type Static } from "@sinclair/typebox";
 
 export const ProviderSchema = Type.Object({

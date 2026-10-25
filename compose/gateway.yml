@@ -1,10 +1,10 @@
 # 責務: gatewayロール（透過ゲートウェイ・Kill Switch・明示的プロキシ・ランナー群）のcompose fragment。
-# specs/design.md「デプロイメント構成の分離とロール別インストール」参照。パスの解決についてはcompose/web.yml冒頭の注記を参照。
+# specs/installer/design.md参照。パスの解決についてはcompose/web.yml冒頭の注記を参照。
 # ベンダーバンドルのcompose.yml（vendors/<ID>/compose.yml）は、従来どおりこのファイルの後ろに合成する
 # （installer/setup.shが.envのCOMPOSE_FILEへ並べる）。
 services:
   # ネットワークコンテナ: 透過ゲートウェイ・Kill Switch・明示的プロキシ・トンネル検出・接続監視。
-  # ベンダーCLIは実行しない（Phase 8でランナーへ分離。specs/proxyserver/design.md「コンテナ構成（Phase 8）」）。
+  # ベンダーCLIは実行しない（Phase 8でランナーへ分離。specs/proxyserver/design.md D-1）。
   proxy:
     restart: always
     build:
@@ -19,14 +19,14 @@ services:
     init: true
     # network_mode: hostのためポートマッピングは書かず、GATEWAY_PORT（既定8443）をホストの全インターフェースへ
     # 直接bindする（proxy/src/server.ts。mTLSのクライアント証明書検証が主たる境界。ファイアウォールでの
-    # 到達元制限（APIサーバのIPのみ）を推奨する。proxyserver/design.md「多層防御」）。
+    # 到達元制限（APIサーバのIPのみ）を推奨する。proxyserver/design.md D-1）。
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
       # ゲートウェイ制御チャネル（mTLS TCP）のサーバ証明書一式。install.shがホストの
       # /etc/vpngwgui/pki/へローカル生成（単一ホスト構成）またはscp配布（分離構成）する。
       - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
       # ホスト再起動の依頼用ディレクトリ。installer/setup.shがホストに作成し（所有者は10001）、proxyは依頼ファイルを置くだけ
-      # （再起動はホストのsystemdが行う。proxyserver/design.md「ホストの再起動依頼」）。
+      # （再起動はホストのsystemdが行う。proxyserver/design.md D-12）。
       - /var/lib/vpngwgui-host-ctl:/var/run/vpngw-host-ctl
     environment:
       # ランナーのUDS（runner-<ベンダーID>.sock）を探すディレクトリ（gateway-channel/runner-forward.ts）。
@@ -39,7 +39,7 @@ services:
       # 場合は空文字列となり、proxy側は透過ゲートウェイを構成しない（proxy/src/server.ts参照）。
       LAN_IFACE: ${LAN_IFACE:-}
       # フェイルオープン時の送出インターフェース名。単一NIC構成が対象ターゲットのため通常は未設定のまま
-      # LAN_IFACEを流用する（proxyserver/design.md「Kill Switch」参照）。
+      # LAN_IFACEを流用する（proxyserver/design.md D-2参照）。
 
 volumes:
   ctl-socket: {}

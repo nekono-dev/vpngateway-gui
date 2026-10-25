@@ -1,6 +1,6 @@
 // 責務: 設定の動作検証のうち、ゲートウェイで実行する項目（L1: 構成の照合、L2: ゲートウェイ内での通信・名前解決）を、
 // 項目IDごとに実行して結果を返す（`POST /net/checks`）。ゲートウェイの設定・状態は変更しない（読み取りと、検証用の
-// 問い合わせ・通信のみ）。項目の一覧・判定はapiserver/design.md「設定の動作検証」、実装はproxyserver/design.md「設定の動作検証」。
+// 問い合わせ・通信のみ）。項目の一覧・判定はapiserver/design.md D-12、実装はproxyserver/design.md D-11。
 // nft・ip・curl・中継リゾルバへの問い合わせ等の実行環境への依存は、GatewayCheckDependenciesとして注入する（単体テストのため）。
 
 import { isIpv4InCidr } from "../lib/ipv4-cidr.js";

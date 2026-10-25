@@ -1,6 +1,6 @@
 // 責務: 53番リダイレクトで誘導した送信元の記録（nftのset`redirected4`）から、「直前に誘導された」かを判定する純粋関数。
 // ルールは誘導のたびに`update`で要素の期限を`REDIRECTED_RECORD_SECONDS`へ戻すため、残り期限がほぼ満了前のままなら、
-// 直前（数秒以内）に誘導された問い合わせがあったと判断できる（proxyserver/design.md「53番リダイレクトで誘導した送信元の記録」）。
+// 直前（数秒以内）に誘導された問い合わせがあったと判断できる（proxyserver/design.md D-6）。
 
 import { REDIRECTED_RECORD_SECONDS } from "../network/ruleset.js";
 import type { SetElement } from "./nft-listing.js";

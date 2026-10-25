@@ -1,6 +1,6 @@
 // 責務: CLIの接続先一覧アクション（`listLocations`）を（ランナー経由で）実行し、接続先の配列として返す。
 // `GET /v1/connection/locations`と、接続時の接続先ID解決（`PUT /v1/connection`）の両方が使う。
-// キャッシュはしない（ping値の鮮度は利用者の「再計測」操作で決める。apiserver/design.md参照）。
+// キャッシュはしない（ping値の鮮度は利用者の「再計測」操作で決める。apiserver/design.md D-7）。
 
 import type { Provider } from "../providers/provider-registry.js";
 import { resolveArgv } from "../profile/placeholder-resolver.js";

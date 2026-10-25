@@ -1,5 +1,5 @@
 // 責務: ゲートウェイ機（ベアメタル）の再起動の確認・パスワード再入力・依頼（`POST /v1/gateway/reboot`）。
-// webserver/design.md「ゲートウェイ機の再起動の実装方針」参照。エラーはダイアログ内に表示する
+// webserver/design.md D-12参照。エラーはダイアログ内に表示する
 // （モーダル表示中はダイアログ外のトーストが操作不能になるため）。
 
 import { useEffect, useRef, useState } from "react";

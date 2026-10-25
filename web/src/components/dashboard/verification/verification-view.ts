@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証の結果を、画面のグループ表示へ変換する純粋関数群（グループの状態・閉じているときの代表行・件数）。
-// 表示規則はwebserver/design.md「設定の動作検証の実装方針」の「グループと折りたたみ」に対応する。
+// 表示規則はwebserver/design.md D-11に対応する。
 
 import type { GetV1VerificationsId200, GetV1VerificationsId200ChecksItem } from "../../../generated/api/endpoints.schemas";
 

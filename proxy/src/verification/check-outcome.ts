@@ -1,5 +1,5 @@
 // 責務: 設定の動作検証の1項目の結果の型と、検証項目のID（APIサーバとの内部プロトコル`POST /net/checks`の契約）。
-// 項目の一覧・判定はapiserver/design.md「設定の動作検証」、ゲートウェイ側の実装はproxyserver/design.md「設定の動作検証」。
+// 項目の一覧・判定はapiserver/design.md D-12、ゲートウェイ側の実装はproxyserver/design.md D-11。
 
 // ゲートウェイ（L1: 構成の照合、L2: ゲートウェイ内での通信・名前解決）で実行する検証項目。
 export const GATEWAY_CHECK_IDS = [

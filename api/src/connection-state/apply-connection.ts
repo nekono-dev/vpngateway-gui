@@ -1,6 +1,6 @@
 // 責務: 接続/切断の実行そのもの（接続先の解決・CLI実行・成否判定・永続化）を行う。
 // `PUT /v1/connection`ルートと、起動時の接続復元（restore-connection.ts、Phase 16）の両方から呼ばれるため、
-// 元々ルートハンドラに書かれていたこの処理を切り出した（apiserver/design.md「接続の実行（切り出し）」）。
+// 元々ルートハンドラに書かれていたこの処理を切り出した（apiserver/design.md D-8）。
 
 import { isCommandSuccess } from "../profile/command-success.js";
 import { resolveArgv, PlaceholderValidationError } from "../profile/placeholder-resolver.js";

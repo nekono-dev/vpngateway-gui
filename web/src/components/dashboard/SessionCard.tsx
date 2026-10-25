@@ -1,17 +1,17 @@
 // 責務: VPNプロバイダのログイン状態（ログイン済み・プラン名・未ログイン）の表示、ログイン導線
 // （`loginMethod`で切替: URL提示型のボタン／ユーザー名・パスワード入力型のフォーム）、ログアウトの組み立てのみを行う。
 // ログイン完了後の状態反映は、ダッシュボードの状態ポーリング（useDashboardPolling）を即時再取得させて行う
-// （従来の`VpnLoginButton`を置換。webserver/design.md「コンポーネントと責務」）。
+// （従来の`VpnLoginButton`を置換。webserver/design.md D-1）。
 // 【Phase 21】ログイン導線はVPNベンダーを選ぶカードにまとめる（接続操作カードとは分離する）ため、
 // 接続・切断ボタンはApp側で別カード（接続状態のカード）へ組み立て、ここでは扱わない
-// （webserver/requirements.md「ダッシュボードのカード構成・レイアウトの整理」）。
+// （webserver/requirements.md FR-3）。
 // 【Phase 23】ベンダー選択のプルダウンの隣に置けるよう、ログイン/ログアウトの単発ボタン（`session-action`）と
 // それ以外の状態表示・フォーム（`session-extra`）を別要素として返す。親（App）がCSS Gridで
 // `session-action`をプルダウンと同じ行に、`session-extra`をその下の行に配置する
-// （webserver/requirements.md「ベンダー選択のプルダウン化」）。
+// （webserver/requirements.md FR-5）。
 // 【Phase 24】資格情報入力型（`loginMethod: "credentials"`）も、フォームをいきなり表示するのではなく、
 // URL提示型と同様に「ログイン」ボタンをプルダウンの隣に置き、押したときだけ下の行へフォームを開く
-// （webserver/requirements.md「ログインボタンもプルダウンの隣へ」）。フォームを開いたあとはこのボタンを
+// （webserver/requirements.md FR-5）。フォームを開いたあとはこのボタンを
 // 隠す（フォーム自身の送信ボタンと表示名が重複するため）。
 import { Fragment, useState } from "react";
 import type { CapabilitiesState, SessionState } from "../../hooks/useDashboardPolling";

@@ -1,5 +1,5 @@
 // 責務: 管理者向け設定「VPNクライアント操作プロファイル」JSONのTypeBoxスキーマ定義。
-// apiserver/design.md「管理者向け設定」「Phase 9における具体プロファイル」「Phase 12におけるプロファイルの明示化」参照。
+// apiserver/design.md D-2参照。
 // argv配列ベースで保持し、シェル文字列は扱わない。プロバイダごとの機能差・プラン制限・出力の書式もここ（データ）で表現し、
 // コード側にプロバイダ固有の既定値を持たない（ベンダー固有になりうる項目は必須にする）。
 
@@ -8,7 +8,7 @@ import { OPERATION_KEYS } from "../capabilities/operations.js";
 
 // 許可値の出典。
 // - "locations": 直前に`listLocations`アクションで取得した接続先から導出した値のみ許可する（Phase 8。
-//   許可値は実行時に決まるため、resolveArgvの呼び出し元が渡す。apiserver/design.md「Phase 8における具体プロファイル」）。
+//   許可値は実行時に決まるため、resolveArgvの呼び出し元が渡す。apiserver/design.md D-1）。
 // - "input": 利用者入力を`pattern`のみで検証して使う（Phase 9。ログインのユーザー名。許可値の列挙が意味を持たない入力用）。
 // - "secret": 秘密の入力（Phase 12。パスワード・2FAコード）。`pattern`のみで検証し、argvには置けず、標準入力（`stdin`）にだけ使う。
 export const PlaceholderDefSchema = Type.Object({
@@ -25,7 +25,7 @@ export const ActionDefSchema = Type.Object({
   // 設定されている場合、プロセスの終了を待たずstdoutがこの正規表現(文字列)に一致した時点で応答し、
   // プロセス自体はプロキシ側でバックグラウンド実行を継続させる。
   // ログイン代行（`login`アクション）のように、ブラウザでの認証完了まで数分かかる長時間プロセスに対応するための拡張点
-  // （proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
+  // （proxyserver/design.md D-1参照）。
   completionPattern: Type.Optional(Type.String()),
   // コマンドが失敗したとき、標準出力・標準エラーがこの正規表現に一致すればプラン制限による失敗とみなす
   // （Phase 9。403 operation_restrictedで通知し、対応するオペレーションを制限として学習する）。
@@ -88,7 +88,7 @@ export const PlanDefSchema = Type.Object({
   ),
   // このプランの利用者向け補足情報（例: 今月分の残りデータ通信量）の出典（Phase 13）。`account`の出力に対して
   // `pattern`を評価し、一致すれば第1キャプチャをそのまま`SessionInfo.plan.usageNote`として表示する
-  // （意味の解釈・数値変換はしない。apiserver/design.md「プランの補足情報の参考表示」）。
+  // （意味の解釈・数値変換はしない。apiserver/design.md D-11）。
   usageNote: Type.Optional(
     Type.Object({
       pattern: Type.String({ minLength: 1 }),
@@ -98,7 +98,7 @@ export const PlanDefSchema = Type.Object({
 export type PlanDef = Static<typeof PlanDefSchema>;
 
 // `account`アクション。ログイン状態・プランを判定する副作用のない読み取り専用コマンド
-// （apiserver/design.md「ログイン状態・プランの判定」）。
+// （apiserver/design.md D-5）。
 export const AccountActionDefSchema = Type.Composite([
   ActionDefSchema,
   Type.Object({

@@ -2,8 +2,7 @@
 // 設定値（`GET /v1/connection/config`）とは別物で、設定ONでも未構成・適用エラーになりうることを示す。
 // 明示的プロキシ（3proxy、Phase 4）も同じ稼働状況エンドポイントから取得した実状態を表示する。
 // 【Phase 21】外枠（.card）は持たず、内容のみを返す。接続状態・接続/切断ボタンと同じカードに
-// まとめるため、外枠はApp側で持つ（webserver/design.md「接続状態・稼働状況・接続/切断ボタンを
-// 1枚のカードにまとめる」）。
+// まとめるため、外枠はApp側で持つ（webserver/design.md D-3）。
 
 import type { ReactNode } from "react";
 import type { GatewayStatus } from "../../hooks/useDashboardPolling";

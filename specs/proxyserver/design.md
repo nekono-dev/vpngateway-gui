@@ -1,303 +1,326 @@
-# SPEC-PROXY: プロキシサーバ基本設計
-
-サービス全体設計（../design.md）で定義されたプロキシサーバの詳細設計を示す。3ファイルの中で最もホスト・ネットワークへの影響が大きく、実現難度が高い部分であるため、実装前に本ファイルの内容をレビューすること。
-
-# コンテナ構成（Phase 8）
-
-Phase 9までは、1つのproxyコンテナがネットワーク制御とベンダーCLIの実行を兼ね、ベンダーごとにイメージを切り替えていた。Web UIからのベンダー選択（`specs/design.md`「ベンダーの選択と実行基盤」）のため、次のように分割する。**ベンダーCLIを実行するランナーは、別のアプリケーションとして`specs/runner/`（要件・設計・タスク）に切り出した**。本ファイルはネットワークコンテナ（`proxy`）を扱う。
-
-| コンテナ（compose service） | 責務 | イメージ | 内部HTTP |
-|---|---|---|---|
-| `proxy`（ネットワーク） | 透過ゲートウェイ・Kill Switch・3proxy・トンネル検出・接続監視・**ゲートウェイ制御チャネルの受信/ルーティング（Phase 25）** | `proxy/Dockerfile`（Alpine。nftables・iproute2・3proxy。**ベンダーCLIを含まない**） | mTLS TCP（`GATEWAY_PORT`。外部＝APIサーバ向け）: `/net/settings`・`/net/status`・`/net/connection-checks`・`/runners/<ベンダーID>/exec`・`/runners/<ベンダーID>/health`。UDS（`net.sock`。自分自身の内部処理用、Phase 24までの唯一の外部窓口） |
-| `runner-<ベンダー>` | ベンダーCLIの実行（**別仕様: `../runner/`**） | `vendors/<ベンダーID>/Dockerfile` | UDS（`runner-<ベンダーID>.sock`。`proxy`からのみ到達可能）: `POST /exec`・`GET /health` |
-
-- **1つのnpmパッケージ、2つのエントリポイント**: `proxy/`パッケージから`dist/server.js`（ネットワーク）と`dist/runner.js`（ランナー。`specs/runner/design.md`）を作る。ネットワーク系（`GatewayController`・`ExplicitProxyController`・接続監視）は`server.ts`のみが持つ。共通の処理（UDSソケットの待受・JSONの入出力・監査ログ）は共有モジュール（`lib/`）に置く。
-- **`network_mode: host`**: ネットワークコンテナ・全ランナーが使う（ランナー側の理由は`specs/runner/design.md`）。ネットワークコンテナは`NET_ADMIN`（nftables・ip）のみ持つ（`/dev/net/tun`は不要になった）。
-- **UDS**: `ctl-socket`ボリュームを全コンテナで共有する。各コンテナは自分のソケットファイル（環境変数`CTL_SOCKET_PATH`。ネットワーク: `/var/run/vpngw-ctl/net.sock`、ランナー: `runner-<ベンダーID>.sock`）だけを作る。ソケットは`0660`、所有者は`vpngwgui`（UID 10001。APIコンテナも同UID）。
-
-## ネットワークコンテナ（`dist/server.js`）の変更
-
-- **`POST /exec`を持たない**（実行系はランナーへ移動。許可リスト（`allowlist.ts`）・`command-runner.ts`はランナー側のみ）。
-- **`POST /connection-checks`（新規）**: ボディなしで呼ばれると、`checkConnectionOnce`（トンネル検出→ルールの再構成）を即時に1回行い、`200 { "checked": true }`を返す。副作用は接続監視ループが行うものと同じで、冪等。失敗しても`200`（`checked: false`）とし、監視ループが追従する。APIは、接続・切断・ログアウトの実行後と、ベンダー切替後に呼ぶ。
-- `POST /settings`・`GET /status`は従来どおり。トンネル検出（`ip route get`）はインターフェース名に依存しないため、ベンダーが替わっても（AdGuardのTUN・ProtonのWireGuard）そのまま追従する。
-- **ゲートウェイ制御チャネル（Phase 25で追加）**: 上記の`/settings`・`/status`・`/connection-checks`は、Phase 24まではUDS（`net.sock`）上でパスそのまま待ち受けていたが、Phase 25で`/net/settings`・`/net/status`・`/net/connection-checks`としてmTLS TCPリスナー配下へ移した（下記「ゲートウェイ制御チャネル（Phase 25）」）。ハンドラ本体（`GatewayController`等）は変更しない。
-
-## composeの構成（Phase 8）
-
-- サービス: **Phase 24までは**composeの本体（`docker-compose.yml`）が`web`・`api`・`proxy`だけを持ち、`runner-<ベンダー>`は、ベンダーバンドル（`vendors/<ベンダーID>/compose.yml`。`specs/runner/design.md`）が持ち、有効にしたベンダーのものだけを`.env`の`COMPOSE_FILE`へ並べていた（Phase 10。従来の`profiles`・`COMPOSE_PROFILES`・AdGuardの特例は廃止）。**Phase 25で**、`web`・`api`・`proxy`は`compose/web.yml`・`compose/api.yml`・`compose/gateway.yml`（`proxy`を含む）へ分割し、`installer/setup.sh`（`--api`・`--web`・`--gateway`引数によるオーケストレーション型インストール）が、各ホストに配置したロールのファイルだけを、そのホストの`.env`の`COMPOSE_FILE`へ並べる（`specs/design.md`「デプロイメント構成の分離とロール別インストール」「オーケストレーション型インストーラ」）。ベンダーバンドルのcompose fragmentは、引き続き`compose/gateway.yml`と合成する。`.env`の`VPN_PROVIDERS`（APIの`ENABLED_PROVIDERS`）と`COMPOSE_FILE`は`installer/setup.sh`が書く。
-- `api`は、`./vendors`を`/etc/vpngwgui/vendors:ro`へマウントし、`ENABLED_PROVIDERS: ${VPN_PROVIDERS:?...}`（必須。既定なし）を受け取る。**Phase 25で`ctl-socket`（UDS）を経由しなくなったため、`api`側はマウントしない**（ゲートウェイとの通信はmTLS TCP。`GATEWAY_HOST`・`GATEWAY_PORT`環境変数で接続先を指定する）。
-- ボリューム: ネットワークコンテナは`ctl-socket`（`proxy`⇄`runner-<ベンダー>`間、Phase 25以降も維持）のみ。ベンダーごとのログイン情報のボリュームはランナーの仕様（`specs/runner/design.md`）。
-
-# Phase 1における縮小構成（履歴。Phase 1のモックVPN CLI仕様は`../runner/design.md`へ移動）
-
-実装はPhase 1から段階的に行った。Phase 1では以下のように構成を縮小していた。
-
-| 項目 | 最終形（本ファイル） | Phase 1 | Phase 2 |
-|---|---|---|---|
-| ネットワーク | `network_mode: host` | 通常のDockerブリッジネットワーク（api/webと同一） | `network_mode: host`（当初計画はPhase 3で移行予定だったが、ブリッジネットワークがIPv6を透過せず実CLIの起動時バックエンド疎通が失敗し、コンテナ再作成のたびにログインセッションが失効する不具合が実機検証で発覚したため、この部分のみPhase 2へ前倒しした。透過ゲートウェイ・nftables等の残りはPhase 3のまま） |
-| 権限 | `cap_add: [NET_ADMIN]`, `devices: [/dev/net/tun]` | 付与しない | 付与する（実CLIがトンネルを確立するために必要。コンテナ自身のnetns内で完結するためブリッジネットワークのままでも付与可能） |
-| VPNベンダーCLI | 実CLI | モックCLIスクリプト | 実CLI |
-| 透過ゲートウェイ／明示的プロキシ／Kill Switch | 実装する | 実装しない（設定は永続化のみ） | Phase 1と同じ（Phase 3/6で実装） |
-| インストールスクリプト | 実装する | 実装しない | Phase 1と同じ（Phase 3で実装） |
-
-実VPNベンダーCLIへの置換を、ネットワーク基盤移行（`network_mode: host`、透過ゲートウェイ、Kill Switch）より前のPhase 2で行ったのは、モックの疑似的な状態遷移でロジックを検証してから実CLIに対応するより、実運用に近い実CLIの非決定的な挙動（ログイン、接続試行等）に早期から向き合い、後続のネットワーク制御ロジックの検証も実際のVPN接続状態を用いて行える方が、切り分けの容易さを損なわずに手戻りを減らせると判断したため。
-
-# ネットワーク構成
-
-## `network_mode: host` の採用理由
-
-透過ゲートウェイモードでは、LAN上の他デバイスからのフォワード通信を、VPNベンダーCLIが確立するトンネルインターフェース（tun/wg系、名称はベンダー・バージョン依存で固定できない）へ到達させる必要がある。これは実質的にプロキシコンテナがホストのネットワーク名前空間を共有する（`network_mode: host`）以外に実用的な方法がない。コンテナを独立したnetnsのまま透過ゲートウェイとして機能させるには、veth・ポリシールーティング等による追加のブリッジ構成が必要になり、Raspberry Pi等の非力機を含む単一ホスト構成というターゲットには不釣り合いに複雑になるため採用しない。
-
-docker-composeの仕様上、`network_mode: host` と `networks:`（ユーザー定義ブリッジ）は併用できない。そのため、プロキシコンテナはWeb/APIコンテナと同一のDockerブリッジネットワークには参加せず、TCPベースの内部通信もできない。
-
-## 必要な権限・デバイス
-
-- `cap_add: [NET_ADMIN]` — IPフォワーディング設定、nftablesルール操作に必要。
-- `devices: ["/dev/net/tun:/dev/net/tun"]` — VPNベンダーCLIがtunデバイスを利用する場合に必要。
-- `privileged: true` は使用しない。上記2つで不足する場合（一部ベンダーCLIがWireGuardカーネルモジュールのロードに`SYS_MODULE`を要求する等）のみ、実装時のPoCで個別に追加検討する。対象OS（Debian/RaspberryPiOS、Ubuntu 24.04）は標準カーネルにWireGuardがビルトインされているため、通常は不要と想定する。
-
-## 内部コマンド受信サーバ（UDS制御チャネル。`proxy`⇄`runner-<ベンダー>`間、Phase 25以降も維持）
-
-- Node.js組み込み `http` モジュールで実装する（外部フレームワーク不要、極小のエンドポイント数のため）。
-- Unixドメインソケット上でlistenする（ネットワークコンテナは`/var/run/vpngw-ctl/net.sock`、ランナーは`runner-<ベンダーID>.sock`。Phase 9までは単一の`exec.sock`）。TCPは使用しない。
-- ソケットファイルは`proxy`・各ランナーコンテナで共有するDocker名前付きボリューム（`ctl-socket`）に配置する。
-- 起動時、残存ソケットファイル（前回異常終了時の残骸）を `unlink` してから `listen` する（`EADDRINUSE` 対策）。
-- `listen` 完了後、`fs.chmodSync(socketPath, 0o770)` でパーミッションを明示的に制限する（Node.jsの `listen()` はソケットファイルのパーミッションを引き継がない）。
-- `proxy`・ランナー両コンテナを同一UID/GID（例: 専用ユーザー、両コンテナで `user: "1000:1000"` を明示）で起動し、ソケットファイルへのアクセスをそのUIDに限定する。
-- **この経路は、ネットワーク的にゲートウェイホスト外部（LAN含む）から到達不可能である。** `proxy`・`runner-<ベンダー>`は常に同一ホストに同居する前提（`specs/design.md`「システムの構成」）が変わらないため、Phase 25以降もこの内部経路にはUDSを使い続ける（TCP化する動機がない）。**APIサーバが到達する経路（下記「ゲートウェイ制御チャネル（Phase 25）」）とは別の経路であり、APIサーバはこのUDSへ直接アクセスしない。**
-
-## ゲートウェイ制御チャネル（Phase 25）
-
-APIサーバからゲートウェイへの経路。設計判断の背景は`specs/design.md`「デプロイメント構成の分離とロール別インストール」を参照。要点は次のとおり。
-
-- `proxy`が、mTLS TCP（既定ポート`8443`。環境変数`GATEWAY_PORT`）でゲートウェイのLAN側インターフェースをlistenする。Node.js組み込みの`tls`/`https`モジュールを使い、`requestCert: true`・`rejectUnauthorized: true`で、APIサーバのクライアント証明書がゲートウェイのCA（`specs/design.md`「証明書のペアリング」）で発行されたものであることを検証する。検証に失敗した接続は確立しない。
-- パスでルーティングする: `/net/*`は`proxy`自身の処理（`/settings`・`/status`・`/connection-checks`）、`/runners/<ベンダーID>/*`は対応する`runner-<ベンダーID>.sock`へUDS経由で転送する（`/exec`・`/health`）。対応するソケットが無ければ`502`。
-- **Phase 24までの方針からの転換（重要）**: Phase 24までは「TCP + `127.0.0.1`バインドは`network_mode: host`のプロキシコンテナに対しては別ネットワーク名前空間のAPIコンテナから到達できないため不採用」「TCP + `0.0.0.0`バインドはLAN全体に露出し要件に抵触するため不採用」とし、UDSのみを許容していた。Phase 25で「APIサーバとゲートウェイを別ホストへ分離できること」（`specs/requirements.md`「デプロイメント構成の分離」）が要件に加わったため、ネットワーク到達性そのものを遮断する方式は維持できなくなった。その代替として、**到達性ではなく暗号学的な認証（mTLS）を境界とする**方式へ転換した。この転換は意図的な方針変更であり、見落としではない。
-- **多層防御（推奨・必須ではない）**: mTLSが主たる境界になるが、ゲートウェイ機のファイアウォールで`GATEWAY_PORT`への到達元をAPIサーバのIPアドレスへ制限することをREADMEで推奨する（本システムが自動設定するものではない）。
-
-# 透過ゲートウェイモードの実現方式
-
-## IPフォワーディングの永続化
-
-`network_mode: host` のプロキシコンテナは、ホストのネットワーク名前空間を共有するため、コンテナ内から `/proc/sys/net/ipv4/ip_forward` へ書き込む操作はホストのカーネル設定を直接変更する操作と等価である。
-
-- **インストールスクリプトが、ホスト上に永続設定ファイル（例 `/etc/sysctl.d/99-vpngwgui.conf` に `net.ipv4.ip_forward=1`）を1つ作成し、その設定だけを`sysctl -p`で反映する（`installer/setup.sh`。Phase 11）。** これは「ホストの変更を最小限に抑える（＝変更するファイル数を最小限にする）」という方針に沿った、必要最小限の永続的ホスト変更である。プロキシコンテナが `restart: always` で永続稼働するデーモンである以上、この設定はコンテナ起動のたびに動的に行うのではなく、インストール時に一度だけ永続化するのが妥当である。
-- プロキシコンテナの起動時にも念のため `/proc/sys/net/ipv4/ip_forward` の値を確認し、0であれば1に設定を試みる（コンテナが再作成された環境でインストールスクリプトを再実行していないケースへのフォールバック）。**ただしDockerはコンテナの`/proc/sys`を読み取り専用でマウントするため、`NET_ADMIN`を付与していても書き込みは`Read-only file system`で失敗し、このフォールバックは実際には機能しない（実機検証で確認）。** 補正できなかった場合は監査ログへ`ip_forward_disabled`イベントを記録して警告する（無音にしない）。実質的な解決手段はインストールスクリプト（`install/setup-sysctl.sh`）の実行のみである。
-
-## NAT/FORWARDルール
-
-- Debian/RaspberryPiOS・Ubuntu 24.04 はいずれも `iptables` パッケージが `iptables-nft`（`nf_tables` バックエンド）をデフォルトとするが、コンテナ内の `iptables` バイナリがどちらのバックエンドを指すかはベースイメージ依存で曖昧になりうる。**`iptables` コマンドではなく `nft` コマンドを直接使用する**ことで、legacy/nftバックエンドの曖昧さを排除する。
-- 専用テーブル名（例 `inet vpngwgui`）で独立に管理し、ホスト上の既存ルール（ufw等）と衝突・意図せぬ上書きが起きないようにする。プロキシコンテナ停止時は `nft delete table inet vpngwgui` でクリーンに撤去する。
-- ルール構成（概念）:
-  - `nft add table inet vpngwgui`
-  - `nft add chain inet vpngwgui postrouting { type nat hook postrouting priority 100 ; }`
-  - `nft add rule inet vpngwgui postrouting oifname "<vpn_iface>" masquerade`
-  - `nft add chain inet vpngwgui forward { type filter hook forward priority 0 ; policy accept ; }`
-  - `nft add rule inet vpngwgui forward ct status dnat accept`（Dockerの公開ポート宛の転送とその応答を常に許可する。これが無いとLAN側からWeb UI（webコンテナの公開ポート）へも到達できなくなる。ゲートウェイ転送通信はDNATされないためKill Switchの遮断範囲には影響しない。実機検証で発覚）
-  - `nft add rule inet vpngwgui forward oifname != "<lan_iface>" ct direction reply ct state established,related accept`（LAN側以外へ向かう応答方向の確立済み通信。単一NIC構成では同居コンテナ自身のインターネット向け通信の応答もLAN側インターフェースから入ってくるため、末尾のdropに巻き込まないための許可。`ct direction reply`によりLAN機器発の確立済み通信は含まれない）
-  - `nft add rule inet vpngwgui forward iifname "<lan_iface>" oifname "<vpn_iface>" accept`（VPN接続中のみ）
-  - `nft add rule inet vpngwgui forward iifname "<vpn_iface>" oifname "<lan_iface>" ct state established,related accept`（VPN接続中のみ）
-  - `nft add rule inet vpngwgui forward iifname "<vpn_iface>" drop`（VPN接続中のみ。トンネル側からのLAN機器宛の新規接続を拒否）
-  - `nft add rule inet vpngwgui forward iifname "<lan_iface>" drop`（**常に末尾**。上記に該当しなかったLAN側発の転送を遮断する）
-- **`forward`チェーンは`policy accept`とし、遮断対象は末尾の`iifname "<lan_iface>" drop`で「LAN側インターフェースから入ってきた転送」のみに限定する。** `policy drop`だと、同居する他のDockerコンテナ等ゲートウェイ機能と無関係な転送（コンテナのインターネット向け通信）まで遮断してしまうため（実機検証で、透過GW有効・VPN未接続・KS ONの間も同居コンテナの通信が継続することを確認）。この末尾のdropがKill Switchの基礎になる（後述）。
-- **ルールセットの置換は原子的に行う。** 組み立てたスクリプトの先頭を「`add table`→`delete table`→`add table`」とし、`nft -f`の1トランザクションで旧ルールの撤去と新ルールの適用を同時に行う（既存テーブルの有無に関わらずエラーにならない）。撤去と適用を別呼び出しにすると、その間フィルタが存在せずLAN機器の通信が漏れる一瞬ができるため。あわせて、APIの定期再通知（後述）で設定・VPN接続状態が前回成功した適用と同じ場合は再構成自体を行わない（`GatewayController.applySettings()`）。
-- **VPNトンネルのインターフェース名（`<vpn_iface>`）は動的に検出する。** ベンダー・バージョンにより `tun0`・`nordlynx` 等固定できないため、VPN接続完了後に `ip route get 1.1.1.1`（公開IP宛の経路選択結果。パケットは送信しない）の出力インターフェースを取得し、それを用いてルールを再適用する。`ip route show default`（メインテーブルのみ参照）を使わない理由: 実機検証で、AdGuard VPN CLI（TUNモード）はメインテーブルのデフォルトルートを書き換えず、ポリシールーティング（`ip rule`の優先度30801で専用テーブル880を優先参照し、テーブル880に全IPv4を`dev tun0`向けで投入）で通信を切り替えることが判明したため。`ip route get`はポリシールーティングを含めたカーネルの実際の経路選択結果を返すため、default置換型・ポリシールーティング型のどちらのベンダーにも対応できる。再接続・国変更のたびに旧ルールを撤去し、新インターフェース名で再適用する。
-- `<lan_iface>`（LAN側インターフェース名）は、インストールスクリプト実行時に検出し設定ファイルへ書き出し、プロキシコンテナ起動時に環境変数/設定ファイル経由で読み込む（ハードコードしない）。
-  - **実装（Phase 3）**: `installer/setup.sh`（Phase 11で従来の`detect-lan-interface.sh`を統合）がデフォルトゲートウェイの逆引きで検出し、リポジトリルートの`.env`ファイル（docker composeが自動読み込みしvariable substitutionに使う、コンテナに直接マウントするファイルではない）へ`LAN_IFACE=<検出結果>`を書き出す。`docker-compose.yml`のproxyサービスが`LAN_IFACE: ${LAN_IFACE:-}`として環境変数に渡す（当初検討していた`/etc/vpngwgui/network.env`のvolumeマウント案は、ファイル未作成時のbind mount失敗を避けるため見送った）。未設定（未インストール環境）の場合、プロキシは透過ゲートウェイを構成せず撤去のみ行う（安全側）。
-  - `<wan_iface>`（フェイルオープン時の送出インターフェース名）は`WAN_IFACE`環境変数で個別指定可能だが、対象ターゲット（Raspberry Pi等の単一NIC構成、../design.md参照）では未設定時`<lan_iface>`をそのまま流用する。
-- nft自体の実行はプロキシコンテナ内で非root（`vpngwgui`）ユーザーが行うため、`sudo nft -f -`（標準入力からルールセットを一括投入）の形で実行する。実VPNベンダーCLIのTUN設定と同じパスワードなしsudo（`proxy/Dockerfile`）を流用し、Dockerイメージへの追加変更は不要。ルールセット全体を1回の`nft -f -`呼び出しで投入することで、複数回の`nft add ...`呼び出しに比べ、途中失敗時のルール半端適用を避けられる。
-
-## Kill Switch
-
-- ユーザ向け設定 `killSwitch` がONの場合: 上記 `forward` チェーン末尾の `iifname "<lan_iface>" drop` を維持する。VPN接続が確立していない、または切断された場合、`<vpn_iface>` 宛のacceptルールが存在しない（または撤去済みの）状態になるため、LAN側からのフォワード通信は自動的に遮断される（フェイルクローズ）。VPN接続状態の監視により、切断を検知した時点で該当acceptルールを即座に撤去する。
-- `killSwitch` がOFFの場合: VPN切断時に、LAN側からの通信をWAN側インターフェースへ直接acceptするフォールバックルールを追加し、フェイルオープンとする。
-- `killSwitch` の切替はユーザ向け設定としてAPIサーバから通知され、プロキシコンテナがnftルールを再構成することで即時反映する。
-- **VPN接続状態の検出方式（実装）**: ベンダー固有のCLI出力解釈をプロキシ側に持ち込まず、`connect`/`disconnect`等のコマンド実行直後および10秒間隔の監視ループの両方で`ip route get 1.1.1.1`を再評価し、その出力インターフェースが`<lan_iface>`と異なればVPN接続中とみなす（`proxy/src/network/connection-monitor.ts`）。これにより、APIサーバ経由の明示的な切断だけでなく、ネットワーク瞬断等によるベンダーCLI側の予期しない切断にも、次回ポーリング（最大10秒）で追従する。
-
-- **起動ガード（ホスト起動時のリーク防止）**: `ip_forward=1`は`installer/setup.sh`（従来の`setup-sysctl.sh`）により起動直後から有効だが、`inet vpngwgui`テーブルはDocker→proxy→APIの設定通知を経て初めて作られる。実機の再起動検証で、この間（KS ONでも）LAN機器の通信がVPNを迂回してリークすることを確認した。これを防ぐため、`installer/setup.sh`（従来の`setup-boot-guard.sh`）がsystemd oneshotユニット`vpngwgui-boot-guard.service`（`network-pre.target`・`docker.service`より前に実行）を作成し、同名テーブルへ「LAN側から入る転送はdrop（DNAT済みのみ許可）」だけを載せる。proxyは最初の`POST /settings`受信時にこのテーブルを原子的に置換する（透過ゲートウェイ無効の設定なら撤去される）。ホストへの永続変更はsysctl設定に加えこのユニット1ファイルのみ。
-- **IPv6は対象外（既知の制約）**: 透過ゲートウェイはIPv4のみを転送・遮断する。LAN機器がルータのRAでIPv6のデフォルトゲートウェイをルータ自身から得ている場合、その通信はゲートウェイを経由せず、Kill Switch・VPNのいずれも迂回してルータ直で外部へ出る（実機検証で、IPv4が遮断／VPN経由の状態でもLAN機器のIPv6が実アドレスで通信できることを確認）。対処は運用側で行う（LAN側ルータでIPv6のRA配布を止める、LAN機器のIPv6を無効化する等）。ゲートウェイ側でのIPv6転送・NAT66は行わない。
-
-# 明示的プロキシモードの実現方式
-
-- SOCKS5とHTTP(CONNECT)の両方を単一プロダクトでサポートする必要があるため、**3proxy**（軽量Cバイナリ、SOCKS4/5・HTTP・HTTP CONNECTに対応）を採用する。SOCKS5専用のmicrosocksやHTTP専用のtinyproxy単体では要件を満たさない。
-- 3proxyは自身でルーティングを制御せず、OSのルーティングテーブルに従って発信するだけである。プロキシコンテナのデフォルトルートがVPNベンダーCLIによってトンネル経由に切り替わっていれば、3proxy側は特別な設定なしに自動的にVPN越しの通信になる。透過ゲートウェイモードのnftables管理とは独立して機能する。
-- `network_mode: host` を採用しているため、3proxyがLAN向けにbindするポート（例 SOCKS5:1080, HTTP:8080）はDockerのポートマッピングを介さずホストのLANインターフェースに直接listenできる。
-- Node/TS側の責務:
-  1. ユーザ向け設定（`explicitProxyEnabled`、`explicitProxyAllowedCidrs`等）変更時、3proxyの設定ファイルをテンプレートから生成する。
-  2. `child_process.spawn` で3proxyを起動・監視し、異常終了時は再起動する。
-  3. VPN接続状態の変化に伴う3proxyの再起動は不要（ルーティングに自動追従するため）。設定変更（ポート変更等）時のみ再起動する。
-
-## 実装（Phase 6）
-
-- **同梱方法**: Alpine 3.24のmain/communityリポジトリに3proxyパッケージが無く（edge/testingのみ）、testingのバイナリは実行ステージのlibcと版が食い違いうるため、`proxy/Dockerfile`の専用ビルドステージで公式リリース（`THREEPROXY_VERSION`、動作確認済み0.9.5）のソースを`make -f Makefile.Linux`でビルドし、`/usr/local/bin/3proxy`のバイナリ1つだけを実行イメージへ渡す（動的リンクはmuslのみ）。ビルド時にGitHubへのネットワークアクセスが必要（実VPN CLIの取得と同じ）。
-- **待ち受けポート**: SOCKS5=`1080`、HTTP(CONNECT含む)=`3128`（環境変数`EXPLICIT_SOCKS_PORT`・`EXPLICIT_HTTP_PORT`で変更可）。HTTPの既定を`8080`としないのは、Web UI（webコンテナがホストの8080を公開）と衝突するため。`network_mode: host`のため、ホストの全インターフェースへbindする（LAN側IPへの限定はしない。接続の可否は下記の許可元CIDRのみで決まる）。
-- **設定ファイル**（`proxy/src/explicit-proxy/config-builder.ts`。既定の出力先`/tmp/vpngwgui/3proxy.cfg`、環境変数`EXPLICIT_PROXY_CONFIG`で変更可。一時ファイル→renameで原子的に書き出す）:
-  ```
-  auth iponly
-  allow * <CIDR>,<CIDR>...
-  deny *
-  socks -p1080
-  proxy -p3128
-  ```
-  認証は送信元IPのみ（`auth iponly`）。許可元CIDR以外は`deny *`で拒否する（SOCKS5は接続拒否、HTTPは403）。ユーザ名・パスワード認証は行わない（LAN限定運用。Phase 15の認証導入時に検討）。
-- **許可CIDRの検証**: CIDRは設定ファイルの行へ埋め込むため、改行等による設定行の注入（例: `192.168.3.0/24\nallow * 0.0.0.0/0`）で許可範囲が意図せず拡大しないよう、APIサーバ（`PUT /v1/connection/config`。400で拒否、`api/src/settings/settings-store.ts`）とproxy（`buildExplicitProxyConfig`。例外→`error`状態）の両方でIPv4 CIDR形式（`a.b.c.d/n`）を厳密に検証する。プレフィックス長を省略した単一ホスト表記（`192.168.3.5`）は受理しない（`/32`を明示する）。IPv6は対象外。
-- **許可CIDRが空**の場合は3proxyを起動せず`unconfigured`とする（全拒否の設定で起動しても利用者にとって意味が無く、全許可にフォールバックするのは危険なため）。
-- **プロセス監視**（`explicit-proxy-controller.ts`の`ExplicitProxyController`。透過ゲートウェイの`GatewayController`と同じく「いつ起動・停止するか」の調停のみを担う）:
-  - `POST /settings`受信ごとに`applySettings()`を呼ぶ。APIは設定を10秒周期で再通知するため、前回反映済みと同じ内容（有効/無効・CIDR列が同一）なら何もしない（不要な再起動でプロキシ接続を切らない）。設定ファイルの生成・書き込みに失敗した場合は`error`状態とし、次回の再通知で再試行する。
-  - 設定変更時は旧プロセスへSIGTERMを送り、**終了を待ってから**新設定で起動する（ポート競合の回避）。3proxyはSIGTERMから終了まで約5秒かかる（実機で計測）ため、SIGKILLへ切り替えるまでの猶予は10秒とする。したがって設定変更中は最大約5秒プロキシが応答しない。意図的な終了は異常終了として数えない。
-  - 異常終了（`kill -9`等）は指数バックオフ（1秒→2秒→4秒…、上限60秒）で再起動する。連続3回の異常終了で`crashLoop`と報告する（再起動は試み続ける）。プロセスが30秒以上生き続ければ安定とみなし、連続失敗回数・バックオフをリセットして`crashLoop`が解消する。設定変更は新しい状況とみなし、バックオフ待ちを打ち切って即座に新設定で起動する。
-  - 起動失敗（バイナリ不在等で`exit`が来ず`error`イベントのみの場合）も異常終了と同じ扱いとする。
-  - 3proxyの標準出力・標準エラーはコンテナのログへそのまま流す。3proxyの接続ログは有効化しない（通信内容の記録を避ける）。起動・停止・異常終了・crashLoopは監査ログ（`explicit_proxy_started`/`explicit_proxy_stopped`/`explicit_proxy_crashed`/`explicit_proxy_crash_loop`/`explicit_proxy_config_error`）へ記録する。
-- **VPN接続状態との独立**: VPNの接続・切断・国変更で3proxyは再起動しない（実機でPID不変を確認）。3proxyはOSのルーティングに従って発信するため、VPN接続中は出口がVPN側になり、切断中は実回線から直接出る。
-- **Kill Switchの対象外（既知の制約）**: Kill Switchは`inet vpngwgui`の`forward`チェーン（透過ゲートウェイの転送）のみを制御する。明示的プロキシはホスト自身の発信（`output`）であるため、**VPN未接続の間は`killSwitch=true`でも実回線から直接インターネットへ抜ける**（実機で実測）。利用者が意図しない直接通信を避けたい場合は、VPN接続時のみプロキシを使う運用とする。対処（3proxy専用のUIDに対する`output`チェーンのdrop等）はPhase 15の課題とする。
-
-# ユーザ向け設定の反映方法
-
-| 設定項目 | 反映先 |
-|---|---|
-| `killSwitch` | nftables `forward` チェーンのフォールバックルール有無 |
-| `excludedDomains` | DNS中継リゾルバの照合リスト。一致したドメインの名前解決結果IPを`bypass4` setへ投入し、ポリシールーティングで迂回する（下記「ドメイン迂回とDNS中継」） |
-| `dnsRelayEnabled`ほか`dns*`（`dnsClientNameServers`を含む） | DNS中継リゾルバの起動/停止・上流・障害時の挙動、53番リダイレクト（下記「ドメイン迂回とDNS中継」） |
-| `transparentGatewayEnabled` | nftables `inet vpngwgui` テーブルの適用/撤去 |
-| `explicitProxyEnabled` | 3proxyプロセスの起動/停止 |
-| `explicitProxyAllowedCidrs` | 3proxy設定ファイルの許可元CIDR |
-
-`excludedDomains`（ドメイン単位のsplit-tunnel除外）は、IPベースのnftables/ルーティングでは直接扱えないため、DNS中継リゾルバが名前解決結果のIPを期限付きで`bypass4` setへ投入する方式で実現する（下記「ドメイン迂回とDNS中継」）。
-
-（ベンダーCLIの実行要求`POST /exec`は、Phase 8でランナーへ移動した。仕様は`../runner/design.md`「`POST /exec`（内部コマンド受信サーバ）の仕様」。以下はネットワークコンテナ（`net.sock`）の内部HTTP。）
-
-## `POST /settings`（設定反映、Phase 3で追加）
-
-具体的なリクエスト/レスポンス形状はapiserver/design.md「設定反映（`POST /settings`）内部プロトコル仕様」参照。プロキシ側の処理は以下の通り（実装: `proxy/src/server.ts`の`handleSettings`）。
-
-1. `killSwitch`・`transparentGatewayEnabled`・`explicitProxyEnabled`のboolean、`explicitProxyAllowedCidrs`の文字列配列という形状のみを検証する（Phase 14以降は、`excludedDomains`・`dns*`の形状も検証する。個々のCIDRの形式は設定ファイル生成時に検証する）。形状不正は400。
-2. `GatewayController.applySettings()`（`proxy/src/network/gateway-controller.ts`）へ渡し、現在のVPN接続インターフェース状態と合わせてnftルールセットを撤去→再適用する。
-3. `ExplicitProxyController.applySettings()`（`proxy/src/explicit-proxy/explicit-proxy-controller.ts`）へ渡し、3proxyを起動・再起動・停止する（上記「実装（Phase 6）」）。透過ゲートウェイのnft再構成とは独立して行う。
-4. 結果（`applied: boolean`。透過ゲートウェイのnft適用結果のみを表す）を応答し、監査ログへ記録する。
-
-## `GET /status`（稼働状況取得、Phase 4で追加）
-
-`GatewayController`（`proxy/src/network/gateway-controller.ts`）が保持する現在状態を、副作用なしで返す読み取り専用エンドポイント。`/exec`・`/settings`と同一UDSソケット上、OpenAPI非公開。APIサーバの`GET /v1/connection/gateway`が中継する（形状はapiserver/design.md「稼働状況取得」参照）。
-
-- 情報源は`GatewayController`のメモリ上の状態（適用中の`killSwitch`/`transparentGatewayEnabled`、検出済みVPN IF名、`LAN_IFACE`有無）のみとし、状態取得のためにnft/ipコマンドを新たに実行しない（ポーリング頻度（5秒×閲覧者数）でsudo実行が発生するのを避けるため）。
-- したがって値は「proxyが最後に適用を試みた結果」であり、外部から`nft`で手動変更された場合の乖離は検知しない（Phase 15以降の課題）。
-- レスポンスは`{ "transparentGateway": { "state", "vpnInterface"?, "killSwitchBlocking" }, "explicitProxy": { "state", "socksPort"?, "httpPort"?, "restartCount" } }`（`GatewayController.getStatus()`・`ExplicitProxyController.getStatus()`）。`transparentGateway.state`は`active`/`stopped`/`unconfigured`/`error`（有効設定だが直近のnft適用が失敗、または再構成の完了前）。設定受信前（プロセス起動直後）は既定設定に基づき`stopped`を返す。
-- `explicitProxy.state`は`active`（稼働中。一時的な再起動待ちを含む。`socksPort`・`httpPort`はこの状態のみ付く）/`stopped`（無効）/`unconfigured`（有効設定だが許可CIDRが空）/`crashLoop`（起動直後の異常終了を連続して繰り返している）/`error`（設定ファイルの生成・書き込みに失敗）。`restartCount`はプロキシ起動以降の異常終了による再起動回数（設定変更による意図的な再起動は含まない）。プロセスの実在確認のための外部コマンドは実行しない。
-- **異常状態のAPIへの通知経路**: `crashLoop`等は、APIサーバが`GET /v1/connection/gateway`のたびにこのエンドポイントを引いて中継する（pull方式）ことでUI・API利用者へ届く。proxy→apiへの能動的なpush用の経路（APIサーバ側の受信口）は新設しない: APIサーバは状態を持たない方針（apiserver/design.md）で、UIは5秒ポーリングにより最大約5秒で異常を表示でき、push経路を足すと内部プロトコルの信頼境界（proxyからapiへの経路は無い）を広げるため。異常は監査ログにも残る。
-
-# ドメイン迂回とDNS中継（Phase 14）
-
-全体方針は`../design.md`「ドメイン単位の迂回とDNS中継の設計方針」。以降は`proxy`の実装詳細（一次情報）。
-
-## DNS中継リゾルバ（`proxy/src/dns-relay/`）
-
-`dnsRelayEnabled=true`のとき、`proxy`プロセス内でUDP・TCPの両方をlistenする。
-
-| 項目 | 内容 |
-|---|---|
-| 待受アドレス | LAN側インターフェースのIPv4アドレスと`127.0.0.1`（後者は3proxy用）。ポートは環境変数`DNS_RELAY_PORT`（既定`53`。`network_mode: host`のためホスト上の他のDNSと衝突しうる。衝突時は`error`状態にし、設定の再通知（10秒周期）のたびに再試行して、解消すれば自動で回復する）。`proxy`は非rootで動くため、53番（特権ポート）のbind権限だけを、nodeバイナリへのファイルcapability（`setcap cap_net_bind_service=+ep`。`proxy/Dockerfile`）で与える（`network_mode: host`ではコンテナ側のsysctl`net.ipv4.ip_unprivileged_port_start`を変えられないため。`NET_BIND_SERVICE`はDockerの既定のcapabilityに含まれる） |
-| 問い合わせの処理 | ①問い合わせ名を迂回リストと照合 → ②上流へ転送 → ③応答が成功（NOERROR）で、かつ照合が一致していれば、応答内のA（IPv4）レコードのIPをnft setへ投入 → ④**setへの反映が終わってから**応答をクライアントへ返す。応答の内容は改変しない（AAAAは対象外）。④の順序が必要なのは、応答を受け取ったクライアントが直ちに接続しても、最初のパケットから迂回されるようにするため（反映を待たずに返すと、最初の接続だけVPN経由になる。実機で確認）。反映の失敗は応答を妨げない |
-| 照合規則 | `example.com`は`example.com`のみ（サブドメインは含まない。完全一致）、`*.example.com`はすべてのサブドメイン（複数階層を含む。`example.com`自体は含まない）。両方を対象にするには両方の表記を登録する。大文字小文字は区別せず、末尾のドットは無視する。照合するのは問い合わせ名のみとする（応答のCNAME先の名前は照合しない。CNAME先のドメインを迂回したい場合は利用者がそのドメインを追加する） |
-| 上流への転送 | 上流（`dnsUpstreamUrl`）へDoH（RFC 8484。`application/dns-message`のPOST）で、`<dnsUpstreamUrl>/<ClientID>`宛に転送する。サーバ証明書は、システムのCAに加えて`dnsUpstreamCaPem`（あれば）で検証する。検証に失敗する接続は使わない |
-| ClientID | クライアントを区別する識別子。**IPベース**（IPのドットをハイフンにした`192-168-3-25`。ClientIDにドットは使えず、`192.168.3.25`のままでは上流のAdGuard Homeが異常応答を返すことを実機で確認したため）を基本とし、**クライアント名の取得先（`dnsClientNameServers`。DHCPサーバ・ルータのDNS）が設定されていて名前が得られれば、その名前**（`Macmini.lan.` → `macmini-lan`。小文字化し、英数字以外の連続をハイフン1つにして63文字以内に整える）にする。名前は、クライアントIPの逆引き（PTR、`<逆順のアドレス>.in-addr.arpa`）を取得先へ平文で問い合わせて得る（上流の自宅DNSサーバは私的な逆引きに答えないことが多いため、取得先を別に指定する）。結果は名前ありで10分、なしで2分保持し（新しく配られた名前を早めに取り込む）、同じクライアントの並行した問い合わせで重複させない。逆引きの待ち時間は1サーバ800ms・全体1秒までで、超えたらIPベースで進める（問い合わせを止めない）。ゲートウェイ自身（`127.0.0.1`。3proxyからの問い合わせ）は固定で`explicit-proxy`とする。MACアドレスは使わない（利用者が識別しにくいため）。名前の変更や、別の名前への付け替えは、保持期間が過ぎたあとに反映される。自宅DNSサーバ側では、ClientIDをクライアントとして登録して名前を付けることもできる |
-| 上流障害 | 上流が接続失敗・タイムアウト（5秒）・5xxのとき、`dnsFailureMode=failClosed`ならSERVFAILを返す。`fallback`なら`dnsFallbackServers`へ平文DNS（UDP、失敗時TCP）で転送する（この場合はClientIDを付けられず、履歴も残らない。監査ログに`dns_relay_fallback`を記録する）。上流のNXDOMAIN・フィルタによるブロック応答は障害ではなく、そのままクライアントへ返す |
-| 上流への通信経路 | 上流（自宅DNSサーバ）宛は通常のルーティングに従う。ゲートウェイ自身の通信のため、Kill Switchの対象外である |
-
-## nft set・ポリシールーティング
-
-`inet vpngwgui`テーブルへ次を追加する（ルールセットの原子的な置換の対象に含める。set内の要素は置換のたびに失われるが、クライアントのキャッシュが切れるまでの間に次の問い合わせで再投入される。この空白を減らすため、再構成時は現在の要素を読み出して新テーブルへ引き継ぐ）。
-
-| 要素 | 内容 |
-|---|---|
-| set `bypass4` | `type ipv4_addr; flags timeout;`。要素の期限は「応答のTTL + 猶予60秒」（TTLが0のときは猶予のみ）。同じIPが再度応答されると期限を更新する。猶予はクライアント側のキャッシュがTTLを超えて保持される場合の取りこぼしを減らすためのもの |
-| チェーン`bypass_mark`（prerouting、`mangle`優先度） | `iifname "<lan_iface>" ip daddr @bypass4 meta mark set 0x100` |
-| チェーン`bypass_mark_output`（output、`type route`） | 明示的プロキシ用。`meta skuid <3proxyのUID> ip daddr @bypass4 meta mark set 0x100` |
-| forward | マーク付きのLAN発通信を許可する（Kill Switchのdropより前）。VPN未接続でも迂回対象は疎通する（利用者が迂回を指定した通信であるため） |
-| postrouting（nat） | 実回線側（`<wan_iface>`）へ出るマーク付き通信（`meta mark`）をマスカレードする。LAN機器からの転送に加え、**ホスト自身の発信（明示的プロキシ）にも必要**: 接続時にVPN側の経路で送信元アドレスが選ばれた後、マークで経路が実回線へ変わるため、マスカレードしないと送信元がVPN側のアドレスのまま出て応答が戻らない（実機で確認）。透過ゲートウェイが無効でも、迂回が有効ならこのチェーンだけを作る |
-| `ip rule` | `fwmark 0x100 lookup 100`（VPNベンダーCLIが追加するポリシールールより高い優先度）。テーブル100に、`<lan_iface>`のデフォルトゲートウェイへの`default`経路を置く。ゲートウェイのアドレスは接続監視ループで再検出する |
-
-- 迂回はIPv4のみ（IPv6は対象外）。
-- 単一NIC構成では、LANクライアントの通信が同一インターフェースへ折り返す。ゲートウェイが「ルータへ直接送れ」というICMPリダイレクトをクライアントへ返すと、以後クライアントが直接送って透過ゲートウェイを迂回してしまうため、ICMPリダイレクトの送出を無効化する。インストーラが`/etc/sysctl.d/99-vpngwgui.conf`へ`net.ipv4.conf.{all,default,<LAN側IF>}.send_redirects=0`を書く（アンインストールで既定値へ戻す）。
-- **IPアドレス単位の判定であることの制約**: 迂回対象のドメインと、対象外のドメインが同じIPアドレスを共有している場合（CDN等）、その対象外のドメイン宛の通信も迂回される（次の名前解決までの間、または期限まで）。ドメイン名ではなくIPで経路を決める方式の本質的な制約である。
-- **待受に失敗している間の安全側の挙動**: 中継リゾルバが待受中でない間は、名前解決を中継へ向ける設定（53番リダイレクト、3proxyの名前解決先）を入れない（入れると名前解決が止まるため）。迂回のsetとポリシールーティングは構成する。
-- 明示的プロキシ: 3proxyの`nserver`をこのリゾルバ（`127.0.0.1`。`DNS_RELAY_PORT`が53以外なら`127.0.0.1:<ポート>`）へ向けて生成する（設定が変わると3proxyは再起動する）。これにより3proxyの名前解決もsetへの投入と上流転送を経る。プロキシ利用者ごとの識別はできない（ClientIDは`explicit-proxy`固定）。ホスト自身の発信のうち`bypass_mark_output`が対象にするのは、`proxy`プロセスの実行ユーザー（3proxyの実行ユーザーと同じ）が発信するもので、迂回対象のIP宛のものだけである。
-
-## 53番リダイレクト
-
-`dnsRedirectEnabled=true`のとき、`inet vpngwgui`のnat prerouting（`iifname "<lan_iface>"`、UDP・TCPの宛先ポート53、宛先アドレスが`dnsRedirectExcludedCidrs`とゲートウェイ自身のアドレスのいずれにも含まれないもの）を、リゾルバの待受アドレス・ポートへDNATする。既定は無効。無効のとき、ゲートウェイをDNSサーバとして受け取った（DHCP配布等の）クライアントの問い合わせだけが中継される。暗号化DNS（DoH・DoT）は対象にできない。
-
-## 設定の反映と状態
-
-- `POST /net/settings`のボディへ、`dnsRelayEnabled`・`dnsUpstreamUrl`・`dnsUpstreamCaPem`・`dnsFailureMode`・`dnsFallbackServers`・`dnsRedirectEnabled`・`dnsRedirectExcludedCidrs`と、`excludedDomains`が加わる（形状は`../apiserver/design.md`「設定反映」）。`DnsRelayController`が`applySettings()`で、設定が前回と同一なら何もせず、変わればリゾルバを再構成する（`GatewayController`・`ExplicitProxyController`と同じ調停の役割）。
-- `GET /net/status`へ`dnsRelay`（`state`: `active`／`stopped`／`unconfigured`／`error`、`upstream`: `ok`／`failing`（直近の転送が失敗）、`bypassEntries`: set内の要素数）が加わる。`unconfigured`は有効設定だが上流もフォールバックも空の場合。
-- 監査ログ: `dns_relay_started`／`dns_relay_stopped`／`dns_relay_config_error`／`dns_relay_upstream_failing`／`dns_relay_upstream_recovered`／`dns_relay_fallback`（フォールバックは障害ごとに1回だけ記録する）／`bypass_set_update_error`／`bypass_routing_error`（迂回用の経路を設定できない場合。問い合わせ内容は記録しない）。
-- **ポリシールーティングの管理**（`network/policy-routing.ts`）: 迂回が有効な間、`ip rule add fwmark 0x100 table 100 priority 100`と、テーブル100の`default via <LAN側IFのデフォルトゲートウェイ> dev <LAN側IF>`を維持する（接続監視の周期ごとに現状を確認して冪等に整える）。ゲートウェイは`ip -4 route show default dev <LAN側IF>`で検出し、VPN接続でメインテーブルのデフォルトルートが書き換えられて検出できない間は、直近に検出できた値を使う。無効になれば`ip rule`とテーブル100を撤去する。
-
-# 障害時の挙動
-
-- VPN接続断検知時: 監視プロセスが `ip route get` 等でトンネル経路の消失を検知し、Kill Switch設定に従ってnftablesルールを即座に更新する（上記「Kill Switch」節参照）。
-- 3proxyプロセスの異常終了: `ExplicitProxyController`が検知し再起動する。連続的なクラッシュループの場合は再起動間隔を指数バックオフし（上限60秒）、`GET /status`の`explicitProxy.state=crashLoop`としてAPI・Web UIへ通知する（上記「実装（Phase 6）」・「`GET /status`」。Phase 6で実装）。
-- プロキシコンテナ自体の再起動時: 3proxyもコンテナとともに停止し、APIの設定再通知（最大約10秒）で設定を受信した時点で自動的に再起動する（実機で確認）。
-- プロキシコンテナ自体の再起動時: **起動時にnftablesルールを撤去しない**。プロキシは自身のプロセス内メモリにのみ現在の`killSwitch`/`transparentGatewayEnabled`を保持し永続化しないため、起動直後は現在の設定を知らない。この状態で撤去すると、設定を受信するまでの間Kill Switchが効かず、LAN機器の通信がVPNを迂回してリークする（実機検証で確認。プロキシコンテナ再起動でVPNデーモンも停止するため、KS ONのまま実IPで通信できてしまう）。既存のルールは、最初の`POST /settings`受信時の「全撤去→再適用」（`GatewayController.applyCurrentState()`）で置き換わり、その際に前回異常終了時の残骸も同時に掃除される。
-  - APIサーバは現在の設定を10秒周期（`SETTINGS_RESYNC_INTERVAL_MS`）で`POST /settings`へ再通知するため（`api/src/server.ts`）、プロキシのみが再起動・再作成された場合でも最大約10秒で設定が反映される。この間はプロセス再起動前のルールがカーネルに残り続けるためフェイルクローズが維持される。
-
-# docker-compose.yml 概念構成（プロキシサービス抜粋）
-
-```yaml
-services:
-  proxy:
-    build: ./proxy
-    network_mode: host        # networks: とは併用不可
-    cap_add: [NET_ADMIN]
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    volumes:
-      - ctl-socket:/var/run/vpngw-ctl
-    environment:
-      # installer/setup.shがリポジトリルートの.envへ書き出し、docker composeが
-      # variable substitutionで読み込む（コンテナへのファイルマウントではない。実装済み、docker-compose.yml参照）。
-      LAN_IFACE: ${LAN_IFACE:-}
-    restart: always
-
-volumes:
-  ctl-socket:
+# ネットワークコンテナ 設計書
+
+## 1. 構成
+
+| パス                                                    | 責務                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------ |
+| `proxy/src/server.ts`                                   | 制御チャネルの受信口。経路の振り分けと各コントローラの起動   |
+| `proxy/src/settings-request.ts`                         | 設定反映の要求の形状検証と、各コントローラ向けの設定への変換 |
+| `proxy/src/gateway-channel/tls-options.ts`              | 制御チャネルの相互TLSの設定                                  |
+| `proxy/src/gateway-channel/runner-forward.ts`           | ランナー宛の要求の転送                                       |
+| `proxy/src/host-control/host-reboot.ts`                 | ホストの再起動の依頼ファイルの作成                           |
+| `proxy/src/network/ruleset.ts`                          | nftablesのルールセットの組み立て                             |
+| `proxy/src/network/gateway-controller.ts`               | 設定と接続状態に応じたルールの再構成の調停                   |
+| `proxy/src/network/tunnel-interface.ts`                 | 経路の問い合わせによるトンネルのインターフェース検出         |
+| `proxy/src/network/connection-monitor.ts`               | 接続状態の定期監視                                           |
+| `proxy/src/network/nft-client.ts`                       | nftコマンドの実行                                            |
+| `proxy/src/network/bypass-set.ts`                       | 迂回対象のIPアドレスと期限の保持                             |
+| `proxy/src/network/policy-routing.ts`                   | 迂回用の経路規則の維持                                       |
+| `proxy/src/explicit-proxy/config-builder.ts`            | 明示的プロキシの設定ファイルの組み立て                       |
+| `proxy/src/explicit-proxy/explicit-proxy-controller.ts` | 明示的プロキシの起動・停止・再起動の調停                     |
+| `proxy/src/dns-relay/domain-matcher.ts`                 | 迂回ドメインの照合                                           |
+| `proxy/src/dns-relay/client-id.ts`                      | 上流へ渡すクライアント識別子の生成                           |
+| `proxy/src/dns-relay/relay.ts`                          | 問い合わせの照合・転送・応答                                 |
+| `proxy/src/dns-relay/upstream.ts`                       | 上流へのDoH転送と公開DNSへの転送                             |
+| `proxy/src/dns-relay/listener.ts`                       | UDPとTCPの待受                                               |
+| `proxy/src/dns-relay/dns-relay-controller.ts`           | 中継リゾルバの起動・停止・再構成の調停                       |
+| `proxy/src/dns-relay/dns-message.ts`                    | DNSメッセージの解析と組み立て                                |
+| `proxy/src/verification/gateway-checks.ts`              | 設定の動作検証の項目の実行                                   |
+| `proxy/src/verification/rule-audit.ts`                  | 設定とルール一覧の照合                                       |
+| `proxy/src/verification/nft-listing.ts`                 | nftの出力のルール単位への分解                                |
+| `proxy/src/verification/check-nonces.ts`                | 検証用の名前の登録と受信の記録                               |
+| `proxy/src/verification/redirect-record.ts`             | 誘導の直後かどうかの判定                                     |
+| `proxy/src/verification/runtime.ts`                     | 検証の実行環境の組み立て                                     |
+| `proxy/src/verification/check-request.ts`               | 検証の要求の形状検証                                         |
+| `proxy/Dockerfile`                                      | ネットワークコンテナのイメージ                               |
+
+## 2. 関係図・ワークフロー
+
+ルール構成と制御チャネルまわりの依存方向を示す。
+
+```mermaid
+flowchart LR
+  server["server"] --> settings_request["settings-request"]
+  server --> tls_options["tls-options"]
+  server --> runner_forward["runner-forward"]
+  server --> host_reboot["host-reboot"]
+  server --> gateway_controller["gateway-controller"]
+  server --> connection_monitor["connection-monitor"]
+  server --> explicit_controller["explicit-proxy-controller"]
+  gateway_controller --> ruleset["ruleset"]
+  gateway_controller --> nft_client["nft-client"]
+  gateway_controller --> bypass_set["bypass-set"]
+  gateway_controller --> policy_routing["policy-routing"]
+  connection_monitor --> tunnel_interface["tunnel-interface"]
+  connection_monitor --> gateway_controller
+  explicit_controller --> config_builder["config-builder"]
+  dockerfile["Dockerfile"] --> server
 ```
 
-# 設定の動作検証（Phase 27）
+DNS中継と動作検証まわりの依存方向を示す。
 
-全体方針は`../design.md`「設定の動作検証の設計方針」、項目の一覧・判定は`../apiserver/design.md`「設定の動作検証」。以降は`proxy`の実装詳細（一次情報）。
+```mermaid
+flowchart LR
+  server2["server"] --> dns_controller["dns-relay-controller"]
+  server2 --> runtime["runtime"]
+  server2 --> check_request["check-request"]
+  server2 --> check_nonces["check-nonces"]
+  dns_controller --> relay["relay"]
+  dns_controller --> listener["listener"]
+  relay --> domain_matcher["domain-matcher"]
+  relay --> client_id["client-id"]
+  relay --> upstream["upstream"]
+  relay --> dns_message["dns-message"]
+  listener --> dns_message
+  runtime --> gateway_checks["gateway-checks"]
+  gateway_checks --> rule_audit["rule-audit"]
+  gateway_checks --> redirect_record["redirect-record"]
+  rule_audit --> nft_listing["nft-listing"]
+```
 
-## 内部エンドポイント
+設定の反映から、中継リゾルバの待受状態による分岐までを示す。
 
-ゲートウェイ制御チャネル（mTLS TCP）へ追加する。`api`だけが呼べる（既存の`/net/settings`と同じ認証）。
+```mermaid
+sequenceDiagram
+  participant ext_api as APIサーバ
+  participant server
+  participant dns_controller as dns-relay-controller
+  participant gateway_controller as gateway-controller
+  participant nft_client as nft-client
+  ext_api->>server: 設定の反映
+  server->>dns_controller: 中継リゾルバの構成
+  alt 待受に成功
+    server->>gateway_controller: 誘導規則を含む設定
+  else 待受に失敗
+    server->>gateway_controller: 誘導規則を除く設定
+  end
+  gateway_controller->>nft_client: ルールセットの置換
+  nft_client-->>gateway_controller: 結果
+  server-->>ext_api: 適用結果
+```
 
-- `POST /net/checks`: ボディ`{ "check": "<検証項目ID>", "echoUrl": "<verifyEchoUrl>", "expectedEgressIp"?: "a.b.c.d", "bypassProbeIp"?: "a.b.c.d" }`。指定された**1項目**（L1・L2）を実行し、`{ "id", "status": "pass"|"fail"|"unconfirmed", "expected"?, "observed"?, "hint"?, "reason"?, "value"? }`を返す（`value`は後続の項目が使う値。`tunnel-egress`の出口IP、`bypass-set`の迂回対象のIP）。迂回ドメイン・上流等の設定は、`proxy`が反映済みの設定（`POST /net/settings`）を使う。項目内の各操作に上限時間を置く（curl 8秒、中継リゾルバへの問い合わせ 8秒、nft 5秒、TCP接続 2秒）。実行中に次の依頼が来れば409。形式不正は400。**ゲートウェイの設定・状態は一切変更しない**（読み取りと、検証用の問い合わせ・通信のみ）。実行中の例外は`unconfirmed`（理由に例外の内容）として返す。
-- `POST /net/check-nonces`: `{ "name": "vpngw-<乱数>.example.com", "ttlSeconds": 60 }`で使い捨て名を登録する（メモリ上のみ）。
-- `GET /net/check-nonces/{name}`: `{ "received": boolean, "redirected": boolean, "recentRedirectedClients": number }`を返す（未登録・期限切れは404）。`received`は登録名を受信したか、`redirected`は**その受信が53番リダイレクトで誘導されたものか**、`recentRedirectedClients`は現在の誘導済みset（下記）の要素数。
+クライアントの問い合わせから応答までの流れと、上流の障害による分岐を示す。
 
-## 53番リダイレクトで誘導した送信元の記録
+```mermaid
+sequenceDiagram
+  participant ext_client as LAN端末
+  participant listener
+  participant relay
+  participant upstream
+  participant ext_home_dns as 自宅DNSサーバ
+  ext_client->>listener: 名前解決の問い合わせ
+  listener->>relay: 問い合わせの引き渡し
+  relay->>upstream: 識別子付きの転送
+  upstream->>ext_home_dns: DoHの要求
+  alt 上流が応答
+    ext_home_dns-->>upstream: 応答
+    upstream-->>relay: 応答
+  else 上流の障害
+    upstream-->>relay: 失敗
+  end
+  relay-->>ext_client: 応答
+```
 
-`inet vpngwgui`へ、次を追加する（既存の53番リダイレクトの節と同じく、ルールセットの原子的な置換の対象。置換でsetの要素は失われるが、実績は10分以内の通信で再び蓄積される）。
+## 3. 設計項目
 
-| 要素 | 内容 |
-|---|---|
-| set `redirected4` | `type ipv4_addr; flags dynamic,timeout; timeout 10m;`。53番リダイレクトで誘導された送信元IPを記録する |
-| リダイレクトのルール | 既存のDNAT（宛先を中継リゾルバへ変更）の前に、`update @redirected4 { ip saddr timeout 10m }`を置く。`update`は、要素が既にあれば期限を更新する（実機で確認）ため、要素の残り時間（`expires`）が`10m − 数秒`以上であることが「直前に誘導された」ことの判定になる |
+### D-1: コンテナの権限と受け口 (NFR-6)
 
-## 実装
+| 設定           | 値                                                                         | 理由                                                       |
+| -------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `network_mode` | `host`                                                                     | LANから入る転送を、ベンダーCLIのトンネルまで直接届ける     |
+| `cap_add`      | `NET_ADMIN`                                                                | nftablesと経路の操作。これ以外の権限と特権モードは使わない |
+| 実行ユーザー   | UID 10001                                                                  | nftは `sudo nft -f -` で実行する                           |
+| 受け口         | 制御チャネル（TCP `GATEWAY_PORT` 既定8443）と、ランナーとのUDS用ボリューム | ランナーとは同一ホストの共有ボリュームのUDSで通信する      |
+| 特権ポート     | nodeバイナリへ `setcap cap_net_bind_service=+ep`                           | 非rootで53番を待ち受ける                                   |
 
-- **検証名の受信記録**: リゾルバは、登録済みの名前の問い合わせを、上流へ転送せず**NXDOMAINでローカルに応答**し、受信を記録する。受信の時点で、`nft -j list set inet vpngwgui redirected4`を読み、問い合わせの送信元IPの要素が存在し、`expires`が`600 − 5`秒以上であれば`redirected=true`とする（DNATの直後に届くため、直前の更新でなければ誘導されていない）。記録するのは、登録名・受信時刻・`redirected`のみ（送信元のIP・クライアント名は保持しない）。期限（60秒）で破棄する。登録の無い名前の扱いは変えない。
-- **L1**: `sudo nft list table inet vpngwgui`（テキスト）をチェーンごとのルール行へ分解し（`verification/nft-listing.ts`）、ゲートウェイの現在の状態（インターフェース・設定。`GatewayController.getVerificationState()`）に対応するルールがあるかを照合する（`verification/rule-audit.ts`）。nftは数値・集合の順序・CIDRの表記を正規化して出力するため（`256`→`0x00000100`、`/32`の省略等。実機で確認）、ルール文字列の完全一致ではなく、ルールの特徴（インターフェース・動作・set名）で照合する。チェーン名・set名・fwmarkはルールセットの生成（`network/ruleset.ts`）と定数を共有する。あわせて`/proc/sys/net/ipv4/ip_forward`、待受（各コントローラの状態と、明示的プロキシのポートへのTCP接続）を確認する。
-- **L2の通信**: 出口IPの取得は、実行イメージへ追加する`curl`で、トンネルのインターフェース（`--interface <トンネルIF>`）へ束縛して行う（`verification/egress-probe.ts`）。明示的プロキシは`--proxy socks5h://<LAN側アドレス>:<SOCKSポート>`・`--proxy http://<LAN側アドレス>:<HTTPポート>`で取得する。応答本文はIPv4のみを許可し、それ以外は`fail`。迂回の経路は`ip -4 route get <IP> [mark 0x100]`で確かめる（`network/tunnel-interface.ts`の`getRouteInterface`）。
-- **L2のDNS**: 中継リゾルバへ（127.0.0.1の待受へ）、送信元を`127.0.0.2`にしてUDPで問い合わせる（`verification/relay-probe.ts`）。中継リゾルバは送信元`127.0.0.2`の問い合わせを、検証専用のClientID`vpngw-selfcheck`で上流へ転送する（`dns-relay/client-id.ts`）。迂回のsetの確認は、`sudo nft -j list set inet vpngwgui bypass4`の読み取りで行う。
-- **副作用の抑制**: 迂回対象の名前の問い合わせは、通常の中継と同じくsetへIPを投入するが、これは通常運用の挙動そのもので、検証が追加の要素を残すのは`bypass4`の要素（期限で消える）のみ。
-- **`unconfirmed`にする条件**: VPN未接続でトンネルが検出できない、リゾルバが`active`でなく問い合わせができない（前提が崩れているのは`dns-relay-listening`が`fail`で示す）、明示的プロキシの許可元に127.0.0.1が含まれない、など。理由を`reason`に入れる。
+- イメージにベンダーCLIを含めない。3proxyは公式リリースのソースを専用ビルドステージで構築し、バイナリ1つだけを実行イメージへ渡す。
+- `docker compose` は `network_mode: host` と `networks` を併用できないため、このコンテナはAPIコンテナと同じブリッジに参加しない。
 
-- **配置**: `proxy/src/verification/`（項目の実行: `gateway-checks.ts`、実行環境の組み立て: `runtime.ts`、検証名: `check-nonces.ts`、誘導の判定: `redirect-record.ts`、リクエストの検証: `check-request.ts`）。
+### D-2: 透過ゲートウェイのルールセット (FR-1, FR-2, NFR-1)
 
-# ホストの再起動依頼
+専用テーブル `inet vpngwgui` を使い、ホスト上の既存ルールと衝突させない。
 
-- **エンドポイント**: `POST /net/host-reboot`（ボディなし）。依頼用ディレクトリ（コンテナ内`/var/run/vpngw-host-ctl`、ホストの`/var/lib/vpngwgui-host-ctl`。`HOST_CTL_DIR`で変更可）へ`reboot-request`を排他的に作成して`202 { "requested": true }`を返す。すでに依頼が残っていれば`409`、ディレクトリが無い・書き込めない（ホスト側の仕組みが未導入）場合は`503 { "error": "host_control_unavailable" }`。監査ログに`host_reboot_requested`を記録する。
-- **ホスト側**（`installer/setup.sh`がgatewayロールのホストへ作成）: ディレクトリ（所有者は`proxy`の実行ユーザー10001、権限0700）、`vpngwgui-reboot.path`（`PathExists`で依頼ファイルを監視）、`vpngwgui-reboot.service`（依頼ファイルを削除してから`systemctl reboot`。削除を先にするのは、再起動後に依頼が残って再起動を繰り返さないため）。ファイルの内容は読まない。
-- `proxy`のcomposeは依頼用ディレクトリをバインドマウントする（`compose/gateway.yml`）。
-- 実装は`proxy/src/host-control/host-reboot.ts`。
+| チェーン    | 条件                         | 規則                                                                                     |
+| ----------- | ---------------------------- | ---------------------------------------------------------------------------------------- |
+| postrouting | 常に                         | トンネルへ出る通信をマスカレード                                                         |
+| forward     | 常に                         | `policy accept`。Docker公開ポート宛のDNAT済み通信を許可し、LAN以外へ向かう応答方向を許可 |
+| forward     | VPN接続中                    | LANからトンネルへ許可、トンネルからLANへは確立済みのみ許可、トンネルからの新規接続は遮断 |
+| forward     | Kill Switch無効かつVPN未接続 | LANから実回線への通信を許可（フェイルオープン）                                          |
+| forward     | 常に末尾                     | LAN発の通信を遮断（Kill Switchの基礎）                                                   |
+
+```text
+nft -f - の1回の呼び出しで、先頭を  add table / delete table / add table  の順にして全体を置換する
+```
+
+- `policy accept` とし、遮断を末尾のLAN発の規則だけに限る。`policy drop` にすると、同居するコンテナのインターネット向け通信まで遮断される。
+- 撤去と適用を別の呼び出しにすると、その間だけ規則が存在せずLAN機器の通信が漏れる。1回の置換で防ぐ。
+- インターフェース名と埋め込む値は、規則へ入れる前に形式を検証し、不正なら適用を諦める。
+- IPv6は転送も遮断もしない。LAN側ルータのRAを止めるか、端末のIPv6を無効にする運用で対処する。
+
+### D-3: トンネルの検出と接続状態への追従 (FR-3, NFR-2)
+
+| 項目       | 内容                                                                                                                              |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 検出       | `ip route get 1.1.1.1` の出力インターフェースを使う。LAN側と異なれば接続中、同じなら未接続                                        |
+| 理由       | ベンダーのCLIはデフォルト経路を置換する型と、ポリシールーティングで別表へ誘導する型があり、実際の経路選択結果だけが両方に対応する |
+| 契機       | APIサーバからの接続状態の再確認の通知と、10秒周期の監視                                                                           |
+| 通知の応答 | `POST /net/connection-checks` は `200 {"checked": true}`。失敗しても200（`false`）とし、監視が追従する                            |
+| 再構成     | インターフェース名が変わったときだけルールを置換する                                                                              |
+
+### D-4: 起動時と設定の再通知 (FR-12)
+
+| 場面             | 挙動                                                                         |
+| ---------------- | ---------------------------------------------------------------------------- |
+| コンテナの起動   | 既存のルールを撤去しない。最初の設定の受信まで、前回のルールが遮断を維持する |
+| 最初の設定の受信 | 全撤去と再適用を原子的に行い、前回の異常終了の残骸も置き換える               |
+| 同じ設定の再通知 | 前回の適用が成功していれば、ルールに触れない。失敗していれば再試行する       |
+| ホストの起動直後 | 起動ガードの専用テーブルが、LAN発の転送を遮断する                            |
+| 稼働状況の取得   | メモリ上の状態だけから導出する。取得のたびにnftやipを実行しない              |
+
+- 稼働状況の `state` は `active`（適用中）、`stopped`（無効）、`unconfigured`（有効だがLAN側インターフェース未設定）、`error`（直近の適用が失敗、または再構成の完了前）。
+
+### D-5: 明示的プロキシ (FR-4, NFR-7)
+
+```text
+auth iponly
+allow * <CIDR>,<CIDR>...
+deny *
+socks -p1080
+proxy -p3128
+```
+
+| 項目         | 内容                                                                                                                 |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 製品         | 3proxy（SOCKS5とHTTP CONNECTを1つで提供）。ポートは `EXPLICIT_SOCKS_PORT`（1080）と `EXPLICIT_HTTP_PORT`（3128）     |
+| 認証         | 送信元IPだけ。許可元以外は `deny *`。CIDRは `a.b.c.d/n` の厳密な形式のみで、改行を含む値による設定行の注入を拒否する |
+| 許可元が空   | 起動せず `unconfigured` とする                                                                                       |
+| 設定ファイル | 一時ファイルへ書いてからrenameする                                                                                   |
+| 設定変更     | SIGTERMを送り、終了を待ってから起動する（SIGKILLへの切替は10秒後）。最大約5秒応答しない                              |
+| 異常終了     | 1秒、2秒、4秒と延ばし上限60秒で再起動。連続3回で `crashLoop`。30秒生き続ければ安定とみなして戻す                     |
+| VPNの切替    | 3proxyは再起動しない。OSの経路に従って発信する                                                                       |
+| 既知の制約   | Kill Switchの対象外。VPN未接続の間は実回線から直接送出する                                                           |
+
+状態は `active`、`stopped`、`unconfigured`、`crashLoop`、`error` の5つで、異常は稼働状況の取得で利用者へ届く。接続ログは有効にしない。
+
+### D-6: DNS中継リゾルバ (FR-6, NFR-4, NFR-5)
+
+| 項目       | 内容                                                                                                                                      |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| 待受       | LAN側IPv4と `127.0.0.1` のUDPとTCP。ポートは `DNS_RELAY_PORT`（53）。衝突時は `error` とし、10秒周期の再通知で再試行する                  |
+| 処理       | 迂回リストと照合、上流へ転送、成功応答のAレコードを迂回setへ反映してから、応答をクライアントへ返す。応答は改変しない                      |
+| 反映の順序 | setへの反映後に応答する。先に返すと、直後の最初の接続だけがVPN経由になる                                                                  |
+| 照合       | `example.com` は自身だけ。`*.example.com` は全サブドメイン（複数階層）で自身を含まない。大文字小文字は区別せず末尾のドットは無視する      |
+| 上流       | `<dnsUpstreamUrl>/<ClientID>` へDoH（`application/dns-message` のPOST）。システムのCAに加え、指定のCAで検証する                           |
+| 障害       | 接続失敗・5秒の打ち切り・5xxのとき、`failClosed` はSERVFAIL、`fallback` は公開DNSへUDP（失敗時TCP）。NXDOMAINやブロック応答は障害にしない |
+| 秘匿       | ドメイン名とクライアントはログに記録しない。履歴は自宅DNSサーバが持つ                                                                     |
+
+クライアント識別子（ClientID）の規則を示す。
+
+| 条件                             | ClientID                                                                                 |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| 既定                             | IPのドットをハイフンにした値（`192-168-3-25`。ドットは上流が異常応答を返すため使わない） |
+| 名前の取得先に逆引きで名前がある | その名前を小文字化し、英数字以外の連続をハイフン1つにして63文字以内にした値              |
+| ゲートウェイ自身（`127.0.0.1`）  | `explicit-proxy`                                                                         |
+| 検証用の送信元（`127.0.0.2`）    | `vpngw-selfcheck`                                                                        |
+
+- 名前の逆引きは、取得先へ平文で問い合わせる。待ち時間は1サーバ800ミリ秒、全体1秒までで、超えたらIPで進める。結果は名前ありを10分、なしを2分保持する。
+- 中継リゾルバの停止や障害は、Kill Switch、転送、明示的プロキシの名前解決以外の動作に影響しない。待受に失敗している間は、名前解決を中継へ向ける設定（53番の誘導、3proxyの名前解決先）を入れない。
+
+### D-7: ドメイン迂回の経路制御 (FR-5, NFR-3)
+
+| 要素                          | 内容                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| set `bypass4`                 | `ipv4_addr` で期限付き。要素の期限は応答の保持時間に60秒を加える（保持時間が0なら60秒）。再応答で更新する     |
+| チェーン `bypass_mark`        | LAN発で宛先がsetにある通信へ `0x100` の印を付ける（preroutingの `mangle` 優先度）                             |
+| チェーン `bypass_mark_output` | 明示的プロキシのUIDの発信で宛先がsetにあるものへ印を付ける（`type route`）                                    |
+| forward                       | 印付きのLAN発を、Kill Switchの遮断より前に許可する                                                            |
+| postrouting                   | 印付きで実回線へ出る通信をマスカレードする。ホスト自身の発信は、送信元がVPN側のまま出て応答が戻らないため必要 |
+| `ip rule`                     | `fwmark 0x100 lookup 100`（優先度100）。表100に、LAN側IFのデフォルトゲートウェイへのdefault経路を置く         |
+
+- 再構成のたびに、保持中の要素を新しいテーブルへ同時に入れる。
+- ゲートウェイは `ip -4 route show default dev <LAN側IF>` で検出し、検出できない間は直近の値を使う。
+- 判定はIPアドレス単位のため、迂回対象と同じIPを共有する他のドメインの通信も迂回される。
+- 単一NICでは、ICMPリダイレクトの送出を無効にする（インストーラが設定する）。クライアントが直接送って透過ゲートウェイを迂回するのを防ぐ。
+
+### D-8: 53番リダイレクト (FR-7)
+
+| 項目 | 内容                                                                                            |
+| ---- | ----------------------------------------------------------------------------------------------- |
+| 規則 | nat preroutingで、LAN発のUDP・TCPの宛先ポート53を、中継リゾルバの待受アドレスとポートへDNATする |
+| 除外 | 宛先がゲートウェイ自身と、利用者が指定した除外CIDRに含まれるもの                                |
+| 既定 | 無効。無効のとき、ゲートウェイをDNSサーバとして受け取った端末の問い合わせだけが中継される       |
+| 制約 | 暗号化DNS（DoH・DoT）は対象にできない                                                           |
+
+### D-9: 制御チャネル (FR-8)
+
+| 経路                                        | 処理                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| `POST /net/settings`                        | 設定の反映。`200 {"applied": boolean}`                               |
+| `GET /net/status`                           | 稼働状況（透過ゲートウェイ・明示的プロキシ・DNS中継・LANのCIDR）     |
+| `POST /net/connection-checks`               | 接続状態の即時の再確認                                               |
+| `POST /net/checks` ほか `/net/check-nonces` | 設定の動作検証                                                       |
+| `POST /net/host-reboot`                     | ホストの再起動の依頼                                                 |
+| `/runners/<ベンダーID>/*`                   | 対応する `runner-<ベンダーID>.sock` へ転送。ソケットが無ければ `502` |
+
+```text
+https.createServer({ ca: gateway-ca, cert: proxy-server, key, requestCert: true, rejectUnauthorized: true })
+```
+
+- 検証に失敗した接続は確立しない。証明書ファイルが読めなければ起動時に例外で終了する。
+- ベンダーIDは `[a-z0-9-]+` に限り、ソケットのディレクトリの外を指させない。
+- ゲートウェイ機のファイアウォールで、`GATEWAY_PORT` への到達元をAPIサーバへ絞ることを推奨する。
+- 設定反映の要求は、真偽値と文字列配列の形状だけをここで検証し、不正は400にする。個々のCIDRは設定ファイルの生成時に検証する。
+
+### D-10: 設定の反映先 (FR-1, FR-4, FR-5, FR-6)
+
+| 設定項目                                           | 反映先                                                   |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| `killSwitch`                                       | 末尾の遮断とフェイルオープンの許可規則                   |
+| `transparentGatewayEnabled`                        | テーブルの適用と撤去                                     |
+| `excludedDomains`                                  | 中継リゾルバの迂回リスト                                 |
+| `dnsRelayEnabled` ほか `dns` で始まる項目          | 中継リゾルバの起動・停止・上流・障害時の挙動・53番の誘導 |
+| `explicitProxyEnabled` `explicitProxyAllowedCidrs` | 3proxyの起動・停止・許可元                               |
+
+- 中継リゾルバを先に構成する。53番の誘導先と3proxyの名前解決先が、待受を前提とするためである。
+- 明示的プロキシは、透過ゲートウェイの再構成とは独立して調停する。
+- 3proxyの名前解決先は、中継リゾルバが待受中のときだけ `127.0.0.1` へ向ける。
+
+### D-11: 設定の動作検証 (FR-9, FR-10)
+
+| エンドポイント                 | 内容                                                                                                           |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `POST /net/checks`             | 1項目を実行し `{id, status, expected?, observed?, hint?, reason?, value?}` を返す。実行中に別の依頼が来れば409 |
+| `POST /net/check-nonces`       | 使い捨ての名前をメモリ上に登録する                                                                             |
+| `GET /net/check-nonces/<名前>` | `{received, redirected, recentRedirectedClients}`。未登録と期限切れは404                                       |
+
+| 層  | 方法                                                                                                                                                 |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L1  | `nft list table` をルール単位へ分解し、チェーン・インターフェース・動作・set名の特徴で設定と照合する。あわせて `ip_forward` と待受を確認する         |
+| L2  | トンネルへ束縛した `curl` で出口IPを取得する。中継リゾルバへ送信元 `127.0.0.2` で問い合わせる。経路は `ip -4 route get <IP> [mark 0x100]` で確かめる |
+
+- 各操作の上限は、curl 8秒、中継への問い合わせ 8秒、nft 5秒、TCP接続 2秒。設定と状態は変更しない。
+- 前提が崩れて判定できない項目は `unconfirmed` とし、実行中の例外も理由を付けて `unconfirmed` にする。
+- set `redirected4`（`flags dynamic,timeout; timeout 10m`）へ、53番の誘導の前に `update @redirected4 { ip saddr timeout 10m }` を置く。要素の残り時間が `10分 − 5秒` 以上なら直前に誘導されたと判定する。
+- 登録済みの名前は、上流へ転送せずNXDOMAINで応答し、登録名・受信時刻・誘導の有無だけを60秒保持する。送信元のIPと名前は保持しない。
+
+### D-12: ホストの再起動依頼 (FR-11)
+
+| 項目 | 内容                                                                                                                                         |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 依頼 | 依頼用ディレクトリ（コンテナ内 `/var/run/vpngw-host-ctl`、環境変数 `HOST_CTL_DIR`）へ `reboot-request` を排他的に作成する                    |
+| 応答 | 作成に成功すると `202 {"requested": true}`、既に残っていれば `409`、置き場が無い・書けないときは `503 {"error": "host_control_unavailable"}` |
+| 実行 | ホスト側のsystemdのpathユニットが依頼ファイルを検知し、削除してから再起動する。ファイルの内容は読まない                                      |
+| 監査 | `host_reboot_requested` を記録する                                                                                                           |
+
+## 4. エラー処理
+
+| 事象                             | 処理                                                                 |
+| -------------------------------- | -------------------------------------------------------------------- |
+| 設定の形状不正                   | 400。ルールは変更しない                                              |
+| nftの適用に失敗                  | 状態を `error` とし、次の再通知で再試行する                          |
+| LAN側インターフェースが未設定    | 透過ゲートウェイを構成せず撤去だけを行い、`unconfigured` を報告する  |
+| 中継リゾルバの待受に失敗         | `error` とし、名前解決を中継へ向ける設定を入れず、再通知で再試行する |
+| 3proxyのバイナリが無い・異常終了 | 異常終了として数え、再起動を試み続ける                               |
+| ランナーのソケットが無い         | 502                                                                  |
+| 無効なクライアント証明書         | 接続を確立しない                                                     |
+| 検証の実行中の例外               | `unconfirmed` とし、理由に例外の内容を載せる                         |

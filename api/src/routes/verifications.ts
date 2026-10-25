@@ -1,4 +1,4 @@
-// 責務: 設定の動作検証（Phase 27）の開始・進行と結果の取得・ブラウザの観測の提出。apiserver/design.md「設定の動作検証」の
+// 責務: 設定の動作検証（Phase 27）の開始・進行と結果の取得・ブラウザの観測の提出。apiserver/design.md D-12の
 // 「エンドポイント」に対応する。検証の実行・保持はVerificationService（verification/verification-service.ts）が担う。
 
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";

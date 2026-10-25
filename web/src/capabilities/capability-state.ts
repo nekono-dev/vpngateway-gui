@@ -1,5 +1,5 @@
 // 責務: APIが返す操作ごとの実行可否（capabilities）を、UI部品が使いやすい形で参照する純粋関数群。
-// 実行可否の判定自体はAPIが行う（specs/apiserver/design.md「オペレーションと実行可否（capability）」）。
+// 実行可否の判定自体はAPIが行う（specs/apiserver/design.md D-5）。
 // ここは受け取った値の参照と、取得できないときの既定値（制限しない）のみを扱う。
 // API応答の型に依存するドメイン処理のため、汎用のlib/ではなく責務ディレクトリcapabilities/に置く。
 
@@ -47,7 +47,7 @@ export function supportsLocationPing(capabilities: Capabilities | undefined): bo
 /**
  * 目的: ［接続］を「接続先を指定しない接続（connectAuto）」として使うかを決める。
  *      接続先を選んで接続できるとき（connectToLocation）はそちらを優先し、使えず自動接続が使えるときだけ自動接続にする
- *      （webserver/requirements.md「操作の制限表示」）。
+ *      （webserver/requirements.md FR-4）。
  * 入力: capabilities(未取得ならundefined)。
  * 出力: 自動接続として使うならtrue。
  * 例: usesAutoConnect(freePlanCaps) // => true

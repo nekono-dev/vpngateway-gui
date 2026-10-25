@@ -1,5 +1,5 @@
 // 責務: APIサーバのエントリポイント。buildApp()で構築したアプリをHTTPSで待ち受ける
-// （Webサーバ⇄APIサーバ間の通信路保護。specs/requirements.md「通信路の保護」）。
+// （Webサーバ⇄APIサーバ間の通信路保護。specs/apiserver/requirements.md）。
 
 import { buildApp } from "./app.js";
 import { loadApiServerTlsOptions } from "./tls-options.js";
@@ -21,7 +21,7 @@ app.listen({ port, host: "0.0.0.0" }).catch((error: unknown) => {
 });
 
 // プロキシコンテナは自身の設定を永続化せず、`POST /settings`による通知でのみ現在の
-// killSwitch/transparentGatewayEnabled等を知る（proxyserver/design.md「内部プロトコル拡張」参照）。
+// killSwitch/transparentGatewayEnabled等を知る（proxyserver/design.md D-9参照）。
 // そのため、プロキシコンテナのみが再作成された場合（APIコンテナは再作成されない場合）、
 // 次にユーザが設定を変更するまでプロキシ側が永続化済みの設定を反映できない空白期間が生じうる。
 // これを緩和するため、APIサーバ起動時に現在の永続化済み設定を通知する（加えて下記の定期再通知も行う）

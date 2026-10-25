@@ -1,9 +1,9 @@
 // 責務: ［接続］ボタン単体の描画のみを行う。切断ボタン（DisconnectButton）と同じ理由（押しやすい位置に
 // 置くため、接続先リストの下ではなく接続状態のカードに置く）で独立した部品として切り出した
-// （webserver/requirements.md「接続ボタンの配置」）。
+// （webserver/requirements.md FR-7）。
 // 【Phase 21】無効化の理由文が接続先リスト側（`location-list-restriction`）に既に表示されるとき
 // （`connectToLocation`と`locationList`は常に同じ理由へ同期されるため）は、同じ文言を重ねて表示せず、
-// `aria-describedby`だけをそちらへ向ける（webserver/design.md「制限理由の重複表示の解消」）。
+// `aria-describedby`だけをそちらへ向ける（webserver/design.md D-7）。
 import { connectBlockedReason, isAvailable, reasonOf } from "../../capabilities/capability-state";
 import type { CapabilitiesState } from "../../hooks/useDashboardPolling";
 import { RestrictionNote } from "./RestrictionNote";

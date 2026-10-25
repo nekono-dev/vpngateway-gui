@@ -1,5 +1,5 @@
 // 責務: Web UI利用者の単一管理者アカウント（ユーザー名・scryptハッシュ化パスワード）の永続化。
-// apiserver/design.md「Web UI利用者の認証」の保存形式（`$STATE_DIR/operator-account.json`）に対応する。
+// apiserver/design.md D-10の保存形式（`$STATE_DIR/operator-account.json`）に対応する。
 // settings-store.tsと同様、単一JSONファイルへのread-modify-write（低頻度更新・単一アカウントのため）。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";

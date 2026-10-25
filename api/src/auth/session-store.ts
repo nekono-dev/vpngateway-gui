@@ -1,5 +1,5 @@
 // 責務: Web UIログインセッションの保持（プロセスメモリ。APIコンテナ再起動でリセットされる）と、
-// セッションCookie（`vpngwgui_session`）の解析・組み立て。apiserver/design.md「Web UI利用者の認証」参照。
+// セッションCookie（`vpngwgui_session`）の解析・組み立て。apiserver/design.md D-10参照。
 
 import { randomBytes } from "node:crypto";
 

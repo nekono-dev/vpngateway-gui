@@ -3,7 +3,7 @@
 # セッションD-Bus・Secret Service（gnome-keyring）をコンテナ内で起動してから、proxy本体を非root（vpngwgui）で起動する。
 # 起動したバックグラウンドプロセスのいずれかが終了したら、コンテナごと終了する（restart: alwaysで再起動させる。
 # 片方だけ死んだ半端な状態で稼働し続けない）。
-# 背景・設計: specs/runner/design.md「Proton VPN用ランナー」。
+# 背景・設計: specs/runner/design.md D-9。
 
 set -eu
 

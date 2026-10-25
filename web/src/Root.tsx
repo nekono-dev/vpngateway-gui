@@ -1,5 +1,5 @@
 // 責務: 認証状態に応じて初期設定画面・ログイン画面・ダッシュボード（App）を出し分ける。
-// webserver/design.md「利用者認証の実装方針」: 未設定・未ログインの間はダッシュボードをレンダリングしない。
+// webserver/design.md D-2: 未設定・未ログインの間はダッシュボードをレンダリングしない。
 
 import { useAuth } from "./contexts/AuthContext";
 import { SetupPage } from "./components/auth/SetupPage";

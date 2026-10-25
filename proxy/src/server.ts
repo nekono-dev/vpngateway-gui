@@ -2,12 +2,12 @@
 // トンネル検出・接続監視を担い、APIサーバからゲートウェイ制御チャネル（mTLS TCP、既定ポート8443。
 // 環境変数GATEWAY_PORT）経由で設定反映・状態取得・接続状態の再確認を受ける内部専用HTTPSサーバ。
 // クライアント証明書（requestCert・rejectUnauthorized）でAPIサーバを認証する
-// （Phase 25。proxyserver/design.md「ゲートウェイ制御チャネル」。Phase 24までのUDS限定方針からの転換）。
+// （Phase 25。proxyserver/design.md D-9。Phase 24までのUDS限定方針からの転換）。
 // ベンダーCLIは実行しない（Phase 11でランナー`runner.ts`へ分離）。
 //   POST /net/settings         : ユーザ向け設定の反映
 //   GET  /net/status           : 稼働状況の取得
 //   POST /net/connection-checks: 接続状態の即時再確認（接続・切断・ベンダー切替の直後にAPIが呼ぶ）
-//   POST /net/checks           : 設定の動作検証の1項目を実行（L1・L2。proxyserver/design.md「設定の動作検証」）
+//   POST /net/checks           : 設定の動作検証の1項目を実行（L1・L2。proxyserver/design.md D-11）
 //   POST /net/check-nonces     : 設定の動作検証で使う検証名の登録
 //   GET  /net/check-nonces/<名前>: 検証名の受信の記録と、53番リダイレクトで誘導した送信元の数
 //   /runners/<ベンダーID>/*    : 対応するランナーのUDS（runner-<ベンダーID>.sock）へ転送（gateway-channel/runner-forward.ts）
@@ -49,7 +49,7 @@ const CONNECTION_POLL_INTERVAL_MS = Number(process.env.CONNECTION_POLL_INTERVAL_
 
 // LAN側のネットワークCIDR（例: 192.168.3.0/24）。起動時に一度だけ検出する（実行中にLAN側のIPアドレスが
 // 変わる運用は想定しないため、`GET /status`のたびに`ip`を実行しない）。Web UIの設定ダイアログで、
-// 明示的プロキシの許可CIDR欄の初期値として使う（webserver/requirements.md「明示的プロキシの許可CIDRの初期値」）。
+// 明示的プロキシの許可CIDR欄の初期値として使う（webserver/requirements.md FR-9）。
 const lanCidr = await getLanSubnetCidr(LAN_IFACE);
 
 // 明示的プロキシ（3proxy）のLAN向け待ち受けポート。HTTPの既定を8080にしないのは、Web UI（webコンテナが
@@ -95,7 +95,7 @@ const explicitProxyController = new ExplicitProxyController({
 
 /**
  * 目的: `POST /connection-checks`を処理する。トンネル検出→ゲートウェイルールの再構成を即時に1回行う
- *      （接続監視ループの次回ポーリングを待たない。proxyserver/design.md「再接続・国変更時の旧ルール撤去→新IFでの再適用処理」）。
+ *      （接続監視ループの次回ポーリングを待たない。proxyserver/design.md D-3）。
  * 入力: res(応答)。ボディは使わない。
  * 出力: なし。`200 { checked: boolean }`を返す。再構成に失敗しても200（checked: false）で、監視ループが追従する。
  * 副作用: 監視ループと同じ再構成（冪等）。失敗は監査ログへ記録する。
@@ -231,7 +231,7 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
 
 const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
   if (req.method === "GET" && req.url === "/net/status") {
-    // 副作用なしの読み取り専用。メモリ上の状態のみを返す（proxyserver/design.md「`GET /status`」）。
+    // 副作用なしの読み取り専用。メモリ上の状態のみを返す（proxyserver/design.md D-3）。
     sendJson(res, 200, {
       transparentGateway: gatewayController.getStatus(),
       explicitProxy: explicitProxyController.getStatus(),

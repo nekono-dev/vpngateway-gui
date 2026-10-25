@@ -1,5 +1,5 @@
 // 責務: 本番のソースコードにVPNベンダー固有の語（ID・名称・CLIのバイナリ名）が混入していないことを検査する
-// （specs/requirements.md「ベンダー非依存性」、AGENTS.md「ベンダー非依存」）。1件でも見つかれば終了コード1で失敗する。
+// （specs/runner/requirements.md、AGENTS.md「ベンダー非依存」）。1件でも見つかれば終了コード1で失敗する。
 // 禁止語: `vendors/*/profile.json`の`vendor`・`displayName`・`binary`のファイル名から自動で作り、
 //         `scripts/vendor-neutrality.words`（まだバンドルが無い既知のベンダー名）を加える。大文字小文字は区別しない。
 // 検査対象: 本番のコード・スクリプト・composeの共通部・共通のDockerfile。**コメントも検査する**（コメントに固有名を残すと、

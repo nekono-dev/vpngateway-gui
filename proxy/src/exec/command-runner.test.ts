@@ -1,6 +1,6 @@
 // 責務: runDetachableCommand（completionPattern一致時の早期応答・バックグラウンド継続実行）の単体テスト。
 // 実VPNベンダーCLIのログイン代行が題材だが、実バイナリには依存せず`sh`スクリプトで挙動を再現する
-// （proxyserver/design.md「実VPNベンダーCLI統合・ログイン代行 (Phase 2)」参照）。
+// （proxyserver/design.md D-1参照）。
 
 import { describe, expect, it } from "vitest";
 import { writeFileSync, mkdtempSync, chmodSync, readFileSync } from "node:fs";
