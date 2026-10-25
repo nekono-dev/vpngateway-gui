@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
+    "password-form-repair@nekono-dev": true,
     "spec-driven-development@nekono-dev": true
   },
   "extraKnownMarketplaces": {
