@@ -37,7 +37,11 @@ test.describe.serial("初期設定・ログイン・ログアウト（ui）", ()
   });
 
   test("2.8: ログアウトすると、ログイン画面へ戻る", async ({ watchedPage: page }) => {
+    // 試験ごとに新しいブラウザの状態になるため、この試験で改めてログインしてからログアウトする
     await page.goto("/");
+    await page.getByLabel("ユーザー名").fill(admin.username);
+    await page.getByLabel("パスワード", { exact: true }).fill(admin.password);
+    await page.getByRole("button", { name: /^ログイン/ }).click();
     await page.getByRole("button", { name: "ログアウト" }).click();
     await expect(page.getByRole("heading", { name: "ログイン" })).toBeVisible();
   });
