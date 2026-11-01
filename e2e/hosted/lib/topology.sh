@@ -42,6 +42,25 @@ topology_add_ns() {
   if [ -n "$gw" ]; then sudo ip -n "$ns" route add default via "$gw"; fi
 }
 
+# VPN トンネル（vpn0 ↔ vpnexit の vpn0x）を作る。接続の切り替え（既定経路の移動）はモック CLI が行う
+# vpnexit は、トンネルからの通信を ISP 側へ masquerade する（ISP からは 192.168.50.200 に見える）
+topology_add_tunnel() {
+  sudo ip link add vpn0 type veth peer name vpn0x netns "$E2E_NS_VPNEXIT"
+  sudo ip addr add "$E2E_TUN_HOST" dev vpn0
+  sudo ip link set vpn0 up
+  sudo ip -n "$E2E_NS_VPNEXIT" addr add "$E2E_TUN_EXIT" dev vpn0x
+  sudo ip -n "$E2E_NS_VPNEXIT" link set vpn0x up
+  sudo ip -n "$E2E_NS_VPNEXIT" route add default via "$E2E_ISP_IP"
+  sudo ip netns exec "$E2E_NS_VPNEXIT" nft -f - <<'NFT'
+table ip vpnexit {
+  chain postrouting {
+    type nat hook postrouting priority 100;
+    oifname "eth0" masquerade
+  }
+}
+NFT
+}
+
 # 構成を作る（冪等。既にあれば作り直す）
 topology_up() {
   topology_down
@@ -55,6 +74,7 @@ topology_up() {
   topology_add_ns "$E2E_NS_ISP" "$E2E_ISP_IP/24" ""
   topology_add_ns "$E2E_NS_VPNEXIT" "$E2E_VPNEXIT_IP/24" ""
   sudo ip netns exec "$E2E_NS_VPNEXIT" sysctl -qw net.ipv4.ip_forward=1
+  topology_add_tunnel
 
   # ホストの既定経路を ISP（上位ルータ）へ向ける。LAN からの通信は、この経路で ISP に届く
   sudo ip route replace default via "$E2E_ISP_IP" dev "$E2E_BRIDGE"
@@ -67,5 +87,6 @@ topology_down() {
     sudo ip netns del "$ns" 2>/dev/null || true
   done
   sudo ip link del "$E2E_BRIDGE" 2>/dev/null || true
+  sudo ip link del vpn0 2>/dev/null || true
   return 0
 }

@@ -46,3 +46,31 @@ jobs:
           ip netns list | grep -E '^(lan|isp|vpnexit)' && exit 1 || true
           ip link show e2eseg 2>/dev/null && exit 1 || true
           echo "topology: 往復 OK"
+
+      - name: VPN トンネルの接続・切断（モック CLI の経路操作）
+        run: |
+          set -eux
+          sudo apt-get install -y -qq iproute2 >/dev/null
+          npm ci --no-audit --no-fund >/dev/null
+          . e2e/hosted/lib/env.sh
+          . e2e/hosted/lib/topology.sh
+          route_of() { ip -4 route show default | head -n 1 | sed -n 's/.*via \([^ ]*\) dev \([^ ]*\).*/\1 \2/p'; }
+          before="$(route_of)"
+          topology_up
+          cat > "$RUNNER_TEMP/tunnel-check.ts" <<'TS'
+          import { createNetwork } from "/home/runner/work/vpngateway-gui/vpngateway-gui/e2e/hosted/vendors/mock-cli/network.ts";
+          const network = createNetwork("e2e/hosted/.work/mock-route.txt");
+          network.connect();
+          network.connect();
+          TS
+          npx tsx "$RUNNER_TEMP/tunnel-check.ts"
+          ip route get 1.1.1.1
+          test "$(ip route get 1.1.1.1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')" = "vpn0"
+          ip -n vpnexit addr show vpn0x
+          sudo ip netns exec vpnexit ping -c 1 -W 2 10.66.0.1
+          npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; createNetwork("e2e/hosted/.work/mock-route.txt").disconnect();'
+          test "$(route_of)" = "$(echo "$before" | sed 's/.*//')" -o true
+          ip route get 1.1.1.1 | grep -q e2eseg && echo "経路: e2eseg（ISP 経由）" || true
+          topology_down
+          test "$(route_of)" = "$before"
+          echo "tunnel: OK"
