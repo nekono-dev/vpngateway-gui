@@ -8,8 +8,14 @@ import { dirname } from "node:path";
 /** コマンドの実行の差し替え点（テストでは記録だけを行う）。 */
 export type RunIp = (args: readonly string[]) => string;
 
-/** 既定の実行: sudo で ip を呼ぶ（hosted runner の中でだけ使う）。 */
-export const runIpWithSudo: RunIp = (args) => execFileSync("sudo", ["ip", ...args], { encoding: "utf8" });
+/**
+ * 既定の実行: ip を呼ぶ。root でなければ sudo（パスワード無し）で呼ぶ。hosted runner と、そのコンテナの中でだけ使う。
+ * コンテナの中のモックは sudoers で ip だけを許可する（vendors の mock Dockerfile）。
+ */
+export const runIpWithSudo: RunIp = (args) =>
+  process.getuid?.() === 0
+    ? execFileSync("ip", [...args], { encoding: "utf8" })
+    : execFileSync("sudo", ["-n", "ip", ...args], { encoding: "utf8" });
 
 /** トンネルの出口（vpnexit 側）のアドレス。topology.sh の E2E_TUN_EXIT と一致させる。 */
 export const TUNNEL_EXIT_ADDRESS = "10.66.0.2";

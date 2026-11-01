@@ -3,7 +3,7 @@
 // ネットワークの変更（vpn0 の作成・既定経路の移動）は Network の実装に任せ、単体テストでは差し替える。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 export type VendorId = "protonvpn" | "adguardvpn";
 
@@ -60,7 +60,9 @@ interface SampleCase {
  * 失敗時の方針: ケースが無ければ例外（契約からずれた出力を返さない）。
  */
 export function sampleOutput(vendor: VendorId, name: string): string {
-  const samples = JSON.parse(readFileSync(new URL(`../../../../vendors/${vendor}/samples.json`, import.meta.url), "utf8")) as {
+  // コンテナの中では MOCKVPN_SAMPLES_DIR（vendors/ を置いた場所）を使う。開発・テストではリポジトリの vendors/ を読む
+  const root = process.env.MOCKVPN_SAMPLES_DIR ?? new URL("../../../../vendors", import.meta.url).pathname;
+  const samples = JSON.parse(readFileSync(join(root, vendor, "samples.json"), "utf8")) as {
     cases: SampleCase[];
   };
   const found = samples.cases.find((c) => c.name === name);

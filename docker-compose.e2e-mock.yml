@@ -1,16 +1,12 @@
-# 責務: E2E専用のoverride。Web UIの公開ポートの差し替えと、APIへ渡すベンダーバンドル（プロファイル）のディレクトリの差し替えだけを行う。
-# **本番では使わない**。ランナーは、各バンドルのcompose fragment（実運用: vendors/<ID>/compose.yml、モック: e2e/vendors/<ID>/compose.yml）が
-# 定義し、有効にするものだけを併せて起動する（本番と同じ方式。e2e/lib/e2e-vendors.shの`e2e_compose_files`）。
-# 使い方: . e2e/lib/e2e-vendors.sh; make_e2e_vendors_dir mockproton
-#         docker compose -p vpngwgui-e2e-mock $(e2e_compose_files mockproton) up -d --build   （リポジトリルートで。Web UIは http://localhost:18080）
-#   E2E_VENDORS_DIR: 有効なベンダーのプロファイルを集めたディレクトリ（`make_e2e_vendors_dir`が作る）
-#   VPN_PROVIDERS: 有効にするベンダー（`make_e2e_vendors_dir`がexportする）
+# 責務: E2E（hosted）専用の compose の上書き。ランナーのビルドを、モック CLI のイメージ（e2e/hosted/vendors/<ID>/Dockerfile）へ差し替える（e2e-tests 1.11）。
+# 本番では使わない。導入の後に、.env の COMPOSE_FILE の末尾へ追記して使う（e2e/hosted/lib/provision.sh）。
+# composeの合成では build の dockerfile の値が、この上書きで置き換わる（context・ユーザー・ネットワークは本番と同じ）。
 services:
-  web:
-    # 他のスタックと衝突しないよう、公開ポートを差し替える（listの合成は追記になるため!overrideで置換する）。
-    ports: !override
-      - "18080:8080"
-  api:
-    volumes:
-      # ベンダーバンドルのディレクトリを、有効なベンダーのプロファイルだけを集めたものへ差し替える（マウント先が同じなので置換される）。
-      - ${E2E_VENDORS_DIR:?E2E_VENDORS_DIRに、有効なベンダーのプロファイルを集めたディレクトリを指定すること}:/etc/vpngwgui/vendors:ro
+  runner-protonvpn:
+    build:
+      context: .
+      dockerfile: e2e/hosted/vendors/protonvpn/Dockerfile
+  runner-adguardvpn:
+    build:
+      context: .
+      dockerfile: e2e/hosted/vendors/adguardvpn/Dockerfile

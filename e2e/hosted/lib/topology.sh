@@ -61,8 +61,14 @@ table ip vpnexit {
 NFT
 }
 
-# 構成を作る（冪等。既にあれば作り直す）
+# 構成を作る（冪等。既にあれば作り直す）。既定経路の切り替えまで行う
 topology_up() {
+  topology_links
+  topology_route_isp
+}
+
+# 既定経路を変えずに、ブリッジと名前空間を作る（導入の間に使う。導入は外部の取得を要するため、経路は後で切り替える）
+topology_links() {
   topology_down
   topology_save_route
 
@@ -75,11 +81,11 @@ topology_up() {
   topology_add_ns "$E2E_NS_VPNEXIT" "$E2E_VPNEXIT_IP/24" ""
   sudo ip netns exec "$E2E_NS_VPNEXIT" sysctl -qw net.ipv4.ip_forward=1
   topology_add_tunnel
+}
 
-  # ランナーの通信（ランナーのユーザーの通信）は、元の回線の経路表で出す。既定経路を移しても GitHub との接続を保つ
+# ホストの既定経路を ISP（上位ルータ）へ向ける。ランナーの通信は元の回線の経路表で出す（GitHub との接続を保つ）
+topology_route_isp() {
   topology_keep_runner_route
-
-  # ホストの既定経路を ISP（上位ルータ）へ向ける。LAN からの通信は、この経路で ISP に届く
   sudo ip route replace default via "$E2E_ISP_IP" dev "$E2E_BRIDGE"
 }
 
