@@ -3,6 +3,9 @@
 # composeの合成では build の dockerfile の値が、この上書きで置き換わる（context・ユーザー・ネットワークは本番と同じ）。
 services:
   runner-protonvpn:
+    # モックのランナーは非 root（10001）で動かす。ランナーのソケット（0770）の所有者を、プロキシ（10001）と揃えるため。
+    # 本番の protonvpn は、エントリポイントの都合で root で起動する（vendors/protonvpn/compose.yml）。
+    user: "10001:10001"
     build:
       context: .
       dockerfile: e2e/hosted/vendors/protonvpn/Dockerfile
