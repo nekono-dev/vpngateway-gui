@@ -51,18 +51,23 @@ jobs:
         run: |
           set -eux
           sudo apt-get install -y -qq iproute2 >/dev/null
-          npm ci --no-audit --no-fund >/dev/null
+          echo '>>> npm ci'
+          timeout 300 npm ci --no-audit --no-fund >/dev/null
+          echo '>>> npm ci done'
           . e2e/hosted/lib/env.sh
           . e2e/hosted/lib/topology.sh
           route_of() { ip -4 route show default | head -n 1 | sed -n 's/.*via \([^ ]*\) dev \([^ ]*\).*/\1 \2/p'; }
           before="$(route_of)"
           topology_up
-          npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; const n = createNetwork("e2e/hosted/.work/mock-route.txt"); n.connect(); n.connect();'
+          echo '>>> connect'
+          timeout 60 npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; const n = createNetwork("e2e/hosted/.work/mock-route.txt"); n.connect(); n.connect();'
+          echo '>>> check'
           ip route get 1.1.1.1
           test "$(ip route get 1.1.1.1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')" = "vpn0"
           ip -n vpnexit addr show vpn0x
           sudo ip netns exec vpnexit ping -c 1 -W 2 10.66.0.1
-          npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; createNetwork("e2e/hosted/.work/mock-route.txt").disconnect();'
+          echo '>>> disconnect'
+          timeout 60 npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; createNetwork("e2e/hosted/.work/mock-route.txt").disconnect();'
           ip route get 1.1.1.1 | grep -q e2eseg && echo "経路: e2eseg（ISP 経由）" || true
           topology_down
           test "$(route_of)" = "$before"
