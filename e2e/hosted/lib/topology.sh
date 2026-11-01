@@ -76,12 +76,33 @@ topology_up() {
   sudo ip netns exec "$E2E_NS_VPNEXIT" sysctl -qw net.ipv4.ip_forward=1
   topology_add_tunnel
 
+  # ランナーの通信（元の回線の送信元アドレス発）は、元の回線の経路表で出す。既定経路を移しても GitHub との接続を保つ
+  topology_keep_runner_route
+
   # ホストの既定経路を ISP（上位ルータ）へ向ける。LAN からの通信は、この経路で ISP に届く
   sudo ip route replace default via "$E2E_ISP_IP" dev "$E2E_BRIDGE"
 }
 
+# 元の回線の送信元アドレス発の通信を、元の既定経路（表 $E2E_RUNNER_TABLE）で出す
+topology_keep_runner_route() {
+  src="$(sed -n 's/.* src \([^ ]*\).*/\1/p' "$E2E_ROUTE_FILE")"
+  via="$(sed -n 's/.*via \([^ ]*\).*/\1/p' "$E2E_ROUTE_FILE")"
+  dev="$(sed -n 's/.*dev \([^ ]*\).*/\1/p' "$E2E_ROUTE_FILE")"
+  if [ -n "$src" ] && [ -n "$via" ] && [ -n "$dev" ]; then
+    sudo ip rule add from "$src" lookup "$E2E_RUNNER_TABLE" priority 100
+    sudo ip route replace default via "$via" dev "$dev" table "$E2E_RUNNER_TABLE"
+  fi
+}
+
+# 表 $E2E_RUNNER_TABLE と、その規則を消す（冪等）
+topology_drop_runner_route() {
+  while sudo ip rule del lookup "$E2E_RUNNER_TABLE" 2>/dev/null; do :; done
+  sudo ip route flush table "$E2E_RUNNER_TABLE" 2>/dev/null || true
+}
+
 # 構成を壊す（冪等）。既定経路を元に戻し、名前空間とブリッジを削除する
 topology_down() {
+  topology_drop_runner_route
   topology_restore_route
   for ns in "$E2E_NS_LAN" "$E2E_NS_ISP" "$E2E_NS_VPNEXIT"; do
     sudo ip netns del "$ns" 2>/dev/null || true
