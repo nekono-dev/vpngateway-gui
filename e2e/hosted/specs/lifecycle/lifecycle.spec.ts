@@ -41,6 +41,8 @@ test.describe.serial("導入・更新・削除（lifecycle）", () => {
   let previous = "";
 
   test.beforeAll(async () => {
+    // 導入は時間がかかるため、フックの上限を延ばす（describe の timeout はフックには効かない）
+    test.setTimeout(40 * 60 * 1000);
     ({ head, previous } = await commits());
     const lan = await defaultIface();
     // 導入は本番と同じ経路。LAN_IFACE は既定経路の回線（経路の切り替えは stack 群の準備で行う）
