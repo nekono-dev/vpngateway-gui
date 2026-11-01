@@ -28,3 +28,21 @@ export async function saveAdmin(credentials: AdminCredentials): Promise<void> {
 export async function loadAdmin(): Promise<AdminCredentials> {
   return JSON.parse(await readFile(join(WORK, "admin.json"), "utf8")) as AdminCredentials;
 }
+
+/** 導入の runner コンテナの名（compose の既定のプロジェクト名 vpngwgui）。 */
+export function runnerContainer(vendor: "protonvpn" | "adguardvpn"): string {
+  return `vpngwgui-runner-${vendor}-1`;
+}
+
+/**
+ * 目的: モック CLI の制御（障害の注入）を、ランナーのコンテナの状態ファイルへ書く。
+ * 入力: vendor、control（制御の内容。空オブジェクトで制御を解除する）。
+ * 出力: なし（書けなければ例外）。
+ */
+export async function setMockControl(vendor: "protonvpn" | "adguardvpn", control: Record<string, unknown>): Promise<void> {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  const json = JSON.stringify(control);
+  await run("sudo", ["docker", "exec", runnerContainer(vendor), "sh", "-c", `printf '%s' '${json}' > /var/lib/mockvpn/${vendor}.control.json`]);
+}
