@@ -19,10 +19,10 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "smoke", testMatch: /smoke\/.*\.spec\.ts/ },
-    { name: "lifecycle", testMatch: /lifecycle\/.*\.spec\.ts/ },
+    { name: "smoke", testMatch: /specs\/smoke\/.*\.spec\.ts$/ },
+    { name: "lifecycle", testMatch: /specs\/lifecycle\/.*\.spec\.ts$/ },
     // stack 群: 初期設定の画面（ui）が最初に実行され、api はその後に実行される（dependencies）
-    { name: "stack-ui", testMatch: /ui\/.*\.spec\.ts/ },
-    { name: "stack-api", testMatch: /api\/.*\.spec\.ts/, dependencies: ["stack-ui"] },
+    { name: "stack-ui", testMatch: /specs\/ui\/.*\.spec\.ts$/ },
+    { name: "stack-api", testMatch: /specs\/api\/.*\.spec\.ts$/, dependencies: ["stack-ui"] },
   ],
 });
