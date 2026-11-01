@@ -1,0 +1,229 @@
+# PoC（使い捨て）: GitHub-hosted runner で E2E 基盤の前提が成立するかを確認する。
+#   - 確認項目: 権限（sudo）、network namespace、NET_ADMIN と nftables、透過ゲートウェイ（NAT・Kill Switch）の模擬、
+#     Dockerコンテナの NET_ADMIN と network_mode: host、host-gateway、Playwright（chromium の起動）
+# main へは入れない。確認が済んだら、ブランチごと削除する。
+name: poc-hosted-runner
+
+on:
+  push:
+    branches: [poc/hosted-runner-netns]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 環境と権限の確認
+        id: env
+        continue-on-error: true
+        run: |
+          set +e
+          fail=0
+          ok() { echo "PASS: $*"; }
+          ng() { echo "FAIL: $*"; fail=1; }
+
+          uname -a
+          . /etc/os-release && echo "OS: $PRETTY_NAME"
+          id
+          nproc
+          free -h | head -2
+          df -h / | tail -1
+
+          if sudo -n true; then ok "sudo（パスワード不要）"; else ng "sudo"; fi
+          if [ -e /dev/net/tun ]; then ok "/dev/net/tun あり"; else echo "INFO: /dev/net/tun なし"; fi
+          sudo apt-get install -y -qq nftables iproute2 >/dev/null 2>&1
+          if nft --version >/dev/null 2>&1 && sudo nft list tables >/dev/null 2>&1; then ok "nftables（nft）が使える"; else ng "nftables"; fi
+          if sudo sh -c 'echo 1 > /proc/sys/net/ipv4/ip_forward'; then ok "ip_forward を設定できる"; else ng "ip_forward"; fi
+          if docker version >/dev/null 2>&1; then ok "docker: $(docker version --format '{{.Server.Version}}')"; else ng "docker"; fi
+          if docker compose version >/dev/null 2>&1; then ok "docker compose: $(docker compose version --short)"; else ng "docker compose"; fi
+          exit $fail
+
+      - name: 透過ゲートウェイの模擬（network namespace・NAT・Kill Switch）
+        id: netns
+        continue-on-error: true
+        run: |
+          set +e
+          fail=0
+          ok() { echo "PASS: $*"; }
+          ng() { echo "FAIL: $*"; fail=1; }
+
+          # 構成: client(10.10.0.2) --- gw(10.10.0.1 / 10.20.0.1) --- wan(10.20.0.2)
+          # gw が client から wan へ転送し、wan からは client が gw のアドレスで見えること（NAT）と、
+          # Kill Switch（gw での遮断）で client の通信が止まることを確認する。
+          sudo ip netns add client
+          sudo ip netns add gw
+          sudo ip netns add wan
+          sudo ip link add cl-veth type veth peer name gw-lan
+          sudo ip link set cl-veth netns client
+          sudo ip link set gw-lan netns gw
+          sudo ip link add gw-wan type veth peer name wan-veth
+          sudo ip link set gw-wan netns gw
+          sudo ip link set wan-veth netns wan
+
+          sudo ip -n client addr add 10.10.0.2/24 dev cl-veth
+          sudo ip -n client link set cl-veth up
+          sudo ip -n client link set lo up
+          sudo ip -n client route add default via 10.10.0.1
+
+          sudo ip -n gw addr add 10.10.0.1/24 dev gw-lan
+          sudo ip -n gw addr add 10.20.0.1/24 dev gw-wan
+          sudo ip -n gw link set gw-lan up
+          sudo ip -n gw link set gw-wan up
+          sudo ip -n gw link set lo up
+
+          sudo ip -n wan addr add 10.20.0.2/24 dev wan-veth
+          sudo ip -n wan link set wan-veth up
+          sudo ip -n wan link set lo up
+          sudo ip netns exec gw sysctl -w net.ipv4.ip_forward=1 >/dev/null
+
+          sudo ip netns exec gw nft -f - <<'NFT'
+          table ip poc {
+            chain forward {
+              type filter hook forward priority 0; policy drop;
+              ct state established,related accept
+              iifname "gw-lan" oifname "gw-wan" accept
+            }
+            chain postrouting {
+              type nat hook postrouting priority 100;
+              oifname "gw-wan" masquerade
+            }
+          }
+          NFT
+          if [ $? -eq 0 ]; then ok "gw に nftables（forward drop・masquerade）を投入"; else ng "gw の nftables 投入"; fi
+
+          sudo ip netns exec wan python3 -m http.server 8080 --bind 10.20.0.2 >"$RUNNER_TEMP/wan.log" 2>&1 &
+          server_pid=$!
+          sleep 2
+
+          if sudo ip netns exec client curl -sS --max-time 5 -o /dev/null http://10.20.0.2:8080/; then
+            ok "client → wan（gw 経由で到達）"
+          else
+            ng "client → wan（gw 経由で到達しない）"
+          fi
+
+          if grep -q '10.20.0.1' "$RUNNER_TEMP/wan.log"; then
+            ok "NAT: wan からは client が gw（10.20.0.1）として見える"
+          else
+            ng "NAT: wan のログに gw の送信元が出ない"
+            cat "$RUNNER_TEMP/wan.log"
+          fi
+
+          sudo ip netns exec gw nft insert rule ip poc forward iifname "gw-lan" oifname "gw-wan" drop
+          if sudo ip netns exec client curl -sS --max-time 5 -o /dev/null http://10.20.0.2:8080/; then
+            ng "Kill Switch: 遮断したのに到達した"
+          else
+            ok "Kill Switch: gw で遮断すると client の通信が止まる"
+          fi
+
+          sudo kill "$server_pid" 2>/dev/null
+          sudo pkill -f 'http.server 8080' 2>/dev/null
+          exit $fail
+
+      - name: Docker コンテナの権限（NET_ADMIN・ホストネットワーク・host-gateway）
+        id: docker
+        continue-on-error: true
+        run: |
+          set +e
+          fail=0
+          ok() { echo "PASS: $*"; }
+          ng() { echo "FAIL: $*"; fail=1; }
+          img=ubuntu:24.04
+
+          if docker pull -q "$img" >/dev/null; then ok "イメージの取得: $img"; else ng "イメージの取得: $img"; fi
+
+          if docker run --rm --cap-add NET_ADMIN "$img" bash -c 'apt-get update -qq >/dev/null && apt-get install -y -qq iproute2 >/dev/null && ip link add poc-dummy type dummy && ip link show poc-dummy >/dev/null'; then
+            ok "NET_ADMIN（ブリッジ網のコンテナで ip link を操作できる）"
+          else
+            ng "NET_ADMIN（ブリッジ網）"
+          fi
+
+          if docker run --rm --cap-add NET_ADMIN --network host "$img" bash -c 'apt-get update -qq >/dev/null && apt-get install -y -qq nftables >/dev/null && nft add table ip poc_from_container'; then
+            if sudo nft list table ip poc_from_container >/dev/null 2>&1; then
+              ok "network_mode: host のコンテナでの nft 変更が、ホストから見える"
+            else
+              ng "network_mode: host の nft 変更がホストから見えない"
+            fi
+            sudo nft delete table ip poc_from_container 2>/dev/null
+          else
+            ng "network_mode: host + NET_ADMIN"
+          fi
+
+          if docker run --rm --add-host host.docker.internal:host-gateway "$img" getent hosts host.docker.internal; then
+            ok "host.docker.internal（host-gateway）が解決できる"
+          else
+            ng "host.docker.internal の解決"
+          fi
+          exit $fail
+
+      - name: Playwright（chromium の導入と起動）
+        id: playwright
+        continue-on-error: true
+        run: |
+          set +e
+          fail=0
+          ok() { echo "PASS: $*"; }
+          ng() { echo "FAIL: $*"; fail=1; }
+
+          mkdir -p "$RUNNER_TEMP/pw" && cd "$RUNNER_TEMP/pw" || exit 1
+          npm init -y >/dev/null
+          if npm install --no-audit --no-fund playwright@1.63.0 >/dev/null 2>&1; then ok "playwright@1.63.0 の導入"; else ng "playwright@1.63.0 の導入"; fi
+
+          start=$(date +%s)
+          if npx playwright install --with-deps chromium >"$RUNNER_TEMP/pw-install.log" 2>&1; then
+            ok "chromium の導入（$(( $(date +%s) - start ))秒）"
+          else
+            ng "chromium の導入"
+            tail -30 "$RUNNER_TEMP/pw-install.log"
+          fi
+
+          python3 -m http.server 18080 --bind 127.0.0.1 >/dev/null 2>&1 &
+          srv=$!
+          sleep 1
+          cat > check.mjs <<'JS'
+          import { chromium } from "playwright";
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage();
+          await page.goto("http://127.0.0.1:18080/");
+          console.log("PAGE_STATUS:", (await page.content()).length > 0 ? "loaded" : "empty");
+          await page.setContent("<h1>poc</h1>");
+          console.log("H1:", await page.textContent("h1"));
+          await browser.close();
+          JS
+          if node check.mjs; then ok "chromium（headless）で起動し、ローカルのページを開ける"; else ng "chromium の起動"; fi
+          kill "$srv" 2>/dev/null
+          exit $fail
+
+      - name: 結果の集計
+        if: always()
+        env:
+          R_ENV: ${{ steps.env.outcome }}
+          R_NETNS: ${{ steps.netns.outcome }}
+          R_DOCKER: ${{ steps.docker.outcome }}
+          R_PW: ${{ steps.playwright.outcome }}
+        run: |
+          {
+            echo "## PoC 結果（GitHub-hosted runner）"
+            echo
+            echo "| 項目 | 結果 |"
+            echo "| --- | --- |"
+            echo "| 環境と権限 | $R_ENV |"
+            echo "| 透過ゲートウェイ（netns・NAT・Kill Switch） | $R_NETNS |"
+            echo "| Docker（NET_ADMIN・network_mode: host） | $R_DOCKER |"
+            echo "| Playwright（chromium） | $R_PW |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for r in "$R_ENV" "$R_NETNS" "$R_DOCKER" "$R_PW"; do
+            [ "$r" = success ] || { echo "PoC に失敗した項目があります（上のログの FAIL を参照）"; exit 1; }
+          done
+
+      - name: 後片付け
+        if: always()
+        run: |
+          sudo ip netns del client 2>/dev/null
+          sudo ip netns del gw 2>/dev/null
+          sudo ip netns del wan 2>/dev/null
+          sudo pkill -f 'http.server' 2>/dev/null || true
+          exit 0
