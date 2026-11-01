@@ -44,6 +44,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       const operator = await getV1Operator();
       if (cancelled) return;
+      // 作成状態を確認できない（200以外。APIへ到達できない等）ときは、初期設定画面へ進めない。
+      // 作成済みのシステムで初期設定を出さないため、ログイン画面に留め、送信時にその原因を示す。
+      if (operator.status !== 200) {
+        setAuth({ status: "login" });
+        return;
+      }
       if (!operator.data.configured) {
         setAuth({ status: "setup" });
         return;

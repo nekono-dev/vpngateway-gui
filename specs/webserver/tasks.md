@@ -41,3 +41,11 @@
 - [x] T-4.3: レイアウトと資材の受け入れテストと、スマートフォン幅の実ブラウザのテストを追加する。
 - 検証: `npx vitest run --config tests/vitest.config.ts tests/webserver/layout.test.ts`
 - E2E: `tests/e2e/dashboard.spec.ts` スマートフォン幅でダッシュボードを開く → ヘッダのタイトルが非表示になり、ページが横にスクロールしない
+
+## Phase 5: ログインの失敗応答
+
+- 対応: D-15
+- [x] T-5.1: ログインの非2xx応答を成功扱いしないようにし、通信例外を1回だけ再送する。起動時に作成状態を取得できないときは初期設定画面を出さない。
+- [x] T-5.2: 失敗応答と再送の受け入れテストと、実ブラウザのテストを追加する。
+- 検証: `npx vitest run --config tests/vitest.config.ts tests/webserver/auth.test.tsx`
+- E2E: `tests/e2e/auth.spec.ts` APIが502を返す状態でログインを送信 → ダッシュボードへ進まず「APIサーバに接続できません」が表示される

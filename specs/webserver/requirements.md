@@ -76,3 +76,6 @@
 - AC-25 (NFR-6): エラーは要約だけが通常表示され、生の出力は詳細の折りたたみの中にだけある。`tests/webserver/dashboard.test.tsx`
 - AC-26 (NFR-7): 動作検証の進行は、500ミリ秒ごとに取得される。`tests/webserver/verification.test.tsx`
 - AC-27 (NFR-8): ホーム画面への追加に必要なマニフェスト・アイコン・Service Workerが配信され、画面から参照される。`tests/webserver/layout.test.ts`
+- AC-28 (FR-2): ログイン画面は、401・429以外の失敗応答を成功として扱わず、APIのエラーの要約を表示する。`tests/webserver/auth.test.tsx`
+- AC-29 (FR-2): ログイン画面は、応答を得られなかった通信例外を1回だけ再送し、なお失敗したときだけ「APIサーバに接続できません」の要約を表示する。`tests/webserver/auth.test.tsx`
+- AC-30 (FR-2): 作成状態を確認できないとき（200以外の応答を受けたとき）は、初期設定画面を出さずログイン画面を表示する。`tests/webserver/auth.test.tsx`

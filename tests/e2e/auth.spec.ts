@@ -40,3 +40,29 @@ test("未認証でページを開くと初期設定画面になり、作成後�
   await page.getByRole("button", { name: "ログイン" }).click();
   await expect(page.getByRole("heading", { name: "VPNGateway-GUI" })).toBeVisible();
 });
+
+test("APIが502を返す状態でログインを送信すると、ダッシュボードへ進まずAPIサーバに接続できませんと表示する", async ({ page }) => {
+  await installMockApi(page, { configured: true, authenticated: false });
+  // 後から登録した経路が先に評価されるため、ログインの送信だけ502で応答させる（それ以外はモックへ戻す）。
+  await page.route("**/api/v1/operator/session", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    return route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "bad_gateway" }) });
+  });
+  await page.goto(server.url);
+  await expect(page.getByRole("heading", { name: "ログイン" })).toBeVisible();
+  await page.getByLabel("ユーザー名").fill("admin");
+  await page.getByLabel("パスワード").fill("correct-horse-battery");
+  await page.getByRole("button", { name: "ログイン" }).click();
+  await expect(page.getByRole("alert")).toHaveText("ログインに失敗しました（APIサーバに接続できません）");
+  await expect(page.getByRole("heading", { name: "VPNGateway-GUI" })).toHaveCount(0);
+});
+
+test("APIが502を返す状態で開くと、初期設定画面ではなくログイン画面を表示する", async ({ page }) => {
+  await installMockApi(page, { configured: true, authenticated: false });
+  await page.route("**/api/v1/operator", (route) =>
+    route.fulfill({ status: 502, contentType: "application/json", body: JSON.stringify({ error: "bad_gateway" }) }),
+  );
+  await page.goto(server.url);
+  await expect(page.getByRole("heading", { name: "ログイン" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "初期設定" })).toHaveCount(0);
+});
