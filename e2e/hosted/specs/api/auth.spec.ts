@@ -45,7 +45,8 @@ test.describe.serial("認証の制限・API の認証・管理者の変更（sta
     const before = Number(readFileSync("/proc/uptime", "utf8").split(" ")[0]);
     // 新しいクライアント（Cookie を持たない）で呼ぶ
     const anonymous = createApiClient({ baseUrl: API_BASE_URL, caPath: API_CA_PATH });
-    const res = await anonymous.post("/v1/gateway/reboot");
+    // 本文（再認証の password）は必要。空の本文は検証の段階で 400 になり、保護の判定に届かないため、本文を付ける
+    const res = await anonymous.post("/v1/gateway/reboot", { password: "not-the-password-1" });
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(statusOf(res)).toBe(401);

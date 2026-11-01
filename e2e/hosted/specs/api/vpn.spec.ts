@@ -82,9 +82,11 @@ test.describe.serial("VPN アカウントと接続（stack・api）", () => {
 
   test("3.3: ランナーを止めた状態で接続すると 502 か 504 を返し、接続状態は変わらない", async () => {
     
+    // 接続先の ID は、ランナーを止める前に得る（止めた後は一覧が得られない）
+    const id = await firstLocationId(client);
     await run("sudo", ["docker", "stop", runnerContainer("protonvpn")]);
     try {
-      const res = await client.put("/v1/connection", { connect: true, locationId: await firstLocationId(client) });
+      const res = await client.put("/v1/connection", { connect: true, locationId: id });
       expect(res.ok).toBe(false);
       if (res.ok) return;
       expect([502, 504]).toContain(res.kind === "http" ? res.status : 0);
