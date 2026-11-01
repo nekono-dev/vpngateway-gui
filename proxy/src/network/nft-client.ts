@@ -1,5 +1,5 @@
 // 責務: nftスクリプト文字列を`nft -f -`（標準入力からルールセットを読み込むモード）で実行する。
-// `iptables`コマンドは使わない（legacy/nftバックエンドの曖昧さを避けるため、proxyserver/design.md
+// `iptables`コマンドは使わない（legacy/nftバックエンドの曖昧さを避けるため
 // 「NAT/FORWARDルール」参照）。ルール文字列の組み立て（ruleset.ts）とは責務を分離する。
 
 import { spawn } from "node:child_process";

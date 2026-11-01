@@ -1,5 +1,5 @@
 // 責務: 「現在の接続先」と「実効選択（接続/変更ボタンの対象）」を、接続状態と接続先一覧から決める純粋関数。
-// 実効選択の優先順位は webserver/design.md D-7。
+// 実効選択の優先順位は
 
 import type { ConnectionState } from "../hooks/useDashboardPolling";
 import type { LocationItem } from "./location-filter";

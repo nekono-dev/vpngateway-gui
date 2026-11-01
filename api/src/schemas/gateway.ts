@@ -1,6 +1,6 @@
 // 責務: 稼働状況取得（`GET /v1/connection/gateway`）のレスポンスのTypeBoxスキーマ定義。
 // プロキシ内部エンドポイント`GET /status`のレスポンス検証（proxy-client.ts）とOpenAPI公開の双方の唯一の情報源。
-// ルート直下は機能ごとのオブジェクト（透過ゲートウェイ・Phase 4で追加した明示的プロキシ。apiserver/design.md参照）。
+// ルート直下は機能ごとのオブジェクト（透過ゲートウェイ・Phase 4で追加した明示的プロキシ）。
 
 import { Type, type Static } from "@sinclair/typebox";
 
@@ -60,7 +60,6 @@ export const GatewayStatusSchema = Type.Object({
   dnsRelay: Type.Optional(DnsRelayStatusSchema),
   // LAN側のネットワークCIDR（例: 192.168.3.0/24）。ゲートウェイ機がLAN_IFACE未設定、またはIPv4アドレスを
   // 検出できない場合は含まれない。Web UIの設定ダイアログで、明示的プロキシの許可CIDR欄の初期値に使う
-  // （webserver/requirements.md FR-9）。
   lanCidr: Type.Optional(Type.String()),
 });
 export type GatewayStatus = Static<typeof GatewayStatusSchema>;

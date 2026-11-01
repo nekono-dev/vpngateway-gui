@@ -1,6 +1,6 @@
 // 責務: ビルド済みSPAの配信と、`/api/*`のAPIコンテナへのリバースプロキシ。
-// ブラウザは常にこのサーバの単一オリジンにのみアクセスする（webserver/design.md参照）。
-// 通信路の保護（specs/webserver/requirements.md）: ブラウザ⇄webはHTTPS（自己署名サーバ証明書）、
+// ブラウザは常にこのサーバの単一オリジンにのみアクセスする。
+// 通信路の保護: ブラウザ⇄webはHTTPS（自己署名サーバ証明書）、
 // web⇄apiもHTTPSとし、APIサーバの証明書を`api-ca`で検証する（検証を無効化しない）。
 
 import Fastify from "fastify";

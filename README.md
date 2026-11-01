@@ -211,7 +211,7 @@ sudo vpngwgui-ctl uninstall --purge
 | `install-host.sh`（任意） | CLIがホスト（ベアメタル）側への追加導入を要する場合だけ |
 | `samples.json`（推奨） | 実CLIの出力サンプルと期待値（適合テストが使う） |
 
-詳細な仕様と各ファイルの書式は[specs/runner/design.md](specs/runner/design.md)のD-8を参照。
+各ファイルの書式は、既存の`vendors/adguardvpn/`・`vendors/protonvpn/`を参照。
 
 ## 開発
 

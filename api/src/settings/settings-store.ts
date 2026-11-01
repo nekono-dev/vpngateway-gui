@@ -1,6 +1,6 @@
 // 責務: ユーザ向け設定（Web UIから変更可能な運用設定）の永続化。
 // Phase 1では単一JSONファイルへのread-modify-writeで十分（低頻度更新・単一ユーザーLAN内運用のため）。
-// 同時書き込み競合の考慮は行わない（見直し候補。specs/apiserver/design.md D-9）。
+// 同時書き込み競合の考慮は行わない（見直し候補）。
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -61,7 +61,7 @@ function validateExcludedDomains(domains: string[]): void {
  * 入力: cidrs(検証対象のCIDR文字列配列)。
  * 出力: なし。不正な要素があればSettingsValidationErrorを投げる。
  * 理由: 値はproxyコンテナで3proxyの設定ファイルへ埋め込まれるため、設定行の注入や意図しない許可範囲の拡大を
- *      入口（保存前）で防ぐ（proxy側でも再検証する）。IPv6は本プロジェクトの対象外（proxyserver/design.md）。
+ *      入口（保存前）で防ぐ（proxy側でも再検証する）。IPv6は本プロジェクトの対象外。
  */
 function validateAllowedCidrs(cidrs: string[]): void {
   for (const cidr of cidrs) {

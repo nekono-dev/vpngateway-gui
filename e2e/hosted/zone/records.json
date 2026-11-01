@@ -1,0 +1,10 @@
+{
+  "records": [
+    { "name": "echo.bypass.test", "a": "192.168.50.254" },
+    { "name": "dns.e2e.test", "a": "192.168.50.254" },
+    { "name": "relay.e2e.test", "a": "192.168.50.254" }
+  ],
+  "directAnswers": [
+    { "name": "redirect.e2e.test", "a": "203.0.113.99" }
+  ]
+}

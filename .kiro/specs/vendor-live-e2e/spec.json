@@ -1,0 +1,22 @@
+{
+  "feature_name": "vendor-live-e2e",
+  "created_at": "2026-11-01T06:05:57Z",
+  "updated_at": "2026-11-01T07:32:11Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

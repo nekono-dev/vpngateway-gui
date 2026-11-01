@@ -1,7 +1,7 @@
 // 責務: 明示的プロキシ（3proxy）プロセスの起動・停止・監視・異常終了時の再起動（指数バックオフ）と、
 // 現在の稼働状況（`GET /status`用）の保持。設定内容の文字列化はconfig-builder.tsが担い、
 // 本ファイルは「いつ起動・再起動・停止するか」の調停のみを行う（GatewayControllerと同じ責務分離）。
-// VPN接続状態の変化では再起動しない（3proxyはOSのルーティングに自動追従するため。proxyserver/design.md参照）。
+// VPN接続状態の変化では再起動しない（3proxyはOSのルーティングに自動追従するため）。
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -19,7 +19,7 @@ export interface ExplicitProxySettings {
 // crashLoop: 起動直後の異常終了を連続して繰り返している / error: 設定ファイルの生成・書き込みに失敗。
 export type ExplicitProxyState = "active" | "stopped" | "unconfigured" | "crashLoop" | "error";
 
-// `GET /status`が返す稼働状況（apiserver/design.md D-9と同形状）。
+// `GET /status`が返す稼働状況。
 export interface ExplicitProxyStatus {
   state: ExplicitProxyState;
   // 稼働中（state=active）のみ含める。

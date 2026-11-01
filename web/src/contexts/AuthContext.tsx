@@ -1,5 +1,5 @@
 // 責務: Web UI利用者の認証状態（未設定／未ログイン／ログイン済み）の判定・保持と、
-// ログイン画面への強制遷移。webserver/design.md D-2参照。
+// ログイン画面への強制遷移。
 // API呼び出しは生成クライアント以外を使わない。
 
 import {
@@ -32,7 +32,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // ログイン済みの間、この間隔でセッションの有効性を確認する。以後のいずれかのAPI呼び出しが401を返した場合も
-// ログイン画面へ切り替えるという方針（webserver/design.md）を、個々の呼び出し箇所ごとに実装する代わりに、
+// ログイン画面へ切り替えるという方針を、個々の呼び出し箇所ごとに実装する代わりに、
 // ダッシュボードのポーリング間隔（5秒、hooks/useDashboardPolling.ts）に合わせたこの定期確認でまかなう。
 const SESSION_CHECK_INTERVAL_MS = 5000;
 

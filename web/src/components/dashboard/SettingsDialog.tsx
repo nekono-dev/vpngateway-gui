@@ -1,8 +1,7 @@
 // 責務: ユーザ向け設定（`GET`/`PUT /v1/connection/config`）をモーダルダイアログとして編集する。
-// ページ遷移は行わず、保存はダイアログ内の保存ボタン押下時に一括でPUTする
-// （webserver/requirements.md FR-9「設定ダイアログの入力項目」参照）。
+// ページ遷移は行わず、保存はダイアログ内の保存ボタン押下時に一括でPUTする。
 // 入力項目はタブで切り替えて表示する（同「設定ダイアログのタブ化」）。設定値・保存は全タブで1つ。
-// 「動作検証」タブで、保存済みの設定が実際に動作しているかを検証する（webserver/design.md D-11）。
+// 「動作検証」タブで、保存済みの設定が実際に動作しているかを検証する。
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -27,7 +26,7 @@ interface Props {
   open: boolean;
   onClose: () => void;
   // ゲートウェイ機のLAN側ネットワークCIDR（例: 192.168.3.0/24）。取得できていれば、明示的プロキシの
-  // 許可CIDR欄が空のときの初期値に使う（webserver/requirements.md FR-9）。
+  // 許可CIDR欄が空のときの初期値に使う。
   defaultExplicitProxyAllowedCidr?: string;
 }
 
@@ -156,8 +155,7 @@ export function SettingsDialog({
   }
 
   // 明示的プロキシが有効なのに、有効な（IPv4 CIDR形式の）許可CIDRが1つも無い場合は保存できない
-  // （APIサーバ側でも許可CIDR自体の形式検証は行うが、ここでは「1件も無い」状態を保存前に防ぐ。
-  // webserver/requirements.md FR-9）。
+  // APIサーバ側でも許可CIDR自体の形式検証は行うが、ここでは「1件も無い」状態を保存前に防ぐ。
   const hasValidExplicitProxyAllowedCidr =
     settings?.explicitProxyAllowedCidrs.some((cidr) =>
       isIpv4Cidr(cidr.trim()),

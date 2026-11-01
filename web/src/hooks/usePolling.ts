@@ -1,5 +1,5 @@
 // 責務: 任意の取得関数を一定間隔でポーリングする汎用フック。画面表示中（タブがvisible）のみポーリングする。
-// webserver/design.md D-3参照（WebSocket等のプッシュ型通信は初期実装では採用しない）。
+//（WebSocket等のプッシュ型通信は初期実装では採用しない）。
 // ドメイン型に依存しない（ポータビリティテスト適合）ため hooks/ 直下に置く。
 
 import { useEffect, useState } from "react";

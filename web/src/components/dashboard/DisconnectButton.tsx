@@ -1,5 +1,5 @@
 // 責務: 切断ボタン単体の描画のみを行う。押し間違いを避けつつ押しやすい位置（SessionCardのログイン/
-// ログアウト導線の隣）に置けるよう、独立した部品として切り出した（webserver/requirements.md FR-7）。
+// ログアウト導線の隣）に置けるよう、独立した部品として切り出した。
 import type { CapabilitiesState } from "../../hooks/useDashboardPolling";
 import { reasonOf } from "../../capabilities/capability-state";
 import { RestrictionNote } from "./RestrictionNote";

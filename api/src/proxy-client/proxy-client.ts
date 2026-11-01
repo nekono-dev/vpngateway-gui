@@ -1,6 +1,6 @@
 // 責務: APIコンテナから、ゲートウェイ（`proxy`が単一の窓口として公開するmTLS TCP、既定ポート8443・
 // 環境変数GATEWAY_PORT）へ、ベンダー別のランナー宛（コマンド実行・利用可否）とネットワークコンテナ宛
-// （設定反映・稼働状況・接続状態の再確認）の要求を送信する。apiserver/design.md D-3
+// （設定反映・稼働状況・接続状態の再確認）の要求を送信する。
 // 「ゲートウェイとの内部通信仕様」参照。この経路はOpenAPI非公開の内部チャネル。
 // Phase 25で、Phase 11以来のUDS（`ctl-socket`ボリューム上の`net.sock`・`runner-<ベンダーID>.sock`）を廃止し、
 // mTLS TCP（`undici`の`Agent({ connect: { ca, cert, key } })`）へ変更した。ゲートウェイ1台に対し1つの
@@ -98,7 +98,6 @@ const SettingsResultSchema = Type.Object({
 /**
  * 目的: ユーザ向け設定の最新値をネットワークコンテナの`/net/settings`へ通知し、nftables等への実反映を要求する。
  *      `executeVendorCommand`（VPNベンダーCLI実行系）とは別の内部プロトコルのため、最初から関数を分離する
- *      （proxyserver/design.md D-9参照）。
  * 入力: settings(UserSettings全体。プロキシ側が実際に用いるのはkillSwitch/transparentGatewayEnabledのみだが、
  *      将来のPhase 4（explicitProxyEnabled等）に備え全体を送信する)。
  * 出力: プロキシがルール再構成を実際に適用できたか（applied）。
@@ -204,7 +203,7 @@ export async function requestConnectionCheck(): Promise<boolean> {
   }
 }
 
-// 設定の動作検証（Phase 27）: ゲートウェイで実行する1項目の結果（proxyserver/design.md D-11の内部エンドポイント）。
+// 設定の動作検証（Phase 27）: ゲートウェイで実行する1項目の結果（内部エンドポイント）。
 const GatewayCheckResultSchema = Type.Object({
   id: Type.String(),
   status: Type.Union([Type.Literal("pass"), Type.Literal("fail"), Type.Literal("unconfirmed")]),
