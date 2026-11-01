@@ -15,7 +15,8 @@ export const test = base.extend<{ watchedPage: Page; pageErrors: PageErrors }>({
   watchedPage: async ({ page, pageErrors }, use) => {
     page.on("pageerror", (error) => pageErrors.messages.push(`pageerror: ${error.message}`));
     page.on("console", (message) => {
-      if (message.type() === "error") pageErrors.messages.push(`console.error: ${message.text()}`);
+      // 発生元の URL を添える（失敗の原因を、成果物の結果から特定できるように）
+      if (message.type() === "error") pageErrors.messages.push(`console.error: ${message.text()} (${message.location().url})`);
     });
     await use(page);
     // error のイベントは、試験の本体の後に届くことがあるため、少し待ってから集めた一覧を確かめる
