@@ -13,3 +13,16 @@ sudo docker compose --project-directory /opt/vpngwgui ps > "$OUT/compose-ps.txt"
 sudo docker compose --project-directory /opt/vpngwgui logs --no-color --tail 300 > "$OUT/compose-logs.txt" 2>&1 || true
 sudo systemctl list-units 'vpngwgui*' --no-pager > "$OUT/units.txt" 2>&1 || true
 exit 0
+# ランナーへ直接 status を送り、応答の形（ExecResult か）を記録する（API の 500 の切り分け用）
+for v in protonvpn adguardvpn; do
+  bin=/usr/bin/protonvpn
+  [ "$v" = adguardvpn ] && bin=/usr/local/bin/adguardvpn-cli
+  sudo docker exec "vpngwgui-runner-$v-1" node -e "
+    const http = require('http');
+    const body = JSON.stringify({ vendor: '$v', binary: '$bin', resolvedArgv: ['status'], timeoutMs: 15000 });
+    const req = http.request({ socketPath: process.env.CTL_SOCKET_PATH, path: '/exec', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, (res) => {
+      let data = ''; res.on('data', (c) => (data += c)); res.on('end', () => console.log(res.statusCode, data));
+    });
+    req.on('error', (e) => console.log('error', e.message)); req.end(body);
+  " > "$OUT/runner-exec-$v.txt" 2>&1 || true
+done
