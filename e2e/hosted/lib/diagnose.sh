@@ -12,7 +12,6 @@ sudo nft list ruleset > "$OUT/nft.txt" 2>&1 || true
 sudo docker compose --project-directory /opt/vpngwgui ps > "$OUT/compose-ps.txt" 2>&1 || true
 sudo docker compose --project-directory /opt/vpngwgui logs --no-color --tail 300 > "$OUT/compose-logs.txt" 2>&1 || true
 sudo systemctl list-units 'vpngwgui*' --no-pager > "$OUT/units.txt" 2>&1 || true
-exit 0
 # ランナーへ直接 status を送り、応答の形（ExecResult か）を記録する（API の 500 の切り分け用）
 for v in protonvpn adguardvpn; do
   bin=/usr/bin/protonvpn
@@ -26,3 +25,4 @@ for v in protonvpn adguardvpn; do
     req.on('error', (e) => console.log('error', e.message)); req.end(body);
   " > "$OUT/runner-exec-$v.txt" 2>&1 || true
 done
+exit 0
