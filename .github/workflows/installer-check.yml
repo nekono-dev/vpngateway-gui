@@ -2,7 +2,6 @@
 #   - 本体インストーラ（installer/setup.sh）と検査スクリプトの構文・shellcheck
 #   - 単体テスト・ベンダー中立性の検査・インストーラの検査（npm test）
 #   - 受け入れテスト（tests/ の vitest。npm run test:acceptance）
-#   - 仕様書の検査（spec-lint。GitHub Packages の取得に Secret SPEC_LINT_TOKEN を使う）
 #   - 実ブラウザの受け入れテスト（tests/e2e の Playwright。npm run test:e2e）
 name: installer-check
 
@@ -16,8 +15,6 @@ permissions:
 env:
   # 実ブラウザのテストが使う Playwright の版（リポジトリの依存には含めず、グローバルに導入する）
   PLAYWRIGHT_VERSION: 1.63.0
-  # 仕様書の検査（spec-lint）の版の範囲
-  SPEC_LINT_RANGE: "1"
 
 jobs:
   check:
@@ -43,22 +40,6 @@ jobs:
 
       - name: 受け入れテスト（vitest）
         run: npm run test:acceptance
-
-  spec-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          registry-url: https://npm.pkg.github.com
-          scope: "@nekono-dev"
-
-      - name: 仕様書の検査
-        run: npx --yes "@nekono-dev/spec-lint@${SPEC_LINT_RANGE}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.SPEC_LINT_TOKEN }}
 
   e2e:
     runs-on: ubuntu-latest

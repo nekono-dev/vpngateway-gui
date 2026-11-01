@@ -19,3 +19,6 @@ web/src/generated/
 # Playwrightの実ブラウザのテストの出力
 test-results/
 playwright-report/
+
+.claude/skills/kiro-*/
+.agents/skills/kiro-*/
