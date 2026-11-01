@@ -109,7 +109,7 @@ jobs:
           sudo ls -l /etc/vpngwgui/pki/ || true
           curl -s --cacert "$(provision_export_ca)" -o /dev/null -w 'api: %{http_code}\n' "https://127.0.0.1:3000/v1/operator" || true
 
-      - name: モックのランナー（1.10）: 許可バイナリ・/health・モック CLI の応答
+      - name: "モックのランナー（1.10）: 許可バイナリ・/health・モック CLI の応答"
         run: |
           set -eux
           for v in protonvpn adguardvpn; do
@@ -122,7 +122,7 @@ jobs:
           sudo docker exec vpngwgui-runner-adguardvpn-1 /usr/local/bin/adguardvpn-cli license || true
           sudo docker compose --project-directory /opt/vpngwgui config | grep -A3 'runner-protonvpn:' | grep dockerfile || true
 
-      - name: Playwright の基盤（1.12）: 空の試験が headless Chromium で起動する
+      - name: "Playwright の基盤（1.12）: 空の試験が headless Chromium で起動する"
         run: |
           set -eux
           npm ci --no-audit --no-fund >/dev/null
