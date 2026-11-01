@@ -25,7 +25,7 @@ provision_install() {
   sh "$checkout/installer/build-bootstrap.sh" refs/heads/e2e-install "$commit" "file://$checkout" > "$E2E_WORK_DIR/install.sh"
   sudo sh "$E2E_WORK_DIR/install.sh" install \
     --set PROVIDERS=protonvpn,adguardvpn \
-    --set LAN_IFACE="$E2E_BRIDGE" \
+    --set LAN_IFACE="${E2E_INSTALL_LAN_IFACE:-$E2E_BRIDGE}" \
     --set WEB_PORT="$E2E_WEB_PORT"
 }
 

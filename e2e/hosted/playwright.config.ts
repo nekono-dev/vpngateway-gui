@@ -9,7 +9,8 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   outputDir: "../artifacts/hosted/test-output",
-  reporter: [["json", { outputFile: "../artifacts/hosted/playwright.json" }], ["list"]],
+  // 群ごとに別の JSON へ書く（run.sh が E2E_JSON_OUT を群ごとに与える）
+  reporter: [["json", { outputFile: process.env.E2E_JSON_OUT ?? "../artifacts/hosted/playwright.json" }], ["list"]],
   use: {
     baseURL: "https://127.0.0.1:18080",
     trace: "retain-on-failure",
@@ -17,5 +18,6 @@ export default defineConfig({
   },
   projects: [
     { name: "smoke", testMatch: /smoke\/.*\.spec\.ts/ },
+    { name: "lifecycle", testMatch: /lifecycle\/.*\.spec\.ts/ },
   ],
 });
