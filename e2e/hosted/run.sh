@@ -20,6 +20,9 @@ RESULT_FILE="$ARTIFACTS/groups.txt"
 run_group() {
   group="$1"
   prep="$2"
+  # 群の実行プロジェクト（stack は ui → api の順に依存で実行される api を指定する）
+  project="$group"
+  [ "$group" = stack ] && project="stack-api"
   if [ -n "$prep" ]; then
     if ! prepare_group "$prep"; then
       echo "$group prepare-failed" >> "$RESULT_FILE"
@@ -27,7 +30,7 @@ run_group() {
       return 2
     fi
   fi
-  E2E_JSON_OUT="$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$group"
+  E2E_JSON_OUT="$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project"
   rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "$group pass" >> "$RESULT_FILE"
@@ -57,7 +60,13 @@ overall=0
 # 群の順序: lifecycle（導入を試験自身が行う）→ stack（導入・起動）→ gateway（経路を使う）
 run_group lifecycle "" || overall=$?
 for group in stack gateway; do
-  if ! ls e2e/hosted/specs/"$group"/*.spec.ts >/dev/null 2>&1; then
+  # stack 群は specs/ui と specs/api からなる（ui が先に実行される）
+  case "$group" in
+    stack) dirs="e2e/hosted/specs/ui e2e/hosted/specs/api" ;;
+    *) dirs="e2e/hosted/specs/$group" ;;
+  esac
+  # shellcheck disable=SC2086
+  if ! ls $dirs/*.spec.ts >/dev/null 2>&1; then
     echo "$group skipped" >> "$RESULT_FILE"
     continue
   fi
