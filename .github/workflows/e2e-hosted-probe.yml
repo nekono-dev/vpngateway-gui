@@ -3,6 +3,9 @@
 name: e2e-hosted-probe
 
 on:
+  push:
+    branches: [feat/e2e-tests]
+    paths: [".github/workflows/e2e-hosted-probe.yml"]
   workflow_dispatch:
 
 permissions:
