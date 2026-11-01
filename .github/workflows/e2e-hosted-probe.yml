@@ -1,11 +1,11 @@
-# 一時的な確認（e2e-tests 1.1）: GitHub-hosted runner で systemd の degraded の原因を切り分ける。
-# 手動起動（workflow_dispatch）のみ。確認が済んだら削除する。
+# 一時的な確認（e2e-tests 1.1・1.6）: GitHub-hosted runner で、systemd の状態と、単一ブリッジの構成（topology）を確かめる。
+# 確認が済んだら削除する。
 name: e2e-hosted-probe
 
 on:
   push:
     branches: [feat/e2e-tests]
-    paths: [".github/workflows/e2e-hosted-probe.yml"]
+    paths: [".github/workflows/e2e-hosted-probe.yml", "e2e/hosted/lib/**"]
   workflow_dispatch:
 
 permissions:
@@ -13,33 +13,35 @@ permissions:
 
 jobs:
   probe:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
     steps:
-      - name: OS と権限
-        run: |
-          . /etc/os-release && echo "OS: $PRETTY_NAME"
-          uname -r
-          sudo -n true && echo "sudo: OK"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: systemd の状態（degraded の原因）
         run: |
-          echo "--- systemctl is-system-running"
           systemctl is-system-running || true
-          echo "--- 失敗している単位"
           systemctl --failed --no-pager || true
-          echo "--- vpngwgui 系の単位（存在の確認）"
           systemctl list-unit-files --no-pager | grep -i vpngwgui || echo "vpngwgui 系の単位は無い"
-          echo "--- 失敗している単位の詳細（上位 5 件）"
-          for u in $(systemctl --failed --no-legend --plain | awk '{print $1}' | head -5); do
-            echo "=== $u"
-            systemctl status "$u" --no-pager -n 20 || true
-          done
 
-      - name: 基盤の前提（netns・nftables・Docker）
+      - name: 単一ブリッジの構成（topology）の往復
         run: |
-          sudo ip netns add probe && sudo ip netns exec probe ip link show lo >/dev/null && echo "netns: OK"
-          sudo ip netns del probe
-          sudo apt-get install -y -qq nftables >/dev/null 2>&1 && sudo nft list tables >/dev/null && echo "nftables: OK"
-          docker version --format '{{.Server.Version}}' && docker compose version --short
-          ip route show default
+          set -eux
+          sudo apt-get install -y -qq nftables iproute2 >/dev/null
+          . e2e/hosted/lib/topology.sh
+          route_of() { ip -4 route show default | head -n 1 | sed -n 's/.*via \([^ ]*\) dev \([^ ]*\).*/\1 \2/p'; }
+          before="$(route_of)"
+          echo "before: $before"
+          topology_up
+          ip route get 1.1.1.1
+          test "$(ip route get 192.168.50.254 | sed -n 's/.* dev \([^ ]*\).*/\1/p')" = "e2eseg"
+          lan_exec ping -c 2 -W 2 192.168.50.254
+          topology_down
+          after="$(route_of)"
+          echo "after: $after"
+          test "$before" = "$after"
+          ip netns list | grep -E '^(lan|isp|vpnexit)' && exit 1 || true
+          ip link show e2eseg 2>/dev/null && exit 1 || true
+          echo "topology: 往復 OK"
