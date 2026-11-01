@@ -37,6 +37,17 @@ export async function installer(args: readonly string[]): Promise<ShellResult> {
   return { stdout, stderr };
 }
 
+/**
+ * 目的: 導入済みの制御コマンド（vpngwgui-ctl）を管理者権限で実行する（status・update・refs）。
+ * install.sh（bootstrap）は install・uninstall だけを持つため、status と update はこちらを使う。
+ * 入力: args（制御コマンドの引数）。
+ * 出力: 標準出力と標準エラー。終了コードが 0 以外なら例外。
+ */
+export async function control(args: readonly string[]): Promise<ShellResult> {
+  const { stdout, stderr } = await run("sudo", ["vpngwgui-ctl", ...args], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  return { stdout, stderr };
+}
+
 /** 管理者権限で、パスが存在するかを確かめる（存在すれば true）。 */
 export async function exists(path: string): Promise<boolean> {
   try {

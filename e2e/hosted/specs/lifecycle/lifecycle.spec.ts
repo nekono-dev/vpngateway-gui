@@ -4,7 +4,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { test, expect } from "@playwright/test";
-import { exists, installer, shell, INSTALLER } from "../../fixtures/installer";
+import { control, exists, installer, shell, INSTALLER } from "../../fixtures/installer";
 
 const run = promisify(execFile);
 const CONF = "/etc/vpngwgui";
@@ -57,15 +57,15 @@ test.describe.serial("導入・更新・削除（lifecycle）", () => {
   });
 
   test("9.1: 導入の後、status が導入済み（導入先・コミット）を示す", async () => {
-    const status = await installer(["status"]);
+    const status = await control(["status"]);
     expect(status.stdout).toContain("導入先:");
     expect(status.stdout).toContain(head.slice(0, 7));
   });
 
   test("9.2: 別のコミットへ更新すると、status にその版が反映される", async () => {
     await run("git", ["branch", "-f", "e2e-older", previous]);
-    await installer(["update", "--ref", "e2e-older"]);
-    const status = await installer(["status"]);
+    await control(["update", "--ref", "e2e-older"]);
+    const status = await control(["status"]);
     expect(status.stdout).toContain(previous.slice(0, 7));
   });
 
@@ -83,7 +83,7 @@ test.describe.serial("導入・更新・削除（lifecycle）", () => {
     await installer(["uninstall", "--purge"]);
     expect(await exists(CONF), "設定が残っている").toBe(false);
     expect(await exists(DATA), "データが残っている").toBe(false);
-    const status = await installer(["status"]);
+    const status = await control(["status"]);
     expect(status.stdout).toContain("未導入");
   });
 });
