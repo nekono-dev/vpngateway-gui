@@ -57,19 +57,12 @@ jobs:
           route_of() { ip -4 route show default | head -n 1 | sed -n 's/.*via \([^ ]*\) dev \([^ ]*\).*/\1 \2/p'; }
           before="$(route_of)"
           topology_up
-          cat > "$RUNNER_TEMP/tunnel-check.ts" <<'TS'
-          import { createNetwork } from "/home/runner/work/vpngateway-gui/vpngateway-gui/e2e/hosted/vendors/mock-cli/network.ts";
-          const network = createNetwork("e2e/hosted/.work/mock-route.txt");
-          network.connect();
-          network.connect();
-          TS
-          npx tsx "$RUNNER_TEMP/tunnel-check.ts"
+          npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; const n = createNetwork("e2e/hosted/.work/mock-route.txt"); n.connect(); n.connect();'
           ip route get 1.1.1.1
           test "$(ip route get 1.1.1.1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')" = "vpn0"
           ip -n vpnexit addr show vpn0x
           sudo ip netns exec vpnexit ping -c 1 -W 2 10.66.0.1
           npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; createNetwork("e2e/hosted/.work/mock-route.txt").disconnect();'
-          test "$(route_of)" = "$(echo "$before" | sed 's/.*//')" -o true
           ip route get 1.1.1.1 | grep -q e2eseg && echo "経路: e2eseg（ISP 経由）" || true
           topology_down
           test "$(route_of)" = "$before"
