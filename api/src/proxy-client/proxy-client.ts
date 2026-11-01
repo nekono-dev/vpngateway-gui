@@ -78,6 +78,14 @@ export async function executeVendorCommand(providerId: string, input: ExecInput)
       bodyTimeout,
       headersTimeout: bodyTimeout,
     });
+    // 状態コードを先に見る。プロキシは、ランナーに届かないとき 502（runner_unavailable）、応答しないとき 504 を返す。
+    // これらを ExecResult の形状として検証すると、原因（ランナーの停止）が 500 の一般エラーに隠れてしまう。
+    if (response.statusCode !== 200) {
+      await response.body.text().catch(() => undefined);
+      if (response.statusCode === 502) throw new ProxyUnavailableError(`runner unavailable (proxy status 502) for ${providerId}`);
+      if (response.statusCode === 504) throw new ProxyTimeoutError(`runner did not respond (proxy status 504) for ${providerId}`);
+      throw new Error(`unexpected status from proxy: ${response.statusCode}`);
+    }
     const body: unknown = await response.body.json();
     if (!Value.Check(ExecResultSchema, body)) {
       const errors = [...Value.Errors(ExecResultSchema, body)].slice(0, 5);
