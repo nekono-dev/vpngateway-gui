@@ -48,6 +48,7 @@ jobs:
           echo "topology: 往復 OK"
 
       - name: VPN トンネルの接続・切断（モック CLI の経路操作）
+        timeout-minutes: 4
         run: |
           set -eux
           sudo apt-get install -y -qq iproute2 >/dev/null
@@ -72,3 +73,11 @@ jobs:
           topology_down
           test "$(route_of)" = "$before"
           echo "tunnel: OK"
+
+      - name: 後始末（既定経路と構成を戻す）
+        if: always()
+        run: |
+          . e2e/hosted/lib/env.sh
+          . e2e/hosted/lib/topology.sh
+          topology_down || true
+          ip -4 route show default || true
