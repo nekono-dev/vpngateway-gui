@@ -98,7 +98,7 @@
   - _Depends: 1.1, 1.11_
   - _Requirements: 1.2, 9.1_
 
-- [ ] 1.14 (P) 共有の API 応答の型（api-types）を作る
+- [x] 1.14 (P) 共有の API 応答の型（api-types）を作る
   - 両 spec が使う API 応答の型（セッション・ベンダー・接続・検証・設定）を定義する
   - 型は api/openapi.json（export-openapi の生成物）の該当スキーマと一致させる
   - 完了の状態: 型検査が通り、使う経路の型が openapi の該当スキーマと一致することを単体テストで確かめる
