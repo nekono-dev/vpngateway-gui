@@ -109,6 +109,26 @@ jobs:
           sudo ls -l /etc/vpngwgui/pki/ || true
           curl -s --cacert "$(provision_export_ca)" -o /dev/null -w 'api: %{http_code}\n' "https://127.0.0.1:3000/v1/operator" || true
 
+      - name: モックのランナー（1.10）: 許可バイナリ・/health・モック CLI の応答
+        run: |
+          set -eux
+          for v in protonvpn adguardvpn; do
+            c="vpngwgui-runner-$v-1"
+            sudo docker exec "$c" sh -c 'echo "RUNNER_ALLOWED_BINARY=$RUNNER_ALLOWED_BINARY"; ls -l "$RUNNER_ALLOWED_BINARY"'
+            sudo docker exec "$c" node -e "require('http').get({socketPath: process.env.CTL_SOCKET_PATH, path: '/health'}, r => { console.log('health', r.statusCode); r.resume(); })"
+          done
+          sudo docker exec vpngwgui-runner-protonvpn-1 /usr/bin/protonvpn status
+          sudo docker exec vpngwgui-runner-protonvpn-1 /usr/bin/protonvpn config list || true
+          sudo docker exec vpngwgui-runner-adguardvpn-1 /usr/local/bin/adguardvpn-cli license || true
+          sudo docker compose --project-directory /opt/vpngwgui config | grep -A3 'runner-protonvpn:' | grep dockerfile || true
+
+      - name: Playwright の基盤（1.12）: 空の試験が headless Chromium で起動する
+        run: |
+          set -eux
+          npm ci --no-audit --no-fund >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+          npx playwright test -c e2e/hosted/playwright.config.ts
+
       - name: 後始末（既定経路と構成を戻す）
         if: always()
         run: |
