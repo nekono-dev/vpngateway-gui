@@ -70,13 +70,15 @@ test.describe.serial("導入・更新・削除（lifecycle）", () => {
   });
 
   test("9.3 / 9.4: --purge なしの削除で、サービスの定義・ホストの規則・取得先は消え、設定とデータは残る", async () => {
+    // データは、導入の直後には作られていないことがある。残ることを確かめるため、目印のファイルを置いてから削除する
+    await run("sudo", ["sh", "-c", `mkdir -p ${DATA} && echo e2e > ${DATA}/e2e-marker`]);
     await installer(["uninstall"]);
     const units = await run("sh", ["-c", "systemctl list-unit-files 'vpngwgui*' --no-legend | wc -l"], { encoding: "utf8" });
     expect(units.stdout.trim()).toBe("0");
     expect(await exists(SRC), "取得先（/opt/vpngwgui）が残っている").toBe(false);
     expect(await nftTableAbsent(), "nftables の規則が残っている").toBe(true);
     expect(await exists(CONF), "設定（/etc/vpngwgui）が残っていない").toBe(true);
-    expect(await exists(DATA), "データ（/var/lib/vpngwgui）が残っていない").toBe(true);
+    expect(await exists(`${DATA}/e2e-marker`), "データ（/var/lib/vpngwgui）が残っていない").toBe(true);
   });
 
   test("9.5 / 9.6: --purge で設定とデータが消え、status が未導入を示す", async () => {
