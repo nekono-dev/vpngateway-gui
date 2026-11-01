@@ -18,7 +18,8 @@ export const test = base.extend<{ watchedPage: Page; pageErrors: PageErrors }>({
       if (message.type() === "error") pageErrors.messages.push(`console.error: ${message.text()}`);
     });
     await use(page);
-    // 試験の本体が終わった後に、集めた error が無いことを確かめる
+    // error のイベントは、試験の本体の後に届くことがあるため、少し待ってから集めた一覧を確かめる
+    await page.waitForTimeout(200);
     expect(pageErrors.messages, "JavaScript の error が出ている").toEqual([]);
   },
 });
