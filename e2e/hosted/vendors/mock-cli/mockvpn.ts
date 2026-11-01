@@ -28,6 +28,8 @@ export interface Network {
 export interface MockControl {
   readonly disconnectFails?: boolean;
   readonly responseDelayMs?: number;
+  // ログインを失敗させる（資格情報の誤り。要件 3.7 の模擬）
+  readonly loginFails?: boolean;
 }
 
 /** CLI の実行結果。 */
@@ -88,6 +90,9 @@ export function runCommand(
   // 切断の失敗の注入: 状態は変えず、経路も戻さない（試験は残った接続を検出する）
   if (command === "disconnect" && control.disconnectFails === true) {
     return { exitCode: 1, stdout: DISCONNECT_FAILURE_OUTPUT };
+  }
+  if ((command === "signin" || command === "login") && control.loginFails === true) {
+    return { exitCode: 1, stdout: "Error: Invalid credentials\n" };
   }
   if (vendor === "protonvpn") return runProton(command, rest, state, network, stdin);
   return runAdGuard(command, rest, state, network);

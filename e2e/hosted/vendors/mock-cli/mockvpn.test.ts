@@ -94,4 +94,11 @@ describe("接続・切断と経路の操作", () => {
     expect(network.calls).toEqual([]);
     expect(state.connected).toBe(true);
   });
+
+  it("ログインの失敗の制御を与えると、signin は失敗し、ログイン状態は変わらない（要件 3.7 の模擬）", () => {
+    const state: MockState = { loggedIn: false, plan: "unknown", connected: false };
+    const out = runCommand("protonvpn", ["signin", "--totp", "user"], state, recorder(), ["pw"], { loginFails: true });
+    expect(out.exitCode).toBe(1);
+    expect(state.loggedIn).toBe(false);
+  });
 });
