@@ -6,7 +6,7 @@
 # 注意: 既定経路を変えるため、ssh などのホストの通信は、topology_down まで届かなくなる。
 #       開発サーバ（devSrv）では実行しない。hosted runner（使い捨て）でだけ実行する。
 
-. "$(dirname "$0")/env.sh"
+# 呼び出し側が先に env.sh を読むこと（. e2e/hosted/lib/env.sh）。ここでは読み直さない（source 時の $0 が呼び出し元を指すため）
 
 # 既定経路の退避: 変更の前の既定経路（"via X dev Y ..."）を 1 行で保存する
 topology_save_route() {
