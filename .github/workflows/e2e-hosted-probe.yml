@@ -1,0 +1,42 @@
+# 一時的な確認（e2e-tests 1.1）: GitHub-hosted runner で systemd の degraded の原因を切り分ける。
+# 手動起動（workflow_dispatch）のみ。確認が済んだら削除する。
+name: e2e-hosted-probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: OS と権限
+        run: |
+          . /etc/os-release && echo "OS: $PRETTY_NAME"
+          uname -r
+          sudo -n true && echo "sudo: OK"
+
+      - name: systemd の状態（degraded の原因）
+        run: |
+          echo "--- systemctl is-system-running"
+          systemctl is-system-running || true
+          echo "--- 失敗している単位"
+          systemctl --failed --no-pager || true
+          echo "--- vpngwgui 系の単位（存在の確認）"
+          systemctl list-unit-files --no-pager | grep -i vpngwgui || echo "vpngwgui 系の単位は無い"
+          echo "--- 失敗している単位の詳細（上位 5 件）"
+          for u in $(systemctl --failed --no-legend --plain | awk '{print $1}' | head -5); do
+            echo "=== $u"
+            systemctl status "$u" --no-pager -n 20 || true
+          done
+
+      - name: 基盤の前提（netns・nftables・Docker）
+        run: |
+          sudo ip netns add probe && sudo ip netns exec probe ip link show lo >/dev/null && echo "netns: OK"
+          sudo ip netns del probe
+          sudo apt-get install -y -qq nftables >/dev/null 2>&1 && sudo nft list tables >/dev/null && echo "nftables: OK"
+          docker version --format '{{.Server.Version}}' && docker compose version --short
+          ip route show default
