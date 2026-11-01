@@ -92,6 +92,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: "Playwright の導入（外部の取得は既定経路を変える前に行う）"
+        run: |
+          set -eux
+          npm ci --no-audit --no-fund >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+
       - name: 導入（本番の経路）→ E2E 用の上書きで起動 → 既定経路の切り替え → 応答の確認
         run: |
           set -eux
@@ -125,8 +131,6 @@ jobs:
       - name: "Playwright の基盤（1.12）: 空の試験が headless Chromium で起動する"
         run: |
           set -eux
-          npm ci --no-audit --no-fund >/dev/null
-          npx playwright install --with-deps chromium >/dev/null
           npx playwright test -c e2e/hosted/playwright.config.ts
 
       - name: 後始末（既定経路と構成を戻す）

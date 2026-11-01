@@ -19,8 +19,12 @@ RUN ./node_modules/.bin/esbuild e2e/hosted/vendors/mock-cli/main.ts --bundle --p
 # 実行ステージ
 FROM node:22-bookworm-slim
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends iproute2 \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends iproute2 sudo \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd -g 10001 vpngwgui \
+  && useradd -u 10001 -g 10001 -M -s /usr/sbin/nologin vpngwgui \
+  && printf 'vpngwgui ALL=(root) NOPASSWD: /usr/bin/ip, /usr/sbin/ip, /sbin/ip\n' > /etc/sudoers.d/vpngwgui-mock \
+  && chmod 0440 /etc/sudoers.d/vpngwgui-mock
 WORKDIR /app
 COPY --from=build /repo/proxy/dist ./dist
 COPY --from=build /out/mockvpn.mjs /opt/mock/mockvpn.mjs
@@ -31,5 +35,5 @@ ENV RUNNER_ALLOWED_BINARY=/usr/bin/protonvpn
 ENV MOCKVPN_SAMPLES_DIR=/opt/mock/vendors
 ENV MOCKVPN_STATE_DIR=/var/lib/mockvpn
 ENV CTL_SOCKET_PATH=/var/run/vpngw-ctl/runner-protonvpn.sock
-RUN mkdir -p /var/run/vpngw-ctl /var/lib/mockvpn
+RUN mkdir -p /var/run/vpngw-ctl /var/lib/mockvpn && chown 10001:10001 /var/lib/mockvpn /var/run/vpngw-ctl
 CMD ["node", "dist/runner.js"]
