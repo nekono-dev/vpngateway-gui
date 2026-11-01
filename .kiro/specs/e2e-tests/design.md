@@ -254,6 +254,7 @@ package.json                            # devDependencies（@playwright/test 1.6
 | Requirements | 1.2, 9.1〜9.6 |
 
 **Responsibilities & Constraints**
+- 順序: `topology_links` → 導入（`LAN_IFACE=e2eseg`）→ 起動し直し（E2E 用の上書きとイメージのビルドを含む。外部の取得が要る）→ `topology_route_isp` → 応答の待機。外部の取得を既定経路が使える間に終える。
 - ローカルのチェックアウトを取得元にした `install.sh` を作る（`build-bootstrap.sh <ref> <commit> file://<checkout>`）。
 - `sudo sh install.sh install --set PROVIDERS=protonvpn,adguardvpn --set LAN_IFACE=e2eseg --set WEB_PORT=18080` で導入する。設定は `--set KEY=VALUE` で渡す（`--no-start` は install の経路には無い）。
 - install は導入の中で起動まで行う（PoC で確認: 78 秒、4 コンテナが起動し、Web UI が HTTPS で 200）。その後 `compose down` で本番の構成を止める。
@@ -275,9 +276,13 @@ package.json                            # devDependencies（@playwright/test 1.6
 | Requirements | 5.1〜5.4, 6.1〜6.4, 7.1〜7.3, 3.3 |
 
 **Responsibilities & Constraints**
-- `topology_up` は、ブリッジ `e2eseg` を作り、`lan`・`isp`・`vpnexit` を接続する。ホストの既定経路を `isp`（192.168.50.254）へ向ける。
-- `topology_down` は、全てを元に戻す（`always()` の後始末。既定経路の復元を含む）。
+- `topology_links` は、ブリッジ `e2eseg` を作り、`lan`・`isp`・`vpnexit` を接続し、VPN トンネル（`vpn0` ↔ `vpnexit` の `vpn0x`）を作る。既定経路は変えない（導入の外部取得を既定経路が使える間に行うため）。
+- `topology_route_isp` は、ホストの既定経路を `isp`（192.168.50.254）へ向ける。`topology_up` は `topology_links` と `topology_route_isp` を続けて行う。
+- ランナーのユーザーの通信は、元の回線の既定経路を持つ表（表 100、`ip rule` の `uidrange`）で出す。既定経路を移すと、ランナーが GitHub と通信できず step が停止するため（hosted runner の検証で確認）。送信元の規則（`from`）では、送信元を指定しない通信を防げない。
+- `vpnexit` は、トンネルからの通信を ISP 側へ masquerade する（ISP からは `192.168.50.200` に見える）。
+- `topology_down` は、全てを元に戻す（`always()` の後始末。既定経路・表 100・規則の復元を含む）。
 - `lan_exec` は `ip netns exec lan` で、LAN クライアント側のコマンドを実行する。
+- VPN の接続の切り替え（既定経路を `vpn0` へ移し、切断で戻す）は、モック CLI（`network.ts`）が行う。
 
 **IP 計画**
 
