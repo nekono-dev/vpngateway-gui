@@ -106,7 +106,8 @@ jobs:
           provision_wait
           sudo docker compose --project-directory /opt/vpngwgui ps
           curl -sk -o /dev/null -w 'web: %{http_code}\n' "https://127.0.0.1:$E2E_WEB_PORT/"
-          curl -s --cacert /etc/vpngwgui/pki/api-ca.crt -o /dev/null -w 'api: %{http_code}\n' "https://127.0.0.1:3000/v1/operator"
+          sudo ls -l /etc/vpngwgui/pki/ || true
+          curl -s --cacert "$(provision_export_ca)" -o /dev/null -w 'api: %{http_code}\n' "https://127.0.0.1:3000/v1/operator" || true
 
       - name: 後始末（既定経路と構成を戻す）
         if: always()

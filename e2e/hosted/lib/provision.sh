@@ -11,6 +11,7 @@
 
 PROVISION_TIMEOUT_S=120
 PROVISION_STACK_DIR="/opt/vpngwgui"
+PROVISION_PKI_DIR="/etc/vpngwgui/pki"
 
 # 目的: 本番と同じ経路で導入する（build-bootstrap の出力の install.sh で install）。
 # 入力: checkout（コミット済みのチェックアウトの絶対パス）、commit（その HEAD の 40 桁の 16 進）。
@@ -37,16 +38,25 @@ provision_start() {
   sudo docker compose --project-directory "$PROVISION_STACK_DIR" --env-file "$PROVISION_STACK_DIR/.env" up -d --build
 }
 
+# 目的: 導入が作った API の CA を、作業場所へ読める形で複製する（検証の入力に使う。秘密鍵は複製しない）。
+# 出力: 作業場所の api-ca.crt のパス（標準出力）。
+provision_export_ca() {
+  mkdir -p "$E2E_WORK_DIR"
+  sudo cat "$PROVISION_PKI_DIR/api-ca.crt" > "$E2E_WORK_DIR/api-ca.crt"
+  echo "$E2E_WORK_DIR/api-ca.crt"
+}
+
 # 目的: API と Web UI が応答するまで待つ（上限 120 秒）。
 # API は導入した CA で検証する（検証の無効化はしない）。Web UI は健全性の確認だけ（資格情報を送らない）ので、証明書を検証しない。
 # 出力: 両方が応答すれば 0、上限を過ぎたら 1（応答していない側を表示する）。
 provision_wait() {
   deadline=$(( $(date +%s) + PROVISION_TIMEOUT_S ))
+  ca="$(provision_export_ca)"
   web=0
   api=0
   while [ "$(date +%s)" -lt "$deadline" ]; do
     if [ "$web" = 0 ] && [ "$(curl -sk -o /dev/null -w '%{http_code}' "https://127.0.0.1:$E2E_WEB_PORT/" || true)" = 200 ]; then web=1; fi
-    if [ "$api" = 0 ] && [ "$(curl -s --cacert /etc/vpngwgui/pki/api-ca.crt -o /dev/null -w '%{http_code}' "https://127.0.0.1:3000/v1/operator" || true)" = 200 ]; then api=1; fi
+    if [ "$api" = 0 ] && [ "$(curl -s --cacert "$ca" -o /dev/null -w '%{http_code}' "https://127.0.0.1:3000/v1/operator" || true)" = 200 ]; then api=1; fi
     if [ "$web" = 1 ] && [ "$api" = 1 ]; then
       echo "導入後の応答: Web UI と API が応答した"
       return 0
