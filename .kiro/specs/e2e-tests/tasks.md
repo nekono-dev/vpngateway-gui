@@ -67,7 +67,7 @@
   - _Depends: 1.8_
   - _Requirements: 3.7, 4.1_
 
-- [ ] 1.10 モックのランナーイメージをビルドする
+- [x] 1.10 モックのランナーイメージをビルドする
   - 本番と同じランナー本体（dist/runner.js）に、モック CLI を RUNNER_ALLOWED_BINARY のパスへ置く（両ベンダー分）
   - 完了の状態: ランナーの /health が 200 を返し、許可されたバイナリのパスを返す
   - _Boundary: RunnerMockImage_
@@ -82,7 +82,7 @@
   - _Depends: 1.5, 1.10_
   - _Requirements: 8.6_
 
-- [ ] 1.12 Playwright のフィクスチャと JS エラー監視を整える
+- [x] 1.12 Playwright のフィクスチャと JS エラー監視を整える
   - 共有の API クライアントを、導入したスタックの api-ca で API（127.0.0.1:3000）に接続する形で包む
   - 実行ごとに乱数で作る管理者の資格情報、LAN 側でコマンドを実行するヘルパ、Web UI の操作ヘルパを用意する
   - 全 UI テストに、未処理の例外と JavaScript の error を集めて失敗にする仕組みを入れる。ワーカーは 1 に固定する
@@ -90,7 +90,7 @@
   - _Depends: 1.3_
   - _Requirements: 1.1, 12.1, 12.3_
 
-- [ ] 1.13 導入の手順（provision）を作る
+- [x] 1.13 導入の手順（provision）を作る
   - ローカルのチェックアウトを取得元にして install.sh を生成し、--set で設定を渡して install を実行する
   - 導入の後に compose を止め、E2E 用の上書きを追記して起動し直し、Web UI（HTTPS）と API の応答を上限 120 秒で待つ
   - 完了の状態: 1 回の実行で導入でき、4 コンテナが稼働し、Web UI が 200 を返す（hosted runner で確認する）
@@ -273,3 +273,6 @@
 - 既定経路を移すと、ランナーが GitHub と通信できなくなり、step が停止する。ランナーのユーザーの通信は、元の回線の経路表（表 100、uidrange）で出す（topology_keep_runner_route）。送信元の規則では防げない（1.6）。
 - topology.sh は env.sh を先に読むこと（source 時の $0 が呼び出し元を指す）。
 - モック CLI の応答の遅延（1.8 の制御の一部）は、ランナー側（1.10）で実装する。切断の失敗の制御は実装済み。
+- 1.10: モックのランナーは、本番と同じ dist/runner.js の受け口に、mockvpn.mjs を許可パスへ置く。adguard のランナーは非 root（10001）で動くため、mock の ip 操作は sudo（ip のみ）を使う。
+- 1.13: 導入の後、既定経路を切り替える前に起動し直す（イメージのビルドが外部の取得を要るため）。CA は導入の /etc/vpngwgui/pki/api-ca.crt を作業場所へ複製して使う。
+- 1.12: Playwright の導入（apt と chromium の取得）は、経路の切り替えの前に行う。切り替え後は外部へ出られない。
