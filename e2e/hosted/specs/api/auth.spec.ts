@@ -18,6 +18,8 @@ function statusOf<T>(res: ApiResult<T>): number {
 const WINDOW_MS = 60_000;
 
 test.describe.serial("認証の制限・API の認証・管理者の変更（stack・api）", () => {
+  // 制限の窓（60 秒）を待つ試験があるため、群の上限を延ばす
+  test.describe.configure({ timeout: 5 * 60 * 1000 });
   test("2.5: 60 秒以内に 5 回失敗すると、429 で拒否する", async () => {
     const client = apiClient();
     const admin = await loadAdmin();
