@@ -92,7 +92,7 @@ topology_keep_runner_route() {
   uid="$(id -u)"
   if [ -n "$via" ] && [ -n "$dev" ]; then
     sudo ip rule add uidrange "$uid-$uid" lookup "$E2E_RUNNER_TABLE" priority 100
-    sudo ip route replace default via "$via" dev "$dev" table "$E2E_RUNNER_TABLE"
+    sudo ip route replace default via "$via" dev "$dev" onlink table "$E2E_RUNNER_TABLE"
   fi
 }
 
