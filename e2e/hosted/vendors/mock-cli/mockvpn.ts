@@ -21,6 +21,15 @@ export interface Network {
   disconnect(): void;
 }
 
+/**
+ * 試験からの制御（障害の注入）。disconnectFails は切断を失敗させ、responseDelayMs は応答を遅らせる（要件 4.9・4.8 の模擬）。
+ * 状態ファイルの control の項目として保存し、試験が書き換える。
+ */
+export interface MockControl {
+  readonly disconnectFails?: boolean;
+  readonly responseDelayMs?: number;
+}
+
 /** CLI の実行結果。 */
 export interface MockResult {
   readonly exitCode: number;
@@ -65,8 +74,19 @@ export function sampleOutput(vendor: VendorId, name: string): string {
  * 出力: 終了コードと標準出力。state は更新される。
  * 失敗時の方針: 未対応のコマンドは終了コード 2 とする（黙って成功させない）。
  */
-export function runCommand(vendor: VendorId, argv: readonly string[], state: MockState, network: Network, stdin: readonly string[] = []): MockResult {
+export function runCommand(
+  vendor: VendorId,
+  argv: readonly string[],
+  state: MockState,
+  network: Network,
+  stdin: readonly string[] = [],
+  control: MockControl = {},
+): MockResult {
   const [command, ...rest] = argv;
+  // 切断の失敗の注入: 状態は変えず、経路も戻さない（試験は残った接続を検出する）
+  if (command === "disconnect" && control.disconnectFails === true) {
+    return { exitCode: 1, stdout: DISCONNECT_FAILURE_OUTPUT };
+  }
   if (vendor === "protonvpn") return runProton(command, rest, state, network, stdin);
   return runAdGuard(command, rest, state, network);
 }
@@ -154,12 +174,23 @@ function runAdGuard(command: string | undefined, rest: readonly string[], state:
 /** 状態の初期値（未ログイン・未接続）。 */
 export const INITIAL_STATE: MockState = { loggedIn: false, plan: "unknown", connected: false };
 
+/** 切断の失敗の出力（終了コード 1）。 */
+export const DISCONNECT_FAILURE_OUTPUT = "Error: failed to disconnect\n";
+
 /**
  * 目的: 状態ファイルを読む（無ければ初期値）。
  */
 export function readState(path: string): MockState {
   if (!existsSync(path)) return { ...INITIAL_STATE };
   return JSON.parse(readFileSync(path, "utf8")) as MockState;
+}
+
+/**
+ * 目的: 制御ファイル（障害の注入）を読む（無ければ空）。
+ */
+export function readControl(path: string): MockControl {
+  if (!existsSync(path)) return {};
+  return JSON.parse(readFileSync(path, "utf8")) as MockControl;
 }
 
 /**

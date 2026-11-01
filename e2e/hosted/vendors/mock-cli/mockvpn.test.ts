@@ -85,4 +85,13 @@ describe("接続・切断と経路の操作", () => {
   it("未対応のコマンドは終了コード 2 で返す（黙って成功させない）", () => {
     expect(runCommand("protonvpn", ["unknown"], { loggedIn: false, plan: "unknown", connected: false }, recorder()).exitCode).toBe(2);
   });
+
+  it("切断の失敗の制御を与えると、切断は失敗し、経路を変えず接続も残る（要件 4.9 の模擬）", () => {
+    const network = recorder();
+    const state: MockState = { loggedIn: true, plan: "free", connected: true, location: "JP" };
+    const out = runCommand("protonvpn", ["disconnect"], state, network, [], { disconnectFails: true });
+    expect(out.exitCode).toBe(1);
+    expect(network.calls).toEqual([]);
+    expect(state.connected).toBe(true);
+  });
 });
