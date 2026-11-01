@@ -81,11 +81,18 @@ test.describe.serial("導入・更新・削除（lifecycle）", () => {
     expect(await exists(`${DATA}/e2e-marker`), "データ（/var/lib/vpngwgui）が残っていない").toBe(true);
   });
 
-  test("9.5 / 9.6: --purge で設定とデータが消え、status が未導入を示す", async () => {
+  test("9.5: --purge で設定・データ・導入メタ情報が消える（削除の前に、もう一度導入する）", async () => {
+    // 非 purge の削除で取得先と制御コマンドが消えるため、purge は導入し直してから行う（本番の手順と同じ）
+    const lan = await defaultIface();
+    await shell(`provision_install "$PWD" "${head}"`, { E2E_INSTALL_LAN_IFACE: lan });
     await installer(["uninstall", "--purge"]);
     expect(await exists(CONF), "設定が残っている").toBe(false);
     expect(await exists(DATA), "データが残っている").toBe(false);
-    const status = await control(["status"]);
-    expect(status.stdout).toContain("未導入");
+  });
+
+  test("9.6: 削除の後、制御コマンドと取得先が無く、未導入である", async () => {
+    // 削除の後は vpngwgui-ctl が無いため、status ではなく残骸の不在で未導入を確かめる
+    expect(await exists("/usr/local/bin/vpngwgui-ctl"), "制御コマンドが残っている").toBe(false);
+    expect(await exists(SRC), "取得先が残っている").toBe(false);
   });
 });
