@@ -1,0 +1,111 @@
+# PoC（使い捨て）: hosted runner で、本番と同じ経路（install.sh の生成と install・status・uninstall --purge）が動くかを確認する。
+# 再起動の依頼（vpngwgui-reboot.path）は、ランナーを実際に再起動させるため実行しない。
+# main へは入れない。確認が済んだら、ブランチごと削除する。
+name: poc-installer
+
+on:
+  push:
+    branches: [poc/hosted-runner-installer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  poc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: systemd の確認
+        id: systemd
+        continue-on-error: true
+        run: |
+          set +e
+          fail=0
+          ok() { echo "PASS: $*"; }
+          ng() { echo "FAIL: $*"; fail=1; }
+          systemctl --version | head -1
+          echo "状態: $(systemctl is-system-running 2>&1)"
+          printf '[Unit]\nDescription=poc\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/bin/true\n[Install]\nWantedBy=multi-user.target\n' | sudo tee /etc/systemd/system/poc-test.service >/dev/null
+          sudo systemctl daemon-reload
+          if sudo systemctl enable --now poc-test.service && systemctl is-active --quiet poc-test.service; then ok "systemctl enable --now（一時の単位）"; else ng "systemctl enable --now"; fi
+          sudo systemctl disable --now poc-test.service >/dev/null 2>&1; sudo rm -f /etc/systemd/system/poc-test.service; sudo systemctl daemon-reload
+          if systemctl is-active --quiet docker; then ok "docker が稼働"; else ng "docker が稼働していない"; fi
+          exit $fail
+
+      - name: 本番の経路で導入（install.sh の生成と install）
+        id: install
+        continue-on-error: true
+        run: |
+          set -e
+          start=$(date +%s)
+          git branch -f poc-ref HEAD
+          COMMIT=$(git rev-parse HEAD)
+          LAN=$(ip -4 route show default | awk '{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); exit}}')
+          echo "LAN_IFACE=$LAN"
+          sh installer/build-bootstrap.sh refs/heads/poc-ref "$COMMIT" "file://$GITHUB_WORKSPACE" > "$RUNNER_TEMP/install.sh"
+          sudo sh "$RUNNER_TEMP/install.sh" install --set PROVIDERS=adguardvpn --set WEB_PORT=18080 --set LAN_IFACE="$LAN" 2>&1 | tail -80
+          echo "導入時間: $(( $(date +%s) - start ))秒"
+
+      - name: 導入後の確認（units・compose・Web の HTTPS）
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          fail=0
+          ok() { echo "PASS: $*"; }
+          ng() { echo "FAIL: $*"; fail=1; }
+          sudo systemctl list-unit-files 'vpngwgui*'
+          if sudo systemctl is-enabled vpngwgui-boot-guard.service >/dev/null 2>&1; then ok "boot-guard の単位が有効"; else ng "boot-guard の単位"; fi
+          if sudo systemctl is-active --quiet vpngwgui-reboot.path; then ok "reboot.path が監視中（再起動は依頼していない）"; else ng "reboot.path が監視中でない"; fi
+          cd /opt/vpngwgui 2>/dev/null || { ng "/opt/vpngwgui が無い"; exit 1; }
+          sudo docker compose ps
+          ok_web=0
+          for i in $(seq 1 60); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:18080/ || true)
+            [ "$code" = 200 ] && { ok_web=1; break; }
+            sleep 5
+          done
+          if [ "$ok_web" = 1 ]; then ok "Web UI が HTTPS で 200（$i 回目）"; else ng "Web UI の応答: $code"; fi
+          code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:18080/v1/session || true)
+          echo "API 経由（未ログイン）の応答: $code"
+          exit $fail
+
+      - name: 導入状態の表示とアンインストール（--purge）
+        id: uninstall
+        continue-on-error: true
+        run: |
+          set -e
+          sudo sh "$RUNNER_TEMP/install.sh" status || true
+          sudo sh "$RUNNER_TEMP/install.sh" uninstall --purge 2>&1 | tail -40
+          sudo sh "$RUNNER_TEMP/install.sh" status || true
+          if sudo systemctl list-unit-files 'vpngwgui*' | grep -q vpngwgui; then echo "FAIL: 単位が残っている"; exit 1; else echo "PASS: 単位は残っていない"; fi
+          if [ -d /etc/vpngwgui ] || [ -d /opt/vpngwgui ]; then echo "FAIL: 設定かソースが残っている"; exit 1; else echo "PASS: 設定とソースは残っていない"; fi
+
+      - name: 結果の集計
+        if: always()
+        env:
+          R_SYSTEMD: ${{ steps.systemd.outcome }}
+          R_INSTALL: ${{ steps.install.outcome }}
+          R_VERIFY: ${{ steps.verify.outcome }}
+          R_UNINSTALL: ${{ steps.uninstall.outcome }}
+        run: |
+          {
+            echo "## PoC 結果（導入の経路）"
+            echo "| 項目 | 結果 |"
+            echo "| --- | --- |"
+            echo "| systemd | $R_SYSTEMD |"
+            echo "| install | $R_INSTALL |"
+            echo "| 導入後の確認 | $R_VERIFY |"
+            echo "| uninstall --purge | $R_UNINSTALL |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 後片付け（導入が残った場合）
+        if: always()
+        run: |
+          [ -x "$RUNNER_TEMP/install.sh" ] && sudo sh "$RUNNER_TEMP/install.sh" uninstall --purge >/dev/null 2>&1 || true
+          exit 0
