@@ -65,7 +65,7 @@ jobs:
           echo '>>> check'
           ip route get 1.1.1.1
           test "$(ip route get 1.1.1.1 | sed -n 's/.* dev \([^ ]*\).*/\1/p')" = "vpn0"
-          ip -n vpnexit addr show vpn0x
+          sudo ip -n vpnexit addr show vpn0x
           sudo ip netns exec vpnexit ping -c 1 -W 2 10.66.0.1
           echo '>>> runner keeps GitHub reachability while the tunnel is up'
           curl -sS -o /dev/null -m 15 https://api.github.com/
