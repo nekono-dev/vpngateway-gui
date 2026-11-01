@@ -76,20 +76,22 @@ topology_up() {
   sudo ip netns exec "$E2E_NS_VPNEXIT" sysctl -qw net.ipv4.ip_forward=1
   topology_add_tunnel
 
-  # ランナーの通信（元の回線の送信元アドレス発）は、元の回線の経路表で出す。既定経路を移しても GitHub との接続を保つ
+  # ランナーの通信（ランナーのユーザーの通信）は、元の回線の経路表で出す。既定経路を移しても GitHub との接続を保つ
   topology_keep_runner_route
 
   # ホストの既定経路を ISP（上位ルータ）へ向ける。LAN からの通信は、この経路で ISP に届く
   sudo ip route replace default via "$E2E_ISP_IP" dev "$E2E_BRIDGE"
 }
 
-# 元の回線の送信元アドレス発の通信を、元の既定経路（表 $E2E_RUNNER_TABLE）で出す
+# ランナーのユーザーの通信を、元の既定経路（表 $E2E_RUNNER_TABLE）で出す。
+# 送信元の規則では、送信元を指定しない通信（ランナーの通信の多く）を防げないため、ユーザー ID で分ける。
+# 試験の通信（ホストの docker・LAN 側）は root などの別のユーザーで出るため、経路の移動の対象になる。
 topology_keep_runner_route() {
-  src="$(sed -n 's/.* src \([^ ]*\).*/\1/p' "$E2E_ROUTE_FILE")"
   via="$(sed -n 's/.*via \([^ ]*\).*/\1/p' "$E2E_ROUTE_FILE")"
   dev="$(sed -n 's/.*dev \([^ ]*\).*/\1/p' "$E2E_ROUTE_FILE")"
-  if [ -n "$src" ] && [ -n "$via" ] && [ -n "$dev" ]; then
-    sudo ip rule add from "$src" lookup "$E2E_RUNNER_TABLE" priority 100
+  uid="$(id -u)"
+  if [ -n "$via" ] && [ -n "$dev" ]; then
+    sudo ip rule add uidrange "$uid-$uid" lookup "$E2E_RUNNER_TABLE" priority 100
     sudo ip route replace default via "$via" dev "$dev" table "$E2E_RUNNER_TABLE"
   fi
 }

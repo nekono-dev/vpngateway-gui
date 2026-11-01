@@ -68,7 +68,7 @@ jobs:
           sudo ip -n vpnexit addr show vpn0x
           sudo ip netns exec vpnexit ping -c 1 -W 2 10.66.0.1
           echo '>>> runner keeps GitHub reachability while the tunnel is up'
-          curl -sS -o /dev/null -m 15 https://api.github.com/
+          curl -sS -o /dev/null -m 15 https://api.github.com/ && echo 'GitHub 到達: OK'
           echo '>>> disconnect'
           timeout 60 npx tsx -e 'import { createNetwork } from "./e2e/hosted/vendors/mock-cli/network.ts"; createNetwork("e2e/hosted/.work/mock-route.txt").disconnect();'
           ip route get 1.1.1.1 | grep -q e2eseg && echo "経路: e2eseg（ISP 経由）" || true
