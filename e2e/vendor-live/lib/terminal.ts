@@ -30,8 +30,9 @@ export function promptHidden(label: string): Promise<string> {
     rl.question("", (answer) => {
       muted = false;
       process.stdout.write("\n");
-      rl.close();
+      // 先に解決してから閉じる（閉じるときの close で失敗扱いにしないため）
       resolve(answer);
+      rl.close();
     });
   });
 }
@@ -65,8 +66,8 @@ export function promptVisible(label: string): Promise<string> {
   return new Promise((resolve, reject) => {
     rl.once("close", () => reject(new Error("入力が途中で閉じられた（Ctrl-C など）")));
     rl.question(label, (answer) => {
-      rl.close();
       resolve(answer);
+      rl.close();
     });
   });
 }
