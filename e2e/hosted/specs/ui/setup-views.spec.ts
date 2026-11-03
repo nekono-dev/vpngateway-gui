@@ -38,6 +38,17 @@ test.describe.serial("画面の表示と操作（ui）", () => {
     await run("sudo", ["docker", "start", runnerContainer("protonvpn")]).catch(() => undefined);
   });
 
+  // 未処理の JavaScript の例外は、そのシナリオを失敗にする（watchedPage の監視）。失敗すること自体が期待の結果
+  test.fail("12.3: 未処理の JavaScript の例外があると、そのシナリオは失敗になる", async ({ watchedPage: page }) => {
+    await page.goto("/");
+    await page.evaluate(() => {
+      setTimeout(() => {
+        throw new Error("意図的な例外（12.3 の確認）");
+      }, 0);
+    });
+    await page.waitForTimeout(500);
+  });
+
   test("4.2・4.3・12.2: お気に入りを登録・解除すると、一覧の表示が変わる", async ({ watchedPage: page }) => {
     await loginDashboard(page);
     const add = page.getByRole("button", { name: /をお気に入りに追加$/ }).first();
