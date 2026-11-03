@@ -280,7 +280,8 @@
 - 2.3: 非 purge の削除の後は取得先と制御コマンドが消えるため、purge は導入し直してから行う。
 - 2.1/2.2: status と update は導入済みの制御コマンド（vpngwgui-ctl）で行う。install.sh（bootstrap）は install と uninstall だけ。
 - 3.1: run.sh の群の順序は lifecycle → stack → gateway。準備の失敗は 2、試験の失敗は 1。stack と gateway は、spec のファイルが無い間は skipped とする。
-- 2.7 の欠陥（製品の不具合・本 spec では修正しない）: ランナーを止めた状態の接続（PUT /v1/connection）は、プロキシが返す 502（runner_unavailable）を api が ExecResult として検証し、500（unexpected response shape）になる。要件 3.3 は 502 または 504。api/src/proxy-client/proxy-client.ts の executeVendorCommand が応答の状態コードを見ないため。3.3 の試験は、この欠陥を検出するために失敗のまま残す。
+- 2.7 の欠陥（製品の不具合）: ランナーを止めた状態の接続（PUT /v1/connection）は、プロキシが返す 502（runner_unavailable）を api が ExecResult として検証し、500（unexpected response shape）になった。要件 3.3 は 502 または 504。api/src/proxy-client/proxy-client.ts の executeVendorCommand が応答の状態コードを見ないため。修正は別の作業として行った（ブランチ fix/runner-unavailable-status の 65af296。hosted で 3.3 が合格することを確認済み）。
+- 3.3 の試験: 接続状態の取得（GET /v1/connection）もランナーを経由するため、ランナー停止中は 502 になる。接続状態が変わらないことは、ランナーを起動し直してから取得して確かめる（ba78855）。
 - 2.6: 群（同じ Cookie）は、群の中で共有する（apiClient() を試験ごとに作ると、ログイン状態が無くなる）。
 - 2.4・2.8（UI）: 試験ごとにブラウザの状態が変わる。誤った資格情報の 401 は、試験が意図した error として allow する。
 
