@@ -30,7 +30,8 @@ run_group() {
       return 2
     fi
   fi
-  E2E_JSON_OUT="$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project" --output "$ARTIFACTS/$group/test-output"
+  # 出力先は絶対パスで渡す（Playwright は報告の相対パスを設定ファイルの場所基準で解決するため）
+  E2E_JSON_OUT="$PWD/$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project" --output "$PWD/$ARTIFACTS/$group/test-output"
   rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "$group pass" >> "$RESULT_FILE"
