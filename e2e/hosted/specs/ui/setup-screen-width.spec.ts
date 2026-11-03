@@ -96,19 +96,27 @@ test.describe.serial("画面幅（ui）", () => {
   test("11.5: 420px 以下で、通知が画面の下部に出る", async ({ watchedPage: page, pageErrors }) => {
     // VPN のログインを誤った資格情報で行う。誤りの応答は、通知（エラー）として画面に出る（この試験の意図した結果）
     pageErrors.allow(/status of 4\d\d/);
-    await setWidth(page, PHONE);
-    await loginDashboard(page);
-    await page.getByRole("button", { name: "ログイン", exact: true }).click();
-    await page.getByLabel("ユーザー名").fill("wrong-user");
-    await page.getByLabel("パスワード", { exact: true }).fill("wrong-password");
-    await page.getByRole("button", { name: "ログイン", exact: true }).click();
+    // ベンダーのログインを解除し、ログインの欄が出る状態にする（試験の後に、ログインし直す）
+    const out = await client.delete("/v1/session");
+    expect(out.ok, "VPN のログアウトに失敗").toBe(true);
+    try {
+      await setWidth(page, PHONE);
+      await loginDashboard(page);
+      await page.getByRole("button", { name: "ログイン", exact: true }).click();
+      await page.getByLabel("ユーザー名").fill("wrong-user");
+      await page.getByLabel("パスワード", { exact: true }).fill("wrong-password");
+      await page.getByRole("button", { name: "ログイン", exact: true }).click();
 
-    const toast = page.locator(".toast-region [role=alert]").first();
-    await expect(toast).toBeVisible();
-    const box = await toast.boundingBox();
-    const viewport = page.viewportSize();
-    expect(box, "通知の位置が取得できない").not.toBeNull();
-    // 通知は画面の下半分（下部）にある
-    expect((box?.y ?? 0) + (box?.height ?? 0), "通知が画面の下部にない").toBeGreaterThan((viewport?.height ?? 0) / 2);
+      const toast = page.locator(".toast-region [role=alert]").first();
+      await expect(toast).toBeVisible();
+      const box = await toast.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box, "通知の位置が取得できない").not.toBeNull();
+      // 通知は画面の下半分（下部）にある
+      expect((box?.y ?? 0) + (box?.height ?? 0), "通知が画面の下部にない").toBeGreaterThan((viewport?.height ?? 0) / 2);
+    } finally {
+      // 後続の試験のため、VPN のログインを戻す
+      await loginVpn(client);
+    }
   });
 });
