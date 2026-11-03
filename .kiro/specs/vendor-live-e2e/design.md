@@ -132,8 +132,13 @@ e2e/vendor-live/
 │       ├── adguard.ts          # AdGuard の device 認証（承認の待ち）（要件 3.1〜3.5）
 │       └── adguard.test.ts     # 承認の待ちと 5 分の上限（単体）
 └── scenarios/
-    ├── proton.ts               # Proton の試験（接続・切断・プラン制限）（要件 4.1〜4.8）
-    └── adguard.ts              # AdGuard の試験（接続・切断・プラン制限）（要件 4.1〜4.8）
+    ├── run.ts                  # 試験の順序・検証サーバへの到達の確認・ログインの失効・中断（要件 4.7, 6.1〜6.3）
+    ├── run.test.ts             # 上記の単体テスト
+    ├── connection.ts           # 接続・切断・終了時の切断の共通の試験（要件 4.2, 4.3, 4.8）
+    ├── proton.ts               # Proton の試験（接続・切断・プラン制限）（要件 4.2〜4.8）
+    ├── proton.test.ts          # 判定の単体テスト（プラン制限を含む）
+    ├── adguard.ts              # AdGuard の試験（接続・切断。プラン制限は 2.6 の観測の後に加える）（要件 4.2〜4.4, 4.8）
+    └── fake-api.ts             # 単体テスト用の偽の API クライアント
 ```
 
 - 共有部品（所有: `e2e-tests`）: `e2e/common/api-client.ts`（HTTPS・CA・Cookie）、`e2e/common/api-types.ts`（API の型）、`e2e/common/report.ts`（`TestResult`、秘密の除外、書き出し）。本 spec のファイルには含めない。
