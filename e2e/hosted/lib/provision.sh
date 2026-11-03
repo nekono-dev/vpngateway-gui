@@ -15,6 +15,23 @@ PROVISION_PKI_DIR="/etc/vpngwgui/pki"
 # proxy に渡す、テスト CA を含む信頼の束（docker-compose.e2e-mock.yml が参照する絶対パス）
 PROVISION_E2E_BUNDLE="/etc/vpngwgui/e2e-ca-bundle.crt"
 
+# 目的: Docker が FORWARD の既定ポリシーを DROP にしない状態にする（導入の setup.sh と同じ設定。E2E の前提）。
+# 理由: ランナーの Docker は、既に起動している間に daemon.json を作っても再起動するまで設定が効かず、
+#      FORWARD が DROP のままになる（LAN の転送が Docker の規則で落ちる）。製品の installer は警告のみ行う。
+# 副作用: /etc/docker/daemon.json が無ければ作り、Docker を再起動する。最後に FORWARD の既定を確かめ、DROP なら ACCEPT にする。
+# 出力: 終了コード。
+provision_docker_forward() {
+  if ! sudo test -e /etc/docker/daemon.json; then
+    printf '{\n  "ip-forward-no-drop": true\n}\n' | sudo tee /etc/docker/daemon.json >/dev/null
+    sudo systemctl restart docker || return 1
+  fi
+  # 既存の daemon.json に設定が無い場合でも、転送を通せるよう既定を ACCEPT にする（E2E の専用ホストのみ）
+  if sudo iptables -S FORWARD 2>/dev/null | grep -q -- '-P FORWARD DROP'; then
+    sudo iptables -P FORWARD ACCEPT || return 1
+  fi
+  return 0
+}
+
 # 目的: 本番と同じ経路で導入する（build-bootstrap の出力の install.sh で install）。
 # 入力: checkout（コミット済みのチェックアウトの絶対パス）、commit（その HEAD の 40 桁の 16 進）。
 # 出力: 終了コード（導入の成否）。
@@ -22,6 +39,7 @@ provision_install() {
   checkout="$1"
   commit="$2"
   mkdir -p "$E2E_WORK_DIR"
+  provision_docker_forward || return 1
   # bootstrap が取得する参照（ブランチ名）を、このコミットへ向ける
   git -C "$checkout" branch -f e2e-install "$commit"
   sh "$checkout/installer/build-bootstrap.sh" refs/heads/e2e-install "$commit" "file://$checkout" > "$E2E_WORK_DIR/install.sh"
@@ -59,7 +77,7 @@ provision_certs() {
 provision_isp_start() {
   rm -f "$E2E_ISP_PID_FILE"
   sudo ip netns exec "$E2E_NS_ISP" "$PWD/node_modules/.bin/tsx" e2e/hosted/services/isp-main.ts \
-    "0.0.0.0" "$E2E_WORK_DIR/certs/server.key" "$E2E_WORK_DIR/certs/server.crt" "$E2E_ISP_PID_FILE" \
+    "0.0.0.0" "$E2E_ISP_SERVICE_IP" "$E2E_WORK_DIR/certs/server.key" "$E2E_WORK_DIR/certs/server.crt" "$E2E_ISP_PID_FILE" \
     > "$E2E_WORK_DIR/isp.log" 2>&1 &
   deadline=$(( $(date +%s) + 30 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
