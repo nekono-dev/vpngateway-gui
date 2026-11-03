@@ -1,4 +1,4 @@
-// 責務: 2.6 の手動の観測。AdGuard で Seoul の接続先を指定して接続したときの応答（状態コード・エラーの種類・文言）を記録する。
+// 責務: 2.6 の手動の観測。AdGuard で接続先（既定は Seoul。--target で変更）を指定して接続したときの応答（状態コード・エラーの種類・文言）を記録する。
 // 試験の判定はしない。記録は research.md の期待値を決めるための材料にする（要件 4.5・4.6 の前段）。
 // 認証情報は準備処理と同じく端末で入力する。AdGuard はパスワードを使わず、承認の URL を別の端末で開いて承認する。
 
@@ -38,9 +38,28 @@ export function pickSeoul(locations: readonly LocationLike[]): LocationLike | un
   );
 }
 
+/**
+ * 目的: 観測する接続先を選ぶ。target が無ければ Seoul、あれば ID・国コード・国名・都市名のいずれかに一致するものを選ぶ（大文字小文字を問わない）。
+ * 入力: locations(接続先の一覧)、target(指定の文字列。省略可)。
+ * 出力: 選んだ接続先。無ければ undefined。
+ * 例: pickTarget(locations, "United States") // => { id: "us-...", countryName: "United States", ... }
+ */
+export function pickTarget(locations: readonly LocationLike[], target?: string): LocationLike | undefined {
+  if (target === undefined) return pickSeoul(locations);
+  const wanted = target.toLowerCase();
+  return locations.find(
+    (location) =>
+      location.id.toLowerCase() === wanted ||
+      location.country.toLowerCase() === wanted ||
+      location.countryName.toLowerCase() === wanted ||
+      (location.city ?? "").toLowerCase() === wanted,
+  );
+}
+
 /** 観測の記録（秘密を含めない）。 */
 interface Observation {
   readonly observedAt: string;
+  readonly target: string;
   readonly apiBaseUrl: string;
   readonly plan?: string;
   readonly locationList: { readonly ok: boolean; readonly message: string; readonly seoul?: string };
@@ -63,17 +82,18 @@ async function connectionStatus(api: ApiClient): Promise<{ status?: string; mess
  * 出力: 観測の記録。
  * 失敗時の方針: 応答が失敗でも観測を続けて記録する。最後に接続が残っていれば切断を試みる。
  */
-async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefined, baselineIp: string): Promise<Observation> {
-  const base = { observedAt: new Date().toISOString(), apiBaseUrl, plan };
+async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefined, baselineIp: string, target?: string): Promise<Observation> {
+  const label = target ?? "Seoul";
+  const base = { observedAt: new Date().toISOString(), target: label, apiBaseUrl, plan };
 
   const list = await api.get<LocationLike[]>("/v1/connection/locations");
   if (!list.ok) {
     return { ...base, locationList: { ok: false, message: describeApi(list) }, logout: await logoutOf(api) };
   }
-  const seoul = pickSeoul(list.body);
+  const seoul = pickTarget(list.body, target);
   if (seoul === undefined) {
     const countries = [...new Set(list.body.map((location) => location.countryName))].join(", ");
-    return { ...base, locationList: { ok: false, message: `Seoul の接続先が一覧に無い（国: ${countries}）` }, logout: await logoutOf(api) };
+    return { ...base, locationList: { ok: false, message: `${label} の接続先が一覧に無い（国: ${countries}）` }, logout: await logoutOf(api) };
   }
 
   const locationList = { ok: true, message: `一覧 ${list.body.length} 件`, seoul: seoul.id };
@@ -124,13 +144,18 @@ async function writeObservation(config: LiveConfig, observation: Observation, fo
 }
 
 /**
- * 目的: 入口。準備処理（管理者の入力・AdGuard の承認）の後に、Seoul への接続の応答を観測する。
+ * 目的: 入口。準備処理（管理者の入力・AdGuard の承認）の後に、接続先への接続の応答を観測する。
  * 出力: 終了コード（準備の中止は 2。観測の記録ができたら 0）。
  */
 async function main(): Promise<number> {
+  // 引数: [設定ファイル] [--target=接続先]。--target は ID・国コード・国名・都市名のいずれか（省略時は Seoul）
+  const args = process.argv.slice(2);
+  const targetArg = args.find((arg) => arg.startsWith("--target="));
+  const target = targetArg?.slice("--target=".length);
+  const configPath = args.find((arg) => !arg.startsWith("--")) ?? DEFAULT_CONFIG_PATH;
   let config: LiveConfig;
   try {
-    config = loadConfig(process.env, process.argv[2] ?? DEFAULT_CONFIG_PATH);
+    config = loadConfig(process.env, configPath);
   } catch (error) {
     print(`準備の中止: ${error instanceof Error ? error.message : String(error)}`);
     return 2;
@@ -160,13 +185,14 @@ async function main(): Promise<number> {
   }
 
   const { api } = outcome.session;
-  const observation = await observe(api, config.apiBaseUrl, outcome.session.vendor.planId, outcome.session.baseline.publicIp);
+  const observation = await observe(api, config.apiBaseUrl, outcome.session.vendor.planId, outcome.session.baseline.publicIp, target);
   const file = await writeObservation(config, observation, entered.filter((value) => value !== ""));
 
   print("");
   print(`プラン: ${observation.plan ?? "不明"}`);
-  print(`接続先の一覧: ${observation.locationList.message}${observation.locationList.seoul ? `（Seoul: ${observation.locationList.seoul}）` : ""}`);
-  if (observation.connect) print(`Seoul への接続: ${observation.connect.ok ? "成功" : "失敗"}（${observation.connect.message}）`);
+  print(`対象の接続先: ${observation.target}`);
+  print(`接続先の一覧: ${observation.locationList.message}${observation.locationList.seoul ? `（${observation.target}: ${observation.locationList.seoul}）` : ""}`);
+  if (observation.connect) print(`${observation.target} への接続: ${observation.connect.ok ? "成功" : "失敗"}（${observation.connect.message}）`);
   if (observation.afterConnect) print(`接続後の状態: ${observation.afterConnect.status ?? observation.afterConnect.message}`);
   if (observation.egress) print(`出口 IP: ${observation.egress.observed}（基準 ${observation.egress.baselineIp} と${observation.egress.differs ? "異なる" : "同じ、または未確認"}）`);
   if (observation.disconnect) print(`切断: ${observation.disconnect.ok ? "成功" : "失敗"}（${observation.disconnect.message}）`);
