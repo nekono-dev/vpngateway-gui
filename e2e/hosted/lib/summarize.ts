@@ -2,7 +2,8 @@
 // 試験の名前の先頭の要件 ID（例: "9.1: ..."）を requirement に入れる。ID が無ければ "-" とする。
 
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { writeReport, type TestResult } from "../../common/report";
 
 /** Playwright の JSON 報告の、本ツールが読む部分。 */
@@ -28,7 +29,8 @@ export function flatten(suite: PwSuite, group = ""): TestResult[] {
   const out: TestResult[] = [];
   for (const spec of suite.specs ?? []) {
     for (const test of spec.tests) {
-      const passed = test.status === test.expectedStatus;
+      // Playwright の status は expected（期待どおり）・unexpected・flaky・skipped。期待どおりなら合格（失敗を期待した試験も含む）
+      const passed = test.status === "expected" || (test.status === "skipped" && test.expectedStatus === "skipped");
       const message = test.results.find((r) => r.error?.message !== undefined)?.error?.message;
       const requirement = /(\d+\.\d+)/.exec(spec.title)?.[1] ?? "-";
       out.push({
@@ -62,7 +64,7 @@ export async function summarize(jsonPaths: readonly string[], outDir: string, fo
 }
 
 // 直接実行: tsx e2e/hosted/lib/summarize.ts <出力先> <群の JSON>...
-if (process.argv[1] !== undefined && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [outDir, ...jsonPaths] = process.argv.slice(2);
   if (outDir === undefined || jsonPaths.length === 0) {
     process.stderr.write("使い方: tsx summarize.ts <出力先> <群の JSON>...\n");

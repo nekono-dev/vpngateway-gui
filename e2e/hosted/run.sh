@@ -30,7 +30,7 @@ run_group() {
       return 2
     fi
   fi
-  E2E_JSON_OUT="$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project"
+  E2E_JSON_OUT="$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project" --output "$ARTIFACTS/$group/test-output"
   rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "$group pass" >> "$RESULT_FILE"
