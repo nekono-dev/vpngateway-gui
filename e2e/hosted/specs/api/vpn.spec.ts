@@ -58,6 +58,10 @@ test.describe.serial("VPN アカウントと接続（stack・api）", () => {
   });
 
   test("3.7: 認証情報の誤りでログインに失敗し、ログイン状態は変わらない", async () => {
+    // 前提: 未ログイン（前の群の試験がログインを残すことがあるため、ここでログアウトして揃える）
+    await client.delete("/v1/session");
+    const before = await client.get<SessionBody>("/v1/session");
+    expect(before.ok && before.body.loggedIn).toBe(false);
     await setMockControl("protonvpn", { loginFails: true });
     try {
       const res = await client.post("/v1/session", { username: MOCK_USER, password: "wrong", twoFactorCode: "123456" });
