@@ -30,7 +30,9 @@ export function flatten(suite: PwSuite, group = ""): TestResult[] {
   for (const spec of suite.specs ?? []) {
     for (const test of spec.tests) {
       // Playwright の status は expected（期待どおり）・unexpected・flaky・skipped。期待どおりなら合格（失敗を期待した試験も含む）
-      const passed = test.status === "expected" || (test.status === "skipped" && test.expectedStatus === "skipped");
+      // 意図して skip した試験（確認の実行のときだけ動く試験）は、確かめていないため報告に含めない
+      if (test.status === "skipped" && test.expectedStatus === "skipped") continue;
+      const passed = test.status === "expected";
       const message = test.results.find((r) => r.error?.message !== undefined)?.error?.message;
       const requirement = /(\d+\.\d+)/.exec(spec.title)?.[1] ?? "-";
       out.push({

@@ -23,11 +23,11 @@ describe("flatten（Playwright の報告 → 共有の報告）", () => {
     expect(results[1]).toMatchObject({ requirement: "9.2", outcome: "fail", reason: "版が違う" });
   });
 
-  it("期待どおりに失敗した試験（test.fail）は合格、期待しない skipped は不合格とする", () => {
+  it("期待どおりに失敗した試験（test.fail）は合格、期待しない skipped は不合格、意図した skip は報告に含めない", () => {
     const skipped = { title: "3.2: 任意", tests: [{ projectName: "gateway", status: "skipped", expectedStatus: "passed", results: [] }] } as never;
     expect(flatten({ title: "g", specs: [skipped] } as never, "gateway")[0]).toMatchObject({ outcome: "fail" });
     const expectedSkip = { title: "3.2: 任意", tests: [{ projectName: "gateway", status: "skipped", expectedStatus: "skipped", results: [] }] } as never;
-    expect(flatten({ title: "g", specs: [expectedSkip] } as never, "gateway")[0]).toMatchObject({ outcome: "pass" });
+    expect(flatten({ title: "g", specs: [expectedSkip] } as never, "gateway")).toHaveLength(0);
   });
 
   it("要件 ID が無い試験は - とする", () => {
