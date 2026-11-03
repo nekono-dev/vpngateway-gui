@@ -37,8 +37,10 @@ function main(): void {
   const state = readState(statePath);
   const control = readControl(controlPath);
   const network = createNetwork(join(dir, `${vendor}.route`));
+  const before = JSON.stringify(state);
   const result = runCommand(vendor, argv, state, network, readStdinLines(), control);
-  writeState(statePath, state);
+  // 状態が変わったときだけ書く（status などの読み取りが、同時に動く別の操作の結果を古い内容で戻さないように）
+  if (JSON.stringify(state) !== before) writeState(statePath, state);
 
   if (control.responseDelayMs !== undefined && control.responseDelayMs > 0) sleepSync(control.responseDelayMs);
   process.stdout.write(result.stdout);

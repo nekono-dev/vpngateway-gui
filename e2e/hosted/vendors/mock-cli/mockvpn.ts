@@ -2,7 +2,7 @@
 // 出力は samples.json の該当ケースの stdout をそのまま使う（出力の契約をずらさないため）。
 // ネットワークの変更（vpn0 の作成・既定経路の移動）は Network の実装に任せ、単体テストでは差し替える。
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { renameSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type VendorId = "protonvpn" | "adguardvpn";
@@ -213,5 +213,8 @@ export function readControl(path: string): MockControl {
  */
 export function writeState(path: string, state: MockState): void {
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(state)}\n`, "utf8");
+  // 一時ファイルへ書いてから差し替える（読む側が書きかけの内容を見ないように）
+  const temp = `${path}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(state)}\n`, "utf8");
+  renameSync(temp, path);
 }
