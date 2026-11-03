@@ -45,6 +45,7 @@ describe("prepareProton", () => {
   it("資格情報を入力し、2FA を直後に送ってログインし、プランを表示する", async () => {
     const { api, bodies } = fakeApi({
       "PUT /v1/providers/active": ok({}),
+      "DELETE /v1/session": ok({}),
       "POST /v1/session": ok({ message: "ok" }),
       "GET /v1/session": ok({ loginMethod: "credentials", loggedIn: true, plan: { id: "free", label: "Free" } }),
     });
@@ -62,6 +63,7 @@ describe("prepareProton", () => {
   it("2FA を空で入力したら、2FA の項目を送らない", async () => {
     const { api, bodies } = fakeApi({
       "PUT /v1/providers/active": ok({}),
+      "DELETE /v1/session": ok({}),
       "POST /v1/session": ok({ message: "ok" }),
       "GET /v1/session": ok({ loginMethod: "credentials", loggedIn: true, plan: { id: "paid", label: "Paid" } }),
     });
@@ -73,6 +75,7 @@ describe("prepareProton", () => {
   it("認証の失敗は vendor-auth-failed（API の message のみ）で中止する", async () => {
     const { api } = fakeApi({
       "PUT /v1/providers/active": ok({}),
+      "DELETE /v1/session": ok({}),
       "POST /v1/session": { ok: false, kind: "http", status: 401, error: "invalid_credentials", message: "認証に失敗しました" },
     });
     const { io } = scriptedIo(["user", "wrong", "000000"]);
@@ -85,6 +88,7 @@ describe("prepareProton", () => {
   it("到達の失敗は vendor-unreachable で中止する（認証の失敗と区別する）", async () => {
     const { api } = fakeApi({
       "PUT /v1/providers/active": ok({}),
+      "DELETE /v1/session": ok({}),
       "POST /v1/session": { ok: false, kind: "transport", message: "ECONNRESET" },
     });
     const { io } = scriptedIo(["user", "pw", "123456"]);

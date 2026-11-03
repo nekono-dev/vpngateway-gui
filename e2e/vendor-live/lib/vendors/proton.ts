@@ -23,6 +23,9 @@ export async function prepareProton(
   const active = await api.put("/v1/providers/active", { providerId: "protonvpn" });
   if (!active.ok) return { ok: false, reason: { kind: "vendor-unreachable" } };
 
+  // 前の実行のログインが残っていると、CLI が別のアカウントへの切り替えを拒否する。先に解除する
+  await api.delete("/v1/session");
+
   const username = await io.hidden("Proton のユーザー名: ");
   const password = await io.hidden("Proton のパスワード: ");
   const twoFactorCode = await io.hidden("2FA のコード（表示されない。入力後に Enter）: ");
