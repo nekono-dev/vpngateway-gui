@@ -14,8 +14,8 @@ const run = promisify(execFile);
 
 /** LAN クライアントの名前空間（topology.sh の E2E_NS_LAN と一致させる）。 */
 export const LAN_NS = "lan";
-/** ISP の模擬サービス（echo・DoH・平文 DNS）の待受 IPv4（env.sh の E2E_ISP_IP と一致させる）。 */
-export const ISP_IP = "192.168.50.254";
+/** ISP の模擬サービス（echo・DoH・平文 DNS）の待受 IPv4（env.sh の E2E_ISP_SERVICE_IP と一致させる）。LAN の外のアドレス。 */
+export const ISP_IP = "198.51.100.254";
 /** 検証の IP 確認サービス（ISP の echo）。 */
 export const ECHO_URL = `https://${ISP_IP}/`;
 /** ゲートウェイのホスト側（LAN の既定の次ホップ・DNS 中継の待受）。 */

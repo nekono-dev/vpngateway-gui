@@ -78,6 +78,8 @@ topology_links() {
 
   topology_add_ns "$E2E_NS_LAN" "$E2E_LAN_IP/24" "$E2E_HOST_IP"
   topology_add_ns "$E2E_NS_ISP" "$E2E_ISP_IP/24" ""
+  # ISP の模擬サービスは LAN の外のアドレスで待つ（lo に付ける。通信はゲートウェイの既定経路を通る）
+  sudo ip -n "$E2E_NS_ISP" addr add "$E2E_ISP_SERVICE_IP/32" dev lo
   topology_add_ns "$E2E_NS_VPNEXIT" "$E2E_VPNEXIT_IP/24" ""
   sudo ip netns exec "$E2E_NS_VPNEXIT" sysctl -qw net.ipv4.ip_forward=1
   topology_add_tunnel

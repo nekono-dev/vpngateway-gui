@@ -5,7 +5,10 @@
 E2E_BRIDGE="e2eseg"
 E2E_HOST_IP="192.168.50.1"            # ホスト（ブリッジ側）。LAN クライアントの既定の次ホップ
 E2E_NET="192.168.50.0/24"
-E2E_ISP_IP="192.168.50.254"           # 上位ルータ・echo・DoH・DNS（既定経路の次ホップ）
+E2E_ISP_IP="192.168.50.254"           # 上位ルータ（既定経路の次ホップ・VPN 出口の既定経路）
+# ISP の模擬サービス（echo・DoH・平文 DNS）の待受。LAN（192.168.50.0/24）の外に置き、LAN クライアントの通信が
+# ゲートウェイ（透過ゲートウェイ・VPN・明示的プロキシ）を通るようにする。isp の名前空間の lo に付ける。
+E2E_ISP_SERVICE_IP="198.51.100.254"
 E2E_LAN_IP="192.168.50.10"            # LAN クライアント
 E2E_VPNEXIT_IP="192.168.50.200"       # VPN 出口（LAN 側）
 E2E_TUN_HOST="10.66.0.1/30"           # VPN トンネル（ホスト側 vpn0）
@@ -26,4 +29,4 @@ E2E_ROUTE_FILE="$E2E_WORK_DIR/default-route.txt"
 E2E_ISP_PID_FILE="$E2E_WORK_DIR/isp.pid"
 
 # ランナー自身の通信（GitHub との接続）を守る経路表。既定経路を移しても、ホスト発の通信はこの表で元の回線へ出る
-E2E_RUNNER_TABLE="100"
+E2E_RUNNER_TABLE="200"   # 製品の迂回の規則（fwmark 0x100 → 表 100）と衝突させない

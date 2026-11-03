@@ -25,7 +25,7 @@ export function clientIpv4(remoteAddress: string | undefined): string {
 
 /**
  * 目的: echo と DoH を提供する HTTPS サーバを起動する。
- * 入力: host(待受 IPv4。例 192.168.50.254)、port(既定 443)、key・cert(サーバの秘密鍵と証明書の PEM)、zone(対応表)。
+ * 入力: host(待受 IPv4。例 198.51.100.254)、port(既定 443)、key・cert(サーバの秘密鍵と証明書の PEM)、zone(対応表)。
  * 出力: IspHttps。
  * 失敗時の方針: 待受に失敗したら例外を投げる。DoH の一時停止中は応答を保留し、再開で返す（上流の停止を再現する）。
  */

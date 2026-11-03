@@ -81,7 +81,7 @@ describe("DoH（RFC 8484 の POST）", () => {
     const res = await call("POST", "/dns-query", query);
     expect(res.status).toBe(200);
     const answer = decode(res.body);
-    expect(answer.answers?.[0]).toMatchObject({ type: "A", data: "192.168.50.254" });
+    expect(answer.answers?.[0]).toMatchObject({ type: "A", data: "198.51.100.254" });
   });
 
   it("対応表にない名前は NXDOMAIN（RCODE 3）で答える", async () => {
@@ -94,7 +94,7 @@ describe("DoH（RFC 8484 の POST）", () => {
 describe("平文 DNS（UDP）", () => {
   it("DoH と同じ対応表を参照して答える", async () => {
     const answer = await udpQuery("dns.e2e.test");
-    expect(answer.answers?.[0]).toMatchObject({ type: "A", data: "192.168.50.254" });
+    expect(answer.answers?.[0]).toMatchObject({ type: "A", data: "198.51.100.254" });
   });
 
   it("直接の応答（directAnswers）は中継の対応表より優先される", () => {
