@@ -150,6 +150,10 @@ async function runVendorTests(config: LiveConfig, session: LiveSession, forbidde
     });
     print(`成果物: ${dir}`);
 
+    // 次の実行で別のアカウントを承認できるよう、ログアウトする（失敗しても結果には影響させない）
+    const logout = await session.api.delete("/v1/session");
+    print(logout.ok ? "ログアウトした" : `ログアウトできなかった（${describeApi(logout)}）`);
+
     const interrupted = controller.signal.aborted;
     return failed || !restore.ok || interrupted ? 1 : 0;
   } finally {

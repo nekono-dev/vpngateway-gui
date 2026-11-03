@@ -40,6 +40,9 @@ export async function prepareAdGuard(
   const active = await api.put("/v1/providers/active", { providerId: "adguardvpn" });
   if (!active.ok) return { ok: false, reason: { kind: "vendor-unreachable" } };
 
+  // 前の実行のログインが残っていると、承認を経ずに別のアカウントのまま進んでしまう。先に解除して、必ず承認し直させる
+  await api.delete("/v1/session");
+
   const started = await api.post<SessionBody>("/v1/session");
   if (!started.ok) {
     if (started.kind === "transport") return { ok: false, reason: { kind: "vendor-unreachable" } };

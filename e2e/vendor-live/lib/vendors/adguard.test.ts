@@ -33,6 +33,7 @@ describe("prepareAdGuard", () => {
   it("承認されるまで確認を繰り返し、承認後にプランを返す", async () => {
     const { api, calls } = scriptedApi({
       "PUT /v1/providers/active": [ok({})],
+      "DELETE /v1/session": [ok({})],
       "POST /v1/session": [ok({ loginUrl: "https://auth.adguard.io/device_code?user_code=ABCD-1234", message: "" })],
       "GET /v1/session": [notYet, notYet, approved],
     });
@@ -53,6 +54,7 @@ describe("prepareAdGuard", () => {
   it("5 分を過ぎても承認されなければ device-approval-timeout で中止する", async () => {
     const { api } = scriptedApi({
       "PUT /v1/providers/active": [ok({})],
+      "DELETE /v1/session": [ok({})],
       "POST /v1/session": [ok({ loginUrl: "https://auth.adguard.io/device_code?user_code=ABCD-1234", message: "" })],
       "GET /v1/session": [notYet],
     });
@@ -65,5 +67,16 @@ describe("prepareAdGuard", () => {
     });
     expect(outcome).toEqual({ ok: false, reason: { kind: "device-approval-timeout" } });
     expect(now).toBeGreaterThanOrEqual(APPROVAL_TIMEOUT_MS);
+  });
+
+  it("承認の前に既存のログインを解除し、承認をやり直させる", async () => {
+    const { api, calls } = scriptedApi({
+      "PUT /v1/providers/active": [ok({})],
+      "DELETE /v1/session": [ok({})],
+      "POST /v1/session": [ok({ loginUrl: "https://auth.adguard.io/device_code?user_code=ABCD-1234", message: "" })],
+      "GET /v1/session": [approved],
+    });
+    await prepareAdGuard(api, io, { now: () => 0, sleep: async () => undefined });
+    expect(calls.indexOf("DELETE /v1/session")).toBeLessThan(calls.indexOf("POST /v1/session"));
   });
 });
