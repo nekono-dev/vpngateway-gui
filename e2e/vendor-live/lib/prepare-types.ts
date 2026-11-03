@@ -9,7 +9,7 @@ export type PrepareStep = "api" | "operator" | "public-ip" | "vendor";
 export type AbortReason =
   | { kind: "api-unreachable" }
   | { kind: "ca-untrusted" }
-  | { kind: "operator-auth-failed" }
+  | { kind: "operator-auth-failed"; message: string }
   | { kind: "public-ip-unavailable" }
   | { kind: "public-ip-not-confirmed" }
   | { kind: "vendor-auth-failed"; message: string }
@@ -47,7 +47,7 @@ export function describeAbort(reason: AbortReason): string {
     case "ca-untrusted":
       return "API の証明書を取り込んだ CA で検証できない。資格情報は入力していない";
     case "operator-auth-failed":
-      return "管理者の認証に失敗した";
+      return `管理者の認証に失敗した（API: ${reason.message}）`;
     case "public-ip-unavailable":
       return "開発サーバの公開 IP を取得できない";
     case "public-ip-not-confirmed":

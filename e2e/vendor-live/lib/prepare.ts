@@ -65,7 +65,8 @@ export async function loginOperator(api: ApiClient, io: PrepareIo): Promise<{ ok
   const result = await api.post("/v1/operator/session", { username, password });
   if (result.ok) return { ok: true };
   if (result.kind === "transport") return { ok: false, reason: classifyTransport(result) };
-  return { ok: false, reason: { kind: "operator-auth-failed" } };
+  // API の message（「username or password is incorrect」「too many failed attempts」など）は秘密を含まないので、そのまま示す
+  return { ok: false, reason: { kind: "operator-auth-failed", message: `HTTP ${result.status} ${result.message}` } };
 }
 
 /** 段の依存。 */
