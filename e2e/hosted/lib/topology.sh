@@ -81,6 +81,9 @@ topology_links() {
   topology_add_ns "$E2E_NS_VPNEXIT" "$E2E_VPNEXIT_IP/24" ""
   sudo ip netns exec "$E2E_NS_VPNEXIT" sysctl -qw net.ipv4.ip_forward=1
   topology_add_tunnel
+  # LAN クライアントの名前解決は、ゲートウェイの DNS 中継（LAN 側のアドレス）へ向ける
+  sudo mkdir -p /etc/netns/"$E2E_NS_LAN"
+  printf "nameserver %s\n" "$E2E_HOST_IP" | sudo tee /etc/netns/"$E2E_NS_LAN"/resolv.conf >/dev/null
 }
 
 # ホストの既定経路を ISP（上位ルータ）へ向ける。ランナーの通信は元の回線の経路表で出す（GitHub との接続を保つ）
@@ -112,6 +115,10 @@ topology_drop_runner_route() {
 topology_down() {
   topology_drop_runner_route
   topology_restore_route
+  # ISP の模擬サービス（isp の名前空間で動く）を止める
+  if [ -s "$E2E_ISP_PID_FILE" ]; then sudo kill "$(cat "$E2E_ISP_PID_FILE")" 2>/dev/null || true; fi
+  rm -f "$E2E_ISP_PID_FILE"
+  sudo rm -rf /etc/netns/"$E2E_NS_LAN"
   for ns in "$E2E_NS_LAN" "$E2E_NS_ISP" "$E2E_NS_VPNEXIT"; do
     sudo ip netns del "$ns" 2>/dev/null || true
   done

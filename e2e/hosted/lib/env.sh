@@ -22,6 +22,8 @@ E2E_DOH_PORT="443"
 # 既定経路の退避先（topology_up が書き、topology_down が読む）。git の対象外の作業場所
 E2E_WORK_DIR="${E2E_WORK_DIR:-e2e/hosted/.work}"
 E2E_ROUTE_FILE="$E2E_WORK_DIR/default-route.txt"
+# ISP の模擬サービスの PID（provision_isp_start が書き、topology_down が止める）
+E2E_ISP_PID_FILE="$E2E_WORK_DIR/isp.pid"
 
 # ランナー自身の通信（GitHub との接続）を守る経路表。既定経路を移しても、ホスト発の通信はこの表で元の回線へ出る
 E2E_RUNNER_TABLE="100"

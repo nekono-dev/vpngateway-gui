@@ -52,7 +52,8 @@ export interface IspDns {
 export async function startIspDns(host: string, zone: Zone, port = 53): Promise<IspDns> {
   const udp = createSocket("udp4");
   udp.on("message", (msg, rinfo) => {
-    const reply = answerQuery(zone, msg, false);
+    // 平文 DNS は直接の応答（directAnswers）を返す。中継（DoH）経由との違いで、53 番リダイレクトの通過を判定する（6.2）
+    const reply = answerQuery(zone, msg, true);
     if (reply !== null) udp.send(reply, rinfo.port, rinfo.address);
   });
   await new Promise<void>((resolve, reject) => {
@@ -68,7 +69,7 @@ export async function startIspDns(host: string, zone: Zone, port = 53): Promise<
       while (buffered.length >= 2) {
         const length = buffered.readUInt16BE(0);
         if (buffered.length < 2 + length) break;
-        const reply = answerQuery(zone, buffered.subarray(2, 2 + length), false);
+        const reply = answerQuery(zone, buffered.subarray(2, 2 + length), true);
         buffered = buffered.subarray(2 + length);
         if (reply !== null) {
           const prefix = Buffer.alloc(2);

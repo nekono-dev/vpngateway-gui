@@ -13,3 +13,9 @@ services:
     build:
       context: .
       dockerfile: e2e/hosted/vendors/adguardvpn/Dockerfile
+  proxy:
+    # 検証の IP 確認（ISP の echo）は、テスト CA で検証する（要件 8.6）。curl の既定の信頼の束を、テスト CA を含む束へ差し替える
+    environment:
+      CURL_CA_BUNDLE: /etc/vpngwgui/e2e-ca-bundle.crt
+    volumes:
+      - /etc/vpngwgui/e2e-ca-bundle.crt:/etc/vpngwgui/e2e-ca-bundle.crt:ro

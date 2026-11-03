@@ -43,7 +43,9 @@ run_group() {
 
 # 準備: 前回の導入を消し、経路を作り、導入して起動し、既定経路を切り替える。
 # 引数: 準備の種類（stack・gateway）。lifecycle は試験自身が導入するため、この関数を使わない。
+# gateway は、ISP の模擬サービス（echo・DoH・平文 DNS）を isp の名前空間で起動してから経路を切り替える。
 prepare_group() {
+  group="$1"
   topology_down
   if [ -x "$E2E_WORK_DIR/install.sh" ]; then
     sudo sh "$E2E_WORK_DIR/install.sh" uninstall --purge >/dev/null 2>&1 || true
@@ -51,6 +53,7 @@ prepare_group() {
   topology_links || return 1
   provision_install "$PWD" "$(git rev-parse HEAD)" || return 1
   provision_start || return 1
+  if [ "$group" = gateway ]; then provision_isp_start || return 1; fi
   topology_route_isp || return 1
   provision_wait || return 1
   return 0

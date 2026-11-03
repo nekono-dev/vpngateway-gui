@@ -27,5 +27,7 @@ export default defineConfig({
     // stack 群: 初期設定の画面（ui）が最初に実行され、api はその後に実行される（dependencies）
     { name: "stack-ui", testMatch: /specs\/ui\/.*\.spec\.ts$/ },
     { name: "stack-api", testMatch: /specs\/api\/.*\.spec\.ts$/, dependencies: ["stack-ui"] },
+    // gateway 群: 透過ゲートウェイ・DNS 中継・明示的プロキシ・動作検証（経路と ISP の模擬を使う）
+    { name: "gateway", testMatch: /specs\/gateway\/.*\.spec\.ts$/ },
   ],
 });
