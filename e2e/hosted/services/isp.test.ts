@@ -77,11 +77,11 @@ describe("echo（送信元 IP を返す）", () => {
 
 describe("DoH（RFC 8484 の POST）", () => {
   it("対応表にある名前を、対応する A レコードで答える", async () => {
-    const query = encode({ type: "query", id: 1, flags: 0x0100, questions: [{ type: "A", name: "echo.bypass.test" }] });
+    const query = encode({ type: "query", id: 1, flags: 0x0100, questions: [{ type: "A", name: "bypass.e2e.test" }] });
     const res = await call("POST", "/dns-query", query);
     expect(res.status).toBe(200);
     const answer = decode(res.body);
-    expect(answer.answers?.[0]).toMatchObject({ type: "A", data: "198.51.100.254" });
+    expect(answer.answers?.[0]).toMatchObject({ type: "A", data: "198.51.100.253" });
   });
 
   it("対応表にない名前は NXDOMAIN（RCODE 3）で答える", async () => {

@@ -1,8 +1,8 @@
 {
   "records": [
     {
-      "name": "echo.bypass.test",
-      "a": "198.51.100.254"
+      "name": "bypass.e2e.test",
+      "a": "198.51.100.253"
     },
     {
       "name": "dns.e2e.test",

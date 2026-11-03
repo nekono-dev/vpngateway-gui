@@ -21,7 +21,7 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
   -keyout ca.key -out ca.crt -days 1 -subj "/CN=vpngwgui-e2e-test-ca" 2>/dev/null
 
 # サーバ証明書。SAN に ISP の IP を含める（ローカルの単体確認のため 127.0.0.1 も含める）
-printf 'subjectAltName=IP:%s,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' "$ISP_IP" > server.ext
+printf 'subjectAltName=IP:%s,IP:198.51.100.253,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' "$ISP_IP" > server.ext
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
   -keyout server.key -out server.csr -subj "/CN=$ISP_IP" 2>/dev/null
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \

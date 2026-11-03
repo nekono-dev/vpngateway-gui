@@ -59,7 +59,7 @@ provision_certs() {
 provision_isp_start() {
   rm -f "$E2E_ISP_PID_FILE"
   sudo ip netns exec "$E2E_NS_ISP" "$PWD/node_modules/.bin/tsx" e2e/hosted/services/isp-main.ts \
-    "$E2E_ISP_SERVICE_IP" "$E2E_WORK_DIR/certs/server.key" "$E2E_WORK_DIR/certs/server.crt" "$E2E_ISP_PID_FILE" \
+    "0.0.0.0" "$E2E_WORK_DIR/certs/server.key" "$E2E_WORK_DIR/certs/server.crt" "$E2E_ISP_PID_FILE" \
     > "$E2E_WORK_DIR/isp.log" 2>&1 &
   deadline=$(( $(date +%s) + 30 ))
   while [ "$(date +%s)" -lt "$deadline" ]; do

@@ -12,6 +12,7 @@ import {
   ispSignal,
   lanDnsQuery,
   lanResolve,
+  networkDump,
   patchConfig,
   readCaPem,
 } from "../../fixtures/gateway";
@@ -67,7 +68,8 @@ test.describe.serial("DNS 中継・53 番リダイレクト（gateway）", () =>
   test("6.2: 53 番リダイレクトが有効なら、他の DNS サーバへの問い合わせは中継へ転送される", async () => {
     // 無効なときは、問い合わせた DNS サーバ（ISP）の直接の応答が返る（中継を通らない対照）
     await patchConfig(client, { dnsRedirectEnabled: false });
-    expect(await lanDnsQuery(ISP_IP, REDIRECT_NAME)).toBe(DIRECT_ANSWER);
+    const direct = await lanDnsQuery(ISP_IP, REDIRECT_NAME);
+    expect(direct, direct === DIRECT_ANSWER ? "" : await networkDump()).toBe(DIRECT_ANSWER);
 
     // 有効なときは、中継（上流の DoH）の応答になる。中継の対応表には無い名前なので NXDOMAIN
     await patchConfig(client, { dnsRedirectEnabled: true });

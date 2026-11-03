@@ -24,8 +24,9 @@ export const GATEWAY_LAN_IP = "192.168.50.1";
 export const VPN_EGRESS_IP = "192.168.50.200";
 /** ISP の DoH 対応表にある、中継の名前（A は ISP の IP）。 */
 export const RELAY_NAME = "relay.e2e.test";
-/** 迂回対象の名前（A は ISP の IP）。 */
-export const BYPASS_NAME = "echo.bypass.test";
+/** 迂回対象の名前（A は迂回の確認用の IP。echo とは別）。 */
+export const BYPASS_NAME = "bypass.e2e.test";
+export const BYPASS_IP = "198.51.100.253";
 /** 53 番リダイレクトの確認の名前（直接の応答は 203.0.113.99。中継の対応表には無い）。 */
 export const REDIRECT_NAME = "redirect.e2e.test";
 
@@ -129,6 +130,9 @@ export async function networkDump(): Promise<string> {
     ["vpnexit route", ["ip", "netns", "exec", "vpnexit", "ip", "-4", "route", "show"]],
     ["vpnexit nft", ["ip", "netns", "exec", "vpnexit", "nft", "list", "ruleset"]],
     ["host nft", ["nft", "list", "ruleset"]],
+    ["isp addresses", ["ip", "netns", "exec", "isp", "ip", "-4", "addr"]],
+    ["isp listeners", ["ip", "netns", "exec", "isp", "ss", "-lntu"]],
+    ["route for lan to isp service", ["ip", "-4", "route", "get", "198.51.100.254", "from", "192.168.50.10", "iif", "e2eseg"]],
   ];
   const parts: string[] = [];
   for (const [label, args] of commands) {
