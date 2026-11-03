@@ -24,7 +24,9 @@ export function promptHidden(label: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output, terminal: true });
   process.stdout.write(label);
   muted = true;
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // 回答の前に閉じた（Ctrl-C や入力の終わり）なら、待たずに失敗にする。解決の後の close は無視される
+    rl.once("close", () => reject(new Error("入力が途中で閉じられた（Ctrl-C など）")));
     rl.question("", (answer) => {
       muted = false;
       process.stdout.write("\n");
@@ -60,7 +62,8 @@ export function print(message: string): void {
  */
 export function promptVisible(label: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    rl.once("close", () => reject(new Error("入力が途中で閉じられた（Ctrl-C など）")));
     rl.question(label, (answer) => {
       rl.close();
       resolve(answer);

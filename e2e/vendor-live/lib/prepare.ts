@@ -35,7 +35,13 @@ export function classifyTransport(result: { ok: false; kind: "transport"; code?:
  * 失敗時の方針: 証明書の検証が失敗したら ca-untrusted、届かなければ api-unreachable で中止する。
  */
 export async function probeApi(config: LiveConfig): Promise<{ ok: true; api: ApiClient } | { ok: false; reason: AbortReason }> {
-  const api = createApiClient({ baseUrl: config.apiBaseUrl, caPath: config.caPath });
+  let api: ApiClient;
+  try {
+    api = createApiClient({ baseUrl: config.apiBaseUrl, caPath: config.caPath });
+  } catch {
+    // 取り込んだ CA を読めない（無い・壊れている）なら、証明書を検証できないので中止する（資格情報は求めない）
+    return { ok: false, reason: { kind: "ca-untrusted" } };
+  }
   // 未ログインで許可された経路（GET /v1/operator）で到達を確かめる
   const result: ApiResult<unknown> = await api.get("/v1/operator");
   if (result.ok || result.kind === "http") return { ok: true, api };

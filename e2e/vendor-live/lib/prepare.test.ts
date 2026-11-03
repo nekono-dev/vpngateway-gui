@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { classifyTransport, prepare } from "./prepare";
+import { classifyTransport, prepare, probeApi } from "./prepare";
 import type { LiveConfig } from "./config";
 import type { PrepareIo } from "./prepare-types";
 
@@ -94,5 +94,12 @@ describe("prepare（段の中止）", () => {
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.step).toBe("operator");
+  });
+});
+
+describe("取り込んだ CA を読めない場合（要件 1.7）", () => {
+  it("CA のファイルが無ければ、通信せずに ca-untrusted で中止する", async () => {
+    const outcome = await probeApi({ apiBaseUrl: baseUrl, caPath: join(dir, "missing-ca.crt"), artifactsDir: dir });
+    expect(outcome).toEqual({ ok: false, reason: { kind: "ca-untrusted" } });
   });
 });

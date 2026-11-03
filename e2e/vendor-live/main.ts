@@ -170,7 +170,6 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  const vendor = await chooseVendor();
   // 端末で入力された秘密の値（管理者とベンダーの資格情報・2FA）。成果物に含めないために覚えておく
   const entered: string[] = [];
   const io: PrepareIo = {
@@ -183,7 +182,15 @@ async function main(): Promise<number> {
     print,
   };
 
-  const outcome = await prepare(config, vendor, { io, fetchPublicIp: () => fetchPublicIp(), now: () => new Date() });
+  let outcome: Awaited<ReturnType<typeof prepare>>;
+  try {
+    const vendor = await chooseVendor();
+    outcome = await prepare(config, vendor, { io, fetchPublicIp: () => fetchPublicIp(), now: () => new Date() });
+  } catch (error) {
+    // 準備の途中の入力の中断（Ctrl-C など）。試験の設定はまだ変えていないので、戻す必要はない
+    print(`準備を中断した: ${error instanceof Error ? error.message : String(error)}`);
+    return 2;
+  }
   if (!outcome.ok) {
     print(`準備の中止（${outcome.step}）: ${describeAbort(outcome.reason)}`);
     return 2;
