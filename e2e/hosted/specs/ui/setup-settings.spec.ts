@@ -40,7 +40,9 @@ test.describe.serial("設定の保存と再表示（ui）", () => {
     await expect(dialog.getByLabel("Kill Switch")).not.toBeChecked();
   });
 
-  test("13.3・12.2: 不正な値は 400 で拒否され、保存済みの値は変わらず、通知が出る", async ({ watchedPage: page }) => {
+  test("13.3・12.2: 不正な値は 400 で拒否され、保存済みの値は変わらず、通知が出る", async ({ watchedPage: page, pageErrors }) => {
+    // 不正な値の 400 は、この試験の意図した結果（ブラウザがリソースの失敗として記録する）
+    pageErrors.allow(/status of 400 \(Bad Request\) \(https:\/\/127\.0\.0\.1:18080\/api\/v1\/connection\/config\)/);
     await login(page);
     const dialog = await openSettings(page);
 

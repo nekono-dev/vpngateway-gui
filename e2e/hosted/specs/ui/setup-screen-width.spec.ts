@@ -4,7 +4,8 @@
 
 import { test, expect } from "../../fixtures/web";
 import type { Page } from "@playwright/test";
-import { apiClient, loadAdmin } from "../../fixtures/stack";
+import { apiClient } from "../../fixtures/stack";
+import { ensureAdminLogin, loginVpn } from "../../fixtures/gateway";
 import { loginDashboard, openSettings } from "../../fixtures/ui";
 
 const WIDE = 1280;
@@ -26,19 +27,16 @@ test.describe.serial("画面幅（ui）", () => {
   const client = apiClient();
 
   test.beforeAll(async () => {
-    // ベンダーを有効にしておく（ダッシュボードのログイン導線を出すため）
-    const admin = await loadAdmin();
-    const login = await client.post("/v1/operator/session", admin);
-    expect(login.ok, "管理者のログインに失敗").toBe(true);
-    const put = await client.put("/v1/providers/active", { providerId: "protonvpn" });
-    expect(put.ok, "プロバイダの切り替えに失敗").toBe(true);
+    // VPN のベンダーにログインしておく（ダッシュボードの接続先の一覧を出すため。ベンダーの状態はサーバ側に保たれる）
+    await ensureAdminLogin(client);
+    await loginVpn(client);
   });
 
   test("11.1: 1280px・600px・420px で、ダッシュボードと設定ダイアログを開ける", async ({ watchedPage: page }) => {
     for (const width of [WIDE, TABLET, PHONE]) {
       await setWidth(page, width);
       await loginDashboard(page);
-      await expect(page.getByRole("radiogroup", { name: "接続先" }), `${width}px の接続先`).toBeVisible();
+      await expect(page.getByRole("button", { name: "設定", exact: true }), `${width}px のヘッダー`).toBeVisible();
       const dialog = await openSettings(page);
       await expect(dialog.getByRole("tab", { name: "通信制御" })).toBeVisible();
       await dialog.getByRole("button", { name: "キャンセル" }).click();
