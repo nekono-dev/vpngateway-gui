@@ -136,7 +136,7 @@ e2e/
 │   ├── playwright.config.ts            # グループ（プロジェクト）、ワーカー 1、成果物の保存（1.5、12）
 │   ├── lib/
 │   │   ├── env.sh                      # 定数（パス、IP 計画、ポート、グループ名）
-│   │   ├── certs.sh                    # テスト用 CA とサーバ証明書（SAN に 192.168.50.254）（8.6）
+│   │   ├── certs.sh                    # テスト用 CA とサーバ証明書（SAN に 198.51.100.254・198.51.100.253・127.0.0.1）（8.6）
 │   │   ├── topology.sh                 # netns・ブリッジ・VPN 出口の作成と破棄、LAN 側の実行（5〜7）
 │   │   ├── provision.sh                # bootstrap の生成、install、.env の上書き、起動と待機（1.2、9）
 │   │   ├── diagnose.sh                 # 失敗時の診断の収集（ip route・nft・docker logs）（1.4、1.5）
@@ -277,8 +277,8 @@ package.json                            # devDependencies（@playwright/test 1.6
 
 **Responsibilities & Constraints**
 - `topology_links` は、ブリッジ `e2eseg` を作り、`lan`・`isp`・`vpnexit` を接続し、VPN トンネル（`vpn0` ↔ `vpnexit` の `vpn0x`）を作る。既定経路は変えない（導入の外部取得を既定経路が使える間に行うため）。
-- `topology_route_isp` は、ホストの既定経路を `isp`（192.168.50.254）へ向ける。`topology_up` は `topology_links` と `topology_route_isp` を続けて行う。
-- ランナーのユーザーの通信は、元の回線の既定経路を持つ表（表 100、`ip rule` の `uidrange`）で出す。既定経路を移すと、ランナーが GitHub と通信できず step が停止するため（hosted runner の検証で確認）。送信元の規則（`from`）では、送信元を指定しない通信を防げない。
+- `topology_route_isp` は、ホストの既定経路を `isp` の上位ルータ（192.168.50.254）へ向ける。`topology_up` は `topology_links` と `topology_route_isp` を続けて行う。模擬サービス（echo・DoH・DNS）は `isp` の lo に置く（198.51.100.254・198.51.100.253）。LAN と同じ /24 に置くと、LAN からの通信が ISP へ直接届き、ゲートウェイを通らないため（承認済みの計画からの変更）。
+- ランナーのユーザーの通信は、元の回線の既定経路を持つ表（表 200、`ip rule` の `uidrange`）で出す。表の番号は製品のバイパス用の fwmark 0x100 の表と衝突しないよう 200 にする（E2E_RUNNER_TABLE）。既定経路を移すと、ランナーが GitHub と通信できず step が停止するため（hosted runner の検証で確認）。送信元の規則（`from`）では、送信元を指定しない通信を防げない。
 - `vpnexit` は、トンネルからの通信を ISP 側へ masquerade する（ISP からは `192.168.50.200` に見える）。
 - `topology_down` は、全てを元に戻す（`always()` の後始末。既定経路・表 100・規則の復元を含む）。
 - `lan_exec` は `ip netns exec lan` で、LAN クライアント側のコマンドを実行する。
@@ -290,7 +290,7 @@ package.json                            # devDependencies（@playwright/test 1.6
 | --- | --- | --- |
 | ブリッジ `e2eseg`（ホスト） | 192.168.50.1/24 | LAN IF と WAN IF を兼ねる（本番の単一 NIC と同じ） |
 | `lan`（LAN クライアント） | 192.168.50.10/24、既定経路 192.168.50.1 | 透過ゲートウェイの LAN 側 |
-| `isp`（上位ルータ・echo・DoH・DNS） | 192.168.50.254/24 | 既定経路の次ホップ。`verifyEchoUrl` は `https://192.168.50.254/` |
+| `isp`（上位ルータ・echo・DoH・DNS） | eth0 192.168.50.254/24（上位ルータ）、lo 198.51.100.254/32・198.51.100.253/32（模擬サービス） | 既定経路の次ホップ。`verifyEchoUrl` は `https://198.51.100.254/` |
 | `vpnexit`（VPN 出口、LAN 側） | 192.168.50.200/24 | VPN 接続時の送信元 IP（echo から見える） |
 | VPN トンネル（ホスト側 `vpn0`） | 10.66.0.1/30 | モック CLI が作る |
 | VPN トンネル（出口側） | 10.66.0.2/30 | `vpnexit` 側で masquerade |
@@ -310,7 +310,7 @@ package.json                            # devDependencies（@playwright/test 1.6
 - Risks: ホストの既定経路を変えるため、runner 上の他の通信（GitHub への通信など）が止まる。成果物のアップロードは、`topology_down` の後に行う。
 
 #### Certs（`e2e/hosted/lib/certs.sh`）・Diagnostics（`e2e/hosted/lib/diagnose.sh`）・Summarize（`e2e/hosted/lib/summarize.ts`）
-- Certs: テスト用 CA を実行ごとに作る。サーバ証明書の SAN は `IP:192.168.50.254`。CA の秘密鍵はリポジトリに含めない。
+- Certs: テスト用 CA を実行ごとに作る。サーバ証明書の SAN は `IP:198.51.100.254`、`IP:198.51.100.253`、`IP:127.0.0.1`。Proxy はテスト CA を `CURL_CA_BUNDLE`（`docker-compose.e2e-mock.yml`）で信頼する。CA の秘密鍵はリポジトリに含めない。
 - Diagnostics: 失敗時に `ip route`・`nft list ruleset`（ホスト）・`docker compose logs` を `e2e/artifacts/hosted/<group>/diag/` へ保存する。
 - Summarize: Playwright の JSON 結果を `common/report.ts` の `TestResult` に変換し、`summary.txt` と合わせて書き出す。報告の規則（秘密の除外）は `common/report.ts` の 1 か所だけで実装する。
 
@@ -405,7 +405,7 @@ sequenceDiagram
 
 ### 通信の確認フロー（透過ゲートウェイ）
 
-- 接続時: `lan_exec curl https://192.168.50.254/` の応答（送信元 IP）が `192.168.50.200` になる（5.1）。
+- 接続時: `lan_exec curl https://198.51.100.254/` の応答（送信元 IP）が `192.168.50.200` になる（5.1）。
 - 未接続・Kill Switch 有効: 同じ `curl` が失敗する（5.2）。
 - 未接続・Kill Switch 無効: 同じ `curl` が成功し、応答は `192.168.50.1`（ホストの WAN 側アドレス）になる（5.3）。
 - 迂回: 迂回対象のドメインを `lan` で引く。中継の応答の IP が `isp` の IP になり、直接経路で届く（5.4）。
@@ -414,7 +414,7 @@ sequenceDiagram
 
 ### テストの識別子と計画（静的）
 - 組み込み値は `hosted/lib/env.sh` に置く: ブリッジ名、IP 計画（上の表）、ポート（Web 18080、echo 443、DoH 443）、グループ名。
-- `hosted/zone/records.json`: `{ "records": [{ "name": "echo.bypass.test", "a": "192.168.50.254" }, { "name": "dns.e2e.test", "a": "192.168.50.254" }, ...], "directAnswers": [{ "name": "redirect.e2e.test", "a": "203.0.113.99" }] }` の形。中継経由の応答（`192.168.50.254`）と、直接の応答（`203.0.113.99`）を分ける。6.2 の判定に使う。
+- `hosted/zone/records.json`: `{ "records": [{ "name": "bypass.e2e.test", "a": "198.51.100.253" }, { "name": "dns.e2e.test", "a": "198.51.100.254" }, { "name": "relay.e2e.test", "a": "198.51.100.254" }, ...], "directAnswers": [{ "name": "redirect.e2e.test", "a": "203.0.113.99" }] }` の形。中継経由の応答（`198.51.100.254`）と、直接の応答（`203.0.113.99`）を分ける。6.2 の判定に使う。バイパスの名前は、ゲートウェイの外（`198.51.100.253`）へ届くことを 8.x の判定に使う。
 
 ### 実行の成果物（秘密を含まない）
 - `e2e/artifacts/hosted/summary.txt`: グループごとの合否（1.1）。`common/report.ts` の形式。

@@ -8,7 +8,7 @@ import { test, expect } from "../../fixtures/web";
 import type { Page } from "@playwright/test";
 import type { Locator } from "@playwright/test";
 import { apiClient, runnerContainer } from "../../fixtures/stack";
-import { ensureAdminLogin, loginVpn, MOCK_PASSWORD, MOCK_USER } from "../../fixtures/gateway";
+import { connectVpn, disconnectVpn, ensureAdminLogin, loginVpn, MOCK_PASSWORD, MOCK_USER } from "../../fixtures/gateway";
 import { loginDashboard, openSettings } from "../../fixtures/ui";
 
 const run = promisify(execFile);
@@ -88,6 +88,22 @@ test.describe.serial("画面の表示と操作（ui）", () => {
     await dialog.getByRole("button", { name: "検証を実行" }).click();
     await expect(dialog.getByRole("button", { name: "もう一度実行" })).toBeVisible({ timeout: 3 * 60 * 1000 });
     await dialog.getByRole("button", { name: "キャンセル" }).click();
+  });
+
+  test("3.1・3.2・3.4: 接続すると接続中、切断すると切断と画面に出る。接続ログに両方の操作が並ぶ", async ({ watchedPage: page }) => {
+    // 接続と切断は API で行い、その結果を画面（接続状態の表示と接続ログの一覧）で確かめる
+    await loginDashboard(page);
+    await connectVpn(client);
+    await expect(page.locator(".connection-label"), "接続中の表示が出ない").toHaveText("接続中", { timeout: 60 * 1000 });
+
+    await disconnectVpn(client);
+    await expect(page.locator(".connection-label"), "切断の表示が出ない").toHaveText("切断", { timeout: 60 * 1000 });
+
+    await page.getByRole("button", { name: "接続ログ", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "接続ログ" });
+    await expect(dialog.getByRole("cell", { name: "接続", exact: true }), "接続の操作が一覧に無い").not.toHaveCount(0);
+    await expect(dialog.getByRole("cell", { name: "切断", exact: true }), "切断の操作が一覧に無い").not.toHaveCount(0);
+    await page.keyboard.press("Escape");
   });
 
   test("3.6・12.1: VPN からログアウトすると、ログインの導線に戻る", async ({ watchedPage: page }) => {
