@@ -1,7 +1,7 @@
 // 責務: モック CLI の単体テスト。出力が samples.json のケースと一致すること（ケース名で突き合わせる）と、経路の操作の呼び出しを確かめる（要件 3.1〜3.7・4.1）。
 
 import { describe, expect, it } from "vitest";
-import { runCommand, sampleOutput, vendorFromBinary, type MockState, type Network } from "./mockvpn";
+import { MOCK_ACCOUNT, runCommand, sampleOutput, vendorFromBinary, type MockState, type Network } from "./mockvpn";
 
 /** 経路の操作の記録（実際のネットワークは変更しない）。 */
 function recorder(): Network & { calls: string[] } {
@@ -78,8 +78,20 @@ describe("接続・切断と経路の操作", () => {
   it("Proton: signin はパスワードを stdin の 1 行目から受け取り、空なら失敗する", () => {
     const state: MockState = { loggedIn: false, plan: "unknown", connected: false };
     expect(runCommand("protonvpn", ["signin", "--totp", "user"], state, recorder(), [""]).exitCode).toBe(1);
-    expect(runCommand("protonvpn", ["signin", "--totp", "user"], state, recorder(), ["pw", "123456"]).exitCode).toBe(0);
+    expect(runCommand("protonvpn", ["signin", "--totp", "user"], state, recorder(), ["pw", "123456"]).exitCode).toBe(1);
+    expect(state.loggedIn).toBe(false);
+  });
+
+  it("Proton: signin は試験の認証情報のみ受け付け、誤りは失敗にする", () => {
+    const state: MockState = { loggedIn: false, plan: "unknown", connected: false };
+    const ok = [MOCK_ACCOUNT.password, MOCK_ACCOUNT.totp];
+    expect(runCommand("protonvpn", ["signin", "--totp", MOCK_ACCOUNT.user], state, recorder(), ok).exitCode).toBe(0);
     expect(state.loggedIn).toBe(true);
+    const wrong = { loggedIn: false, plan: "unknown", connected: false } as MockState;
+    expect(runCommand("protonvpn", ["signin", "--totp", MOCK_ACCOUNT.user], wrong, recorder(), ["wrong", MOCK_ACCOUNT.totp]).exitCode).toBe(1);
+    expect(runCommand("protonvpn", ["signin", "--totp", "other@example.test"], wrong, recorder(), ok).exitCode).toBe(1);
+    expect(runCommand("protonvpn", ["signin", "--totp", MOCK_ACCOUNT.user], wrong, recorder(), [MOCK_ACCOUNT.password, "000000"]).exitCode).toBe(1);
+    expect(wrong.loggedIn).toBe(false);
   });
 
   it("未対応のコマンドは終了コード 2 で返す（黙って成功させない）", () => {

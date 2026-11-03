@@ -98,11 +98,19 @@ export function runCommand(
   return runAdGuard(command, rest, state, network);
 }
 
+/** モックが受け付ける認証情報（試験の値。fixtures/gateway.ts の MOCK_USER・MOCK_PASSWORD・MOCK_TOTP と一致させる）。 */
+export const MOCK_ACCOUNT = { user: "mock-user@example.test", password: "mock-password", totp: "123456" } as const;
+
 function runProton(command: string | undefined, rest: readonly string[], state: MockState, network: Network, stdin: readonly string[]): MockResult {
   switch (command) {
     case "signin": {
       const password = stdin[0] ?? "";
       if (password === "") return { exitCode: 1, stdout: "Error: Password is required\n" };
+      // 認証情報は、試験が使う値のみを受け付ける（実アカウントは使わない。誤りは失敗にする）
+      const user = rest[rest.length - 1] ?? "";
+      if (user !== MOCK_ACCOUNT.user || password !== MOCK_ACCOUNT.password || stdin[1] !== MOCK_ACCOUNT.totp) {
+        return { exitCode: 1, stdout: "Error: Invalid credentials\n" };
+      }
       state.loggedIn = true;
       state.plan = "paid";
       return { exitCode: 0, stdout: "Login successful.\n" };
