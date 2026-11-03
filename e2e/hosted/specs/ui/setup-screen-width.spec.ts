@@ -54,7 +54,8 @@ test.describe.serial("画面幅（ui）", () => {
     const radio = page.getByRole("radio").first();
     // 接続先が一覧に出ない場合は、接続操作の表示を失敗の理由として出す
     const controls = page.getByRole("region", { name: "接続操作" });
-    await expect(radio, `接続操作の表示: ${(await controls.innerText().catch(() => "（取得できない）")).slice(0, 300)}`).toBeVisible();
+    const caps = await client.get("/v1/connection/capabilities");
+    await expect(radio, `接続操作の表示: ${(await controls.innerText().catch(() => "（取得できない）")).slice(0, 300)} 機能: ${JSON.stringify(caps).slice(0, 600)}`).toBeVisible();
     await radio.click();
     await expect(radio).toBeChecked();
     const connect = page.getByRole("button", { name: "接続", exact: true });
