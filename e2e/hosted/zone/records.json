@@ -11,6 +11,18 @@
     {
       "name": "relay.e2e.test",
       "a": "198.51.100.254"
+    },
+    {
+      "name": "example.com",
+      "a": "203.0.113.10"
+    },
+    {
+      "name": "example.net",
+      "a": "203.0.113.10"
+    },
+    {
+      "name": "example.org",
+      "a": "203.0.113.10"
     }
   ],
   "directAnswers": [
