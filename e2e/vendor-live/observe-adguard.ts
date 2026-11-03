@@ -13,6 +13,8 @@ import { describeAbort, type PrepareIo } from "./lib/prepare-types";
 import { fetchPublicIp } from "./lib/public-ip";
 import { print, promptHidden, promptVisible } from "./lib/terminal";
 import { describeApi } from "./scenarios/run";
+import { observeEgress, type EgressObservation } from "./lib/egress";
+import { describeObservation } from "./scenarios/connection";
 
 /** 接続先の一覧の 1 件（GET /v1/connection/locations のうち、本ツールが読む部分）。 */
 export interface LocationLike {
@@ -44,6 +46,7 @@ interface Observation {
   readonly locationList: { readonly ok: boolean; readonly message: string; readonly seoul?: string };
   readonly connect?: { readonly ok: boolean; readonly message: string; readonly locationId: string };
   readonly afterConnect?: { readonly status?: string; readonly message?: string };
+  readonly egress?: { readonly baselineIp: string; readonly observed: string; readonly differs: boolean };
   readonly disconnect?: { readonly ok: boolean; readonly message: string };
   readonly logout: { readonly ok: boolean; readonly message: string };
 }
@@ -60,7 +63,7 @@ async function connectionStatus(api: ApiClient): Promise<{ status?: string; mess
  * 出力: 観測の記録。
  * 失敗時の方針: 応答が失敗でも観測を続けて記録する。最後に接続が残っていれば切断を試みる。
  */
-async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefined): Promise<Observation> {
+async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefined, baselineIp: string): Promise<Observation> {
   const base = { observedAt: new Date().toISOString(), apiBaseUrl, plan };
 
   const list = await api.get<LocationLike[]>("/v1/connection/locations");
@@ -77,6 +80,8 @@ async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefi
   const connect = await api.put("/v1/connection", { connect: true, locationId: seoul.id });
   const connectRecord = { ok: connect.ok, message: connect.ok ? `HTTP ${connect.status}` : describeApi(connect), locationId: seoul.id };
   const afterConnect = await connectionStatus(api);
+  // 接続後の出口 IP（基準の IP と異なれば、Seoul の出口を通っている）
+  const egress = connect.ok ? await egressRecord(api, baselineIp) : undefined;
 
   // 接続が残っていれば切断する（観測の後の後始末）
   let disconnect: Observation["disconnect"];
@@ -85,7 +90,14 @@ async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefi
     disconnect = { ok: res.ok, message: res.ok ? `HTTP ${res.status}` : describeApi(res) };
   }
   // 次の観測（別のアカウント）で承認をやり直せるよう、AdGuard からログアウトする
-  return { ...base, locationList, connect: connectRecord, afterConnect, disconnect, logout: await logoutOf(api) };
+  return { ...base, locationList, connect: connectRecord, afterConnect, egress, disconnect, logout: await logoutOf(api) };
+}
+
+/** 目的: 接続後の出口 IP を観測し、基準の IP と異なるかを記録する。 */
+async function egressRecord(api: ApiClient, baselineIp: string): Promise<{ baselineIp: string; observed: string; differs: boolean }> {
+  const observation: EgressObservation = await observeEgress(api);
+  const differs = observation.kind === "observed" && observation.ip !== baselineIp;
+  return { baselineIp, observed: describeObservation(observation), differs };
 }
 
 /** 目的: AdGuard からログアウトし、結果を記録する。 */
@@ -148,7 +160,7 @@ async function main(): Promise<number> {
   }
 
   const { api } = outcome.session;
-  const observation = await observe(api, config.apiBaseUrl, outcome.session.vendor.planId);
+  const observation = await observe(api, config.apiBaseUrl, outcome.session.vendor.planId, outcome.session.baseline.publicIp);
   const file = await writeObservation(config, observation, entered.filter((value) => value !== ""));
 
   print("");
@@ -156,6 +168,7 @@ async function main(): Promise<number> {
   print(`接続先の一覧: ${observation.locationList.message}${observation.locationList.seoul ? `（Seoul: ${observation.locationList.seoul}）` : ""}`);
   if (observation.connect) print(`Seoul への接続: ${observation.connect.ok ? "成功" : "失敗"}（${observation.connect.message}）`);
   if (observation.afterConnect) print(`接続後の状態: ${observation.afterConnect.status ?? observation.afterConnect.message}`);
+  if (observation.egress) print(`出口 IP: ${observation.egress.observed}（基準 ${observation.egress.baselineIp} と${observation.egress.differs ? "異なる" : "同じ、または未確認"}）`);
   if (observation.disconnect) print(`切断: ${observation.disconnect.ok ? "成功" : "失敗"}（${observation.disconnect.message}）`);
   print(`ログアウト: ${observation.logout.ok ? "成功" : "失敗"}（${observation.logout.message}）`);
   print(`観測の記録: ${file}`);
