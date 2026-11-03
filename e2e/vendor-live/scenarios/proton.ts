@@ -5,9 +5,6 @@ import type { ApiClient } from "../../common/api-client";
 import { connectedEgressCase, disconnectedEgressCase, endDisconnectedCase, firstLocationId } from "./connection";
 import { describeApi, type ScenarioCase, type Verdict } from "./run";
 
-/** 無料プランの制限を確かめるために渡す接続先の ID。無料プランでは一覧の取得が 403 になり、この ID は使われない。 */
-export const RESTRICTED_PROBE_LOCATION_ID = "us-restricted-probe";
-
 /** 試験の依存。planId は GET /v1/session のプラン（free・paid）。 */
 export interface ProtonCaseOptions {
   readonly api: ApiClient;
@@ -27,9 +24,12 @@ function planCase(options: ProtonCaseOptions): ScenarioCase {
       name: "proton/無料プランは接続先を指定した接続が 403（operation_restricted）",
       requirement: "4.5",
       run: async (): Promise<Verdict> => {
-        const res = await options.api.put("/v1/connection", { connect: true, locationId: RESTRICTED_PROBE_LOCATION_ID });
+        // 実在する接続先（一覧の先頭）を指定する。架空の ID は、制限ではなく「未知の接続先」（400）として拒否される
+        const found = await firstLocationId(options.api);
+        if (!found.ok) return { ok: false, expected: "接続先の一覧が得られる", observed: found.observed };
+        const res = await options.api.put("/v1/connection", { connect: true, locationId: found.id });
         if (!res.ok && res.kind === "http" && res.status === 403 && res.error === "operation_restricted") {
-          return { ok: true, observed: "403 operation_restricted" };
+          return { ok: true, observed: `${found.id}: 403 operation_restricted` };
         }
         return { ok: false, expected: "403 operation_restricted", observed: describeApi(res) };
       },

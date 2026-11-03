@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { fakeApi, httpError, ok, type FakeHandler } from "./fake-api";
 import { adguardCases } from "./adguard";
 import { judgeConnected, judgeDisconnected } from "./connection";
-import { protonCases, RESTRICTED_PROBE_LOCATION_ID } from "./proton";
+import { protonCases } from "./proton";
 import type { EgressObservation } from "../lib/egress";
 import type { Verdict } from "./run";
 
@@ -52,20 +52,21 @@ describe("protonCases", () => {
     expect(cases[0].name).toBe("proton/接続後の出口 IP が基準と異なる");
   });
 
-  it("無料プランは、接続先を指定した接続が 403（operation_restricted）なら合格", async () => {
+  it("無料プランは、一覧の接続先を指定した接続が 403（operation_restricted）なら合格", async () => {
     const seen: unknown[] = [];
     const api = fakeApi((method, path, body) => {
       seen.push([method, path, body]);
+      if (method === "GET" && path === "/v1/connection/locations") return ok([{ id: "jp-tyo" }]);
       return httpError(403, "operation_restricted", "無料");
     });
     const [, plan] = protonCases({ api, baselineIp: BASELINE, planId: "free" });
     const verdict = await plan.run();
-    expect(verdict.ok).toBe(true);
-    expect(seen).toEqual([["PUT", "/v1/connection", { connect: true, locationId: RESTRICTED_PROBE_LOCATION_ID }]]);
+    expect(verdict).toMatchObject({ ok: true, observed: "jp-tyo: 403 operation_restricted" });
+    expect(seen).toContainEqual(["PUT", "/v1/connection", { connect: true, locationId: "jp-tyo" }]);
   });
 
   it("無料プランで接続先を指定した接続が成功してしまえば失敗", async () => {
-    const api = fakeApi(() => ok({ status: "connected" }));
+    const api = fakeApi((method, path) => (method === "GET" ? ok([{ id: "jp-tyo" }]) : ok({ status: "connected" })));
     const [, plan] = protonCases({ api, baselineIp: BASELINE, planId: "free" });
     const verdict = await plan.run();
     expect(verdict.ok).toBe(false);
