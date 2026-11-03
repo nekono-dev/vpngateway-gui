@@ -112,7 +112,7 @@ async function runVendorTests(config: LiveConfig, session: LiveSession, forbidde
     const cases =
       session.vendor.vendor === "protonvpn"
         ? protonCases({ api: session.api, baselineIp, planId: session.vendor.planId })
-        : adguardCases({ api: session.api, baselineIp });
+        : adguardCases({ api: session.api, baselineIp, planId: session.vendor.planId });
 
     let results: TestResult[] = [];
     let restore: RestoreResult = { ok: true };

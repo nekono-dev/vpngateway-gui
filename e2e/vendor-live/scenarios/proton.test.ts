@@ -138,8 +138,8 @@ describe("adguardCases", () => {
       if (method === "PUT" && path === "/v1/connection") return ok({ status: "connected" });
       return egressReply({ status: "pass", observed: "192.168.50.200" })(method, path, body);
     });
-    const cases = adguardCases({ api, baselineIp: BASELINE });
-    expect(cases.map((item) => item.requirement)).toEqual(["4.2", "4.3", "4.8"]);
+    const cases = adguardCases({ api, baselineIp: BASELINE, planId: "premium" });
+    expect(cases.map((item) => item.requirement)).toEqual(["4.2", "4.6", "4.3", "4.8"]);
 
     const verdict = await cases[0].run();
     expect(verdict.ok).toBe(true);
@@ -151,8 +151,37 @@ describe("adguardCases", () => {
       if (method === "GET" && path === "/v1/connection/locations") return ok([]);
       return httpError(404, "not_found");
     });
-    const cases = adguardCases({ api, baselineIp: BASELINE });
+    const cases = adguardCases({ api, baselineIp: BASELINE, planId: "premium" });
     const verdict = await cases[0].run();
     expect(verdict).toMatchObject({ ok: false, observed: "接続先の一覧が空" });
+  });
+
+  it("無料版は、一覧に無い接続先の指定を HTTP のエラーで拒否されれば合格", async () => {
+    const api = fakeApi((method, path, body) => {
+      if (method === "PUT" && path === "/v1/connection" && JSON.stringify(body) === JSON.stringify({ connect: true, locationId: "kr-seoul" })) {
+        return httpError(422, "validation_error", "unknown locationId: kr-seoul");
+      }
+      return httpError(404, "not_found");
+    });
+    const [, plan] = adguardCases({ api, baselineIp: BASELINE, planId: "free" });
+    expect(plan.requirement).toBe("4.5");
+    expect(await plan.run()).toMatchObject({ ok: true });
+  });
+
+  it("無料版で一覧に無い接続先への接続が成功してしまえば失敗", async () => {
+    const api = fakeApi(() => ok({ status: "connected" }));
+    const [, plan] = adguardCases({ api, baselineIp: BASELINE, planId: "free" });
+    expect(await plan.run()).toMatchObject({ ok: false, observed: "接続に成功した" });
+  });
+
+  it("有料版は、一覧の先頭の接続先へ接続できれば合格", async () => {
+    const api = fakeApi((method, path) => {
+      if (method === "GET" && path === "/v1/connection/locations") return ok([{ id: "us-los-angeles" }]);
+      if (method === "PUT" && path === "/v1/connection") return ok({ status: "connected" });
+      return httpError(404, "not_found");
+    });
+    const [, plan] = adguardCases({ api, baselineIp: BASELINE, planId: "premium" });
+    expect(plan).toMatchObject({ requirement: "4.6", name: "adguard/有料プランは指定した接続先へ接続できる" });
+    expect(await plan.run()).toMatchObject({ ok: true, observed: "接続先 us-los-angeles へ接続した" });
   });
 });
