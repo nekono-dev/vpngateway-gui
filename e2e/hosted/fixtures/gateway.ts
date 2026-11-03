@@ -74,19 +74,30 @@ export async function firstLocationId(client: ApiClient): Promise<string> {
   return id as string;
 }
 
-/** 目的: VPN に接続し、接続済みになるまで待つ。 */
+/**
+ * 目的: 接続・切断の後、ゲートウェイがトンネルの有無を反映するまで待つ。
+ * 理由: ゲートウェイは接続の監視（10 秒ごと）で VPN の経路を検出し、転送の規則を組み直す。監視の周期を待たずに
+ *      通信を試すと、組み直し前の規則で判定してしまう。
+ */
+export async function settleTunnelRoute(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 12_000));
+}
+
+/** 目的: VPN に接続し、接続済みになり、ゲートウェイが経路を反映するまで待つ。 */
 export async function connectVpn(client: ApiClient): Promise<void> {
   const id = await firstLocationId(client);
   const res = await client.put("/v1/connection", { connect: true, locationId: id });
   expect(res.ok, "接続に失敗").toBe(true);
   await waitForConnection(client, "connected");
+  await settleTunnelRoute();
 }
 
-/** 目的: VPN から切断し、切断済みになるまで待つ。 */
+/** 目的: VPN から切断し、切断済みになり、ゲートウェイが経路を反映するまで待つ。 */
 export async function disconnectVpn(client: ApiClient): Promise<void> {
   const res = await client.put("/v1/connection", { connect: false });
   expect(res.ok, "切断に失敗").toBe(true);
   await waitForConnection(client, "disconnected");
+  await settleTunnelRoute();
 }
 
 /** 目的: 接続状態が期待の値になるまで待つ（上限 60 秒）。 */

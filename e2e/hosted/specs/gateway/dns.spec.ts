@@ -49,6 +49,8 @@ test.describe.serial("DNS 中継・53 番リダイレクト（gateway）", () =>
       dnsFailureMode: "failClosed",
       dnsFallbackServers: [],
       excludedDomains: [],
+      // 53 番リダイレクトの直接の応答（6.2）は、LAN から ISP への転送が要る。Kill Switch が有効だと遮断されるため無効にする
+      killSwitch: false,
     });
     await waitForRelayActive(client);
   });
