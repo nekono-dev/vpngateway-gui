@@ -30,6 +30,8 @@ test.describe.serial("画面幅（ui）", () => {
     // VPN のベンダーにログインしておく（ダッシュボードの接続先の一覧を出すため。ベンダーの状態はサーバ側に保たれる）
     await ensureAdminLogin(client);
     await loginVpn(client);
+    const session = await client.get<{ loggedIn?: boolean }>("/v1/session");
+    expect(session.ok && session.body.loggedIn, "VPN のベンダーにログインできていない").toBe(true);
   });
 
   test("11.1: 1280px・600px・420px で、ダッシュボードと設定ダイアログを開ける", async ({ watchedPage: page }) => {
@@ -50,6 +52,9 @@ test.describe.serial("画面幅（ui）", () => {
     await setWidth(page, TABLET);
     await loginDashboard(page);
     const radio = page.getByRole("radio").first();
+    // 接続先が一覧に出ない場合は、接続操作の表示を失敗の理由として出す
+    const controls = page.getByRole("region", { name: "接続操作" });
+    await expect(radio, `接続操作の表示: ${(await controls.innerText().catch(() => "（取得できない）")).slice(0, 300)}`).toBeVisible();
     await radio.click();
     await expect(radio).toBeChecked();
     const connect = page.getByRole("button", { name: "接続", exact: true });
