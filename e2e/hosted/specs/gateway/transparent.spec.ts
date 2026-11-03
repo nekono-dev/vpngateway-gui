@@ -16,6 +16,7 @@ import {
   lanFetch,
   lanResolve,
   loginVpn,
+  networkDump,
   patchConfig,
   readCaPem,
 } from "../../fixtures/gateway";
@@ -45,7 +46,7 @@ test.describe.serial("透過ゲートウェイ（gateway）", () => {
     await connectVpn(client);
     const res = await lanFetch(ECHO_URL);
     expect(res.ok, res.ok ? "" : res.error).toBe(true);
-    expect(res.ok && res.body).toBe(VPN_EGRESS_IP);
+    expect(res.ok && res.body, await networkDump()).toBe(VPN_EGRESS_IP);
   });
 
   test("5.2: 未接続で Kill Switch が有効なら、通信は遮断される", async () => {

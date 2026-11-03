@@ -39,7 +39,8 @@ test.describe.serial("DNS 中継・53 番リダイレクト（gateway）", () =>
     await ensureAdminLogin(client);
     // 中継を有効にする（上流は ISP の DoH。CA は作業場所のテスト CA）。透過ゲートウェイは、この群では使わない
     await patchConfig(client, {
-      transparentGatewayEnabled: false,
+      // 設定の規則により、透過ゲートウェイか明示的プロキシの一方は有効でなければならない（この群は透過ゲートウェイを使う）
+      transparentGatewayEnabled: true,
       explicitProxyEnabled: false,
       dnsRelayEnabled: true,
       dnsUpstreamUrl: `https://${ISP_IP}/dns-query`,

@@ -78,9 +78,8 @@ test.describe.serial("動作検証と出口 IP の観測（gateway）", () => {
     const verification = await waitForVerification(client, id);
     expect(verification.checks.length).toBeGreaterThan(0);
     // 有効な機能の項目は、合格か未確認（ブラウザの観測が要る項目）のいずれかになる
-    for (const check of verification.checks) {
-      expect(["pass", "unconfirmed", "notApplicable"], `項目 ${check.id}`).toContain(check.status);
-    }
+    const failed = verification.checks.filter((check) => !["pass", "unconfirmed", "notApplicable"].includes(check.status));
+    expect(failed, JSON.stringify(failed)).toEqual([]);
   });
 
   test("8.3: 実行中に別の検証を開始すると 409 を返す", async () => {
@@ -118,6 +117,6 @@ test.describe.serial("動作検証と出口 IP の観測（gateway）", () => {
     await client.put(`/v1/verifications/${id}/client-observations/egress-ip`, { ip: VPN_EGRESS_IP });
     const verification = await waitForVerification(client, id);
     const failed = verification.checks.filter((check) => check.status !== "pass" && check.status !== "notApplicable");
-    expect(failed.map((check) => `${check.id}=${check.status}`)).toEqual([]);
+    expect(failed.map((check) => `${check.id}=${check.status}`), JSON.stringify(failed)).toEqual([]);
   });
 });

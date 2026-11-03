@@ -13,6 +13,7 @@ import {
   ensureAdminLogin,
   lanFetch,
   loginVpn,
+  networkDump,
   patchConfig,
 } from "../../fixtures/gateway";
 
@@ -77,6 +78,6 @@ test.describe.serial("明示的プロキシ（gateway）", () => {
     await connectVpn(client);
     const res = await lanFetch(ECHO_URL, ["-x", proxyUrl]);
     expect(res.ok, res.ok ? "" : res.error).toBe(true);
-    expect(res.ok && res.body).toBe(VPN_EGRESS_IP);
+    expect(res.ok && res.body, await networkDump()).toBe(VPN_EGRESS_IP);
   });
 });

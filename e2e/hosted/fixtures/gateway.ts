@@ -103,7 +103,32 @@ export async function waitForConnection(client: ApiClient, status: "connected" |
 /** 目的: 設定を部分更新する（失敗したら試験を失敗させる）。 */
 export async function patchConfig(client: ApiClient, patch: Record<string, unknown>): Promise<void> {
   const res = await client.put("/v1/connection/config", patch);
-  expect(res.ok, `設定の更新に失敗: ${JSON.stringify(patch)}`).toBe(true);
+  expect(res.ok, `設定の更新に失敗: ${JSON.stringify(patch)} 応答: ${JSON.stringify(res)}`).toBe(true);
+}
+
+/**
+ * 目的: 失敗の原因を探すため、ホストと VPN 出口の経路・規則・nft を取得する（試験のメッセージに出す）。
+ * 出力: 取得できた内容（取得できない部分は説明の文字列）。秘密は含まれない。
+ */
+export async function networkDump(): Promise<string> {
+  const commands: [string, string[]][] = [
+    ["host route", ["ip", "-4", "route", "show"]],
+    ["host rule", ["ip", "rule"]],
+    ["host table 100", ["ip", "-4", "route", "show", "table", "100"]],
+    ["vpnexit route", ["ip", "netns", "exec", "vpnexit", "ip", "-4", "route", "show"]],
+    ["vpnexit nft", ["ip", "netns", "exec", "vpnexit", "nft", "list", "ruleset"]],
+    ["host nft", ["nft", "list", "ruleset"]],
+  ];
+  const parts: string[] = [];
+  for (const [label, args] of commands) {
+    try {
+      const { stdout } = await run("sudo", args);
+      parts.push(`== ${label}\n${stdout.trim()}`);
+    } catch (error) {
+      parts.push(`== ${label}: 取得できない（${(error as Error).message.split("\n")[0]}）`);
+    }
+  }
+  return parts.join("\n");
 }
 
 /** 結果: LAN クライアントからの通信。成功なら本文（前後の空白を除く）。 */

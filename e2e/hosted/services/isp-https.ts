@@ -45,7 +45,8 @@ export async function startIspHttps(opts: {
       res.end(`${clientIpv4(req.socket.remoteAddress)}\n`);
       return;
     }
-    if (req.method === "POST" && req.url === "/dns-query") {
+    // 中継は ClientID を /dns-query/<ID> のようにパスへ追記して送る（proxy/src/dns-relay/upstream.ts）ため、接頭辞で判定する
+    if (req.method === "POST" && req.url !== undefined && (req.url === "/dns-query" || req.url.startsWith("/dns-query/"))) {
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => chunks.push(chunk));
       req.on("end", () => {
