@@ -56,7 +56,8 @@ test.describe.serial("画面幅（ui）", () => {
     const controls = page.getByRole("region", { name: "接続操作" });
     const caps = await client.get("/v1/connection/capabilities");
     await expect(radio, `接続操作の表示: ${(await controls.innerText().catch(() => "（取得できない）")).slice(0, 300)} 機能: ${JSON.stringify(caps).slice(0, 600)}`).toBeVisible();
-    await radio.click();
+    // 選択肢の入力欄は視覚的に隠れている（visually-hidden）ため、行（label）を押して選ぶ
+    await radio.check({ force: true });
     await expect(radio).toBeChecked();
     const connect = page.getByRole("button", { name: "接続", exact: true });
     await expect(connect).toBeVisible();
