@@ -104,7 +104,7 @@ function runProton(command: string | undefined, rest: readonly string[], state: 
       const password = stdin[0] ?? "";
       if (password === "") return { exitCode: 1, stdout: "Error: Password is required\n" };
       state.loggedIn = true;
-      state.plan = "free";
+      state.plan = "paid";
       return { exitCode: 0, stdout: "Login successful.\n" };
     }
     case "signout":
