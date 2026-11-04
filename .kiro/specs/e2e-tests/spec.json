@@ -1,0 +1,22 @@
+{
+  "feature_name": "e2e-tests",
+  "created_at": "2026-11-01T04:19:33Z",
+  "updated_at": "2026-11-01T07:32:11Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

@@ -1,5 +1,5 @@
 // 責務: `account`アクション（副作用のない読み取り専用コマンド）の出力から、ログイン状態・契約プランを判定し、
-// 結果を短時間キャッシュする（apiserver/design.md D-5）。
+// 結果を短時間キャッシュする。
 // Web UIが5秒周期で取得してもCLIの起動が最大30秒に1回になるようにするため。
 
 import type { Provider } from "../providers/provider-registry.js";

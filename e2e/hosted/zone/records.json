@@ -1,0 +1,34 @@
+{
+  "records": [
+    {
+      "name": "bypass.e2e.test",
+      "a": "198.51.100.253"
+    },
+    {
+      "name": "dns.e2e.test",
+      "a": "198.51.100.254"
+    },
+    {
+      "name": "relay.e2e.test",
+      "a": "198.51.100.254"
+    },
+    {
+      "name": "example.com",
+      "a": "203.0.113.10"
+    },
+    {
+      "name": "example.net",
+      "a": "203.0.113.10"
+    },
+    {
+      "name": "example.org",
+      "a": "203.0.113.10"
+    }
+  ],
+  "directAnswers": [
+    {
+      "name": "redirect.e2e.test",
+      "a": "203.0.113.99"
+    }
+  ]
+}

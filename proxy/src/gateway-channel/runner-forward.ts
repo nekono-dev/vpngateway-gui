@@ -1,5 +1,5 @@
 // 責務: `/runners/<ベンダーID>/*`宛のリクエストを、対応するランナーのUDS（`runner-<ベンダーID>.sock`）へ
-// 転送する。proxyserver/design.md D-9: proxy⇄runner間は同一ホスト常在の前提が
+// 転送する。: proxy⇄runner間は同一ホスト常在の前提が
 // 変わらないため、従来どおり共有Dockerボリューム上のUDSを使う（api⇄proxy間のみmTLS TCP化した）。
 
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
@@ -11,7 +11,7 @@ function socketDir(): string {
   return process.env.CTL_SOCKET_DIR ?? "/var/run/vpngw-ctl";
 }
 
-// ベンダーIDはprovider-registry側で英数字・ハイフンのみに制限されている（api/apiserver/design.md）。
+// ベンダーIDはprovider-registry側で英数字・ハイフンのみに制限されている。
 // ここでも同じ形式のみを許可し、パス経由でソケットディレクトリ外を指させない。
 const RUNNER_PATH_PATTERN = /^\/runners\/([a-z0-9-]+)(\/.+)$/;
 
@@ -38,7 +38,7 @@ export function matchRunnerPath(url: string | undefined): RunnerTarget | undefin
  * 入力: vendorId(転送先ランナーのベンダーID), runnerPath(ランナー側のパス。例 "/exec"・"/health"),
  *      req(受信リクエスト), res(応答先)。
  * 出力: なし（副作用としてresへランナーの応答を書き込む）。
- * 失敗時の方針: 対応するソケットが無い・接続できない場合は502（proxyserver/design.md D-9）。
+ * 失敗時の方針: 対応するソケットが無い・接続できない場合は502。
  */
 export function forwardToRunner(vendorId: string, runnerPath: string, req: IncomingMessage, res: ServerResponse): void {
   const socketPath = join(socketDir(), `runner-${vendorId}.sock`);

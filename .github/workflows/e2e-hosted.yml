@@ -1,0 +1,45 @@
+# hosted runner の E2E（e2e-tests）。npm run test:e2e（sh e2e/hosted/run.sh）を、GitHub-hosted runner で実行する。
+# 検証のための実行（feat/e2e-tests への push と手動実行）。cicd の spec で、main への組み込みを決める。
+name: e2e-hosted
+
+on:
+  push:
+    branches: [feat/e2e-tests]
+  workflow_dispatch:
+    inputs:
+      intentional_failure:
+        description: "3.2 の確認: 意図的な失敗を起こし、失敗時の診断の成果物を確かめる"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 依存と Playwright の導入（外部の取得は経路を変える前に行う）
+        run: |
+          set -eux
+          npm ci --no-audit --no-fund >/dev/null
+          npx playwright install --with-deps chromium >/dev/null
+
+      - name: E2E（hosted）
+        env:
+          E2E_INTENTIONAL_FAILURE: ${{ inputs.intentional_failure && '1' || '' }}
+        run: npm run test:e2e
+
+      - name: 成果物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-hosted-artifacts
+          path: e2e/artifacts/hosted
+          if-no-files-found: ignore

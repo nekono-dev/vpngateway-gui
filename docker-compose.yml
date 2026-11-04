@@ -1,5 +1,5 @@
 # 責務: docker composeの起点（アンカー）ファイル。実際のサービス定義は compose/web.yml・compose/api.yml・
-# compose/gateway.yml（specs/installer/design.md）へ分割されている。
+# compose/gateway.ymlへ分割されている。
 #
 # このファイル自体はサービスを定義しない。installer/setup.shが`.env`の`COMPOSE_FILE`へ、常にこのファイルを
 # 先頭に置いた上で、配置対象のロールのcompose/*.yml（・有効なベンダーのvendors/<ID>/compose.yml）を並べる
@@ -8,7 +8,7 @@
 # 【設計判断】docker composeの`include:`はincludeされたファイル自身の相対パス（build.context等）を
 # 「そのファイル自身の場所」基準で解決する（`.env`の`COMPOSE_FILE`によるファイル結合とは異なる）。
 # 一方、本プロジェクトのベンダーバンドル（vendors/<ID>/compose.yml）は、リポジトリルート基準の相対パス
-# （`context: .`等）を前提に既存の全フェーズで実装されている（AGENTS.md「ベンダー非依存」: ベンダー追加・削除が
+# （`context: .`等）を前提に既存の全フェーズで実装されている（ベンダー追加・削除が
 # バンドルの追加・削除だけで済まなくなる変更をしない）。両者を両立できないため、`include:`は採用せず、
 # 「このファイルを`COMPOSE_FILE`の先頭に置く」ことで、docker composeのproject directory（相対パスの基準。
 # 既定はCOMPOSE_FILE中の最初のファイルの場所）を常にリポジトリルートに固定する方式を採る。

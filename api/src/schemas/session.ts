@@ -10,7 +10,7 @@ export const SessionResponseSchema = Type.Object({
 export type SessionResponse = Static<typeof SessionResponseSchema>;
 
 // ユーザー名・パスワード入力型（`loginMethod: "credentials"`）のログイン入力。
-// パスワード・2FAコードは秘密情報のため、監査ログ・エラー応答・APIのログへ残さない（apiserver/design.md）。
+// パスワード・2FAコードは秘密情報のため、監査ログ・エラー応答・APIのログへ残さない。
 export const SessionLoginBodySchema = Type.Object({
   username: Type.String({ minLength: 1, maxLength: 256 }),
   password: Type.String({ minLength: 1, maxLength: 512 }),

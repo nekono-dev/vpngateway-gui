@@ -51,8 +51,7 @@ function parseJsonOutput(stdout: string): ConnectionStatus {
  * 出力: 接続状態オブジェクト。接続中で接続先の表示名が読み取れれば`location`を含める。
  * 実装上の制約: 接続状態は`connectedPattern`の一致の有無のみで判定し、接続先（`location`）は取れれば付与する
  *              補助情報とする（取れなくても状態判定には影響しない）。CLIは国コードを出力しない前提のため、
- *              国コード(country)はここでは取得しない（接続時に要求した国をroutes/connection.tsが永続化する。
- *              apiserver/design.md D-8参照）。
+ *              国コード(country)はここでは取得しない。接続時に要求した国をroutes/connection.tsが永続化する。
  */
 function parseTextOutput(
   stdout: string,

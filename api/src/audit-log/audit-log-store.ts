@@ -1,5 +1,5 @@
 // 責務: すべてのコマンド実行要求・結果を構造化ログ(JSONL)として記録し、事後追跡できるようにする。
-// 現時点で認証機構がないため、事後追跡性の確保が重要になる（apiserver/requirements.md参照）。
+// 現時点で認証機構がないため、事後追跡性の確保が重要になる。
 
 import { appendFileSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";

@@ -14,11 +14,15 @@
     "generate:api-client": "npm run export-openapi && npm run generate:api-client -w web",
     "check:neutrality": "node scripts/check-vendor-neutrality.mjs",
     "test:install": "sh installer/tests/run.sh",
-    "test:acceptance": "vitest run --config tests/vitest.config.ts",
-    "test:e2e": "NODE_PATH=$(npm root -g) playwright test -c tests/e2e/playwright.config.ts",
-    "lint:specs": "spec-lint"
+    "test:e2e": "sh e2e/hosted/run.sh",
+    "test:vendor-live": "tsx e2e/vendor-live/main.ts",
+    "test:e2e-unit": "vitest run e2e --exclude \"**/*.spec.ts\""
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "@playwright/test": "1.63.0",
+    "dns-packet": "5.6.1",
+    "tsx": "4.23.15",
+    "typescript": "^5.6.3",
+    "vitest": "2.1.9"
   }
 }

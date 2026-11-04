@@ -1,5 +1,5 @@
 // 責務: Web UI利用者のログイン状態（`/v1/operator`のサブリソース）。
-// apiserver/design.md D-10`POST/GET/DELETE /v1/operator/session`に対応する。
+//`POST/GET/DELETE /v1/operator/session`に対応する。
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import { OperatorSessionLoginBodySchema, OperatorSessionStateSchema } from "../schemas/operator.js";
@@ -30,7 +30,7 @@ export const registerOperatorSessionRoute: FastifyPluginAsyncTypebox = async (fa
       }
       const { username, password } = request.body;
       // アカウント未作成であること自体は`GET /v1/operator`の`configured`で判別させ、
-      // ログイン失敗の応答からは区別できないようにする（apiserver/design.md）。
+      // ログイン失敗の応答からは区別できないようにする。
       if (!verifyOperatorPassword(username, password)) {
         recordFailure(ip);
         throw new UnauthenticatedError("username or password is incorrect");

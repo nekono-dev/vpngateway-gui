@@ -18,11 +18,12 @@ vi.mock("./gateway-tls-options.js", () => ({
   loadGatewayClientTlsOptions: () => ({ ca: Buffer.from("ca"), cert: Buffer.from("cert"), key: Buffer.from("key") }),
 }));
 
+const { ProxyUnavailableError, ProxyTimeoutError } = await import("../errors.js");
 const { executeVendorCommand, notifySettings, fetchProxyStatus, checkRunnerHealth, requestConnectionCheck } =
   await import("./proxy-client.js");
 
-function jsonResponse(body: unknown) {
-  return { body: { json: async () => body } };
+function jsonResponse(body: unknown, statusCode = 200) {
+  return { statusCode, body: { json: async () => body, text: async () => JSON.stringify(body) } };
 }
 
 describe("executeVendorCommand", () => {
@@ -50,6 +51,25 @@ describe("executeVendorCommand", () => {
         timeoutMs: 8000,
       }),
     ).rejects.toThrow(/unexpected response shape from proxy/);
+  });
+});
+
+describe("executeVendorCommand（プロキシの状態コード）", () => {
+  const input = { vendor: "protonvpn", binary: "/usr/bin/protonvpn", resolvedArgv: ["status"], timeoutMs: 15000 };
+
+  it("ランナーに届かず 502（runner_unavailable）が返れば、ProxyUnavailableError（API は 502）", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ error: "runner_unavailable" }, 502));
+    await expect(executeVendorCommand("protonvpn", input)).rejects.toBeInstanceOf(ProxyUnavailableError);
+  });
+
+  it("プロキシの応答が 504 なら、ProxyTimeoutError（API は 504）", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ error: "timeout" }, 504));
+    await expect(executeVendorCommand("protonvpn", input)).rejects.toBeInstanceOf(ProxyTimeoutError);
+  });
+
+  it("その他の状態コードは、形状の検証に進まず例外にする", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ exitCode: 0, stdout: "", stderr: "" }, 500));
+    await expect(executeVendorCommand("protonvpn", input)).rejects.toThrow("unexpected status from proxy: 500");
   });
 });
 

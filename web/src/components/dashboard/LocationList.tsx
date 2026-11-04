@@ -25,7 +25,7 @@ interface Props {
   onRefresh: () => void;
   onToggleFavorite: (locationId: string, favorite: boolean) => void;
   // 接続先の一覧そのものが使えない理由（capabilityの`locationList`が不可のとき）。指定されると一覧・タブ・
-  // 絞り込みを出さず、この理由文の枠だけを表示する（一覧を取得しない。webserver/requirements.md FR-4）。
+  // 絞り込みを出さず、この理由文の枠だけを表示する（一覧を取得しない）。
   unavailableReason?: string;
   // 一覧が使えないプランで接続できる国の参考一覧（理由文の下に表示する。空・未指定なら何も出さない）。
   availableLocations?: AvailableLocation[];
@@ -75,9 +75,8 @@ export function LocationList({
     return (
       // 通常時の一覧（.location-list）と同じflexの縦積みで囲み、内部の.location-scrollへ残り高さを渡す
       // （囲まないと参照一覧の行数ぶんだけ高さが伸び、ページ全体がビューポートを超えて表示されてしまう。
-      // webserver/design.md D-14）。
       <div className="location-list">
-        {/* ConnectButtonが同じ理由文のときaria-describedbyで参照する固定id（webserver/design.md D-7）。 */}
+        {/* ConnectButtonが同じ理由文のときaria-describedbyで参照する固定id。 */}
         <RestrictionNote id="location-list-restriction" message={unavailableReason} />
         <AvailableLocations
           locations={availableLocations ?? []}
