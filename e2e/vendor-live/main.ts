@@ -14,7 +14,7 @@ import { ensureEgressPrerequisite, restoreSettings, type RestoreResult } from ".
 import { print, promptHidden, promptVisible } from "./lib/terminal";
 import { adguardCases } from "./scenarios/adguard";
 import { protonCases } from "./scenarios/proton";
-import { describeApi, runCases } from "./scenarios/run";
+import { describeApi, runCases, type Verdict } from "./scenarios/run";
 
 /** 試験の対象にできるベンダー。 */
 const VENDORS = ["protonvpn", "adguardvpn"] as const;
@@ -89,12 +89,28 @@ async function writeArtifacts(input: ArtifactInput): Promise<string> {
 }
 
 /**
+ * 目的: 指定の時間だけ待つ。中断の信号が立てば、待たずに戻る。
+ * 入力: ms(待つ時間。ミリ秒)、signal(中断の信号)。
+ */
+function waitUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
+/**
  * 目的: 準備の後に試験を実行し、設定を試験の前の値に戻し、結果を表示して成果物を書き出す。
  * 入力: config(設定)、session(準備の結果)、forbidden(秘密の値。成果物に含めない)。
  * 出力: 終了コード（0 は全て合格、1 は試験の失敗・復元の失敗・中断）。
  * 失敗時の方針: 試験の結果に関わらず、設定を必ず戻す。Ctrl-C は次の試験の前に止め、設定を戻してから終える。
  */
-async function runVendorTests(config: LiveConfig, session: LiveSession, forbidden: readonly string[]): Promise<number> {
+async function runVendorTests(config: LiveConfig, session: LiveSession, forbidden: readonly string[], holdSeconds: number): Promise<number> {
   const controller = new AbortController();
   const onInterrupt = (): void => {
     controller.abort();
@@ -109,10 +125,23 @@ async function runVendorTests(config: LiveConfig, session: LiveSession, forbidde
     }
 
     const baselineIp = session.baseline.publicIp;
-    const cases =
+    const base =
       session.vendor.vendor === "protonvpn"
         ? protonCases({ api: session.api, baselineIp, planId: session.vendor.planId })
         : adguardCases({ api: session.api, baselineIp, planId: session.vendor.planId });
+    // 中断（Ctrl-C）の確認用: 各試験の前に表示して待つ。待っている間の Ctrl-C は、その試験を実行せずに中断として記録する
+    const cases =
+      holdSeconds > 0
+        ? base.map((scenario) => ({
+            ...scenario,
+            run: async (): Promise<Verdict> => {
+              print(`試験中: ${scenario.name}（${holdSeconds} 秒待つ。Ctrl-C で中断できる）`);
+              await waitUnlessAborted(holdSeconds * 1000, controller.signal);
+              if (controller.signal.aborted) return { ok: false, expected: "試験を実行する", observed: "中断（Ctrl-C）" };
+              return scenario.run();
+            },
+          }))
+        : base;
 
     let results: TestResult[] = [];
     let restore: RestoreResult = { ok: true };
@@ -166,9 +195,17 @@ async function runVendorTests(config: LiveConfig, session: LiveSession, forbidde
  * 出力: 終了コード。
  */
 async function main(): Promise<number> {
+  // 引数: [設定ファイル] [--hold=秒]。--hold は中断の確認用に、各試験の前に待つ秒数（省略時は 0）
+  const args = process.argv.slice(2);
+  const holdArg = args.find((arg) => arg.startsWith("--hold="));
+  const holdSeconds = holdArg === undefined ? 0 : Number(holdArg.slice("--hold=".length));
+  if (!Number.isFinite(holdSeconds) || holdSeconds < 0) {
+    print("--hold には 0 以上の秒数を指定する");
+    return 2;
+  }
   let config: LiveConfig;
   try {
-    config = loadConfig(process.env, process.argv[2] ?? DEFAULT_CONFIG_PATH);
+    config = loadConfig(process.env, args.find((arg) => !arg.startsWith("--")) ?? DEFAULT_CONFIG_PATH);
   } catch (error) {
     print(`準備の中止: ${error instanceof Error ? error.message : String(error)}`);
     return 2;
@@ -199,7 +236,7 @@ async function main(): Promise<number> {
     print(`準備の中止（${outcome.step}）: ${describeAbort(outcome.reason)}`);
     return 2;
   }
-  return runVendorTests(config, outcome.session, entered.filter((value) => value !== ""));
+  return runVendorTests(config, outcome.session, entered.filter((value) => value !== ""), holdSeconds);
 }
 
 main().then(
