@@ -13,6 +13,7 @@ import { fetchPublicIp } from "./lib/public-ip";
 import { ensureEgressPrerequisite, restoreSettings, type RestoreResult } from "./lib/settings";
 import { print, promptHidden, promptVisible } from "./lib/terminal";
 import { adguardCases } from "./scenarios/adguard";
+import { connectionStatus } from "./scenarios/connection";
 import { protonCases } from "./scenarios/proton";
 import { describeApi, runCases, type Verdict } from "./scenarios/run";
 
@@ -89,6 +90,17 @@ async function writeArtifacts(input: ArtifactInput): Promise<string> {
 }
 
 /**
+ * 目的: 接続が残っていれば切断する（中断の後の後始末）。結果を端末に表示する。
+ * 入力: api(管理者の Cookie を保持する API クライアント)。
+ */
+async function disconnectIfConnected(api: ApiClient): Promise<void> {
+  const state = await connectionStatus(api);
+  if (state.kind === "error" || state.status !== "connected") return;
+  const res = await api.put("/v1/connection", { connect: false });
+  print(res.ok ? "中断後に接続が残っていたため、切断した" : `中断後の切断に失敗した（${describeApi(res)}）。手で切断する`);
+}
+
+/**
  * 目的: 指定の時間だけ待つ。中断の信号が立てば、待たずに戻る。
  * 入力: ms(待つ時間。ミリ秒)、signal(中断の信号)。
  */
@@ -148,6 +160,8 @@ async function runVendorTests(config: LiveConfig, session: LiveSession, forbidde
     try {
       results = await runCases(cases, { api: session.api, signal: controller.signal });
     } finally {
+      // 中断のときは終了時の切断（4.8）が実行されないため、接続が残っていれば、ここで切断する
+      if (controller.signal.aborted) await disconnectIfConnected(session.api);
       restore = await restoreSettings(session.api, prerequisite.snapshot, prerequisite.changed);
     }
 
