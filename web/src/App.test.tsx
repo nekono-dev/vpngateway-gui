@@ -2,7 +2,7 @@
 // 接続先リストからの接続・接続先変更・切断、接続国の表示、エラートースト、稼働状況表示、
 // ゲートウェイ取得失敗の分離を検証する。
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,6 +19,11 @@ const api = vi.hoisted(() => ({
   postV1Session: vi.fn(),
 }));
 vi.mock("./generated/api/default/default", () => api);
+// テーマの切り替えボタンは ThemeProvider を要するため、ここではスタブに置き換える（ボタンの挙動は ThemeToggleButton の単体テストで確かめる）。
+vi.mock("./components/theme/ThemeToggleButton", async () => {
+  const { createElement } = await import("react");
+  return { ThemeToggleButton: () => createElement("button", { type: "button" }, "テーマ切替スタブ") };
+});
 
 const { App } = await import("./App");
 const { ToastProvider } = await import("./notifications/ToastProvider");
@@ -56,6 +61,12 @@ async function selectLocation(city: RegExp | string) {
 }
 
 describe("App", () => {
+  it("ヘッダーにテーマの切り替えボタンを置く（ログイン後のダッシュボード。1.5）", async () => {
+    renderApp();
+    const header = document.querySelector("header.app-header") as HTMLElement;
+    expect(within(header).getByRole("button", { name: "テーマ切替スタブ" })).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     api.getV1Connection.mockResolvedValue(disconnected);

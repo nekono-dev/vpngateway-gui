@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Root } from "./Root";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ToastProvider } from "./notifications/ToastProvider";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import "./styles.css";
 
 const rootElement = document.getElementById("root");
@@ -13,9 +14,12 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <ToastProvider>
-      <AuthProvider>
-        <Root />
-      </AuthProvider>
+      {/* テーマの取得が終わるまで、認証の画面も含めて何も描画しない（白いちらつきを防ぐ）。 */}
+      <ThemeProvider>
+        <AuthProvider>
+          <Root />
+        </AuthProvider>
+      </ThemeProvider>
     </ToastProvider>
   </StrictMode>,
 );

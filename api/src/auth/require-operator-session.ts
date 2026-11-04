@@ -10,6 +10,8 @@ const UNAUTHENTICATED_ROUTES: ReadonlySet<string> = new Set([
   "GET /v1/operator",
   "POST /v1/operator",
   "POST /v1/operator/session",
+  // テーマの値だけを返す公開の読み取り（PUT は含めない。保存は管理者のみ）。
+  "GET /v1/ui-preferences",
 ]);
 
 /**

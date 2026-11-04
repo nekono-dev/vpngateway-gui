@@ -23,6 +23,8 @@ const api = vi.hoisted(() => ({
   getV1ConnectionLog: vi.fn(),
 }));
 vi.mock("./generated/api/default/default", () => api);
+// テーマの切り替えボタンは ThemeProvider を要するため、このテストの対象外としてスタブにする。
+vi.mock("./components/theme/ThemeToggleButton", () => ({ ThemeToggleButton: () => null }));
 
 const { App } = await import("./App");
 const { ToastProvider } = await import("./notifications/ToastProvider");

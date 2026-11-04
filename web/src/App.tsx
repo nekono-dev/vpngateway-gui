@@ -14,6 +14,7 @@ import { ProviderSelector } from "./components/dashboard/ProviderSelector";
 import { SettingsDialog } from "./components/dashboard/SettingsDialog";
 import { ConnectionLogDialog } from "./components/dashboard/ConnectionLogDialog";
 import { GithubIcon } from "./components/icons/GithubIcon";
+import { ThemeToggleButton } from "./components/theme/ThemeToggleButton";
 import { HorizontalScroll } from "./components/HorizontalScroll";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
 import { useToast } from "./notifications/ToastProvider";
@@ -128,6 +129,7 @@ export function App({ onLogout }: Props) {
       <header className="app-header">
         <h1>VPNGateway-GUI</h1>
         <HorizontalScroll className="header-actions">
+          <ThemeToggleButton />
           <button type="button" onClick={() => setIsLogOpen(true)}>
             接続ログ
           </button>

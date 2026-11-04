@@ -1,5 +1,14 @@
 /* 最小限のスタイル（レイアウト・状態の色分け・操作ボタンの視認性のみ。デザインシステムは導入しない） */
+/* 配色のトークン（ライト）。ダークは :root[data-theme="dark"] で上書きする（JS が html の data-theme を解決して付ける）。 */
 :root {
+  --page-bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-hover: #ddf4ff;
+  --tint: #f0f6ff;
+  --text: #1f2328;
+  --text-on-accent: #ffffff;
+  --accent: #0969da;
+  --border: #d0d7de;
   --ok: #1a7f37;
   --ok-bg: #dafbe1;
   --warn: #9a6700;
@@ -8,15 +17,46 @@
   --danger-bg: #ffebe9;
   --muted: #57606a;
   --muted-bg: #eaeef2;
-  --border: #d0d7de;
-  --accent: #0969da;
+  --star-active: #bf8700;
+  --scroll-thumb: #c1c7cd;
+  --scroll-thumb-active: #a8b0b8;
+  --overlay: rgba(31, 35, 40, 0.4);
+  --shadow: rgba(31, 35, 40, 0.15);
   /* 入力欄の枠線色（Phase 22）。
      【Phase 23】紫（#6e40c9）は他のUI（枠線・アクセント色）と系統が異なり一貫性を欠くため、グレー系へ変更した。
      【Phase 24】そのグレーが濃すぎるという指摘を受け、ボタンの枠線色（--border）と同程度の薄さへ変更する
      （webserver/requirements.md FR-7）。 */
   --input-border: #d0d7de;
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
-  color: #1f2328;
+  color: var(--text);
+  color-scheme: light;
+}
+
+/* ダークの配色。OS の配色設定をJSが解決し、ダークのときだけ data-theme="dark" を付ける。 */
+:root[data-theme="dark"] {
+  --page-bg: #0d1117;
+  --surface: #161b22;
+  --surface-hover: #1b2b3d;
+  --tint: #14233a;
+  --text: #e6edf3;
+  --text-on-accent: #ffffff;
+  --accent: #1f6feb;
+  --border: #30363d;
+  --ok: #3fb950;
+  --ok-bg: #0f2e1a;
+  --warn: #d29922;
+  --warn-bg: #3d2e00;
+  --danger: #f85149;
+  --danger-bg: #3d1418;
+  --muted: #8b949e;
+  --muted-bg: #21262d;
+  --star-active: #e3b341;
+  --scroll-thumb: #3d444d;
+  --scroll-thumb-active: #6e7681;
+  --overlay: rgba(1, 4, 9, 0.6);
+  --shadow: rgba(1, 4, 9, 0.5);
+  --input-border: #3d444d;
+  color-scheme: dark;
 }
 
 html,
@@ -36,7 +76,7 @@ body,
 
 body {
   margin: 0;
-  background: #f6f8fa;
+  background: var(--page-bg);
   /* iOS Safari等でページ全体を引っ張って伸縮させる挙動（ラバーバンドスクロール）を防ぎ、
      意図しないスクロールが発生しないようにする（Phase 23）。 */
   overscroll-behavior-y: none;
@@ -139,7 +179,7 @@ button {
   padding: 6px 14px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
 }
 
@@ -156,14 +196,14 @@ button[type="submit"],
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
   font-weight: 600;
 }
 
 /* 切断ボタン（Phase 16）: 押しやすい位置（ログイン/ログアウト導線の隣）に置く。
    赤背景は誤操作の印象が強すぎるため、他のボタンと同じ白背景にし、文字色のみ強調する。 */
 button.danger {
-  background: #fff;
+  background: var(--surface);
   border-color: var(--danger);
   color: var(--danger);
   font-weight: 600;
@@ -181,7 +221,7 @@ input[type="checkbox"] {
   margin: 0;
   border: 1px solid var(--input-border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
   display: inline-grid;
   place-content: center;
@@ -196,8 +236,8 @@ input[type="checkbox"]:checked::after {
   content: "";
   width: 5px;
   height: 9px;
-  border-right: 2px solid #fff;
-  border-bottom: 2px solid #fff;
+  border-right: 2px solid var(--text-on-accent);
+  border-bottom: 2px solid var(--text-on-accent);
   transform: rotate(45deg) translate(-1px, -1px);
 }
 
@@ -223,7 +263,7 @@ input[type="radio"]:not(.visually-hidden) {
   margin: 0;
   border: 1px solid var(--input-border);
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface);
   cursor: pointer;
   display: inline-grid;
   place-content: center;
@@ -239,7 +279,7 @@ input[type="radio"]:not(.visually-hidden):checked::after {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--text-on-accent);
 }
 
 input[type="radio"]:not(.visually-hidden):focus-visible {
@@ -275,7 +315,7 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible {
 }
 
 .card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-left-width: 6px;
   border-radius: 8px;
@@ -401,13 +441,13 @@ dialog .location-tabs::-webkit-scrollbar {
   bottom: 0;
   min-width: 24px;
   border-radius: 5px;
-  background: #c1c7cd;
+  background: var(--scroll-thumb);
   cursor: grab;
   touch-action: none;
 }
 
 .hscroll-thumb:active {
-  background: #a8b0b8;
+  background: var(--scroll-thumb-active);
   cursor: grabbing;
 }
 
@@ -426,7 +466,7 @@ dialog .location-tabs::-webkit-scrollbar {
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
-  background: #f0f6ff;
+  background: var(--tint);
 }
 
 .location-scroll {
@@ -438,7 +478,7 @@ dialog .location-tabs::-webkit-scrollbar {
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .location-scroll > .hint {
@@ -463,12 +503,12 @@ dialog .location-tabs::-webkit-scrollbar {
 }
 
 .location-item:hover {
-  background: #f6f8fa;
+  background: var(--page-bg);
 }
 
 .location-selected,
 .location-selected:hover {
-  background: #ddf4ff;
+  background: var(--surface-hover);
   box-shadow: inset 4px 0 0 var(--accent);
 }
 
@@ -531,7 +571,7 @@ dialog .location-tabs::-webkit-scrollbar {
 }
 
 .star[aria-pressed="true"] {
-  color: #bf8700;
+  color: var(--star-active);
 }
 
 .location-error {
@@ -549,7 +589,7 @@ dialog .location-tabs::-webkit-scrollbar {
   margin: 4px 0 0;
   white-space: pre-wrap;
   word-break: break-all;
-  color: #1f2328;
+  color: var(--text);
   font-size: 0.75rem;
 }
 
@@ -650,11 +690,11 @@ dialog.non-modal {
   max-height: calc(100dvh - 2 * var(--page-gutter));
   overflow-y: auto;
   z-index: 1000;
-  box-shadow: 0 0 0 100vmax rgba(31, 35, 40, 0.4);
+  box-shadow: 0 0 0 100vmax var(--overlay);
 }
 
 dialog::backdrop {
-  background: rgba(31, 35, 40, 0.4);
+  background: var(--overlay);
 }
 
 dialog form {
@@ -707,7 +747,7 @@ dialog textarea {
   width: 100%;
   box-sizing: border-box;
   resize: vertical;
-  background: #fff;
+  background: var(--surface);
   color: inherit;
   /* 文字入力欄（テキストボックス）と同じ余白・枠線・角丸・フォーカス表示を土台に、複数行入力欄としての独自スタイルを重ねる。
      フォントは他の入力欄と揃えて本文と同じものを継承し、行間を広げて読みやすくする。
@@ -833,8 +873,8 @@ dialog [role="alert"] {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid;
-  background: #fff;
-  box-shadow: 0 4px 12px rgba(31, 35, 40, 0.15);
+  background: var(--surface);
+  box-shadow: 0 4px 12px var(--shadow);
 }
 
 .toast-error {
@@ -861,7 +901,7 @@ dialog [role="alert"] {
   max-height: 160px;
   padding: 0 var(--scrollbar-gap) var(--scrollbar-gap) 0;
   overflow: auto;
-  color: #1f2328;
+  color: var(--text);
   font-size: 0.75rem;
 }
 
@@ -987,7 +1027,7 @@ dialog [role="alert"] {
   -webkit-appearance: none;
   width: 100%;
   padding-right: 32px;
-  background: #fff;
+  background: var(--surface);
   color: inherit;
   cursor: pointer;
 }
@@ -1218,7 +1258,7 @@ dialog [role="alert"] {
   padding: 8px 12px;
   border: 0;
   border-radius: 0;
-  background: #f6f8fa;
+  background: var(--page-bg);
   color: inherit;
   text-align: left;
   white-space: normal;
@@ -1371,7 +1411,7 @@ dialog [role="alert"] {
   padding: 6px 10px;
   border-radius: 6px;
   font-size: 12px;
-  color: #1f2328;
+  color: var(--text);
   overflow-wrap: anywhere;
 }
 
@@ -1412,7 +1452,7 @@ dialog [role="alert"] {
 
 .verify-icon-pass path,
 .verify-icon-fail path {
-  stroke: #fff;
+  stroke: var(--text-on-accent);
 }
 
 .verify-icon-unconfirmed circle,
@@ -1465,7 +1505,7 @@ dialog [role="alert"] {
 .line-list-frame {
   border: 1px solid var(--input-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -1479,7 +1519,7 @@ dialog [role="alert"] {
   align-items: center;
   gap: 8px;
   padding: 6px 8px 6px 12px;
-  background: #f6f8fa;
+  background: var(--page-bg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -1527,18 +1567,18 @@ dialog [role="alert"] {
 }
 
 .line-list-row:hover {
-  background: #f6f8fa;
+  background: var(--page-bg);
 }
 
 .line-list-row.line-list-selected,
 .line-list-row.line-list-selected:hover {
-  background: #ddf4ff;
+  background: var(--surface-hover);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .line-list-row.line-list-editing,
 .line-list-row.line-list-editing:hover {
-  background: #fff;
+  background: var(--surface);
 }
 
 .line-list-row.line-list-dragging {
@@ -1593,7 +1633,7 @@ dialog [role="alert"] {
 
 .line-list-frame .line-list-row.line-list-editing input.line-list-cell {
   pointer-events: auto;
-  background: #fff;
+  background: var(--surface);
   border-color: var(--input-border);
   outline: 2px solid var(--input-border);
   outline-offset: 1px;
