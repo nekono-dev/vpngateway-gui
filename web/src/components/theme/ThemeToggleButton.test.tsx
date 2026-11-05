@@ -15,6 +15,7 @@ const theme = vi.hoisted(() => ({
 vi.mock("../../contexts/ThemeContext", () => ({ useTheme: () => theme.value }));
 
 const { ThemeToggleButton } = await import("./ThemeToggleButton");
+const { THEME_LABEL } = await import("../../theme/theme-preference");
 
 beforeEach(() => {
   theme.value = { preference: "system", resolved: "light", saving: false, setPreference: vi.fn() };
@@ -41,6 +42,18 @@ describe("ThemeToggleButton", () => {
     render(<ThemeToggleButton />);
     await user.click(screen.getByRole("button"));
     expect(theme.value.setPreference).toHaveBeenLastCalledWith("system");
+  });
+
+  it("文字を出さず、テーマに対応するアイコンだけを表示する", () => {
+    for (const [preference, icon] of [["system", "system"], ["light", "light"], ["dark", "dark"]] as const) {
+      theme.value.preference = preference;
+      const { container, unmount } = render(<ThemeToggleButton />);
+      const button = screen.getByRole("button");
+      expect(button.textContent).toBe("");
+      expect(button).toHaveAttribute("title", `テーマ: ${THEME_LABEL[preference]}`);
+      expect(container.querySelector("svg")).toHaveAttribute("data-icon", icon);
+      unmount();
+    }
   });
 
   it("保存中は押せない", () => {

@@ -196,3 +196,42 @@ test.describe("ダイアログもダークの配色で表示され、本文の�
     });
   }
 });
+
+test.describe("テーマの切り替えボタン（アイコンのみ）は共通のボタン規格に従う", () => {
+  const cases = [
+    { os: "light" as const, saved: "light" as const, text: "rgb(31, 35, 40)", border: "rgb(208, 215, 222)" },
+    { os: "light" as const, saved: "dark" as const, text: "rgb(230, 237, 243)", border: "rgb(48, 54, 61)" },
+  ];
+  for (const { os, saved, text, border } of cases) {
+    test(`保存値 ${saved}: 文字色（アイコンの線）は本文の色 ${text}、枠線は共通の枠線色、背景は面の色`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: os });
+      await mockApi(page, { loggedIn: true, theme: saved });
+      await page.goto("/");
+      const toggle = page.locator("button.theme-toggle");
+      await expect(toggle).toBeVisible();
+      const styles = await toggle.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          color: style.color,
+          border: style.borderTopColor,
+          background: style.backgroundColor,
+          svgStroke: getComputedStyle(element.querySelector("svg") as Element).stroke,
+        };
+      });
+      // 他の既定のボタンと同じ規格: 文字色は本文の色、枠線は共通の枠線色、背景は面の色。アイコンの線は文字色に従う。
+      expect(styles.color).toBe(text);
+      expect(styles.svgStroke).toBe(text);
+      expect(styles.border).toBe(border);
+      await toggle.screenshot({ path: `${SCREENS_DIR}/theme-toggle-${saved}.png` });
+    });
+  }
+
+  test("ホバーで枠線がアクセント色になる（共通のボタン規格）", async ({ page }) => {
+    await mockApi(page, { loggedIn: true, theme: "light" });
+    await page.goto("/");
+    const toggle = page.locator("button.theme-toggle");
+    await toggle.hover();
+    const border = await toggle.evaluate((element) => getComputedStyle(element).borderTopColor);
+    expect(border).toBe("rgb(9, 105, 218)");
+  });
+});
