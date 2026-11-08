@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-restore-test-"));
@@ -26,6 +26,8 @@ vi.mock("../proxy-client/proxy-client.js", () => ({
 
 const { restoreConnectionOnStartup } = await import("./restore-connection.js");
 const { saveConnectedLocation, clearConnectedLocation } = await import("./connection-state-store.js");
+const { saveCityList } = await import("../locations/city-cache-store.js");
+const { getActiveProvider } = await import("../providers/active-provider-store.js");
 
 const P = "mockproton";
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: "" });
@@ -56,18 +58,27 @@ describe("起動時の接続状態の復元", () => {
   });
 
   it("直前に接続先を指定して接続していた場合、切断状態から観測されたら同じ接続先へ再接続する", async () => {
-    saveConnectedLocation(P, { locationId: "jp-japan", country: "jp" }, "JP");
+    const profile = getActiveProvider().profile as unknown as Record<string, unknown>;
+    profile.locationTarget = { city: "fastestServer", unavailableFavorite: "error", errorProvider: "proton" };
+    profile.serverCatalog = { file: "VPN/serverlist.json", list: "LogicalServers", name: "Name", country: "ExitCountry", city: "City", tier: "Tier", features: "Features", status: "Status", score: "Score", load: "Load" };
+    (profile.actions as unknown as { connect: { placeholders: { LOCATION: { pattern: string } } } }).connect.placeholders.LOCATION.pattern = "^[A-Za-z0-9#-]{1,64}$";
+    (profile.actions as unknown as { connect: { argv: string[] } }).connect.argv = ["connect", "%LOCATION%"];
+    mkdirSync(join(dir, "providers", P, "cities"), { recursive: true });
+    mkdirSync(join(dir, "cache", P, "VPN"), { recursive: true });
+    saveCityList(P, "jp", ["Tokyo"]);
+    writeFileSync(join(dir, "cache", P, "VPN", "serverlist.json"), JSON.stringify({ LogicalServers: [{ Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Features: 0, Status: true, Score: 1, Load: 5 }] }));
+    saveConnectedLocation(P, { locationId: "jp-tokyo", country: "jp" }, "JP");
     executeVendorCommandMock.mockImplementation(({ resolvedArgv }: { resolvedArgv: string[] }) => {
       const [command] = resolvedArgv;
       if (command === "status") return Promise.resolve(ok("Status: Disconnected"));
       if (command === "countries") return Promise.resolve(ok(COUNTRIES));
-      if (command === "connect") return Promise.resolve(ok("Connected to JP. \nYour new IP address is 1.2.3.4."));
+      if (command === "connect") return Promise.resolve(ok("Connected to JP#1. \nYour new IP address is 1.2.3.4."));
       return Promise.resolve(ok(""));
     });
     await restoreConnectionOnStartup(logger);
     const connectCalls = calls("connect");
     expect(connectCalls).toHaveLength(1);
-    expect(connectCalls[0].resolvedArgv).toEqual(["connect", "--country", "JP"]);
+    expect(connectCalls[0].resolvedArgv).toEqual(["connect", "JP#1"]);
   });
 
   it("直前が自動接続（接続先の指定なし）だった場合、切断状態から観測されたら接続先を指定せず再接続する", async () => {
