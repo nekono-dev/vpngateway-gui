@@ -11,6 +11,7 @@ import { parseProfileFile, validateProfile } from "./profile-loader.js";
 const load = (relative: string): VendorProfile => JSON.parse(readFileSync(join(import.meta.dirname, relative), "utf8")) as VendorProfile;
 const adguard = load("../../../vendors/adguardvpn/profile.json");
 const protonLike = load("../../../e2e/vendors/mockproton/profile.json");
+const proton = load("../../../vendors/protonvpn/profile.json");
 
 describe("プロファイルのスキーマ・検証", () => {
   it("URL提示型のプロファイルが、スキーマ・組合せ検証を通る", () => {
@@ -125,5 +126,30 @@ describe("同梱のベンダーバンドルのプロファイル（vendors/<ID>/
     const profile = parseProfileFile(join(dir, name));
     expect(profile.vendor).toBe(name.replace(/[\\/]profile\.json$/, ""));
     expect(profile.displayName).toBeTruthy();
+  });
+
+  it("ProtonVPNは都市取得・サーバ一覧の項目・サーバ名接続を宣言し、AdGuard VPNの宣言は従来どおり", () => {
+    expect(Value.Check(VendorProfileSchema, proton)).toBe(true);
+    expect(() => validateProfile(proton)).not.toThrow();
+    expect(proton.actions.listCities).toMatchObject({
+      argv: ["cities", "list", "--country", "%LOCATION%"],
+      table: { city: "City", features: "Features" },
+    });
+    expect(proton.serverCatalog).toEqual({
+      file: "VPN/serverlist.json",
+      list: "LogicalServers",
+      name: "Name",
+      country: "ExitCountry",
+      city: "City",
+      tier: "Tier",
+      features: "Features",
+      status: "Status",
+      score: "Score",
+      load: "Load",
+    });
+    expect(proton.actions.connect?.argv).toEqual(["connect", "%LOCATION%"]);
+    expect(adguard.actions.connect?.argv).toEqual(["connect", "-l", "%LOCATION%", "-y"]);
+    expect(adguard.actions.listCities).toBeUndefined();
+    expect(adguard.serverCatalog).toBeUndefined();
   });
 });

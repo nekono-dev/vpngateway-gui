@@ -7,7 +7,7 @@
 > - 6.1: 行の距離の注釈（`annotateDistances`）
 
 - [ ] 1. プロファイルの宣言を整える
-- [ ] 1.1 都市の一覧とサーバ一覧の宣言を、プロファイルに追加する
+- [x] 1.1 都市の一覧とサーバ一覧の宣言を、プロファイルに追加する
   - プロファイルの宣言に、都市の一覧の取得（国ごと）・サーバ一覧キャッシュの項目名・サーバ名での接続の引数を書けるようにする
   - ProtonVPN の宣言に、`cities list` の取得、サーバ一覧（`VPN/serverlist.json`、`LogicalServers`）の項目（サーバ名・国・都市・Tier・Features・Status・Score・Load）、接続の引数 `connect %LOCATION%`（サーバ名）を書く
   - 観測できる完了条件: プロファイルの検証の単体テストが通り、ProtonVPN の宣言が読み込まれ、AdGuard VPN の宣言は変わらない

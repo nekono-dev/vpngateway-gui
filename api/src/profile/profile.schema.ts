@@ -58,6 +58,30 @@ export const ListLocationsActionDefSchema = Type.Composite([
 ]);
 export type ListLocationsActionDef = Static<typeof ListLocationsActionDefSchema>;
 
+// 国ごとの都市一覧取得。国コードをLOCATIONプレースホルダーとして渡し、表の都市名・機能列を宣言する。
+export const ListCitiesActionDefSchema = Type.Composite([
+  ActionDefSchema,
+  Type.Object({
+    table: Type.Object({ city: Type.String(), features: Type.String() }),
+  }),
+]);
+export type ListCitiesActionDef = Static<typeof ListCitiesActionDefSchema>;
+
+// CLIが管理するサーバ一覧キャッシュの項目名（読み取り専用）。
+export const ServerCatalogSchema = Type.Object({
+  file: Type.String({ minLength: 1 }),
+  list: Type.String({ minLength: 1 }),
+  name: Type.String({ minLength: 1 }),
+  country: Type.String({ minLength: 1 }),
+  city: Type.String({ minLength: 1 }),
+  tier: Type.String({ minLength: 1 }),
+  features: Type.String({ minLength: 1 }),
+  status: Type.String({ minLength: 1 }),
+  score: Type.String({ minLength: 1 }),
+  load: Type.String({ minLength: 1 }),
+});
+export type ServerCatalog = Static<typeof ServerCatalogSchema>;
+
 // 契約プランの定義。`account`の出力が`pattern`に一致したときそのプランと判定し、`restricts`のオペレーションを制限する。
 export const PlanDefSchema = Type.Object({
   id: Type.String(),
@@ -174,6 +198,8 @@ export const VendorProfileSchema = Type.Object({
   // ベンダーの国コードを、同梱データ（ISO 3166-1 alpha-2 や ADM0_A3）の国の識別キーへ読み替える対応（任意）。
   // 距離の注釈と参考一覧の名称解決が、この共通の対応を使う。
   countryAliases: Type.Optional(Type.Record(Type.String(), Type.String())),
+  // 都市・サーバ解決に使うCLI管理キャッシュの書式（対応しないプロバイダでは省略）。
+  serverCatalog: Type.Optional(ServerCatalogSchema),
   actions: Type.Object({
     // 接続先を指定する接続（`%LOCATION%`を含む）。`listLocations`と組で`connectToLocation`になる。
     // Phase 9で省略可に変更（`connectAuto`のみのプロバイダに対応）。
@@ -189,6 +215,8 @@ export const VendorProfileSchema = Type.Object({
     // 接続先一覧（`list-locations`）の取得アクション。Phase 8で追加（静的な`countries`一覧を廃止した代わり）、
     // Phase 9で省略可に変更。
     listLocations: Type.Optional(ListLocationsActionDefSchema),
+    // 国ごとの都市一覧を取得するアクション。
+    listCities: Type.Optional(ListCitiesActionDefSchema),
     // ログイン状態・プランの判定（Phase 9で追加）。
     account: Type.Optional(AccountActionDefSchema),
   }),
