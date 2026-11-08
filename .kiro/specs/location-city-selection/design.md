@@ -214,7 +214,7 @@ sequenceDiagram
 | 1.6 | 上の階層に戻ってもタブの状態を保つ | location-browser-state, useCityTab | — | — |
 | 2.1 | サーバの段がある場合、二つのタブを表示 | CityList, location-browser-state | プロバイダの機能の判定 | — |
 | 2.2 | サーバの段がない場合、「最速サーバ」のみ | CityList | — | — |
-| 2.3 | 「最速サーバ」で都市を選ぶと接続して終える | CityList, ConnectApi, location-target | `PUT /v1/connection` | 都市の一覧 |
+| 2.3 | 「最速サーバ」で都市を選び、［接続］で接続する | CityList, ConnectApi, location-target | `PUT /v1/connection` | 都市の一覧 |
 | 2.4 | 「サーバを選択」で都市を選ぶとサーバの一覧へ | CityList, ServerList | `GET /v1/connection/locations/{cityId}/servers` | — |
 | 2.5 | タブの選択を保存する | CityTabApi, city-tab-store | `PUT /v1/connection/city-tab` | — |
 | 2.6 | 国を選ぶと保存されたタブで表示 | CityTabApi, useCityTab | `GET /v1/connection/city-tab` | — |
@@ -225,14 +225,14 @@ sequenceDiagram
 | 3.4 | 無効なサーバを表示しない | server-catalog | — | — |
 | 3.5 | サーバの一覧に検索窓を出さない | ServerList | — | — |
 | 3.6 | サーバの一覧の上に要約の行を出さない | ServerList | — | — |
-| 3.7 | サーバを選ぶとそのサーバ名で接続 | location-target, ConnectApi | `PUT /v1/connection` | — |
+| 3.7 | サーバを選び、［接続］でそのサーバ名で接続 | location-target, ConnectApi | `PUT /v1/connection` | — |
 | 4.1 | お気に入りをプロバイダごとに保存 | favorite-locations-store | `PUT/DELETE /v1/connection/locations/{locationId}/favorite` | — |
 | 4.2 | 都市の行に ☆（最速サーバ・サーバの段がない場合） | CityList | — | — |
 | 4.3 | 「サーバを選択」の都市の行には ☆ を出さない | CityList | — | — |
 | 4.4 | サーバの行に ☆ | ServerList | — | — |
 | 4.5 | ☆で行の選択状態を変えない | LocationRow | — | — |
 | 4.6 | 「お気に入り」タブに都市とサーバの両方 | favorites route, LocationBrowser | `GET /v1/connection/favorites` | — |
-| 4.7 | 「お気に入り」のサーバを選ぶとそのサーバへ接続。一覧に無いとき、AdGuard VPN は接続中なら切断して国名接続し、お気に入りを無通知で削除する。ProtonVPN は CLI を呼ばずエラーにし、お気に入りを残す | location-target, FavoriteStore | `PUT /v1/connection` | — |
+| 4.7 | 「お気に入り」のサーバを選び、［接続］でそのサーバへ接続。一覧に無いとき、AdGuard VPN は接続中なら切断して国名接続し、お気に入りを無通知で削除する。ProtonVPN は CLI を呼ばずエラーにし、お気に入りを残す | location-target, FavoriteStore | `PUT /v1/connection` | — |
 | 4.8 | 旧形式の国の単位のお気に入りは表示・接続しない | favorite-locations-store | 読み取りで除外 | — |
 | 5.1 | 初めて国を選ぶと都市の一覧を取得して保存 | connection-cities, city-cache-store, city-list-parser | `GET /v1/connection/locations/{country}/cities` | 都市の一覧 |
 | 5.2 | 保存済みの一覧は使い、再取得しない | city-cache-store | — | 都市の一覧 |
