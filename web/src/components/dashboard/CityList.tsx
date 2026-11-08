@@ -65,7 +65,7 @@ export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServe
               <label className="location-row">
                 <input type="radio" name="city" className="visually-hidden" checked={selectedId === city.id} disabled={disabled} onChange={() => tab === "fastest" ? onSelect(city.id) : onSelectCity(city.id)} />
                 <span className="location-iso">{city.country.toUpperCase()}</span>
-                <span className="location-name"><span className="location-title"><strong>{city.city}</strong>{city.id === currentId ? <span className="badge badge-ok">接続中</span> : null}{city.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span><span className="hint">{city.countryName}</span></span>
+                <span className="location-name"><span className="location-title"><strong>{city.city}</strong>{city.id === currentId ? <span className="badge badge-ok">接続中</span> : null}{city.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span></span>
                 {city.pingMs === undefined ? null : <span className="location-ping">{city.pingMs} ms</span>}
                 {city.distanceKm === undefined ? null : <span className="location-distance">約 {city.distanceKm.toLocaleString("ja-JP")} km</span>}
               </label>
