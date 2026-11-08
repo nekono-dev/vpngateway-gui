@@ -16,6 +16,25 @@ export interface LocationBrowserState {
   cityTab: CityTab;
 }
 
+/** The horizontal movement required to recognize a rightward swipe. */
+export const SWIPE_BACK_THRESHOLD_PX = 50;
+
+/** Returns the back control label for a nested screen, or null at the root. */
+export function getLocationBackLabel(screen: LocationBrowserScreen, parentName?: string): string | null {
+  if (screen.type === "countries") return null;
+  if (screen.type === "cities") return "‹ 国一覧";
+  return parentName ? `‹ ${parentName}` : null;
+}
+
+/** Recognizes a rightward swipe only while a parent screen exists. */
+export function shouldSwipeBack(
+  screen: LocationBrowserScreen,
+  horizontalDelta: number,
+  threshold = SWIPE_BACK_THRESHOLD_PX,
+): boolean {
+  return screen.type !== "countries" && horizontalDelta >= threshold;
+}
+
 export type LocationBrowserAction =
   | { type: "select-country"; countryId: string }
   | { type: "select-city"; cityId: string }

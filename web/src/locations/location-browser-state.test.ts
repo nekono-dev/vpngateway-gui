@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
   createLocationBrowserState,
+  getLocationBackLabel,
   locationBrowserReducer,
+  shouldSwipeBack,
   type LocationBrowserState,
 } from "./location-browser-state";
 
 describe("location browser state", () => {
+  it("階層に応じた戻るボタンの文言を返し、国一覧では表示しない", () => {
+    expect(getLocationBackLabel({ type: "countries" })).toBeNull();
+    expect(getLocationBackLabel({ type: "cities", countryId: "jp" })).toBe("‹ 国一覧");
+    expect(getLocationBackLabel({ type: "servers", countryId: "jp", cityId: "jp-tokyo" }, "東京")).toBe("‹ 東京");
+  });
+
+  it("右へ一定以上動いたときだけ戻り、国一覧と左向き・短い移動では戻らない", () => {
+    const countries = { type: "countries" } as const;
+    const cities = { type: "cities", countryId: "jp" } as const;
+    expect(shouldSwipeBack(cities, 50)).toBe(true);
+    expect(shouldSwipeBack(cities, 49)).toBe(false);
+    expect(shouldSwipeBack(cities, -100)).toBe(false);
+    expect(shouldSwipeBack(countries, 100)).toBe(false);
+  });
+
   it("国から都市、都市からサーバへ進み、一つ上の階層へ戻る", () => {
     let state = createLocationBrowserState("server-selection");
     state = locationBrowserReducer(state, { type: "select-country", countryId: "jp" });
