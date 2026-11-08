@@ -4,6 +4,15 @@
 import type { VendorProfile } from "../profile/profile.schema.js";
 import type { Capability, CapabilityMap, OperationKey } from "./operations.js";
 
+/**
+ * 目的: プロバイダが ping を計測できるかを、プロファイルの機能宣言から判定する（宣言が無ければ計測できる）。
+ * 入力: profile（検証済みのプロファイル）。
+ * 出力: ping を計測できるなら true。`features.locationPing` が false のときだけ false。
+ */
+export function isPingMeasurable(profile: VendorProfile): boolean {
+  return profile.features?.locationPing !== false;
+}
+
 // 判定済みのログイン状態・プラン。`loggedIn`が未定義なら不明（判定できない場合は制限しない）。
 export interface SessionInfo {
   loggedIn?: boolean;
@@ -62,7 +71,7 @@ function isSupportedByProfile(profile: VendorProfile, operation: OperationKey): 
     case "locationFavorites":
       return true;
     case "pingMeasurement":
-      return features?.locationPing !== false;
+      return isPingMeasurable(profile);
   }
 }
 

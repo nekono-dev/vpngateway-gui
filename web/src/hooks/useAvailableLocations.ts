@@ -9,6 +9,8 @@ export interface AvailableLocation {
   code: string;
   name: string;
   cities: string[];
+  // 利用者の国の首都からの距離（km。小数点以下第一位）。距離が決まらない国では無い。
+  distanceKm?: number;
 }
 
 /**

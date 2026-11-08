@@ -20,6 +20,7 @@ import { LineListEditor } from "./LineListEditor";
 import { AccountSettingsDialog } from "./AccountSettingsDialog";
 import { RebootDialog } from "./RebootDialog";
 import { VerificationPanel } from "./verification/VerificationPanel";
+import { UserLocationPanel } from "./UserLocationPanel";
 import { useVerification } from "../../hooks/useVerification";
 
 interface Props {
@@ -373,14 +374,17 @@ export function SettingsDialog({
                   ) : null}
                 </>
               ) : activeTab === "maintenance" ? (
-                <div className="maintenance-actions">
-                  <button type="button" onClick={() => setIsAccountOpen(true)}>
-                    アカウント情報を変更
-                  </button>
-                  <button type="button" onClick={() => setIsRebootOpen(true)}>
-                    ゲートウェイ再起動
-                  </button>
-                </div>
+                <>
+                  <div className="maintenance-actions">
+                    <button type="button" onClick={() => setIsAccountOpen(true)}>
+                      アカウント情報を変更
+                    </button>
+                    <button type="button" onClick={() => setIsRebootOpen(true)}>
+                      ゲートウェイ再起動
+                    </button>
+                  </div>
+                  <UserLocationPanel />
+                </>
               ) : activeTab === "dnsResolver" ? (
                 <>
                   <div className="settings-item">

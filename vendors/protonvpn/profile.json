@@ -12,6 +12,10 @@
     "changeLocation": true,
     "locationPing": false
   },
+  "countryAliases": {
+    "UK": "GB",
+    "XK": "KOS"
+  },
   "actions": {
     "connect": {
       "argv": [

@@ -8,6 +8,9 @@ const api = vi.hoisted(() => ({
   getV1ConnectionConfig: vi.fn(),
   putV1ConnectionConfig: vi.fn(),
   putV1Operator: vi.fn(),
+  getV1UserLocation: vi.fn(),
+  putV1UserLocation: vi.fn(),
+  deleteV1UserLocation: vi.fn(),
 }));
 vi.mock("../../generated/api/default/default", () => api);
 
@@ -49,6 +52,7 @@ async function openTab(name: string | RegExp) {
 
 describe("SettingsDialog: タブ", () => {
   beforeEach(() => {
+    api.getV1UserLocation.mockResolvedValue({ status: 200, data: { source: "none", countries: [] } });
     api.getV1ConnectionConfig.mockReset();
     api.putV1ConnectionConfig.mockReset();
     api.putV1ConnectionConfig.mockResolvedValue({ status: 200, data: BASE_SETTINGS });
@@ -63,6 +67,13 @@ describe("SettingsDialog: タブ", () => {
     rerender(<SettingsDialog open onClose={() => undefined} defaultExplicitProxyAllowedCidr={undefined} />);
     expect(screen.getByRole("tab", { name: "ゲートウェイ" })).toHaveAttribute("aria-selected", "true");
     expect(api.getV1ConnectionConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it("利用者の場所は、独立したタブではなくメンテナンスタブの中に置く", async () => {
+    await renderDialog();
+    await openTab("メンテナンス");
+    expect(screen.getByRole("combobox", { name: "利用者の国" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "アカウント情報を変更" })).toBeInTheDocument();
   });
 
   it("先頭の「通信制御」タブを表示し、タブで項目を切り替えられる", async () => {
@@ -162,6 +173,7 @@ describe("SettingsDialog: タブ", () => {
 
 describe("SettingsDialog: 迂回ドメイン・DNS中継", () => {
   beforeEach(() => {
+    api.getV1UserLocation.mockResolvedValue({ status: 200, data: { source: "none", countries: [] } });
     api.getV1ConnectionConfig.mockReset();
     api.putV1ConnectionConfig.mockReset();
     api.putV1ConnectionConfig.mockResolvedValue({ status: 200, data: BASE_SETTINGS });
