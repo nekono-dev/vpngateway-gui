@@ -10,6 +10,13 @@ const api = vi.hoisted(() => ({
   getV1Connection: vi.fn(),
   putV1Connection: vi.fn(),
   getV1ConnectionLocations: vi.fn(),
+  getV1ConnectionLocationsCountries: vi.fn(),
+  getV1ConnectionLocationsCountryCities: vi.fn(),
+  postV1ConnectionLocationsCountryCitiesRefresh: vi.fn(),
+  getV1ConnectionLocationsCityIdServers: vi.fn(),
+  getV1ConnectionFavorites: vi.fn(),
+  getV1ConnectionCityTab: vi.fn(),
+  putV1ConnectionCityTab: vi.fn(),
   putV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   deleteV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   getV1ConnectionGateway: vi.fn(),
@@ -42,7 +49,9 @@ const capabilities = {
     },
   },
 };
-const LOCATIONS = [{ id: "jp-tokyo", country: "jp", countryName: "Japan", city: "Tokyo", pingMs: 4, favorite: false, lastConnected: false }];
+// 国の行（GET /v1/connection/locations）。都市は国を開いたときに都市の一覧として取得する。
+const LOCATIONS = [{ id: "jp", country: "jp", countryName: "Japan", hasServerStage: false, favorite: false, lastConnected: false }];
+const TOKYO = { id: "jp-tokyo", country: "jp", countryName: "Japan", city: "Tokyo", favorite: false, lastConnected: false };
 
 function renderApp() {
   return render(
@@ -61,6 +70,12 @@ describe("App（VPNベンダーの選択）", () => {
       data: { transparentGateway: { state: "stopped", killSwitchBlocking: false }, explicitProxy: { state: "stopped", restartCount: 0 } },
     });
     api.getV1ConnectionLocations.mockResolvedValue({ status: 200, data: LOCATIONS });
+    api.getV1ConnectionLocationsCountries.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionLocationsCountryCities.mockImplementation(async (country: string) => ({ status: 200, data: country === "jp" ? [TOKYO] : [] }));
+    api.postV1ConnectionLocationsCountryCitiesRefresh.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionLocationsCityIdServers.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionCityTab.mockResolvedValue({ status: 200, data: { tab: "fastest" } });
     api.getV1ConnectionCapabilities.mockResolvedValue(capabilities);
     api.getV1Session.mockResolvedValue({ status: 200, data: { loginMethod: "deviceUrl" } });
     api.getV1Providers.mockResolvedValue({ status: 200, data: TWO });
@@ -77,7 +92,7 @@ describe("App（VPNベンダーの選択）", () => {
   it("ベンダー一覧を取得できない場合は選択部品を出さず、従来どおり操作できる（後方互換）", async () => {
     api.getV1Providers.mockRejectedValue(new Error("not found"));
     renderApp();
-    expect(await screen.findByRole("radio", { name: /Tokyo/ })).toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: /Japan/ })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "VPNベンダー" })).not.toBeInTheDocument();
   });
 
@@ -104,14 +119,14 @@ describe("App（VPNベンダーの選択）", () => {
     api.putV1ProvidersActive.mockResolvedValue({ status: 200, data: { id: "protonvpn", displayName: "Proton VPN" } });
     const confirm = vi.spyOn(window, "confirm");
     renderApp();
-    await screen.findByRole("radio", { name: /Tokyo/ });
+    await screen.findByRole("radio", { name: /Japan/ });
     const callsBefore = api.getV1ConnectionLocations.mock.calls.length;
 
     // 切替後は、新しいベンダーの一覧・状態が返る。
     api.getV1Providers.mockResolvedValue({ status: 200, data: [{ ...TWO[0], active: false }, { ...TWO[1], active: true }] });
     api.getV1ConnectionLocations.mockResolvedValue({
       status: 200,
-      data: [{ id: "us-united-states", country: "us", countryName: "United States", favorite: false, lastConnected: false }],
+      data: [{ id: "us", country: "us", countryName: "United States", hasServerStage: false, favorite: false, lastConnected: false }],
     });
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "VPNベンダー" }), "protonvpn");
 
@@ -120,7 +135,7 @@ describe("App（VPNベンダーの選択）", () => {
     expect(await screen.findByText("Proton VPNへ切り替えました")).toBeInTheDocument();
     // 前のベンダーの接続先は消え、新しいベンダーの接続先が取得し直される。
     expect(await screen.findByRole("radio", { name: /United States/ })).toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /Tokyo/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Japan/ })).not.toBeInTheDocument();
     expect(api.getV1ConnectionLocations.mock.calls.length).toBeGreaterThan(callsBefore);
     confirm.mockRestore();
   });
@@ -158,6 +173,7 @@ describe("App（VPNベンダーの選択）", () => {
     api.getV1Connection.mockResolvedValue({ status: 200, data: { status: "disconnected" } });
     api.putV1Connection.mockResolvedValue({ status: 409, data: { error: "provider_switching" } });
     renderApp();
+    await userEvent.click(await screen.findByRole("radio", { name: /Japan/ }));
     await userEvent.click(await screen.findByRole("radio", { name: /Tokyo/ }));
     await userEvent.click(screen.getByRole("button", { name: "接続" }));
     expect(await screen.findByText(/ベンダーの切替中です/)).toBeInTheDocument();

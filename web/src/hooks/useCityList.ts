@@ -9,6 +9,7 @@ export interface CityListState {
   isRefreshing: boolean;
   error: ErrorContent | undefined;
   refresh: () => Promise<void>;
+  patchFavorite: (cityId: string, favorite: boolean) => void;
 }
 
 /** 国の都市一覧を取得し、明示的な再取得時のみベンダーの一覧を更新する。 */
@@ -46,6 +47,8 @@ export function useCityList(country: string): CityListState {
   }, [country]);
 
   useEffect(() => {
+    // 国が未選択（国の一覧の画面）のときは取得しない。
+    if (!country) return;
     setCities([]);
     setError(undefined);
     setIsLoading(true);
@@ -53,7 +56,12 @@ export function useCityList(country: string): CityListState {
     return () => {
       requestId.current += 1;
     };
-  }, [load]);
+  }, [country, load]);
 
-  return { cities, isLoading, isRefreshing, error, refresh: () => load(true) };
+  // お気に入りの登録・解除の成功後に、この一覧の☆の表示だけを直す（一覧は取り直さない）。
+  const patchFavorite = useCallback((cityId: string, favorite: boolean) => {
+    setCities((current) => current.map((city) => (city.id === cityId ? { ...city, favorite } : city)));
+  }, []);
+
+  return { cities, isLoading, isRefreshing, error, refresh: () => load(true), patchFavorite };
 }

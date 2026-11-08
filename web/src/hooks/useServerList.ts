@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getV1ConnectionLocationsCityIdServers } from "../generated/api/default/default";
 import type { GetV1ConnectionLocationsCityIdServers200Item } from "../generated/api/endpoints.schemas";
 import { describeApiError, describeThrownError, type ErrorContent } from "../notifications/describe-api-error";
@@ -7,6 +7,7 @@ export interface ServerListState {
   servers: GetV1ConnectionLocationsCityIdServers200Item[];
   isLoading: boolean;
   error: ErrorContent | undefined;
+  patchFavorite: (serverName: string, favorite: boolean) => void;
 }
 
 /** 都市のサーバ一覧を取得する。 */
@@ -16,6 +17,8 @@ export function useServerList(cityId: string): ServerListState {
   const [error, setError] = useState<ErrorContent>();
 
   useEffect(() => {
+    // 都市が未選択のときは取得しない。
+    if (!cityId) return;
     let stale = false;
     setServers([]);
     setError(undefined);
@@ -32,5 +35,10 @@ export function useServerList(cityId: string): ServerListState {
     return () => { stale = true; };
   }, [cityId]);
 
-  return { servers, isLoading, error };
+  // お気に入りの登録・解除の成功後に、この一覧の☆の表示だけを直す。
+  const patchFavorite = useCallback((serverName: string, favorite: boolean) => {
+    setServers((current) => current.map((server) => (server.name === serverName ? { ...server, favorite } : server)));
+  }, []);
+
+  return { servers, isLoading, error, patchFavorite };
 }

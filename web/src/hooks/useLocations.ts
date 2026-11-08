@@ -3,12 +3,8 @@
 // 取得は画面表示時と`refresh()`（再計測）のときだけ行う（ポーリングしない）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  deleteV1ConnectionLocationsLocationIdFavorite,
-  getV1ConnectionLocations,
-  putV1ConnectionLocationsLocationIdFavorite,
-} from "../generated/api/default/default";
-import type { LocationItem } from "../locations/location-filter";
+import { getV1ConnectionLocations } from "../generated/api/default/default";
+import type { GetV1ConnectionLocations200Item } from "../generated/api/endpoints.schemas";
 import { describeApiError, describeThrownError, type ErrorContent } from "../notifications/describe-api-error";
 import { useToast } from "../notifications/ToastProvider";
 
@@ -16,18 +12,17 @@ export interface LocationsState {
   // 初回取得中（一覧が空でスピナー相当を出す状態）。再計測中は一覧を残したままisRefreshingだけがtrueになる。
   isLoading: boolean;
   isRefreshing: boolean;
-  locations: LocationItem[];
+  // 国の行の一覧（GET /v1/connection/locations）。都市とサーバは都市の一覧・サーバの一覧で取得する。
+  locations: GetV1ConnectionLocations200Item[];
   // 直近の取得が失敗した場合のみ。失敗時は古い一覧を残さない（接続操作を許さないため）。
   error: ErrorContent | undefined;
   refresh: () => void;
-  setFavorite: (locationId: string, favorite: boolean) => Promise<void>;
   markLastConnected: (locationId: string) => void;
 }
 
 /**
  * 目的: 接続先一覧の取得・再取得・お気に入り更新を提供する。
- * 出力: LocationsState。`refresh`は取得中の重複呼び出しを無視する。`setFavorite`は楽観的に一覧へ反映し
- *       （並び順を変えないため再取得しない）、APIエラー時は元へ戻してトーストで通知する。
+ * 出力: LocationsState。`refresh`は取得中の重複呼び出しを無視する。（お気に入りは App 側で扱う）。
  * 入力: providerId(選択中のベンダーID。変わったら、前のベンダーの一覧・エラー・応答を捨てて取得し直す。Phase 11。
  *       未取得のときはundefined), enabled(取得を行うか。接続先一覧の操作が制限されている・実行可否が未取得の間はfalse。falseの間は
  *       取得せず一覧を空にする。制限されるプロバイダで無駄な取得とエラー表示が出るのを避けるため)。
@@ -36,7 +31,7 @@ export interface LocationsState {
  */
 export function useLocations(enabled: boolean, providerId?: string): LocationsState {
   const { notifyError } = useToast();
-  const [locations, setLocations] = useState<LocationItem[]>([]);
+  const [locations, setLocations] = useState<GetV1ConnectionLocations200Item[]>([]);
   const [error, setError] = useState<ErrorContent>();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -94,37 +89,11 @@ export function useLocations(enabled: boolean, providerId?: string): LocationsSt
     void load();
   }, [enabled, providerId, load]);
 
-  const patchFavorite = useCallback((locationId: string, favorite: boolean) => {
-    setLocations((current) =>
-      current.map((location) => (location.id === locationId ? { ...location, favorite } : location)),
-    );
-  }, []);
-
-  const setFavorite = useCallback(
-    async (locationId: string, favorite: boolean) => {
-      const operation = favorite ? "お気に入りへの追加" : "お気に入りの解除";
-      patchFavorite(locationId, favorite);
-      try {
-        const response = favorite
-          ? await putV1ConnectionLocationsLocationIdFavorite(locationId)
-          : await deleteV1ConnectionLocationsLocationIdFavorite(locationId);
-        if (response.status !== 200) {
-          patchFavorite(locationId, !favorite);
-          notifyError(describeApiError(response.status, response.data, `${operation}に失敗しました`));
-        }
-      } catch (caughtError) {
-        patchFavorite(locationId, !favorite);
-        notifyError(describeThrownError(caughtError, `${operation}に失敗しました`));
-      }
-    },
-    [notifyError, patchFavorite],
-  );
-
   const markLastConnected = useCallback((locationId: string) => {
     setLocations((current) =>
       current.map((location) => ({ ...location, lastConnected: location.id === locationId })),
     );
   }, []);
 
-  return { isLoading, isRefreshing, locations, error, refresh: () => void load(), setFavorite, markLastConnected };
+  return { isLoading, isRefreshing, locations, error, refresh: () => void load(), markLastConnected };
 }

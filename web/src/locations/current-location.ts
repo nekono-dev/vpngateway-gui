@@ -2,7 +2,6 @@
 // 実効選択の優先順位は
 
 import type { ConnectionState } from "../hooks/useDashboardPolling";
-import type { LocationItem } from "./location-filter";
 
 /**
  * 目的: 現在接続中の接続先IDを特定する。
@@ -14,7 +13,7 @@ import type { LocationItem } from "./location-filter";
  */
 export function findCurrentLocationId(
   connection: ConnectionState | undefined,
-  locations: LocationItem[],
+  locations: { id: string; city?: string }[],
 ): string | undefined {
   if (connection?.status !== "connected") return undefined;
   if (connection.locationId) return connection.locationId;
@@ -35,7 +34,7 @@ export function resolveEffectiveId(
   selectedId: string | undefined,
   currentId: string | undefined,
   lastConnectedId: string | undefined,
-  locations: LocationItem[],
+  locations: { id: string }[],
 ): string | undefined {
   const candidates = [selectedId, currentId ?? lastConnectedId];
   return candidates.find((id) => id !== undefined && locations.some((location) => location.id === id));

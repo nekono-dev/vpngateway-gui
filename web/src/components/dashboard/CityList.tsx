@@ -14,8 +14,13 @@ interface Props {
   onBack?: () => void;
   disabled: boolean;
   onTabChange: (tab: CityTab) => void;
-  onConnect: (cityId: string) => void;
+  // 「最速サーバ」のタブで都市を選んだとき（接続先として選ぶ。接続は［接続］で行う）。
+  onSelect: (cityId: string) => void;
+  // 「サーバを選択」のタブで都市を選んだとき（サーバの一覧へ進む）。
   onSelectCity: (cityId: string) => void;
+  selectedId?: string;
+  // 現在接続中の接続先ID（その行に「接続中」を出す）。
+  currentId?: string;
   onToggleFavorite: (cityId: string, favorite: boolean) => void;
   onRefresh: () => void;
   query?: string;
@@ -23,7 +28,7 @@ interface Props {
 }
 
 /** 都市一覧のタブ、都市行、取得エラーを表示する。データ取得と遷移は親に委ねる。 */
-export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServerSelection, countryId, onBack = () => {}, disabled, onTabChange, onConnect, onSelectCity, onToggleFavorite, onRefresh, query, onQueryChange }: Props) {
+export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServerSelection, countryId, onBack = () => {}, disabled, onTabChange, onSelect, onSelectCity, selectedId, currentId, onToggleFavorite, onRefresh, query, onQueryChange }: Props) {
   const tabs = (
     <LocationBackBar screen={{ type: "cities", countryId: countryId ?? cities[0]?.country ?? "" }} onBack={onBack}>
       <div role="tablist" aria-label="都市の接続方法" className="location-tabs">
@@ -50,14 +55,17 @@ export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServe
   return (
     <div className="location-list">
       {tabs}
+      <div className="location-actions">
+        <button type="button" disabled={disabled || isRefreshing} onClick={onRefresh}>{isRefreshing ? "取得中..." : "再計測"}</button>
+      </div>
       {cities.length === 0 ? null : (
         <ul role="radiogroup" aria-label="都市" className="location-items">
           {cities.map((city) => (
             <li key={city.id} className="location-item">
               <label className="location-row">
-                <input type="radio" name="city" className="visually-hidden" checked={false} disabled={disabled} onChange={() => tab === "fastest" ? onConnect(city.id) : onSelectCity(city.id)} />
+                <input type="radio" name="city" className="visually-hidden" checked={selectedId === city.id} disabled={disabled} onChange={() => tab === "fastest" ? onSelect(city.id) : onSelectCity(city.id)} />
                 <span className="location-iso">{city.country.toUpperCase()}</span>
-                <span className="location-name"><span className="location-title"><strong>{city.city}</strong>{city.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span><span className="hint">{city.countryName}</span></span>
+                <span className="location-name"><span className="location-title"><strong>{city.city}</strong>{city.id === currentId ? <span className="badge badge-ok">接続中</span> : null}{city.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span><span className="hint">{city.countryName}</span></span>
                 {city.pingMs === undefined ? null : <span className="location-ping">{city.pingMs} ms</span>}
                 {city.distanceKm === undefined ? null : <span className="location-distance">約 {city.distanceKm.toLocaleString("ja-JP")} km</span>}
               </label>

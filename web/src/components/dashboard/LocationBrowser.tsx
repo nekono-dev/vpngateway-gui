@@ -22,14 +22,24 @@ interface Props {
   cityTab: "fastest" | "select";
   hasServerSelection: boolean;
   disabled: boolean;
-  onConnect: (locationId: string) => void;
-  onToggleFavorite: (locationId: string, favorite: boolean) => void;
+  // 接続先として選んだとき（接続は［接続］で行う）。
+  onSelect: (locationId: string) => void;
+  // 選ばれている接続先のID（都市かサーバの接続先ID）。
+  selectedId?: string;
+  // 現在接続中の接続先ID（都市の行の「接続中」の表示に使う）。
+  currentId?: string;
+  onToggleCityFavorite: (cityId: string, favorite: boolean) => void;
+  onToggleServerFavorite: (serverName: string, favorite: boolean) => void;
   onRefresh: () => void;
   onCityTabChange: (tab: "fastest" | "select") => void;
+  // 国の一覧で国を開いたとき・国の一覧へ戻ったとき（未選択はundefined）。親は都市の一覧を取得する対象にする。
+  onCountryChange: (country: string | undefined) => void;
+  // 都市を開いたとき・都市の一覧へ戻ったとき（未選択はundefined）。親はサーバの一覧を取得する対象にする。
+  onCityChange: (cityId: string | undefined) => void;
 }
 
 /** 国・都市・サーバを切り替える。取得と接続要求は親から受け取る。 */
-export function LocationBrowser({ countries, favorites, cities, servers, isLoading, isRefreshing, cityError, cityTab, hasServerSelection, disabled, onConnect, onToggleFavorite, onRefresh, onCityTabChange }: Props) {
+export function LocationBrowser({ countries, favorites, cities, servers, isLoading, isRefreshing, cityError, cityTab, hasServerSelection, disabled, onSelect, selectedId, currentId, onToggleCityFavorite, onToggleServerFavorite, onRefresh, onCityTabChange, onCountryChange, onCityChange }: Props) {
   const [state, dispatch] = useReducer(locationBrowserReducer, undefined, () => createLocationBrowserState("server-selection", cityTab));
   const [query, setQuery] = useState("");
   const countryId = state.screen.type === "cities" || state.screen.type === "servers" ? state.screen.countryId : undefined;
@@ -53,7 +63,7 @@ export function LocationBrowser({ countries, favorites, cities, servers, isLoadi
         {showingFavorites ? <ul role="radiogroup" aria-label="お気に入り" className="location-items">
           {visibleFavorites.map((favorite) => <li className="location-item" key={`${favorite.kind}:${favorite.id}`}>
             <label className="location-row">
-              <input type="radio" name="favorite" className="visually-hidden" disabled={disabled} onChange={() => onConnect(favorite.id)} />
+              <input type="radio" name="favorite" className="visually-hidden" checked={selectedId === favorite.id} disabled={disabled} onChange={() => onSelect(favorite.id)} />
               <span className="location-iso">{favorite.country.toUpperCase()}</span>
               <span className="location-name"><span className="location-title"><strong>{favorite.kind === "city" ? favorite.city : favorite.serverName}</strong></span></span>
               {favorite.kind === "server" ? <span>{favorite.serverName}</span> : null}
@@ -62,7 +72,7 @@ export function LocationBrowser({ countries, favorites, cities, servers, isLoadi
         </ul> : <ul role="radiogroup" aria-label="国" className="location-items">
           {visibleCountries.map((item) => <li key={item.id} className="location-item">
             <label className="location-row">
-              <input type="radio" name="country" className="visually-hidden" disabled={disabled} onChange={() => dispatch({ type: "select-country", countryId: item.id })} />
+              <input type="radio" name="country" className="visually-hidden" checked={state.screen.type !== "countries" && state.screen.countryId === item.id} disabled={disabled} onChange={() => { onCountryChange(item.country); dispatch({ type: "select-country", countryId: item.id }); }} />
               <span className="location-iso">{item.country.toUpperCase()}</span>
               <span className="location-name"><span className="location-title"><strong>{item.countryName}</strong>{item.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span></span>
               {item.distanceKm === undefined ? null : <span className="location-distance">約 {item.distanceKm.toLocaleString("ja-JP")} km</span>}
@@ -77,16 +87,16 @@ export function LocationBrowser({ countries, favorites, cities, servers, isLoadi
     <CityList
       cities={cities.filter((item) => `${item.city} ${item.countryName}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))}
       isLoading={isLoading} isRefreshing={isRefreshing} error={cityError} tab={cityTab}
-      hasServerSelection={hasServerSelection} countryId={countryId} onBack={() => dispatch({ type: "back" })}
-      disabled={disabled} onTabChange={onCityTabChange} onConnect={onConnect}
-      onSelectCity={(selectedCityId) => dispatch({ type: "select-city", cityId: selectedCityId })}
-      onToggleFavorite={onToggleFavorite} onRefresh={onRefresh}
+      hasServerSelection={hasServerSelection} countryId={countryId} onBack={() => { onCountryChange(undefined); onCityChange(undefined); dispatch({ type: "back" }); }}
+      disabled={disabled} onTabChange={onCityTabChange} onSelect={onSelect}
+      onSelectCity={(selectedCityId) => { onCityChange(selectedCityId); dispatch({ type: "select-city", cityId: selectedCityId }); }}
+      onToggleFavorite={onToggleCityFavorite} onRefresh={onRefresh} selectedId={selectedId} currentId={currentId}
       query={query} onQueryChange={setQuery}
     />
   </div>;
 
   return <div className="location-list">
-    <LocationBackBar screen={state.screen} parentName={city?.city} onBack={() => dispatch({ type: "back" })} />
-    <ServerList servers={servers} disabled={disabled} onSelect={onConnect} onToggleFavorite={onToggleFavorite} />
+    <LocationBackBar screen={state.screen} parentName={city?.city} onBack={() => { onCityChange(undefined); dispatch({ type: "back" }); }} />
+    <ServerList servers={servers} disabled={disabled} onSelect={onSelect} onToggleFavorite={onToggleServerFavorite} selectedId={selectedId} />
   </div>;
 }

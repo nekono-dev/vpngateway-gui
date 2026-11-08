@@ -10,7 +10,7 @@ const CITIES: GetV1ConnectionLocationsCountryCities200Item[] = [
 ];
 function setup(overrides: Partial<React.ComponentProps<typeof CityList>> = {}) {
   cleanup();
-  const props = { cities: CITIES, isLoading: false, isRefreshing: false, error: undefined, tab: "fastest" as const, hasServerSelection: true, disabled: false, onTabChange: vi.fn(), onConnect: vi.fn(), onSelectCity: vi.fn(), onToggleFavorite: vi.fn(), onRefresh: vi.fn(), ...overrides };
+  const props = { cities: CITIES, isLoading: false, isRefreshing: false, error: undefined, tab: "fastest" as const, hasServerSelection: true, disabled: false, onTabChange: vi.fn(), onSelect: vi.fn(), onSelectCity: vi.fn(), onToggleFavorite: vi.fn(), onRefresh: vi.fn(), ...overrides };
   const view = render(<CityList {...props} />);
   return { ...props, rerender: (next: Partial<React.ComponentProps<typeof CityList>>) => view.rerender(<CityList {...props} {...next} />) };
 }
@@ -24,10 +24,10 @@ describe("CityList", () => {
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["最速サーバ"]);
   });
 
-  it("最速サーバの都市選択は接続し、サーバ選択の都市選択は一覧へ進む", async () => {
+  it("最速サーバの都市選択は接続先として選び、サーバ選択の都市選択は一覧へ進む", async () => {
     const props = setup();
     await userEvent.click(screen.getByRole("radio", { name: /Tokyo/ }));
-    expect(props.onConnect).toHaveBeenCalledWith("jp-tokyo");
+    expect(props.onSelect).toHaveBeenCalledWith("jp-tokyo");
     fireEvent.click(screen.getByRole("tab", { name: "サーバを選択" }));
     props.rerender({ tab: "select" });
     await userEvent.click(screen.getByRole("radio", { name: /Osaka/ }));
@@ -39,7 +39,7 @@ describe("CityList", () => {
     const star = screen.getByRole("button", { name: "Tokyoをお気に入りに追加" });
     await userEvent.click(star);
     expect(props.onToggleFavorite).toHaveBeenCalledWith("jp-tokyo", true);
-    expect(props.onConnect).not.toHaveBeenCalled();
+    expect(props.onSelect).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("tab", { name: "サーバを選択" }));
     props.rerender({ tab: "select" });
     expect(screen.queryByRole("button", { name: /お気に入り/ })).not.toBeInTheDocument();

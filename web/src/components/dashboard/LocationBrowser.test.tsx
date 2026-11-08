@@ -22,7 +22,8 @@ function renderBrowser(overrides: Partial<React.ComponentProps<typeof LocationBr
   const props = {
     countries, favorites, cities, servers, isLoading: false, isRefreshing: false, cityError: undefined,
     cityTab: "select" as const, hasServerSelection: true, disabled: false,
-    onConnect: vi.fn(), onToggleFavorite: vi.fn(), onRefresh: vi.fn(), onCityTabChange: vi.fn(),
+    onSelect: vi.fn(), onToggleCityFavorite: vi.fn(), onToggleServerFavorite: vi.fn(), onRefresh: vi.fn(), onCityTabChange: vi.fn(),
+    onCountryChange: vi.fn(), onCityChange: vi.fn(),
   };
   const merged = { ...props, ...overrides };
   render(<LocationBrowser {...merged} />);
@@ -30,13 +31,13 @@ function renderBrowser(overrides: Partial<React.ComponentProps<typeof LocationBr
 }
 
 describe("LocationBrowser", () => {
-  it("国から都市、都市からサーバへ遷移し、国行では接続しない", async () => {
+  it("国から都市、都市からサーバへ遷移し、国行では接続先を選ばない", async () => {
     const user = userEvent.setup();
-    const { onConnect } = renderBrowser();
+    const { onSelect } = renderBrowser();
     expect(screen.getByRole("tab", { name: "すべて" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "お気に入り" })).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /Japan/ }));
-    expect(onConnect).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "‹ 国一覧" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "サーバを選択" })).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /Tokyo/ }));
@@ -44,16 +45,16 @@ describe("LocationBrowser", () => {
     expect(screen.getByText("jp-tokyo-01")).toBeInTheDocument();
   });
 
-  it("お気に入りに都市とサーバを表示し、旧形式の国項目は隠し、サーバ選択で接続する", async () => {
+  it("お気に入りに都市とサーバを表示し、旧形式の国項目は隠し、選んだ接続先を通知する", async () => {
     const user = userEvent.setup();
-    const { onConnect } = renderBrowser();
+    const { onSelect } = renderBrowser();
     await user.click(screen.getByRole("tab", { name: "お気に入り" }));
     expect(screen.getByRole("radio", { name: /Tokyo/ })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Tokyo/ }).closest("label")).not.toHaveTextContent("Japan");
     expect(screen.getByRole("radio", { name: /jp-tokyo-01/ })).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: /legacy-country/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: /jp-tokyo-01/ }));
-    expect(onConnect).toHaveBeenCalledWith("jp-tokyo-01");
+    expect(onSelect).toHaveBeenCalledWith("jp-tokyo-01");
   });
 
   it("都市取得エラーを表示し、再取得できる", async () => {

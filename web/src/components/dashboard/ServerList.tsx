@@ -1,14 +1,17 @@
 import type { GetV1ConnectionLocationsCityIdServers200Item } from "../../generated/api/endpoints.schemas";
+import { toServerLocationId } from "../../locations/server-location-id";
 
 interface Props {
   servers: GetV1ConnectionLocationsCityIdServers200Item[];
   disabled: boolean;
-  onSelect: (serverName: string) => void;
+  // サーバを選んだとき（接続先として選ぶ。接続は［接続］で行う）。接続先ID（srv-…）を渡す。
+  onSelect: (locationId: string) => void;
   onToggleFavorite: (serverName: string, favorite: boolean) => void;
+  selectedId?: string;
 }
 
 /** Score順のサーバ行を表示し、選択とお気に入り操作を親へ渡す。 */
-export function ServerList({ servers, disabled, onSelect, onToggleFavorite }: Props) {
+export function ServerList({ servers, disabled, onSelect, onToggleFavorite, selectedId }: Props) {
   const orderedServers = [...servers].sort((left, right) => left.score - right.score || left.name.localeCompare(right.name));
 
   return (
@@ -23,8 +26,8 @@ export function ServerList({ servers, disabled, onSelect, onToggleFavorite }: Pr
                   name="server"
                   className="visually-hidden"
                   disabled={disabled}
-                  checked={server.connected}
-                  onChange={() => onSelect(server.name)}
+                  checked={selectedId === toServerLocationId(server.name)}
+                  onChange={() => onSelect(toServerLocationId(server.name))}
                 />
                 <span className="location-name">
                   <span className="location-title">

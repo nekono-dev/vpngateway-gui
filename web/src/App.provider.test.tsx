@@ -10,6 +10,13 @@ const api = vi.hoisted(() => ({
   getV1Connection: vi.fn(),
   putV1Connection: vi.fn(),
   getV1ConnectionLocations: vi.fn(),
+  getV1ConnectionLocationsCountries: vi.fn(),
+  getV1ConnectionLocationsCountryCities: vi.fn(),
+  postV1ConnectionLocationsCountryCitiesRefresh: vi.fn(),
+  getV1ConnectionLocationsCityIdServers: vi.fn(),
+  getV1ConnectionFavorites: vi.fn(),
+  getV1ConnectionCityTab: vi.fn(),
+  putV1ConnectionCityTab: vi.fn(),
   getV1ConnectionAvailableLocations: vi.fn(),
   putV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   deleteV1ConnectionLocationsLocationIdFavorite: vi.fn(),
@@ -56,9 +63,11 @@ const notLoggedInCapabilities = capabilitiesOf({
   logout: { available: false, reason: "notLoggedIn", message: "ログインしてください" },
 });
 const LOCATIONS = [
-  { id: "jp-japan", country: "jp", countryName: "Japan", favorite: false, lastConnected: false },
-  { id: "us-united-states", country: "us", countryName: "United States", favorite: false, lastConnected: false },
+  { id: "jp", country: "jp", countryName: "Japan", hasServerStage: false, favorite: false, lastConnected: false },
+  { id: "us", country: "us", countryName: "United States", hasServerStage: false, favorite: false, lastConnected: false },
 ];
+// 都市の一覧（国 jp を開いたときに取得される）。
+const JP_CITIES = [{ id: "jp-japan", country: "jp", countryName: "Japan", city: "Tokyo", favorite: false, lastConnected: false }];
 
 function renderApp() {
   return render(
@@ -80,6 +89,12 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       },
     });
     api.getV1ConnectionLocations.mockResolvedValue({ status: 200, data: LOCATIONS });
+    api.getV1ConnectionLocationsCountries.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionLocationsCountryCities.mockResolvedValue({ status: 200, data: [] });
+    api.postV1ConnectionLocationsCountryCitiesRefresh.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionLocationsCityIdServers.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionCityTab.mockResolvedValue({ status: 200, data: { tab: "fastest" } });
     api.getV1ConnectionCapabilities.mockResolvedValue(capabilitiesOf());
     api.getV1Session.mockResolvedValue({ status: 200, data: { loginMethod: "deviceUrl" } });
     api.getV1ConnectionAvailableLocations.mockResolvedValue({ status: 200, data: { locations: [] } });
@@ -185,8 +200,10 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
         data: { error: "operation_restricted", message: "現在のプランでは利用できない操作です", exitCode: 2, stderr: "not available on the free plan" },
       });
       renderApp();
+      api.getV1ConnectionLocationsCountryCities.mockResolvedValue({ status: 200, data: JP_CITIES });
       const selectRadio = await screen.findByRole("radio", { name: /Japan/ });
       await userEvent.click(selectRadio);
+      await userEvent.click(await screen.findByRole("radio", { name: /Tokyo/ }));
       const callsBefore = api.getV1ConnectionCapabilities.mock.calls.length;
       api.getV1ConnectionCapabilities.mockResolvedValue(freePlanCapabilities);
       await userEvent.click(screen.getByRole("button", { name: "接続" }));
@@ -199,17 +216,19 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
   });
 
   describe("有料プラン（国単位の一覧・pingなし）", () => {
-    it("接続先リストから選んで接続でき、ping列は出さず、再計測は理由付きで無効になる", async () => {
+    it("国から都市を選んで接続でき、ping列は出さず、再計測は都市の一覧を取り直す（ping計測とは別）", async () => {
       api.getV1ConnectionCapabilities.mockResolvedValue(
         capabilitiesOf({ pingMeasurement: { available: false, reason: "unsupported", message: "このVPNプロバイダでは ping 計測を利用できません" } }),
       );
-      api.putV1Connection.mockResolvedValueOnce({ status: 200, data: { status: "connected", country: "jp", location: "JP#1 in Tokyo, Japan", locationId: "jp-japan" } });
+      api.getV1ConnectionLocationsCountryCities.mockResolvedValue({ status: 200, data: JP_CITIES });
+      api.putV1Connection.mockResolvedValueOnce({ status: 200, data: { status: "connected", country: "jp", location: "Tokyo", locationId: "jp-japan" } });
       renderApp();
-      const radio = await screen.findByRole("radio", { name: /Japan/ });
-      // 都市を持たない接続先は国名が主表示（補足の国名は重複しない）。ping列は無い。
+      await userEvent.click(await screen.findByRole("radio", { name: /Japan/ }));
+      const radio = await screen.findByRole("radio", { name: /Tokyo/ });
+      // 都市の行に ping 列は無い。ping 計測の案内は出さない（都市の一覧の再計測は有効）。
       expect(radio.closest("li")).not.toHaveTextContent("ms");
-      expect(screen.getByRole("button", { name: "再計測" })).toBeDisabled();
-      expect(screen.getByText("このVPNプロバイダでは ping 計測を利用できません")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "再計測" })).toBeEnabled();
+      expect(screen.queryByText("このVPNプロバイダでは ping 計測を利用できません")).not.toBeInTheDocument();
 
       await userEvent.click(radio);
       await userEvent.click(screen.getByRole("button", { name: "接続" }));

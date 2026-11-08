@@ -42,9 +42,9 @@ describe("ServerList", () => {
     expect(onToggleFavorite).toHaveBeenCalledWith("JP-TK#2", false);
   });
 
-  it("行の選択でサーバ名を指定した接続を要求する", async () => {
+  it("行の選択で、サーバの接続先ID（srv-…）を通知する", async () => {
     const { onSelect } = renderServers();
     await userEvent.click(screen.getByRole("radio", { name: /JP-TK#2/ }));
-    expect(onSelect).toHaveBeenCalledWith("JP-TK#2");
+    expect(onSelect).toHaveBeenCalledWith("srv-jp-tk-2");
   });
 });
