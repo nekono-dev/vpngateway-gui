@@ -9,11 +9,17 @@ export const MAX_FAVORITE_LOCATIONS = 200;
 export const FAVORITES_VERSION = 2;
 export type FavoriteLocation = {
   id: string;
-  kind: "city" | "server";
+  kind: "city";
   country: string;
   countryName: string;
   city: string;
-  serverName?: string;
+} | {
+  id: string;
+  kind: "server";
+  country: string;
+  countryName: string;
+  city: string;
+  serverName: string;
 };
 export class FavoriteLocationsError extends Error {}
 
@@ -29,7 +35,9 @@ function isFavoriteLocation(value: unknown): value is FavoriteLocation {
     && typeof item.country === "string" && item.country.length > 0
     && typeof item.countryName === "string" && item.countryName.length > 0
     && typeof item.city === "string" && item.city.length > 0
-    && (item.serverName === undefined || (typeof item.serverName === "string" && item.serverName.length > 0));
+    && (item.kind === "server"
+      ? typeof item.serverName === "string" && item.serverName.length > 0
+      : item.serverName === undefined);
 }
 
 export function readFavoriteLocations(providerId: string): FavoriteLocation[] {
@@ -63,22 +71,6 @@ export function addFavoriteLocationItem(providerId: string, item: FavoriteLocati
     items.push(item);
   }
   writeFavorites(providerId, items);
-}
-
-// 既存ルート用。新規項目はメタデータが必要なため、IDだけの追加は拒否する。
-export function addFavoriteLocation(providerId: string, locationId: string): void {
-  if (!matchesPattern(locationId, LOCATION_ID_PATTERN) || locationId.startsWith("srv-")) {
-    throw new FavoriteLocationsError(`invalid location id: ${locationId}`);
-  }
-  const [country = "", ...parts] = locationId.split("-");
-  const city = parts.join(" ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-  addFavoriteLocationItem(providerId, {
-    id: locationId,
-    kind: "city",
-    country,
-    countryName: country.toUpperCase(),
-    city,
-  });
 }
 
 export function removeFavoriteLocation(providerId: string, locationId: string): void {

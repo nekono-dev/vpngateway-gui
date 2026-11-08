@@ -51,7 +51,7 @@ describe("/v1/connection/locations", () => {
 
   it("ping昇順で、favorite・lastConnectedを付けて返し、接続時の指定名は含めない", async () => {
     saveLastLocationId("adguardvpn", "jp-tokyo");
-    await app.inject({ method: "PUT", url: "/v1/connection/locations/cn-shanghai-virtual/favorite" });
+    await app.inject({ method: "PUT", url: "/v1/connection/locations/cn-shanghai-virtual/favorite", payload: { id: "cn-shanghai-virtual", kind: "city", country: "cn", countryName: "China", city: "Shanghai (Virtual)" } });
 
     const response = await app.inject({ method: "GET", url: "/v1/connection/locations" });
     expect(response.statusCode).toBe(200);
@@ -83,9 +83,16 @@ describe("/v1/connection/locations", () => {
   });
 
   it("お気に入りの登録・解除は冪等で、一覧の再取得後も保持される", async () => {
-    const add = await app.inject({ method: "PUT", url: "/v1/connection/locations/us-las-vegas/favorite" });
+    const city = { id: "us-las-vegas", kind: "city", country: "us", countryName: "United States", city: "Las Vegas" };
+    const add = await app.inject({ method: "PUT", url: "/v1/connection/locations/us-las-vegas/favorite", payload: city });
     expect(add.json()).toEqual({ locationId: "us-las-vegas", favorite: true });
-    await app.inject({ method: "PUT", url: "/v1/connection/locations/us-las-vegas/favorite" });
+    await app.inject({ method: "PUT", url: "/v1/connection/locations/us-las-vegas/favorite", payload: city });
+
+    const server = { id: "srv-us-il-1", kind: "server", country: "us", countryName: "United States", city: "Chicago", serverName: "US-IL#1" };
+    const serverAdd = await app.inject({ method: "PUT", url: "/v1/connection/locations/srv-us-il-1/favorite", payload: server });
+    expect(serverAdd.statusCode, JSON.stringify(serverAdd.json())).toBe(200);
+    const favorites = await app.inject({ method: "GET", url: "/v1/connection/favorites" });
+    expect(favorites.json()).toEqual([city, server]);
 
     const listed = await app.inject({ method: "GET", url: "/v1/connection/locations" });
     expect(listed.json().filter((l: { favorite: boolean }) => l.favorite).map((l: { id: string }) => l.id)).toEqual(["us-las-vegas"]);
@@ -95,11 +102,30 @@ describe("/v1/connection/locations", () => {
     await app.inject({ method: "DELETE", url: "/v1/connection/locations/us-las-vegas/favorite" });
     const after = await app.inject({ method: "GET", url: "/v1/connection/locations" });
     expect(after.json().some((l: { favorite: boolean }) => l.favorite)).toBe(false);
+    const serverRemoved = await app.inject({ method: "DELETE", url: "/v1/connection/locations/srv-us-il-1/favorite" });
+    expect(serverRemoved.json()).toEqual({ locationId: "srv-us-il-1", favorite: false });
+    const finalFavorites = await app.inject({ method: "GET", url: "/v1/connection/favorites" });
+    expect(finalFavorites.json()).toEqual([]);
   });
 
   it("形式不正な接続先IDのお気に入り操作は400", async () => {
-    const response = await app.inject({ method: "PUT", url: "/v1/connection/locations/Tokyo/favorite" });
+    const response = await app.inject({ method: "PUT", url: "/v1/connection/locations/Tokyo/favorite", payload: { id: "Tokyo", kind: "city", country: "jp", countryName: "Japan", city: "Tokyo" } });
     expect(response.statusCode).toBe(400);
     expect(response.json()).toMatchObject({ error: "invalid_input" });
+  });
+
+  it("city としてサーバIDを登録できない", async () => {
+    const response = await app.inject({ method: "PUT", url: "/v1/connection/locations/srv-us-il-1/favorite", payload: { id: "srv-us-il-1", kind: "city", country: "us", countryName: "United States", city: "Chicago" } });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("server として都市IDを登録できない", async () => {
+    const response = await app.inject({ method: "PUT", url: "/v1/connection/locations/jp-tokyo/favorite", payload: { id: "jp-tokyo", kind: "server", country: "jp", countryName: "Japan", city: "Tokyo", serverName: "JP#1" } });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it("server ID は serverName から導出した値と一致しなければならない", async () => {
+    const response = await app.inject({ method: "PUT", url: "/v1/connection/locations/srv-us-il-1/favorite", payload: { id: "srv-us-il-1", kind: "server", country: "us", countryName: "United States", city: "Chicago", serverName: "US-IL#2" } });
+    expect(response.statusCode).toBe(400);
   });
 });

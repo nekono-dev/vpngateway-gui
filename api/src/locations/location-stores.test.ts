@@ -59,8 +59,8 @@ describe("favorite-locations-store", () => {
   });
 
   it("形式不正なIDの登録は拒否する", () => {
-    expect(() => favorites.addFavoriteLocation(P, "Tokyo")).toThrow(favorites.FavoriteLocationsError);
-    expect(() => favorites.addFavoriteLocation(P, "../etc")).toThrow(favorites.FavoriteLocationsError);
+    expect(() => favorites.addFavoriteLocationItem(P, { ...tokyo, id: "Tokyo" })).toThrow(favorites.FavoriteLocationsError);
+    expect(() => favorites.addFavoriteLocationItem(P, { ...tokyo, id: "../etc" })).toThrow(favorites.FavoriteLocationsError);
   });
 
   it("上限に達すると登録を拒否する", () => {

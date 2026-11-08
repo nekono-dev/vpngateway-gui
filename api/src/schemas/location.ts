@@ -63,6 +63,16 @@ export const FavoriteItemSchema = Type.Union([
   Type.Object({ id: Type.String(), kind: Type.Literal("server"), country: Type.String(), countryName: Type.String(), city: Type.String(), serverName: Type.String() }, { additionalProperties: false }),
 ]);
 export type FavoriteItem = Static<typeof FavoriteItemSchema>;
+// API request uses one object schema because AJV's removeAdditional behavior mutates
+// union branches before checking the server variant.
+export const FavoriteItemRequestSchema = Type.Object({
+  id: Type.String(),
+  kind: Type.Union([Type.Literal("city"), Type.Literal("server")]),
+  country: Type.String(),
+  countryName: Type.String(),
+  city: Type.String(),
+  serverName: Type.Optional(Type.String()),
+}, { additionalProperties: false });
 export const FavoritesResponseSchema = Type.Array(FavoriteItemSchema);
 
 export const CityTabSchema = Type.Union([Type.Literal("fastest"), Type.Literal("select")]);
