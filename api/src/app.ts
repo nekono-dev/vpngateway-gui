@@ -4,6 +4,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { registerConnectionLocationsRoute } from "./routes/connection-locations.js";
+import { registerConnectionServersRoute } from "./routes/connection-servers.js";
 import { registerConnectionRoute } from "./routes/connection.js";
 import { registerConnectionCapabilitiesRoute } from "./routes/connection-capabilities.js";
 import { registerConnectionAvailableLocationsRoute } from "./routes/connection-available-locations.js";
@@ -155,6 +156,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.addHook("preHandler", requireOperatorSession);
 
   app.register(registerConnectionLocationsRoute);
+  app.register(registerConnectionServersRoute);
   app.register(registerConnectionRoute);
   app.register(registerConnectionCapabilitiesRoute);
   app.register(registerConnectionAvailableLocationsRoute);

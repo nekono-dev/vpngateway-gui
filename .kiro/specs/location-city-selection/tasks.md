@@ -113,7 +113,7 @@
   - _Depends: 5.1_
   - _Requirements: 5.3, 5.4_
 
-- [ ] 5.3 サーバの一覧の API を作る
+- [x] 5.3 サーバの一覧の API を作る
   - 都市のサーバを、Score の昇順で返す。有効でない・Secure Core のサーバは含めない。サーバを持たないプロバイダ（AdGuard VPN）からの要求は 404 にする
   - 観測できる完了条件: 統合テストで、Secure Core と無効なサーバが除かれ、Score 順になり、AdGuard VPN からは 404 になることを確認できる
   - _Boundary: Servers API_
