@@ -148,8 +148,7 @@
             "where": [
               { "field": "Tier", "equals": 0 },
               { "field": "Status", "equals": 1 }
-            ],
-            "countryAliases": { "UK": "GB" }
+            ]
           }
         }
       ],

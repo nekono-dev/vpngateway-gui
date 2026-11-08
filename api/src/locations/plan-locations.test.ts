@@ -46,6 +46,13 @@ describe("extractPlanLocations", () => {
     ]);
   });
 
+  it("プロファイル最上位のcountryAliasesで名称を解決する", () => {
+    const { countryAliases: _legacyAliases, ...availableLocations } = def;
+    expect(extractPlanLocations({ Servers: [server({ Country: "UK", City: null })] }, availableLocations, { UK: "US" })).toEqual([
+      { code: "UK", name: "アメリカ合衆国", cities: [] },
+    ]);
+  });
+
   it("whereが無ければ全サーバが対象。cityの宣言が無ければ都市は空", () => {
     const result = extractPlanLocations({ Servers: [server({ Tier: 2 })] }, { file: "s.json", list: "Servers", country: "Country" });
     expect(result).toEqual([{ code: "JP", name: "日本", cities: [] }]);

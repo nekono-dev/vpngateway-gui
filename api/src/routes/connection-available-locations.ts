@@ -36,7 +36,7 @@ export const registerConnectionAvailableLocationsRoute: FastifyPluginAsyncTypebo
       const source = provider.profile.actions.account?.plans.find((plan) => plan.id === planId)?.availableLocations;
       if (source === undefined) return { locations: [] };
       const cacheDir = process.env.PROVIDER_CACHE_DIR ?? "/var/lib/vpngwgui-provider-cache";
-      const planLocations = readPlanLocations(source, join(cacheDir, provider.id));
+      const planLocations = readPlanLocations(source, join(cacheDir, provider.id), provider.profile.countryAliases);
       const geo = getGeoIndex();
       const userLocation = resolveUserLocation({
         saved: readSavedUserCountry(),
