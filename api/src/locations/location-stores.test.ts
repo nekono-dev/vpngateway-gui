@@ -17,7 +17,26 @@ const last = await import("./last-location-store.js");
 
 describe("favorite-locations-store", () => {
   beforeEach(() => {
-    writeFileSync(favoritesFile, JSON.stringify({ ids: [] }));
+    writeFileSync(favoritesFile, JSON.stringify({ version: 2, items: [] }));
+  });
+
+  const tokyo = { id: "jp-tokyo", kind: "city" as const, country: "jp", countryName: "Japan", city: "Tokyo" };
+
+  it("表示名付き項目を保存して読み取る", () => {
+    const server = { id: "srv-jp-tokyo-1", kind: "server" as const, country: "jp", countryName: "Japan", city: "Tokyo", serverName: "JP-TK#1" };
+    favorites.addFavoriteLocationItem(P, tokyo);
+    favorites.addFavoriteLocationItem(P, server);
+    expect(favorites.readFavoriteLocations(P)).toEqual([tokyo, server]);
+  });
+
+  it("旧形式のID配列を空として扱う", () => {
+    writeFileSync(favoritesFile, JSON.stringify({ ids: ["jp-tokyo"] }));
+    expect(favorites.readFavoriteLocations(P)).toEqual([]);
+  });
+
+  it("不正IDまたは必須項目の欠けた項目を読み飛ばす", () => {
+    writeFileSync(favoritesFile, JSON.stringify({ version: 2, items: [tokyo, { ...tokyo, id: "BAD" }, { ...tokyo, countryName: "" }, { id: "us-boston", kind: "city", country: "us", city: "Boston" }] }));
+    expect(favorites.readFavoriteLocations(P)).toEqual([tokyo]);
   });
 
   it("未保存なら空", () => {
@@ -26,14 +45,14 @@ describe("favorite-locations-store", () => {
   });
 
   it("登録は冪等で、登録順を保つ", () => {
-    favorites.addFavoriteLocation(P, "jp-tokyo");
-    favorites.addFavoriteLocation(P, "us-las-vegas");
-    favorites.addFavoriteLocation(P, "jp-tokyo");
+    favorites.addFavoriteLocationItem(P, tokyo);
+    favorites.addFavoriteLocationItem(P, { ...tokyo, id: "us-las-vegas", country: "us", countryName: "United States", city: "Las Vegas" });
+    favorites.addFavoriteLocationItem(P, tokyo);
     expect(favorites.readFavoriteLocationIds(P)).toEqual(["jp-tokyo", "us-las-vegas"]);
   });
 
   it("解除は冪等で、未登録IDの解除は何も起こさない", () => {
-    favorites.addFavoriteLocation(P, "jp-tokyo");
+    favorites.addFavoriteLocationItem(P, tokyo);
     favorites.removeFavoriteLocation(P, "jp-tokyo");
     favorites.removeFavoriteLocation(P, "jp-tokyo");
     expect(favorites.readFavoriteLocationIds(P)).toEqual([]);
@@ -45,17 +64,16 @@ describe("favorite-locations-store", () => {
   });
 
   it("上限に達すると登録を拒否する", () => {
-    const ids = Array.from({ length: favorites.MAX_FAVORITE_LOCATIONS }, (_, i) => `jp-city-${i}`);
-    writeFileSync(favoritesFile, JSON.stringify({ ids }));
-    expect(() => favorites.addFavoriteLocation(P, "jp-one-more")).toThrow(/too many/);
-    // 登録済みなら上限でも冪等に成功する
-    expect(() => favorites.addFavoriteLocation(P, "jp-city-0")).not.toThrow();
+    const items = Array.from({ length: favorites.MAX_FAVORITE_LOCATIONS }, (_, i) => ({ ...tokyo, id: `jp-city-${i}` }));
+    writeFileSync(favoritesFile, JSON.stringify({ version: 2, items }));
+    expect(() => favorites.addFavoriteLocationItem(P, { ...tokyo, id: "jp-one-more" })).toThrow(/too many/);
+    expect(favorites.readFavoriteLocations(P)).toHaveLength(200);
   });
 
   it("破損したファイルは空として扱い、形式不正な要素は除外する", () => {
     writeFileSync(favoritesFile, "{not json");
     expect(favorites.readFavoriteLocationIds(P)).toEqual([]);
-    writeFileSync(favoritesFile, JSON.stringify({ ids: ["jp-tokyo", 5, "BAD"] }));
+    writeFileSync(favoritesFile, JSON.stringify({ version: 2, items: [tokyo, 5, { ...tokyo, id: "BAD" }] }));
     expect(favorites.readFavoriteLocationIds(P)).toEqual(["jp-tokyo"]);
   });
 });

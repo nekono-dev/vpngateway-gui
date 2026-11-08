@@ -72,7 +72,7 @@
   - _Boundary: City tab store_
   - _Requirements: 2.5, 2.6, 2.7_
 
-- [ ] 3.3 (P) お気に入りを表示名付きで保存し、旧形式を除外する
+- [x] 3.3 (P) お気に入りを表示名付きで保存し、旧形式を除外する
   - 項目（ID・種類・国・国名・都市・サーバ名）を保存し、上限（200 件）を保つ。旧形式（ID の配列）は読まず、表示しない
   - 観測できる完了条件: 単体テストで、表示名付きの保存と読み取り、旧形式の除外、上限の超過を確認できる
   - _Boundary: Favorite store_
@@ -234,3 +234,4 @@
 
 ## Implementation Notes
 - 2.2（サーバ一覧）: 実データ（検証サーバの ProtonVPN `VPN/serverlist.json`）では `Status` は真偽値、Secure Core は Features の値 1 で判定する。タスクの例「Chicago で最速が US-IL#378」は現行データと一致しない（現行の最速は US-IL#834、Score 2.9877。US-IL#378 は 2.9966）ため、例外として扱った。例の扱い（完了として残すか、期待値を更新するか）は利用者の判断待ち。
+- 3.3（お気に入りの保存）: タスク 5.5 で既存ルート（api/src/routes/connection-locations.ts の登録）を、表示名（種類・国・国名・都市・サーバ名）付きの登録に置き換え、ID から表示名を推定する互換処理（favorite-locations-store.ts の addFavoriteLocation）を廃止すること。推定した国名・都市名は暫定の値。
