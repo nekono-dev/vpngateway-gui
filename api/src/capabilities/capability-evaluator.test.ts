@@ -63,6 +63,10 @@ describe("evaluateCapabilities", () => {
       available: false,
       reason: "unsupported",
     });
+    // 理由文は、何が利用できないかが分かるよう操作の名前を含む（「利用できません」だけにしない）。
+    expect(evaluateCapabilities(protonLike, paidPlan, noLearned).pingMeasurement.message).toBe(
+      "このVPNプロバイダでは ping 計測を利用できません",
+    );
   });
 
   it("有料プラン: 接続先の指定・一覧・お気に入り・接続先変更が可", () => {

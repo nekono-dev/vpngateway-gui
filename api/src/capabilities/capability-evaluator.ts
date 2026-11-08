@@ -17,7 +17,18 @@ export interface SessionInfo {
   };
 }
 
-const MESSAGE_UNSUPPORTED = "このVPNプロバイダでは利用できません";
+// プロバイダ非対応の理由文。何が利用できないかを示すため、操作ごとに主語（操作の名前）を入れる。
+const MESSAGES_UNSUPPORTED: Record<OperationKey, string> = {
+  login: "このVPNプロバイダではログインを利用できません",
+  logout: "このVPNプロバイダではログアウトを利用できません",
+  connectToLocation: "このVPNプロバイダでは接続先を指定した接続を利用できません",
+  connectAuto: "このVPNプロバイダでは接続先を指定しない接続を利用できません",
+  changeLocation: "このVPNプロバイダでは接続中の接続先の変更を利用できません",
+  disconnect: "このVPNプロバイダでは切断を利用できません",
+  locationList: "このVPNプロバイダでは接続先の一覧を利用できません",
+  locationFavorites: "このVPNプロバイダではお気に入りを利用できません",
+  pingMeasurement: "このVPNプロバイダでは ping 計測を利用できません",
+};
 const MESSAGE_NOT_LOGGED_IN = "ログインしてください";
 
 // 未ログインのとき実行できないオペレーション（`disconnect`・`login`は常に可能）。
@@ -83,7 +94,7 @@ export function evaluateCapabilities(
   /** 親を持たないオペレーション、または親が可のオペレーションの、自身の条件での可否。 */
   function evaluateOwn(operation: OperationKey): Capability {
     if (!isSupportedByProfile(profile, operation)) {
-      return { available: false, reason: "unsupported", message: MESSAGE_UNSUPPORTED };
+      return { available: false, reason: "unsupported", message: MESSAGES_UNSUPPORTED[operation] };
     }
     if (session.loggedIn === false && REQUIRES_LOGIN.includes(operation)) {
       return { available: false, reason: "notLoggedIn", message: MESSAGE_NOT_LOGGED_IN };

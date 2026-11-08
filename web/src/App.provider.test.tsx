@@ -45,7 +45,7 @@ const freePlanCapabilities = capabilitiesOf({
   locationList: { available: false, reason: "planRestricted", message: FREE_MESSAGE },
   locationFavorites: { available: false, reason: "planRestricted", message: FREE_MESSAGE },
   changeLocation: { available: false, reason: "planRestricted", message: FREE_MESSAGE },
-  pingMeasurement: { available: false, reason: "unsupported", message: "このVPNプロバイダでは利用できません" },
+  pingMeasurement: { available: false, reason: "unsupported", message: "このVPNプロバイダでは ping 計測を利用できません" },
 });
 const notLoggedInCapabilities = capabilitiesOf({
   connectToLocation: { available: false, reason: "notLoggedIn", message: "ログインしてください" },
@@ -201,7 +201,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
   describe("有料プラン（国単位の一覧・pingなし）", () => {
     it("接続先リストから選んで接続でき、ping列は出さず、再計測は理由付きで無効になる", async () => {
       api.getV1ConnectionCapabilities.mockResolvedValue(
-        capabilitiesOf({ pingMeasurement: { available: false, reason: "unsupported", message: "このVPNプロバイダでは利用できません" } }),
+        capabilitiesOf({ pingMeasurement: { available: false, reason: "unsupported", message: "このVPNプロバイダでは ping 計測を利用できません" } }),
       );
       api.putV1Connection.mockResolvedValueOnce({ status: 200, data: { status: "connected", country: "jp", location: "JP#1 in Tokyo, Japan", locationId: "jp-japan" } });
       renderApp();
@@ -209,7 +209,7 @@ describe("App（プロバイダの機能差・プラン制限）", () => {
       // 都市を持たない接続先は国名が主表示（補足の国名は重複しない）。ping列は無い。
       expect(radio.closest("li")).not.toHaveTextContent("ms");
       expect(screen.getByRole("button", { name: "再計測" })).toBeDisabled();
-      expect(screen.getByText("このVPNプロバイダでは利用できません")).toBeInTheDocument();
+      expect(screen.getByText("このVPNプロバイダでは ping 計測を利用できません")).toBeInTheDocument();
 
       await userEvent.click(radio);
       await userEvent.click(screen.getByRole("button", { name: "接続" }));
