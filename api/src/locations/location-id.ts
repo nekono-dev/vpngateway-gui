@@ -4,7 +4,7 @@
 import { slugify } from "../lib/slugify.js";
 
 // IDの形式。URLパスへそのまま置け、永続化ファイルの破損時にも検証できるよう文字種を絞る。
-export const LOCATION_ID_PATTERN = "^[a-z]{2}-[a-z0-9-]{1,64}$";
+export const LOCATION_ID_PATTERN = "^(?:[a-z]{2}-[a-z0-9-]{1,64}|srv-[a-z0-9-]{1,63})$";
 
 /**
  * 目的: 接続先の安定IDを導出する。
@@ -15,6 +15,16 @@ export const LOCATION_ID_PATTERN = "^[a-z]{2}-[a-z0-9-]{1,64}$";
  */
 export function toLocationId(isoCode: string, city: string): string {
   return `${isoCode.toLowerCase()}-${slugify(city, "location")}`;
+}
+
+/**
+ * 目的: サーバ名から接続先の安定IDを導出する。
+ * 入力: serverName(プロバイダが返すサーバ名)。
+ * 出力: `srv-`と、小文字化して`#`を`-`に置き換えたサーバ名。
+ * 例: toServerLocationId("CH-US#13") // => "srv-ch-us-13"
+ */
+export function toServerLocationId(serverName: string): string {
+  return `srv-${serverName.toLowerCase().replaceAll("#", "-")}`;
 }
 
 /**
