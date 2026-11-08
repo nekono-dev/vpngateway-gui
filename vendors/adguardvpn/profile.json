@@ -100,5 +100,10 @@
         "label": "不明"
       }
     }
+  },
+  "hopSelection": {
+    "source": "listLocations",
+    "value": "ping",
+    "direction": "min"
   }
 }

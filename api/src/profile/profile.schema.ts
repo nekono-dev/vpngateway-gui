@@ -116,6 +116,35 @@ export const OutputFormatSchema = Type.Union([Type.Literal("json"), Type.Literal
 export const LoginMethodSchema = Type.Union([Type.Literal("deviceUrl"), Type.Literal("credentials")]);
 export type LoginMethod = Static<typeof LoginMethodSchema>;
 
+// 段の選び方の宣言（多段接続）。プロバイダごとに、候補の値（列・キャッシュの項目）と最小化の向きを宣言する。
+// "listLocations"＝接続先一覧の列（例: ping）から値を取る。"cacheFile"＝CLIがキャッシュしたサーバ一覧（JSON）の項目から値を取る。
+// 対象の値は最小のものを選ぶ（direction は "min" のみ）。
+export const HopSelectionSchema = Type.Union([
+  Type.Object(
+    {
+      source: Type.Literal("listLocations"),
+      value: Type.String({ minLength: 1 }),
+      direction: Type.Literal("min"),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      source: Type.Literal("cacheFile"),
+      value: Type.String({ minLength: 1 }),
+      direction: Type.Literal("min"),
+      // `<PROVIDER_CACHE_DIR>/<ベンダーID>/`からの相対パス（availableLocationsと同じ規約）。
+      file: Type.String({ minLength: 1 }),
+      // サーバの配列を持つ最上位のキー、国コード・都市名の項目名（availableLocationsと同じ意味）。
+      list: Type.String({ minLength: 1 }),
+      country: Type.String({ minLength: 1 }),
+      city: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+]);
+export type HopSelection = Static<typeof HopSelectionSchema>;
+
 export const VendorProfileSchema = Type.Object({
   vendor: Type.String(),
   // 画面に出すベンダー名（Phase 11）。省略時は`vendor`。
@@ -140,6 +169,8 @@ export const VendorProfileSchema = Type.Object({
       locationPing: Type.Optional(Type.Boolean()),
     }),
   ),
+  // 多段接続で段の接続先を選ぶ規則（省略可。多段接続に使うプロバイダは必須。計画の段階で判定する）。
+  hopSelection: Type.Optional(HopSelectionSchema),
   actions: Type.Object({
     // 接続先を指定する接続（`%LOCATION%`を含む）。`listLocations`と組で`connectToLocation`になる。
     // Phase 9で省略可に変更（`connectAuto`のみのプロバイダに対応）。

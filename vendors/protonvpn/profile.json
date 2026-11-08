@@ -136,5 +136,14 @@
         "label": "Paid"
       }
     }
+  },
+  "hopSelection": {
+    "source": "cacheFile",
+    "value": "Score",
+    "direction": "min",
+    "file": "VPN/serverlist.json",
+    "list": "LogicalServers",
+    "country": "ExitCountry",
+    "city": "City"
   }
 }
