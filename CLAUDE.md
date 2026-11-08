@@ -25,27 +25,39 @@ Kiro-style Spec-Driven Development on an agentic SDLC
 
 Codex CLI is registered as the MCP server `codex`. Its tool `codex_exec` runs a task with Codex inside this repository and returns the result. Use it proactively as a child agent. Claude stays the owner of the work: Claude decides, delegates, verifies, and reports.
 
-### When to delegate to Codex
-- **Independent review**: a second opinion on a diff, a design draft, or a task's implementation (`sandbox: "read-only"`). Use it as the reviewer input in `kiro-review` when a fresh reviewer is needed.
-- **Bounded implementation**: a well-scoped change with named files and tests (`sandbox: "workspace-write"`). Claude then verifies the result (see below).
-- **Broad exploration**: searches across many files, or tracing a behavior through the codebase (`sandbox: "read-only"`). Ask for a short summary, not raw dumps.
-- **Parallel work**: when two or more subtasks have no dependency on each other, send their `codex_exec` calls in the same turn.
+### Delegation Rules (Mandatory)
+- **Thinking-first**: Delegate work that requires thinking to Codex: design, analysis, requirements review, new implementation or modification, root-cause investigation during debugging, review, and broad exploration via `codex_exec`. Claude (the main agent) focuses on instructing the delegate, verifying results, reporting to the user, changing approval state, and handling questions for the user.
+- **Subagent-first**: For the work above, delegate to `codex_exec` before Claude works on it directly. Independent reviews and mutually independent tasks are also delegation targets.
+- **Review is never self-review**: Claude, as the author, does not reach the conclusion of an independent review of a spec or implementation. Always have a `codex_exec` call with `sandbox: "read-only"` do the review, and use its findings as the input.
+- **Parallel by default**: Send independent `codex_exec` calls side by side in the same turn.
+- **Report the delegation**: The final report states which work was delegated to Codex and what Claude verified. If delegation was skipped, state the reason.
+- **Direct-handling exceptions**: Claude may handle directly: mechanical one-to-few-line fixes (typos, swapping a config value, etc.), items awaiting the user's decision, changes to the approval flag in `spec.json`, git operations, and handling of secrets. When applicable, state the reason in the report. Never include secrets in a Codex prompt.
+- **On MCP failure**: If `codex_exec` errors, you may run the same request with `codex -a never exec --sandbox read-only --cd <repository> - < <prompt-file>` (the approval flag goes before `exec`). Report that this fallback was used.
+- Make each prompt self-contained (target files, requirement/design/task numbers, constraints, output format). Put prompt files in the session scratchpad, not in `/tmp`.
 
-### When not to delegate
-- Spec approvals, requirement or design decisions that need the user, and anything that changes approval state in spec.json.
-- Git commits, pushes, and pull requests unless the user asked for them.
-- Destructive operations (reset, force removal, deleting logins or volumes), and any action that reaches an outward-facing system.
-- Handling secrets or credentials. Never put tokens, passwords, or account identifiers in a prompt.
+### When to Delegate to Codex
+- **Design, analysis, requirements review**: Delegate analysis of issues, organizing options, and review of designs or requirements (`sandbox: "read-only"`).
+- **Implementation**: Delegate new creation or changes with `sandbox: "workspace-write"`. The prompt must include target files, requirement/design/task numbers, the test command, and completion criteria.
+- **Debugging**: Delegate root-cause investigation and fix proposals. Use `workspace-write` if file changes are needed.
+- **Review**: Request independent reviews of diffs, design proposals, and task implementations with `sandbox: "read-only"`. Feed them into the review input of `kiro-review` as needed.
+- **Broad exploration**: Delegate searches across many files and tracing behavior through the codebase with `sandbox: "read-only"`, asking for a summary rather than raw output.
+- **Parallel work**: When there are multiple independent tasks, send their `codex_exec` calls side by side in the same turn.
 
-### How to write a Codex prompt
-- Make it self-contained: the goal, the exact file paths, the constraints (boundary, language rules, no git operations), the expected output format, and the command that proves the result.
-- State the sandbox choice in the call. Use `read-only` unless the task must edit files.
-- Give the spec references (requirement and design section numbers) when the task belongs to a spec. Do not paste the whole conversation.
+### When Not to Delegate
+- Items that need the user's judgment or approval: do not delegate the decision; wait for confirmation.
+- Changes to approval flags in `spec.json` and git operations: Claude does these directly.
+- Work involving secrets or credentials: Claude does this directly and never includes tokens, passwords, or account identifiers in a prompt.
+- Destructive operations (reset, forced removal, deleting logins or volumes) and operations that act on external systems: do not delegate.
 
-### Verifying Codex output
-- Treat Codex's claims as unverified until checked. Before reporting success, read `git diff` for the changed files and run the relevant tests yourself.
-- If Codex's result is wrong or incomplete, correct it with a follow-up `codex_exec` call that names the exact defect, or fix it directly.
-- Report to the user what Codex did, what Claude verified, and what remains unverified. Follow `kiro-verify-completion` before any completion claim.
+### How to Write a Codex Prompt
+- Make the prompt self-contained: state the goal, target files, requirement/design/task numbers, constraints such as boundaries and language rules, and the output format. Do not paste the whole conversation.
+- For implementation requests, include the test command and completion criteria.
+- Specify the sandbox at call time. Use `read-only` for reading, investigation, and review; use `workspace-write` for implementation that modifies files.
+
+### Verifying Codex Output
+- Treat Codex's report as unverified until checked. After implementation, check the changes with `git diff` and run the tests named in the prompt. This confirms the scope of changes and behavior; it is not a review by Claude. Reviews are requested from `codex_exec` with `sandbox: "read-only"`.
+- If the result is wrong or incomplete, name the specific defect and re-request from `codex_exec`.
+- Report to the user what Codex did, what Claude verified, and what remains unverified. Follow `kiro-verify-completion` before reporting completion.
 
 ## Minimal Workflow
 - Phase 0 (optional): `/kiro-steering`, `/kiro-steering-custom`

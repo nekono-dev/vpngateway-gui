@@ -57,11 +57,12 @@ async function runCodex({ prompt, cwd, sandbox }) {
   const tempDirectory = await mkdtemp(path.join(tmpdir(), "codex-mcp-"));
   const lastMessagePath = path.join(tempDirectory, "last-message.txt");
   try {
+    // codex CLI 0.167 以降、--ask-for-approval は exec の下ではなく最上位のオプションとして受け付ける
     const args = [
-      "exec",
-      "--json",
       "--ask-for-approval",
       "never",
+      "exec",
+      "--json",
       "--sandbox",
       sandbox ?? "workspace-write",
       "--cd",
