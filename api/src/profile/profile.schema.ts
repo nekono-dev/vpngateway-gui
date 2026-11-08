@@ -82,6 +82,15 @@ export const ServerCatalogSchema = Type.Object({
 });
 export type ServerCatalog = Static<typeof ServerCatalogSchema>;
 
+// 接続先IDを接続引数へ解決するプロバイダー固有の規則。
+export const LocationTargetSchema = Type.Object({
+  city: Type.Union([Type.Literal("fastestServer"), Type.Literal("cityName")]),
+  unavailableFavorite: Type.Union([Type.Literal("countryFallback"), Type.Literal("error")]),
+  fallbackProvider: Type.Optional(Type.String()),
+  errorProvider: Type.Optional(Type.String()),
+});
+export type LocationTargetDef = Static<typeof LocationTargetSchema>;
+
 // 契約プランの定義。`account`の出力が`pattern`に一致したときそのプランと判定し、`restricts`のオペレーションを制限する。
 export const PlanDefSchema = Type.Object({
   id: Type.String(),
@@ -200,6 +209,7 @@ export const VendorProfileSchema = Type.Object({
   countryAliases: Type.Optional(Type.Record(Type.String(), Type.String())),
   // 都市・サーバ解決に使うCLI管理キャッシュの書式（対応しないプロバイダでは省略）。
   serverCatalog: Type.Optional(ServerCatalogSchema),
+  locationTarget: Type.Optional(LocationTargetSchema),
   actions: Type.Object({
     // 接続先を指定する接続（`%LOCATION%`を含む）。`listLocations`と組で`connectToLocation`になる。
     // Phase 9で省略可に変更（`connectAuto`のみのプロバイダに対応）。

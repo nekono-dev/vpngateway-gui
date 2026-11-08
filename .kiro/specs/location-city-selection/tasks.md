@@ -80,7 +80,7 @@
   - _Requirements: 4.1, 4.6, 4.8_
 
 - [ ] 4. 接続先を接続引数へ解決する
-- [ ] 4.1 接続先 ID を、接続の引数へ解決する
+- [x] 4.1 接続先 ID を、接続の引数へ解決する
   - 都市の ID は、ProtonVPN ではその都市の最速サーバ名へ、AdGuard VPN では都市名へ解決する。サーバの ID はサーバ名へ解決する
   - 一覧に無いお気に入りのサーバは、AdGuard VPN では国名接続の `countryFallback`、ProtonVPN ではお気に入りを残す `favoriteUnavailable` エラーに解決する
   - 国の ID は拒否する（国の行からは接続しない）。未知の ID も拒否する
@@ -235,3 +235,4 @@
 ## Implementation Notes
 - 2.2（サーバ一覧）: 実データ（検証サーバの ProtonVPN `VPN/serverlist.json`）では `Status` は真偽値、Secure Core は Features の値 1 で判定する。タスクの例「Chicago で最速が US-IL#378」は現行データと一致しない（現行の最速は US-IL#834、Score 2.9877。US-IL#378 は 2.9966）ため、例外として扱った。例の扱い（完了として残すか、期待値を更新するか）は利用者の判断待ち。
 - 3.3（お気に入りの保存）: タスク 5.5 で既存ルート（api/src/routes/connection-locations.ts の登録）を、表示名（種類・国・国名・都市・サーバ名）付きの登録に置き換え、ID から表示名を推定する互換処理（favorite-locations-store.ts の addFavoriteLocation）を廃止すること。推定した国名・都市名は暫定の値。
+- 4.1（接続先の解決）: 一覧外お気に入りのプロバイダ別の挙動と provider の値は、ベンダー中立性を保つためプロファイルの `locationTarget` 宣言で指定する。`api/src` の型にはベンダー固有名を含めない。設計（design.md の ConnectTarget）にあるベンダー名入りの `provider` リテラルを中立な形に改めるかは利用者の判断待ち（禁止語は vendors の宣言から自動で作られるため、リテラルを入れると check:neutrality が失敗する）。

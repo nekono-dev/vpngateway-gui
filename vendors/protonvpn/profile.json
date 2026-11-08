@@ -2,6 +2,7 @@
   "vendor": "protonvpn",
   "displayName": "Proton VPN",
   "binary": "/usr/bin/protonvpn",
+  "locationTarget": { "city": "fastestServer", "unavailableFavorite": "error", "errorProvider": "proton" },
   "outputFormat": "text",
   "loginMethod": "credentials",
   "output": {
