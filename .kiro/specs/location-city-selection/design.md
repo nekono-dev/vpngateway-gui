@@ -362,7 +362,9 @@ type ConnectTarget =
   | { readonly kind: "cityByName"; readonly locationId: string; readonly country: string; readonly connectName: string } // 都市名を渡す（D1 の決定）
   | { readonly kind: "countryFallback"; readonly provider: string; readonly locationId: string; readonly country: string; readonly connectName: string; readonly removeFavorite: true } // 宣言 locationTarget の unavailableFavorite が countryFallback のプロバイダ。connectName は国名。接続中なら切断してから国名で接続し、お気に入りを削除する
   | { readonly kind: "favoriteUnavailable"; readonly provider: string; readonly locationId: string; readonly error: "favorite_unavailable"; readonly removeFavorite: false }; // 宣言の unavailableFavorite が error のプロバイダ。CLI を呼ばず、お気に入りを残す
-function resolveConnectTarget(provider: Provider, locationId: string): Promise<ConnectTarget>;
+// 依存: 国の一覧・都市の一覧（キャッシュ）・サーバの一覧（カタログ）・保存済みのお気に入り（FavoriteStore の項目。国名と削除の対象を得るため）
+interface ConnectTargetDependencies { locations; cities; servers; favorites }
+function resolveConnectTarget(provider: Provider, locationId: string, dependencies: ConnectTargetDependencies): Promise<ConnectTarget>;
 // 失敗時: 未知の ID・未取得の都市・サーバが無い → 400（未知の接続先）
 //        国の ID → 400（国の行からは接続しない。要件 6-6）
 //        一覧に無いお気に入り → 宣言された unavailableFavorite の動作に従う
