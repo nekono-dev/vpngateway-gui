@@ -8,7 +8,7 @@
 
 **Impact**: 接続先の一覧の応答が、国の行の一覧（既存）に加えて、都市の一覧・サーバの一覧・お気に入りの一覧を返す。接続は国の行を受け付けなくなり、都市とサーバの行で接続する。
 
-**設計の状態**: 要件 5-5・4-7・6-6 を改訂済み（2026-11-08）。D1 は (a)（都市名のみ）で確定し、(b)（都市と国の両方を渡す形式）は AdGuard VPN CLI に拒否されたため不採用。D7 は方針 A で決定: 一覧に無いお気に入りのサーバは、AdGuard VPN では `connect -l <国名>` で国名接続しお気に入りを削除、ProtonVPN ではフォールバックせず CLI を呼ばずにエラーを返しお気に入りを残す。AdGuard VPN 1.8.2 で Japan の実接続を確認済み。ProtonVPN の国名接続は使わない。D5 は実装時の確認事項。
+**設計の状態**: 要件 5-5・4-7・6-6 を改訂済み（2026-11-08）。D1 は (a)（都市名のみ）で確定し、(b)（都市と国の両方を渡す形式）は AdGuard VPN CLI に拒否されたため不採用。D7 は方針 A で決定: 一覧に無いお気に入りのサーバは、AdGuard VPN では `connect -l <国名>` で国名接続しお気に入りを削除、ProtonVPN ではフォールバックせず CLI を呼ばずにエラーを返しお気に入りを残す。AdGuard VPN 1.8.2 で Japan の実接続を確認済み。ProtonVPN の国名接続は使わない。D7 の国接続は `connect -l <国名>` の書式で確定。一覧外お気に入りの挙動は profile の locationTarget 宣言で指定し、型はベンダー名を含まない（2026-11-08 改訂）。D5 は実装時の確認事項。
 
 ### Goals
 - 国 → 都市 →（ProtonVPN のみ）サーバの画面を、両プロバイダで同じ操作にする（要件 1・2・3）
@@ -357,16 +357,17 @@ function readCatalog(providerId: string, declaration: ServerCatalogDef): Catalog
 ##### Service Interface
 ```typescript
 type ConnectTarget =
-  | { readonly kind: "city"; readonly locationId: string; readonly country: string; readonly connectName: string } // ProtonVPN: 最速サーバ名
+  | { readonly kind: "city"; readonly locationId: string; readonly country: string; readonly connectName: string } // 都市の最速サーバ名
   | { readonly kind: "server"; readonly locationId: string; readonly country: string; readonly connectName: string }
-  | { readonly kind: "cityByName"; readonly locationId: string; readonly country: string; readonly connectName: string } // AdGuard: 都市名を渡す（D1 の決定）
-  | { readonly kind: "countryFallback"; readonly provider: "adguard"; readonly locationId: string; readonly country: string; readonly connectName: string; readonly removeFavorite: true } // 要件 4-7: AdGuard VPN 専用。connectName は国名。接続中なら切断して国名で接続し、お気に入りを削除する
-  | { readonly kind: "favoriteUnavailable"; readonly provider: "proton"; readonly locationId: string; readonly error: "favorite_unavailable"; readonly removeFavorite: false }; // 要件 4-7: ProtonVPN の一覧に無いお気に入り。CLI を呼ばずエラーにし、お気に入りを残す
+  | { readonly kind: "cityByName"; readonly locationId: string; readonly country: string; readonly connectName: string } // 都市名を渡す（D1 の決定）
+  | { readonly kind: "countryFallback"; readonly provider: string; readonly locationId: string; readonly country: string; readonly connectName: string; readonly removeFavorite: true } // 宣言 locationTarget の unavailableFavorite が countryFallback のプロバイダ。connectName は国名。接続中なら切断してから国名で接続し、お気に入りを削除する
+  | { readonly kind: "favoriteUnavailable"; readonly provider: string; readonly locationId: string; readonly error: "favorite_unavailable"; readonly removeFavorite: false }; // 宣言の unavailableFavorite が error のプロバイダ。CLI を呼ばず、お気に入りを残す
 function resolveConnectTarget(provider: Provider, locationId: string): Promise<ConnectTarget>;
 // 失敗時: 未知の ID・未取得の都市・サーバが無い → 400（未知の接続先）
 //        国の ID → 400（国の行からは接続しない。要件 6-6）
-//        ProtonVPN の一覧に無いお気に入り → favoriteUnavailable（CLI は呼ばず、お気に入りを残す）
+//        一覧に無いお気に入り → 宣言された unavailableFavorite の動作に従う
 ```
+`provider` には宣言の値（プロバイダ ID）をそのまま入れる。ベンダー名は本体コードに書かない（要件 7.3 の中立性。禁止語は vendors の宣言から自動で作られ、check:neutrality が検査する）。一覧外のお気に入りの挙動は、プロファイルの locationTarget 宣言で指定する。
 - ID の解釈: `srv-` で始まればサーバ、それ以外は都市（国コード・都市のスラッグ）。国の行の ID は国の一覧に含まれるものとして拒否する。
 - 都市の解決: 国の都市の一覧（キャッシュ。無ければ取得）からスラッグが一致する都市を探し、その最速サーバ名を返す。
 - お気に入りのサーバの解決（D7）: サーバ一覧に無いとき、AdGuard VPN は `countryFallback` を返す。呼び出し側は接続中なら切断してから、そのお気に入りの国名（`connectName`）で `connect -l <国名>` を実行し、お気に入りを表示・通知せず削除する。ProtonVPN は `favoriteUnavailable` のエラー結果を返し、CLI を呼ばず、お気に入りを残す。エラー表示は既存の方法に従う。国の行の ID は、どちらの結果とも別に 400 で拒否する（6-6）。
