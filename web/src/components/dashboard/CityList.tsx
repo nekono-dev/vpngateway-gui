@@ -18,10 +18,12 @@ interface Props {
   onSelectCity: (cityId: string) => void;
   onToggleFavorite: (cityId: string, favorite: boolean) => void;
   onRefresh: () => void;
+  query?: string;
+  onQueryChange?: (query: string) => void;
 }
 
 /** 都市一覧のタブ、都市行、取得エラーを表示する。データ取得と遷移は親に委ねる。 */
-export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServerSelection, countryId, onBack = () => {}, disabled, onTabChange, onConnect, onSelectCity, onToggleFavorite, onRefresh }: Props) {
+export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServerSelection, countryId, onBack = () => {}, disabled, onTabChange, onConnect, onSelectCity, onToggleFavorite, onRefresh, query, onQueryChange }: Props) {
   const tabs = (
     <LocationBackBar screen={{ type: "cities", countryId: countryId ?? cities[0]?.country ?? "" }} onBack={onBack}>
       <div role="tablist" aria-label="都市の接続方法" className="location-tabs">
@@ -30,12 +32,13 @@ export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServe
       </div>
     </LocationBackBar>
   );
-  if (isLoading) return <div className="location-list">{tabs}</div>;
+  if (isLoading) return <div className="location-list">{tabs}{onQueryChange ? <input type="search" aria-label="都市を絞り込み" placeholder="都市名で絞り込み" value={query ?? ""} onChange={(event) => onQueryChange(event.target.value)} /> : null}</div>;
 
   if (error) {
     return (
       <div role="alert" className="location-error">
         {tabs}
+        {onQueryChange ? <input type="search" aria-label="都市を絞り込み" placeholder="都市名で絞り込み" value={query ?? ""} onChange={(event) => onQueryChange(event.target.value)} /> : null}
         <strong>{error.summary}</strong>
         {error.detail ? <details><summary>詳細</summary><pre>{error.detail}</pre></details> : null}
         <button type="button" disabled={isRefreshing} onClick={onRefresh}>{isRefreshing ? "取得中..." : "再取得"}</button>
