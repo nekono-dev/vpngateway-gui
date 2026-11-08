@@ -107,7 +107,7 @@ describe("/v1/connection の接続先", () => {
 
     const locations = await app.inject({ method: "GET", url: "/v1/connection/locations" });
     const last = locations.json().filter((l: { lastConnected: boolean }) => l.lastConnected);
-    expect(last.map((l: { id: string }) => l.id)).toEqual(["us-las-vegas"]);
+    expect(last.map((l: { id: string }) => l.id)).toEqual(["us-united-states"]);
   });
 
   it("CLI外で別の接続先へ再接続されていた場合は、古い接続先を返さない", async () => {

@@ -30,6 +30,7 @@ function buildApp() {
   return withAuthenticatedInject(buildRawApp());
 }
 const { saveLastLocationId } = await import("../locations/last-location-store.js");
+const { readCityList, saveCityList } = await import("../locations/city-cache-store.js");
 
 // 実CLIはping昇順で返すが、APIが整列する（順序をCLI任せにしない）ことを検証するため、あえて崩して並べる。
 const LIST_OUTPUT =
@@ -49,23 +50,31 @@ describe("/v1/connection/locations", () => {
     rmSync(statePath("last-location.json"), { force: true });
   });
 
-  it("ping昇順で、favorite・lastConnectedを付けて返し、接続時の指定名は含めない", async () => {
+  it("国の行を都市の最小ping順で返し、国行にpingを含めない", async () => {
     saveLastLocationId("adguardvpn", "jp-tokyo");
     await app.inject({ method: "PUT", url: "/v1/connection/locations/cn-shanghai-virtual/favorite", payload: { id: "cn-shanghai-virtual", kind: "city", country: "cn", countryName: "China", city: "Shanghai (Virtual)" } });
 
     const response = await app.inject({ method: "GET", url: "/v1/connection/locations" });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual([
-      { id: "jp-tokyo", country: "jp", countryName: "Japan", city: "Tokyo", pingMs: 4, favorite: false, lastConnected: true },
-      { id: "cn-shanghai-virtual", country: "cn", countryName: "China", city: "Shanghai (Virtual)", pingMs: 59, favorite: true, lastConnected: false },
-      { id: "us-las-vegas", country: "us", countryName: "United States", city: "Las Vegas", pingMs: 111, favorite: false, lastConnected: false },
-    ]);
+    const rows = response.json() as Array<Record<string, unknown>>;
+    expect(rows.map((row) => row.country)).toEqual(["jp", "cn", "us"]);
+    expect(rows.every((row) => row.pingMs === undefined && row.city === undefined)).toBe(true);
+    expect(rows.every((row) => row.hasServerStage === false)).toBe(true);
   });
 
   it("list-locationsを実行するのは、リクエストごと（キャッシュしない）", async () => {
     await app.inject({ method: "GET", url: "/v1/connection/locations" });
     await app.inject({ method: "GET", url: "/v1/connection/locations" });
     expect(executeVendorCommandMock).toHaveBeenCalledTimes(2);
+    expect(executeVendorCommandMock.mock.calls[0][0]).toMatchObject({ resolvedArgv: ["list-locations"] });
+  });
+
+  it("再計測で都市の保存を破棄してから国一覧を取り直す", async () => {
+    saveCityList("adguardvpn", "jp", ["Tokyo"]);
+    const response = await app.inject({ method: "POST", url: "/v1/connection/locations/refresh" });
+    expect(response.statusCode).toBe(200);
+    expect(readCityList("adguardvpn", "jp")).toBeUndefined();
+    expect(executeVendorCommandMock).toHaveBeenCalledTimes(1);
     expect(executeVendorCommandMock.mock.calls[0][0]).toMatchObject({ resolvedArgv: ["list-locations"] });
   });
 
@@ -95,7 +104,7 @@ describe("/v1/connection/locations", () => {
     expect(favorites.json()).toEqual([city, server]);
 
     const listed = await app.inject({ method: "GET", url: "/v1/connection/locations" });
-    expect(listed.json().filter((l: { favorite: boolean }) => l.favorite).map((l: { id: string }) => l.id)).toEqual(["us-las-vegas"]);
+    expect(listed.json().every((l: { favorite: boolean }) => !l.favorite)).toBe(true);
 
     const removed = await app.inject({ method: "DELETE", url: "/v1/connection/locations/us-las-vegas/favorite" });
     expect(removed.json()).toEqual({ locationId: "us-las-vegas", favorite: false });

@@ -45,7 +45,7 @@ beforeEach(() => {
   writeFileSync(join(dir, "user-location.json"), "{}"); // 既定（保存なし）から始める
 });
 
-type Row = { id: string; country: string; distanceKm?: number };
+type Row = { id: string; country: string; distanceKm?: number; pingMs?: number };
 const countries = (rows: Row[]) => rows.map((r) => r.country);
 
 describe("GET /v1/connection/locations（ping を計測できないプロバイダ）", () => {
@@ -61,6 +61,7 @@ describe("GET /v1/connection/locations（ping を計測できないプロバイ�
     expect(rows[0].distanceKm).toBe(0);
     expect(rows[1].distanceKm).toBeGreaterThan(9000);
     expect(rows[3].distanceKm).toBeUndefined(); // 首都が無い国は距離なし（末尾）
+    expect(rows.every((r) => r.pingMs === undefined)).toBe(true);
   });
 
   it("保存された利用者の場所（US）があれば、それを基点にする", async () => {

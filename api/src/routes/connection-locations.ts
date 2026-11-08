@@ -8,7 +8,7 @@ import {
   FavoriteItemRequestSchema,
   FavoritesResponseSchema,
   LocationIdParamsSchema,
-  LocationsResponseSchema,
+  LocationsRefreshResponseSchema,
   type FavoriteItem,
 } from "../schemas/location.js";
 import { LOCATION_ID_PATTERN, toServerLocationId } from "../locations/location-id.js";
@@ -18,7 +18,6 @@ import {
   FavoriteLocationsError,
   addFavoriteLocationItem,
   readFavoriteLocations,
-  readFavoriteLocationIds,
   removeFavoriteLocation,
 } from "../locations/favorite-locations-store.js";
 import { readLastLocationId } from "../locations/last-location-store.js";
@@ -27,6 +26,8 @@ import { getGeoIndex } from "../geo/geo-index.js";
 import { annotateDistances } from "../locations/distance-annotator.js";
 import { readSavedUserCountry } from "../locations/user-location-store.js";
 import { resolveUserLocation } from "../locations/user-location-resolver.js";
+import { buildCountryRows } from "../locations/location-tree.js";
+import { clearCityCache } from "../locations/city-cache-store.js";
 
 function validateFavoriteItem(body: {
   id: string;
@@ -72,7 +73,7 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
     {
       schema: {
         response: {
-          200: LocationsResponseSchema,
+          200: LocationsRefreshResponseSchema,
           403: ErrorResponseSchema,
           422: ErrorResponseSchema,
           501: ErrorResponseSchema,
@@ -84,8 +85,8 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
     async (request) => {
       const provider = getActiveProvider();
       const locations = await fetchLocations(provider);
-      const favorites = new Set(readFavoriteLocationIds(provider.id));
       const lastId = readLastLocationId(provider.id);
+      const lastCountry = locations.find((location) => location.id === lastId)?.country.toLowerCase();
       const geo = getGeoIndex();
       const userLocation = resolveUserLocation({
         saved: readSavedUserCountry(),
@@ -93,25 +94,43 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
         isKnownCountry: (code) => geo.hasCountry(code),
       });
       // 距離の注釈（ping を計測できないときだけ距離順。それ以外は CLI の順序のまま）。
+      const pingMeasurable = isPingMeasurable(provider.profile);
+      const countryRows = buildCountryRows({
+        source: locations.some((location) => location.city !== undefined) ? "cityRows" : "countryTable",
+        rows: locations,
+        pingMeasurable,
+      });
       const annotated = annotateDistances(
-        locations.map((location) => ({
-          id: location.id,
-          country: location.country,
-          countryName: location.countryName,
-          ...(location.city === undefined ? {} : { city: location.city }),
-          ...(location.pingMs === undefined ? {} : { pingMs: location.pingMs }),
-          favorite: favorites.has(location.id),
-          lastConnected: location.id === lastId,
-        })),
+        countryRows.map((row) => ({ ...row, favorite: false, lastConnected: row.country === lastCountry })),
         {
-          pingMeasurable: isPingMeasurable(provider.profile),
+          pingMeasurable,
           countryAliases: provider.profile.countryAliases ?? {},
           userCountry: userLocation.country,
         },
         geo,
       );
-      // 接続時の指定名（connectName）は内部値のためレスポンスへ含めない。
-      return annotated.map(({ distanceKm, ...row }) => (distanceKm === undefined ? row : { ...row, distanceKm }));
+      return annotated.map(({ pingMs: _pingMs, distanceKm, ...row }) => (distanceKm === undefined ? row : { ...row, distanceKm }));
+    },
+  );
+
+  fastify.post(
+    "/v1/connection/locations/refresh",
+    {
+      schema: {
+        response: {
+          200: LocationsRefreshResponseSchema,
+          403: ErrorResponseSchema,
+          422: ErrorResponseSchema,
+          501: ErrorResponseSchema,
+          502: ErrorResponseSchema,
+          504: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      clearCityCache(getActiveProvider().id);
+      const response = await fastify.inject({ method: "GET", url: "/v1/connection/locations", headers: request.headers });
+      return reply.code(response.statusCode as 200 | 403 | 422 | 501 | 502 | 504).send(response.json());
     },
   );
 

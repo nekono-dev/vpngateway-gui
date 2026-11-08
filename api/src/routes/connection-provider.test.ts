@@ -191,8 +191,8 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
       state.plan = "paid";
       const list = await app.inject({ method: "GET", url: "/v1/connection/locations" });
       expect(list.json()).toEqual([
-        { id: "jp-japan", country: "jp", countryName: "Japan", favorite: false, lastConnected: false },
-        { id: "us-united-states", country: "us", countryName: "United States", favorite: false, lastConnected: false },
+        { id: "jp-japan", country: "jp", countryName: "Japan", hasServerStage: true, favorite: false, lastConnected: false },
+        { id: "us-united-states", country: "us", countryName: "United States", hasServerStage: true, favorite: false, lastConnected: false },
       ]);
       const put = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-japan" } });
       expect(put.statusCode).toBe(200);
