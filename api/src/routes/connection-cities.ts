@@ -73,4 +73,51 @@ export const registerConnectionCitiesRoute: FastifyPluginAsyncTypebox = async (f
       }, geo);
     },
   );
+
+  fastify.post(
+    "/v1/connection/locations/:country/cities/refresh",
+    { schema: { params: ParamsSchema, response: { 200: Type.Array(CityRowSchema), 403: ErrorResponseSchema, 422: ErrorResponseSchema, 502: ErrorResponseSchema, 504: ErrorResponseSchema } } },
+    async (request) => {
+      const provider = getActiveProvider();
+      const country = request.params.country;
+      const action = requireAction(provider.profile, "listCities");
+      const code = country.toUpperCase();
+      const argv = resolveArgv(provider.profile, "listCities", { LOCATION: code }, { LOCATION: [code] });
+      const result = await executeVendorCommand(provider.id, {
+        vendor: provider.profile.vendor,
+        binary: provider.profile.binary,
+        resolvedArgv: argv,
+        timeoutMs: action.timeoutMs,
+      });
+      if (result.exitCode !== 0) {
+        const connectAction = provider.profile.actions.connect;
+        throwCommandFailure(provider.id, "city list command failed", result.exitCode ?? -1,
+          pickFailureOutput(result.stderr, result.stdout), {
+            pattern: connectAction?.restrictedPattern,
+            operation: "connectToLocation",
+          });
+      }
+      const cities = parseCityList(result.stdout, action.table);
+      saveCityList(provider.id, country, cities);
+
+      const geo = getGeoIndex();
+      const userLocation = resolveUserLocation({
+        saved: readSavedUserCountry(),
+        acceptLanguage: request.headers["accept-language"],
+        isKnownCountry: (countryCode) => geo.hasCountry(countryCode),
+      });
+      const countryName = COUNTRY_NAMES.of(country.toUpperCase()) ?? country.toUpperCase();
+      const favorites = new Set(readFavoriteLocations(provider.id).filter((item) => item.kind === "city").map((item) => item.id));
+      const lastId = readLastLocationId(provider.id);
+      const rows = cities.map((city) => {
+        const id = toLocationId(country, city);
+        return { id, country, countryName, city, favorite: favorites.has(id), lastConnected: lastId === id };
+      });
+      return annotateDistances(rows, {
+        pingMeasurable: isPingMeasurable(provider.profile),
+        countryAliases: provider.profile.countryAliases ?? {},
+        userCountry: userLocation.country,
+      }, geo);
+    },
+  );
 };
