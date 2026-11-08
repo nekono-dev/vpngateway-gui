@@ -92,27 +92,27 @@ export function UserLocationPanel() {
   const current = view.countries.find((country) => country.code === view.effective);
 
   return (
-    <div className="user-location-panel">
-      <p>
-        現在の場所: {current?.name ?? "未設定"}
-      </p>
+    <div className="settings-item" aria-label="利用者の場所">
+      <p>現在の場所: {current?.name ?? "未設定"}</p>
       {view.source === "browser" ? (
         <p className="hint">既定値はブラウザの言語設定から推定したもので、現在の場所と異なる場合があります</p>
       ) : null}
-      <label htmlFor="user-location-country">利用者の国</label>
-      <select
-        id="user-location-country"
-        aria-label="利用者の国"
-        value={selected}
-        onChange={(event) => setSelected(event.target.value)}
-      >
-        <option value="">選択してください</option>
-        {view.countries.map((country) => (
-          <option key={country.code} value={country.code}>
-            {country.name}
-          </option>
-        ))}
-      </select>
+      <div className="settings-item">
+        <label htmlFor="user-location-country">利用者の国</label>
+        <select
+          id="user-location-country"
+          aria-label="利用者の国"
+          value={selected}
+          onChange={(event) => setSelected(event.target.value)}
+        >
+          <option value="">選択してください</option>
+          {view.countries.map((country) => (
+            <option key={country.code} value={country.code}>
+              {country.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="maintenance-actions">
         <button type="button" disabled={busy || selected === ""} onClick={() => void save()}>
           保存

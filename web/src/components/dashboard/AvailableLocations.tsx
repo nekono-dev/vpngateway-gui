@@ -6,6 +6,7 @@
 
 import type { AvailableLocation } from "../../hooks/useAvailableLocations";
 import type { CurrentAvailableLocation } from "../../locations/current-available-location";
+import { formatDistance } from "../../locations/format-distance";
 
 interface Props {
   locations: AvailableLocation[];
@@ -43,7 +44,7 @@ export function AvailableLocations({ locations, current, showPing }: Props) {
                   </span>
                   {showPing ? <span className="location-ping">-</span> : null}
                   {location.distanceKm === undefined ? null : (
-                    <span className="location-distance">約 {location.distanceKm.toFixed(1)} km</span>
+                    <span className="location-distance">約 {formatDistance(location.distanceKm)}</span>
                   )}
                 </div>
                 <button

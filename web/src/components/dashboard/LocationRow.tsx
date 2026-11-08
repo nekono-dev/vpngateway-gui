@@ -3,6 +3,7 @@
 // （ラベルの中に操作要素を入れ子にしないため）。
 
 import { locationLabel, type LocationItem } from "../../locations/location-filter";
+import { formatDistance } from "../../locations/format-distance";
 
 interface Props {
   location: LocationItem;
@@ -61,7 +62,7 @@ export function LocationRow({
         </span>
         {showPing ? <span className="location-ping">{formatPing(location.pingMs)}</span> : null}
         {location.distanceKm === undefined ? null : (
-          <span className="location-distance">約 {location.distanceKm.toFixed(1)} km</span>
+          <span className="location-distance">約 {formatDistance(location.distanceKm)}</span>
         )}
       </label>
       <button

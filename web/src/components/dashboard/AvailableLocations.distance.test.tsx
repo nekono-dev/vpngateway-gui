@@ -12,7 +12,7 @@ describe("AvailableLocations の距離", () => {
         locations={[{ code: "gb", name: "英国", cities: ["London"], distanceKm: 9558.94 }]}
       />,
     );
-    expect(screen.getByText("約 9558.9 km")).toBeInTheDocument();
+    expect(screen.getByText("約 9.6k km")).toBeInTheDocument();
   });
 
   it("距離が決まらない国には距離を表示しない", () => {

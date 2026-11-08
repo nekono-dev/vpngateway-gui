@@ -7,5 +7,6 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true
   },
-  "include": ["src", "server", "vite.config.ts", "orval.config.ts"]
+  "include": ["src", "server", "vite.config.ts", "orval.config.ts"],
+  "exclude": ["server/**/*.test.ts"]
 }

@@ -37,7 +37,6 @@ type SettingsTab =
   | "dnsResolver"
   | "dnsDetail"
   | "verify"
-  | "userLocation"
   | "maintenance";
 
 const TAB_LABELS: Record<SettingsTab, string> = {
@@ -46,7 +45,6 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   dnsResolver: "上位DNSリゾルバ",
   dnsDetail: "DNS詳細",
   verify: "動作検証",
-  userLocation: "利用者の場所",
   maintenance: "メンテナンス",
 };
 const TAB_KEYS = Object.keys(TAB_LABELS) as SettingsTab[];
@@ -191,7 +189,6 @@ export function SettingsDialog({
     dnsResolver: dnsRelayNeedsUpstream,
     dnsDetail: dnsFallbackNeedsServers,
     verify: verifyEchoUrlMissing,
-    userLocation: false,
     maintenance: false,
   };
   const hasUnsavedChanges =
@@ -376,17 +373,18 @@ export function SettingsDialog({
                     </p>
                   ) : null}
                 </>
-              ) : activeTab === "userLocation" ? (
-                <UserLocationPanel />
               ) : activeTab === "maintenance" ? (
-                <div className="maintenance-actions">
-                  <button type="button" onClick={() => setIsAccountOpen(true)}>
-                    アカウント情報を変更
-                  </button>
-                  <button type="button" onClick={() => setIsRebootOpen(true)}>
-                    ゲートウェイ再起動
-                  </button>
-                </div>
+                <>
+                  <div className="maintenance-actions">
+                    <button type="button" onClick={() => setIsAccountOpen(true)}>
+                      アカウント情報を変更
+                    </button>
+                    <button type="button" onClick={() => setIsRebootOpen(true)}>
+                      ゲートウェイ再起動
+                    </button>
+                  </div>
+                  <UserLocationPanel />
+                </>
               ) : activeTab === "dnsResolver" ? (
                 <>
                   <div className="settings-item">
