@@ -10,7 +10,8 @@
     "start": "node dist-server/index.js",
     "generate:api-client": "orval --config orval.config.ts",
     "test": "vitest run",
-    "test:screens": "vite build && playwright test -c playwright.screens.config.ts"
+    "test:screens": "vite build && playwright test -c playwright.screens.config.ts",
+    "test:server": "vitest run -c vitest.server.config.ts"
   },
   "dependencies": {
     "@fastify/http-proxy": "^10.0.1",

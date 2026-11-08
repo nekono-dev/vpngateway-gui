@@ -60,6 +60,9 @@ export function LocationRow({
           {location.city !== undefined ? <span className="hint">{location.countryName}</span> : null}
         </span>
         {showPing ? <span className="location-ping">{formatPing(location.pingMs)}</span> : null}
+        {location.distanceKm === undefined ? null : (
+          <span className="location-distance">約 {location.distanceKm.toFixed(1)} km</span>
+        )}
       </label>
       <button
         type="button"

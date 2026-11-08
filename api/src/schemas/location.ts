@@ -13,6 +13,8 @@ export const LocationSchema = Type.Object({
   city: Type.Optional(Type.String()),
   // ping推定値（ミリ秒）。取得できなかった接続先では省略する。
   pingMs: Type.Optional(Type.Number()),
+  // 利用者の国の首都からの距離（km。小数点以下第一位）。ping を計測できないプロバイダで、距離が決まった接続先のみ付く。
+  distanceKm: Type.Optional(Type.Number()),
   favorite: Type.Boolean(),
   // 最後に接続に成功した接続先か（高々1件がtrue）。
   lastConnected: Type.Boolean(),

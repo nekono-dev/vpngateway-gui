@@ -42,6 +42,9 @@ export function AvailableLocations({ locations, current, showPing }: Props) {
                     {subtitle ? <span className="hint">{subtitle}</span> : null}
                   </span>
                   {showPing ? <span className="location-ping">-</span> : null}
+                  {location.distanceKm === undefined ? null : (
+                    <span className="location-distance">約 {location.distanceKm.toFixed(1)} km</span>
+                  )}
                 </div>
                 <button
                   type="button"

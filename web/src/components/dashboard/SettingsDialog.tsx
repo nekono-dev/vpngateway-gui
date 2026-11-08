@@ -20,6 +20,7 @@ import { LineListEditor } from "./LineListEditor";
 import { AccountSettingsDialog } from "./AccountSettingsDialog";
 import { RebootDialog } from "./RebootDialog";
 import { VerificationPanel } from "./verification/VerificationPanel";
+import { UserLocationPanel } from "./UserLocationPanel";
 import { useVerification } from "../../hooks/useVerification";
 
 interface Props {
@@ -36,6 +37,7 @@ type SettingsTab =
   | "dnsResolver"
   | "dnsDetail"
   | "verify"
+  | "userLocation"
   | "maintenance";
 
 const TAB_LABELS: Record<SettingsTab, string> = {
@@ -44,6 +46,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   dnsResolver: "上位DNSリゾルバ",
   dnsDetail: "DNS詳細",
   verify: "動作検証",
+  userLocation: "利用者の場所",
   maintenance: "メンテナンス",
 };
 const TAB_KEYS = Object.keys(TAB_LABELS) as SettingsTab[];
@@ -188,6 +191,7 @@ export function SettingsDialog({
     dnsResolver: dnsRelayNeedsUpstream,
     dnsDetail: dnsFallbackNeedsServers,
     verify: verifyEchoUrlMissing,
+    userLocation: false,
     maintenance: false,
   };
   const hasUnsavedChanges =
@@ -372,6 +376,8 @@ export function SettingsDialog({
                     </p>
                   ) : null}
                 </>
+              ) : activeTab === "userLocation" ? (
+                <UserLocationPanel />
               ) : activeTab === "maintenance" ? (
                 <div className="maintenance-actions">
                   <button type="button" onClick={() => setIsAccountOpen(true)}>

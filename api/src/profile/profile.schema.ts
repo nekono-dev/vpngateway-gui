@@ -140,6 +140,9 @@ export const VendorProfileSchema = Type.Object({
       locationPing: Type.Optional(Type.Boolean()),
     }),
   ),
+  // ベンダーの国コードを、同梱データ（ISO 3166-1 alpha-2 や ADM0_A3）の国の識別キーへ読み替える対応（任意）。
+  // 距離の注釈と参考一覧の名称解決が、この共通の対応を使う。
+  countryAliases: Type.Optional(Type.Record(Type.String(), Type.String())),
   actions: Type.Object({
     // 接続先を指定する接続（`%LOCATION%`を含む）。`listLocations`と組で`connectToLocation`になる。
     // Phase 9で省略可に変更（`connectAuto`のみのプロバイダに対応）。

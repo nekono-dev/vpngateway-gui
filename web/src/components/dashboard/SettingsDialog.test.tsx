@@ -8,6 +8,9 @@ const api = vi.hoisted(() => ({
   getV1ConnectionConfig: vi.fn(),
   putV1ConnectionConfig: vi.fn(),
   putV1Operator: vi.fn(),
+  getV1UserLocation: vi.fn(),
+  putV1UserLocation: vi.fn(),
+  deleteV1UserLocation: vi.fn(),
 }));
 vi.mock("../../generated/api/default/default", () => api);
 
@@ -67,7 +70,7 @@ describe("SettingsDialog: タブ", () => {
 
   it("先頭の「通信制御」タブを表示し、タブで項目を切り替えられる", async () => {
     await renderDialog();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ", "動作検証", "メンテナンス"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ", "動作検証", "利用者の場所", "メンテナンス"]);
     expect(screen.getByRole("tab", { name: "通信制御" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("checkbox", { name: /Kill Switch/ })).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /明示的プロキシモード/ })).not.toBeInTheDocument();
@@ -90,7 +93,7 @@ describe("SettingsDialog: タブ", () => {
 
     await openTab("上位DNSリゾルバ");
     await userEvent.click(screen.getByLabelText(/DNS中継を有効にする/));
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ !", "DNS詳細", "動作検証", "メンテナンス"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ !", "DNS詳細", "動作検証", "利用者の場所", "メンテナンス"]);
 
     await openTab("DNS詳細");
     expect(screen.getByLabelText(/名前解決を止める/)).toBeInTheDocument();

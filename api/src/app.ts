@@ -17,6 +17,7 @@ import { registerOperatorSessionRoute } from "./routes/operator-session.js";
 import { registerVerificationsRoute } from "./routes/verifications.js";
 import { registerGatewayRebootRoute } from "./routes/gateway-reboot.js";
 import { registerUiPreferencesRoute } from "./routes/ui-preferences.js";
+import { registerUserLocationRoute } from "./routes/user-location.js";
 import { requireOperatorSession } from "./auth/require-operator-session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
@@ -167,6 +168,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(registerVerificationsRoute);
   app.register(registerGatewayRebootRoute);
   app.register(registerUiPreferencesRoute);
+  app.register(registerUserLocationRoute);
 
   return app;
 }

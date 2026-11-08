@@ -16,6 +16,11 @@ import {
   removeFavoriteLocation,
 } from "../locations/favorite-locations-store.js";
 import { readLastLocationId } from "../locations/last-location-store.js";
+import { isPingMeasurable } from "../capabilities/capability-evaluator.js";
+import { getGeoIndex } from "../geo/geo-index.js";
+import { annotateDistances } from "../locations/distance-annotator.js";
+import { readSavedUserCountry } from "../locations/user-location-store.js";
+import { resolveUserLocation } from "../locations/user-location-resolver.js";
 
 export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.get(
@@ -32,21 +37,37 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
         },
       },
     },
-    async () => {
+    async (request) => {
       const provider = getActiveProvider();
       const locations = await fetchLocations(provider);
       const favorites = new Set(readFavoriteLocationIds(provider.id));
       const lastId = readLastLocationId(provider.id);
+      const geo = getGeoIndex();
+      const userLocation = resolveUserLocation({
+        saved: readSavedUserCountry(),
+        acceptLanguage: request.headers["accept-language"],
+        isKnownCountry: (code) => geo.hasCountry(code),
+      });
+      // 距離の注釈（ping を計測できないときだけ距離順。それ以外は CLI の順序のまま）。
+      const annotated = annotateDistances(
+        locations.map((location) => ({
+          id: location.id,
+          country: location.country,
+          countryName: location.countryName,
+          ...(location.city === undefined ? {} : { city: location.city }),
+          ...(location.pingMs === undefined ? {} : { pingMs: location.pingMs }),
+          favorite: favorites.has(location.id),
+          lastConnected: location.id === lastId,
+        })),
+        {
+          pingMeasurable: isPingMeasurable(provider.profile),
+          countryAliases: provider.profile.countryAliases ?? {},
+          userCountry: userLocation.country,
+        },
+        geo,
+      );
       // 接続時の指定名（connectName）は内部値のためレスポンスへ含めない。
-      return locations.map((location) => ({
-        id: location.id,
-        country: location.country,
-        countryName: location.countryName,
-        ...(location.city === undefined ? {} : { city: location.city }),
-        ...(location.pingMs === undefined ? {} : { pingMs: location.pingMs }),
-        favorite: favorites.has(location.id),
-        lastConnected: location.id === lastId,
-      }));
+      return annotated.map(({ distanceKm, ...row }) => (distanceKm === undefined ? row : { ...row, distanceKm }));
     },
   );
 
