@@ -5,6 +5,49 @@
 import { renameSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+// ProtonVPN の都市一覧・サーバカタログ（実 CLI の形式を模擬。api の解析規則 parseCityList と読み方 readCatalog で検査する）。
+const PROTON_COUNTRIES: Record<string, string> = { JP: "Japan", US: "United States" };
+/** 国コード → 都市（都市名と、その都市の Features 欄）。 */
+const PROTON_CITIES: Record<string, { city: string; features: string }[]> = {
+  JP: [{ city: "Tokyo", features: "" }, { city: "Osaka", features: "P2P" }],
+  US: [{ city: "New York", features: "" }],
+};
+/** サーバカタログ（LogicalServers）。Tier 0 は無料、Features の 1 は Secure Core。 */
+export const PROTON_CATALOG = {
+  LogicalServers: [
+    { Name: "JP-TK#1", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 0, Status: true, Score: 1.5, Load: 20 },
+    { Name: "JP-TK#2", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 4, Status: true, Score: 2.0, Load: 25 },
+    { Name: "JP-TK#3", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 1, Status: true, Score: 0.5, Load: 10 },
+    { Name: "JP-OS#1", ExitCountry: "JP", City: "Osaka", Tier: 2, Features: 0, Status: true, Score: 3.0, Load: 30 },
+    { Name: "JP-FREE#5", ExitCountry: "JP", City: "Tokyo", Tier: 0, Features: 0, Status: true, Score: 4.0, Load: 40 },
+    { Name: "US-NY#1", ExitCountry: "US", City: "New York", Tier: 2, Features: 0, Status: true, Score: 2.5, Load: 35 },
+  ],
+};
+
+/**
+ * 目的: 都市の一覧の出力（実 CLI の形式: 空行・「Cities in <国名>:」・見出し・区切り・都市の行・空行）を作る。
+ * 入力: 国コード（大文字 2 文字）。未知なら undefined。
+ */
+export function protonCitiesOutput(code: string): string | undefined {
+  const cities = PROTON_CITIES[code];
+  const name = PROTON_COUNTRIES[code];
+  if (cities === undefined || name === undefined) return undefined;
+  const width = Math.max("City".length, ...cities.map((c) => c.city.length));
+  const rows = cities.map((c) => (c.features === "" ? c.city : `${c.city.padEnd(width)}  ${c.features}`));
+  return `\nCities in ${name}:\nCity${" ".repeat(width - 4)}  Features\n${"-".repeat(width)}  --------\n${rows.join("\n")}\n\n`;
+}
+
+/**
+ * 目的: サーバカタログを、指定のディレクトリの VPN/serverlist.json へ書く（サインイン時）。実 CLI が作るキャッシュの位置を模擬する。
+ * 入力: cacheDir（キャッシュの根。既定は MOCKVPN_CACHE_DIR、無ければ /home/vpngwgui/.cache/Proton）。
+ * 失敗時の方針: 書けなければ例外（呼び出し側がサインインの失敗として扱う）。
+ */
+export function writeProtonCatalog(cacheDir: string = process.env.MOCKVPN_CACHE_DIR ?? "/home/vpngwgui/.cache/Proton"): void {
+  const file = join(cacheDir, "VPN", "serverlist.json");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${JSON.stringify(PROTON_CATALOG, null, 2)}\n`, "utf8");
+}
+
 export type VendorId = "protonvpn" | "adguardvpn";
 
 /** 状態（ファイル。ログイン状態・プラン・接続先）。 */
@@ -113,6 +156,7 @@ function runProton(command: string | undefined, rest: readonly string[], state: 
       }
       state.loggedIn = true;
       state.plan = "paid";
+      writeProtonCatalog();
       return { exitCode: 0, stdout: "Login successful.\n" };
     }
     case "signout":
@@ -123,6 +167,18 @@ function runProton(command: string | undefined, rest: readonly string[], state: 
     case "connect": {
       if (!state.loggedIn) return { exitCode: 1, stdout: "Error: Authentication required\n" };
       const country = rest[0] === "--country" ? rest[1] : undefined;
+      const target = rest[0];
+      if (country === undefined && target !== undefined && target !== "--country") {
+        // サーバ名（カタログの Name）での接続。国コードの位置引数は国の接続として扱う（実 CLI と同じ）。
+        const server = PROTON_CATALOG.LogicalServers.find((item) => item.Name === target);
+        if (server === undefined && !/^[A-Za-z]{2}$/.test(target)) return { exitCode: 2, stdout: `Error: Invalid server name '${target}'.\n` };
+        if (server !== undefined) {
+          state.connected = true;
+          state.location = `${server.Name} in ${server.City}, ${PROTON_COUNTRIES[server.ExitCountry] ?? server.ExitCountry}`;
+          network.connect();
+          return { exitCode: 0, stdout: `Connected to ${state.location}.\nYour new IP address is 203.0.113.9.\n` };
+        }
+      }
       state.connected = true;
       state.location = country === undefined ? "JP-FREE#3 in Osaka, Japan" : `${country.toUpperCase()}-FREE#1 in Tokyo, Japan`;
       network.connect();
@@ -135,6 +191,14 @@ function runProton(command: string | undefined, rest: readonly string[], state: 
       return { exitCode: 0, stdout: "Disconnected.\n" };
     case "status":
       return { exitCode: 0, stdout: state.connected ? sampleOutput("protonvpn", "status: 接続中") : sampleOutput("protonvpn", "status: 切断中（未ログインでも同じ）") };
+    case "cities": {
+      // cities list --country <CC>（都市の一覧）。ログインを要しない（実 CLI と同じ）。
+      const idx = rest.indexOf("--country");
+      const code = idx === -1 ? undefined : rest[idx + 1]?.toUpperCase();
+      const output = code === undefined ? undefined : protonCitiesOutput(code);
+      if (output === undefined) return { exitCode: 1, stdout: "Error: Invalid country code\n" };
+      return { exitCode: 0, stdout: output };
+    }
     case "countries":
       return { exitCode: 0, stdout: "Country          Code\n---------------  ------\nJapan            JP\nUnited States    US\n" };
     case "config":

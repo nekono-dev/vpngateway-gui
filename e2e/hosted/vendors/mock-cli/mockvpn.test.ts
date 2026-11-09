@@ -1,6 +1,12 @@
 // 責務: モック CLI の単体テスト。出力が samples.json のケースと一致すること（ケース名で突き合わせる）と、経路の操作の呼び出しを確かめる（要件 3.1〜3.7・4.1）。
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+
+// サインインはカタログを既定のキャッシュ先へ書くため、テストでは一時ディレクトリへ向ける（既定の場所は実行環境の権限に依る）。
+process.env.MOCKVPN_CACHE_DIR ??= mkdtempSync(join(tmpdir(), "mockvpn-test-cache-"));
 import { MOCK_ACCOUNT, runCommand, sampleOutput, vendorFromBinary, type MockState, type Network } from "./mockvpn";
 
 /** 経路の操作の記録（実際のネットワークは変更しない）。 */
@@ -112,5 +118,51 @@ describe("接続・切断と経路の操作", () => {
     const out = runCommand("protonvpn", ["signin", "--totp", "user"], state, recorder(), ["pw"], { loginFails: true });
     expect(out.exitCode).toBe(1);
     expect(state.loggedIn).toBe(false);
+  });
+});
+
+describe("ProtonVPN の都市一覧・サーバカタログ・サーバ名での接続", () => {
+  it("都市一覧は実 CLI の形式で、api の解析規則で都市名を取り出せる", async () => {
+    const { parseCityList } = await import("../../../../api/src/locations/city-list-parser.js");
+    const { protonCitiesOutput } = await import("./mockvpn");
+    const output = protonCitiesOutput("JP") ?? "";
+    expect(output).toMatch(/^\nCities in Japan:\nCity\s+Features\n-+\s+-+\n/);
+    expect(parseCityList(output, { city: "City" })).toEqual(["Tokyo", "Osaka"]);
+    expect(protonCitiesOutput("ZZ")).toBeUndefined();
+  });
+
+  it("cities list の未知の国コードは終了コード 1 で拒否する", () => {
+    const result = runCommand("protonvpn", ["cities", "list", "--country", "ZZ"], { loggedIn: false, plan: "unknown", connected: false }, recorder());
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("Invalid country code");
+  });
+
+  it("サインインでカタログを書き、サーバ名で接続できる（存在しない名前は拒否）", async () => {
+    const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "mockvpn-cache-"));
+    const previous = process.env.MOCKVPN_CACHE_DIR;
+    process.env.MOCKVPN_CACHE_DIR = dir;
+    try {
+      const state: MockState = { loggedIn: false, plan: "unknown", connected: false };
+      const signedIn = runCommand("protonvpn", ["signin", MOCK_ACCOUNT.user], state, recorder(), [MOCK_ACCOUNT.password, MOCK_ACCOUNT.totp]);
+      expect(signedIn.exitCode).toBe(0);
+      const catalog = JSON.parse(readFileSync(join(dir, "VPN", "serverlist.json"), "utf8")) as { LogicalServers: { Name: string; Features: number; Status: boolean }[] };
+      expect(catalog.LogicalServers.find((item) => item.Name === "JP-TK#1")?.Status).toBe(true);
+      expect(state.plan).toBe("paid");
+      const net = recorder();
+      const connected = runCommand("protonvpn", ["connect", "JP-TK#1"], state, net);
+      expect(connected.exitCode).toBe(0);
+      expect(connected.stdout).toContain("Connected to JP-TK#1 in Tokyo, Japan.");
+      expect(state.location).toBe("JP-TK#1 in Tokyo, Japan");
+      expect(net.calls).toEqual(["connect"]);
+      const missing = runCommand("protonvpn", ["connect", "NO-SUCH#1"], state, recorder());
+      expect(missing.exitCode).toBe(2);
+      expect(missing.stdout).toContain("Invalid server name 'NO-SUCH#1'");
+    } finally {
+      if (previous === undefined) delete process.env.MOCKVPN_CACHE_DIR; else process.env.MOCKVPN_CACHE_DIR = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
