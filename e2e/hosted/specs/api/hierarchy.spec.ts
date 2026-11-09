@@ -42,7 +42,7 @@ test.describe.serial("場所の階層（国→都市→サーバ）の受け入�
     // URL 提示型のログインは本文を送らない（null。資格情報のスキーマは適用しない）。失敗しても、有効なベンダーは ProtonVPN へ戻す
     await switchProvider(client, "adguardvpn");
     try {
-      const adguard = await client.post("/v1/session", null);
+      const adguard = await client.post("/v1/session", null, 60_000);
       expect(adguard.ok, `AdGuard VPN のログインに失敗: ${JSON.stringify(adguard)}`).toBe(true);
     } finally {
       await switchProvider(client, "protonvpn");

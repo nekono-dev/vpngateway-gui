@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { test, expect } from "@playwright/test";
 import { apiClient, loadAdmin, runnerContainer, setMockControl } from "../../fixtures/stack";
 import type { ApiClient, ApiResult } from "../../../common/api-client";
+import { firstLocationId } from "../../fixtures/gateway";
 
 const run = promisify(execFile);
 const MOCK_USER = "mock-user@example.test";
@@ -29,14 +30,6 @@ async function readConnectionWhenRunnerReady(client: ApiClient, timeoutMs = 90_0
   return res;
 }
 
-/** 目的: 接続先の一覧（GET /v1/connection/locations）の先頭の ID を得る。 */
-async function firstLocationId(client: ApiClient): Promise<string> {
-  const res = await client.get<{ id: string }[]>("/v1/connection/locations");
-  expect(res.ok, "接続先の一覧が得られない").toBe(true);
-  const id = res.ok ? res.body[0]?.id : undefined;
-  expect(id, "接続先が 1 件も無い").toBeTruthy();
-  return id as string;
-}
 
 test.describe.serial("VPN アカウントと接続（stack・api）", () => {
   test.describe.configure({ timeout: 5 * 60 * 1000 });
