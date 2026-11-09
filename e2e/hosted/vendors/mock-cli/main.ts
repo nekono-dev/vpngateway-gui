@@ -38,7 +38,9 @@ function main(): void {
   const control = readControl(controlPath);
   const network = createNetwork(join(dir, `${vendor}.route`));
   const before = JSON.stringify(state);
-  const result = runCommand(vendor, argv, state, network, readStdinLines(), control);
+  // 標準入力は、パスワードを受け取るサインインだけで読む。他のコマンドで読むと、閉じられない入力で止まる（AdGuard VPN のログインは標準入力を使わない）。
+  const stdin = argv[0] === "signin" ? readStdinLines() : [];
+  const result = runCommand(vendor, argv, state, network, stdin, control);
   // 状態が変わったときだけ書く（status などの読み取りが、同時に動く別の操作の結果を古い内容で戻さないように）
   if (JSON.stringify(state) !== before) writeState(statePath, state);
 
