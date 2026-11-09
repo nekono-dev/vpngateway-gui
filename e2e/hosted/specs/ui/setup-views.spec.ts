@@ -51,6 +51,12 @@ test.describe.serial("画面の表示と操作（ui）", () => {
 
   test("4.2・4.3・12.2: お気に入りを登録・解除すると、一覧の表示が変わる", async ({ watchedPage: page }) => {
     await loginDashboard(page);
+    // 階層の画面: 国（Japan）を開き、「最速サーバ」の都市の行で ☆ を押す
+    const openJapanCities = async () => {
+      await page.locator("label.location-row", { hasText: "Japan" }).first().click();
+      await page.getByRole("tab", { name: "最速サーバ" }).click();
+    };
+    await openJapanCities();
     const add = page.getByRole("button", { name: /をお気に入りに追加$/ }).first();
     await expect(add, "お気に入りに追加のボタンが無い").toBeVisible();
     const label = (await add.getAttribute("aria-label")) ?? "";
@@ -60,8 +66,9 @@ test.describe.serial("画面の表示と操作（ui）", () => {
     const remove = page.getByRole("button", { name: `${target}のお気に入りを解除` });
     await expect(remove, "登録後に解除の表示になる").toBeVisible();
 
-    // 再読み込みの後も、登録が保たれている（API の状態を画面が表示する）
+    // 再読み込みの後も、登録が保たれている（API の状態を画面が表示する）。国の一覧から開き直す
     await page.reload();
+    await openJapanCities();
     await expect(page.getByRole("button", { name: `${target}のお気に入りを解除` })).toBeVisible();
 
     await page.getByRole("button", { name: `${target}のお気に入りを解除` }).click();
