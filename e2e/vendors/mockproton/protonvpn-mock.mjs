@@ -13,7 +13,8 @@
 //   食い違わせる（プランの判定では制限が見えないが、実行すると制限に当たる状況＝「実行失敗からの学習」の検証用）。
 // 使い方: protonvpn-mock signin free@example.com ／ protonvpn-mock connect ／ protonvpn-mock config list
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 const STATE_FILE = process.env.MOCK_STATE_FILE ?? "/tmp/protonvpn-mock-state.json";
 const PASSWORD = "mock-pass";
@@ -30,6 +31,27 @@ const COUNTRIES = [
   ["United States", "US", "New York"],
 ];
 const FREE_SERVER = "JP-FREE#5 in Tokyo, Japan";
+const CACHE_DIR = process.env.PROVIDER_CACHE_DIR ?? "/var/lib/vpngwgui-provider-cache";
+
+const CITIES = {
+  AU: ["Sydney", "Melbourne"],
+  JP: ["Tokyo", "Osaka", "Nagoya"],
+  CH: ["Zurich", "Geneva"],
+  US: ["New York", "Los Angeles", "Miami"],
+};
+const SERVER_CATALOG = COUNTRIES.flatMap(([country, code, city], countryIndex) => {
+  const cities = CITIES[code] ?? [city, `${city} 2`];
+  return cities.map((serverCity, cityIndex) => ({
+    Name: code === "JP" && cityIndex === 0 ? "JP-TK#1" : `${code}-${serverCity.split(/\s+/).map((part) => part.slice(0, 2).toUpperCase()).join("")}#${cityIndex + 1}`,
+    ExitCountry: code,
+    City: serverCity,
+    Tier: code === "JP" && cityIndex === 0 ? 0 : 2,
+    Features: (cityIndex === 1 ? 4 : 0) | (cityIndex === 2 ? 2 : 0) | (countryIndex === 2 && cityIndex === 0 ? 1 : 0),
+    Status: true,
+    Score: 10 + countryIndex * 10 + cityIndex,
+    Load: 20 + countryIndex * 10 + cityIndex * 5,
+  }));
+});
 
 /** 状態ファイルを読む。無い・壊れている場合は初期状態（未ログイン・未接続）。 */
 function loadState() {
@@ -97,6 +119,13 @@ switch (command) {
     }
     if (account.twoFactor && twoFactor !== TWO_FACTOR_CODE) clickError("2FA Authentication failed. Please try again.");
     saveState({ account: { username, ...account }, connectedTo: null });
+    try {
+      const catalogPath = join(CACHE_DIR, "mockproton", "VPN", "serverlist.json");
+      mkdirSync(dirname(catalogPath), { recursive: true });
+      writeFileSync(catalogPath, JSON.stringify({ LogicalServers: SERVER_CATALOG }, null, 2));
+    } catch (error) {
+      process.stderr.write(`Warning: failed to write server catalog: ${error.message}\n`);
+    }
     console.log(`Successfully signed in as '${username}'`);
     break;
   }
@@ -134,16 +163,28 @@ switch (command) {
       else if (arg === "--random") feature = "random";
       else serverName = arg;
     }
+    // 位置引数が国コード（2 文字で、既知の国）なら、サーバ名ではなく国の指定として扱う。
+    const countryCode = serverName && /^[A-Za-z]{2}$/.test(serverName) && COUNTRIES.some(([, code]) => code === serverName.toUpperCase()) ? serverName : undefined;
     if (state.account.plan === "free") {
       if (serverName) usageError("Server selection by ID is not available on the free plan. Please use 'protonvpn connect' to connect to available free servers or upgrade to access all servers.", "connect");
       if (country || city) usageError("Location selection is not available on the free plan. Please use 'protonvpn connect' to connect to available free servers or upgrade to choose your location.", "connect");
       if (feature === "random") usageError("Random selection is not available on the free plan. Please use 'protonvpn connect' to connect to available free servers.", "connect");
       if (feature) usageError(`${feature} servers are not available on the free plan. Please use 'protonvpn connect' to connect to available free servers or upgrade to to access ${feature} servers.`, "connect");
       state.connectedTo = FREE_SERVER;
-    } else if (country) {
-      const entry = COUNTRIES.find(([name, code]) => code === country.toUpperCase() || name.toLowerCase() === country.toLowerCase());
-      if (!entry) usageError(`Invalid country code '${country}'. Please use a valid country code.`, "connect");
+    } else if (country || countryCode) {
+      // 国の指定は --country のほか、位置引数の国コード（実 CLI は国コードを接続先として受け付ける）でもよい。
+      const requested = country ?? countryCode;
+      const entry = COUNTRIES.find(([name, code]) => code === requested.toUpperCase() || name.toLowerCase() === requested.toLowerCase());
+      if (!entry) usageError(`Invalid country code '${requested}'. Please use a valid country code.`, "connect");
       state.connectedTo = `${entry[1]}#12 in ${entry[2]}, ${entry[0]}`;
+    } else if (serverName && !countryCode) {
+      const catalogPath = join(CACHE_DIR, "mockproton", "VPN", "serverlist.json");
+      let servers = [];
+      try { servers = JSON.parse(readFileSync(catalogPath, "utf8")).LogicalServers ?? []; } catch {}
+      const server = servers.find((item) => item.Name === serverName);
+      if (!server) usageError(`Invalid server name '${serverName}'.`, "connect");
+      const countryName = COUNTRIES.find(([, code]) => code === server.ExitCountry)?.[0] ?? server.ExitCountry;
+      state.connectedTo = `${server.Name} in ${server.City}, ${countryName}`;
     } else {
       state.connectedTo = "CH#3 in Zurich, Switzerland";
     }
@@ -163,6 +204,18 @@ switch (command) {
     if (rest[0] !== "list") usageError("Missing command.", "countries");
     requireSignedIn("Authentication required to view complete country list. Please sign in with 'protonvpn signin'", "list");
     console.log(table(["Country", "Code"], COUNTRIES.map(([name, code]) => [name, code])));
+    break;
+  }
+  case "cities": {
+    if (rest[0] !== "list") usageError("Missing command.", "cities");
+    const countryIndex = rest.indexOf("--country");
+    const code = countryIndex >= 0 ? rest[countryIndex + 1]?.toUpperCase() : undefined;
+    const entry = COUNTRIES.find(([, countryCode]) => countryCode === code);
+    if (!entry) clickError("Invalid country code");
+    const [country] = entry;
+    const cities = CITIES[code] ?? [entry[2], `${entry[2]} 2`];
+    const output = table(["City", "Features"], cities.map((city, index) => [city, index === 0 ? "" : "P2P"]));
+    console.log(`\nCities in ${country}:\n${output}\n`);
     break;
   }
   case "config": {
