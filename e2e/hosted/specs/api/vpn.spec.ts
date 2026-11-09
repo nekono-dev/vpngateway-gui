@@ -86,7 +86,7 @@ test.describe.serial("VPN アカウントと接続（stack・api）", () => {
     const id = await firstLocationId(client);
 
     const connect = await client.put<ConnectionBody>("/v1/connection", { connect: true, locationId: id });
-    expect(connect.ok, "接続に失敗").toBe(true);
+    expect(connect.ok, `接続に失敗: ${JSON.stringify(connect)}`).toBe(true);
     const connected = await client.get<ConnectionBody>("/v1/connection");
     expect(connected.ok && connected.body.status).toBe("connected");
 

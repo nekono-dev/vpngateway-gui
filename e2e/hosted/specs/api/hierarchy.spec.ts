@@ -43,7 +43,7 @@ test.describe.serial("場所の階層（国→都市→サーバ）の受け入�
     await switchProvider(client, "adguardvpn");
     try {
       const adguard = await client.post("/v1/session", null);
-      expect(adguard.ok, "AdGuard VPN のログインに失敗").toBe(true);
+      expect(adguard.ok, `AdGuard VPN のログインに失敗: ${JSON.stringify(adguard)}`).toBe(true);
     } finally {
       await switchProvider(client, "protonvpn");
     }
