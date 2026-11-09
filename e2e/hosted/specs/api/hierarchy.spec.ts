@@ -39,10 +39,14 @@ test.describe.serial("場所の階層（国→都市→サーバ）の受け入�
     await setMockControl("adguardvpn", {});
     await loginVpn(client);
     // AdGuard VPN のログインは URL 提示型（資格情報は送らない）。モックは即座にログイン済みになる
+    // URL 提示型のログインは本文を送らない（null。資格情報のスキーマは適用しない）。失敗しても、有効なベンダーは ProtonVPN へ戻す
     await switchProvider(client, "adguardvpn");
-    const adguard = await client.post("/v1/session");
-    expect(adguard.ok, "AdGuard VPN のログインに失敗").toBe(true);
-    await switchProvider(client, "protonvpn");
+    try {
+      const adguard = await client.post("/v1/session", null);
+      expect(adguard.ok, "AdGuard VPN のログインに失敗").toBe(true);
+    } finally {
+      await switchProvider(client, "protonvpn");
+    }
   });
 
   test.afterAll(async () => {
