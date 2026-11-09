@@ -69,9 +69,10 @@ export async function loginVpn(client: ApiClient): Promise<void> {
 /** 目的: 接続先の先頭の ID を得る（接続先の一覧が空なら失敗）。 */
 export async function firstLocationId(client: ApiClient): Promise<string> {
   // 接続先の行は都市とサーバ（国の行からは接続できない）。最初の国の最初の都市の ID を返す（都市の接続は最速のサーバへ行く）。
-  const countries = await client.get<{ id: string }[]>("/v1/connection/locations");
+  // 国の行の ID は「国コード-国名」の形のため、都市の一覧の取得には国コード（country）を使う
+  const countries = await client.get<{ country: string }[]>("/v1/connection/locations");
   expect(countries.ok, "国の一覧が得られない").toBe(true);
-  const country = countries.ok ? countries.body[0]?.id : undefined;
+  const country = countries.ok ? countries.body[0]?.country : undefined;
   expect(country, "国が 1 件も無い").toBeTruthy();
   const cities = await client.get<{ id: string }[]>(`/v1/connection/locations/${country}/cities`);
   expect(cities.ok, "都市の一覧が得られない").toBe(true);
