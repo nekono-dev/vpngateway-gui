@@ -16,6 +16,16 @@ function setup(overrides: Partial<React.ComponentProps<typeof CityList>> = {}) {
 }
 
 describe("CityList", () => {
+  it.each([[2102.7, "約 2.1k km"], [0, "約 0.0k km"]] as const)("都市の距離 %s km を共通の千km形式で表示する", (distanceKm, expected) => {
+    setup({ cities: [{ ...CITIES[0], distanceKm }] });
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it("距離のない都市には距離を表示しない", () => {
+    setup({ cities: [CITIES[0]] });
+    expect(screen.queryByText(/^約 /)).not.toBeInTheDocument();
+  });
+
   it("ProtonVPN相当では2タブ、AdGuard VPN相当では最速サーバだけを表示する", () => {
     setup();
     expect(screen.getByRole("tab", { name: "最速サーバ" })).toBeInTheDocument();

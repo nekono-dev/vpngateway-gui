@@ -79,7 +79,7 @@ export function App({ onLogout }: Props) {
     setSelectedCityId("");
   }, [activeProviderId]);
   const cityList = useCityList(selectedCountry);
-  const serverList = useServerList(selectedCityId);
+  const serverList = useServerList(selectedCityId, data?.connection?.status, data?.connection?.location);
   const cityTab = useCityTab();
   // お気に入りの一覧（都市とサーバ）。登録・解除のたびに取り直す。
   const loadFavorites = useCallback(async () => {
@@ -144,7 +144,20 @@ export function App({ onLogout }: Props) {
         if (response.status === 403) refresh();
         return;
       }
-      notifySuccess(done);
+      // サーバお気に入りが接続時に削除された場合は、無通知のフォールバックとして扱う。
+      let silent = connecting && !autoConnect && favorites.some((item) => item.id === target?.id && item.kind === "server");
+      if (silent) {
+        try {
+          const updated = await getV1ConnectionFavorites();
+          if (updated.status === 200) {
+            setFavorites(updated.data);
+            silent = !updated.data.some((item) => item.id === target?.id);
+          }
+        } catch {
+          // 接続は成功済み。判定用の再取得失敗を接続失敗として通知しない。
+        }
+      }
+      if (!silent) notifySuccess(done);
       if (connecting && target && !autoConnect) {
         // 以降の既定選択（次回の「前回」）を一覧へ即時反映し、明示的な選択は消して現在の接続先へ戻す。
         if (selectedCountry) locations.markLastConnected(selectedCountry);
@@ -312,7 +325,7 @@ export function App({ onLogout }: Props) {
               onSelect={setSelectedId}
               onToggleCityFavorite={(cityId, favorite) => void toggleCityFavorite(cityId, favorite)}
               onToggleServerFavorite={(serverName, favorite) => void toggleServerFavorite(serverName, favorite)}
-              onRefresh={() => void cityList.refresh()}
+              onRefresh={() => void (cityList.error ? cityList.refresh() : cityList.remeasure().then((success) => { if (success) locations.refresh(); }))}
               onCityTabChange={(tab) => void cityTab.save(tab)}
               onCountryChange={(country) => { setSelectedCountry(country ?? ""); setSelectedCityId(""); setSelectedId(undefined); }}
               onCityChange={(cityId) => { setSelectedCityId(cityId ?? ""); }}

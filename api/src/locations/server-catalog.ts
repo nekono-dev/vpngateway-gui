@@ -35,6 +35,11 @@ export function serversInCity(
   country: string,
   city: string,
 ): ServerRecord[] {
+  return availableServers(providerId, declaration).filter((server) => server.country === country.toLowerCase() && server.city === city);
+}
+
+/** キャッシュから有効な通常サーバを返す。接続先の解決と都市の一覧で同じ条件を使う。 */
+export function availableServers(providerId: string, declaration: ServerCatalogDef): ServerRecord[] {
   const catalog = readCatalog(providerId, declaration) as Record<string, unknown>;
   const rows = catalog[declaration.list] as unknown[];
   const result: ServerRecord[] = [];
@@ -57,7 +62,7 @@ export function serversInCity(
         typeof score !== "number" || !Number.isFinite(score) || typeof load !== "number" || !Number.isFinite(load)) {
       throw new Error("invalid server catalog: server entry fields have unexpected types");
     }
-    if (rowCountry.toLowerCase() !== country.toLowerCase() || rowCity !== city || (status !== true && status !== 1) || (features & 1) !== 0) continue;
+    if ((status !== true && status !== 1) || (features & 1) !== 0) continue;
     result.push({ name, country: rowCountry.toLowerCase(), city: rowCity, tier: tier === 0 ? "free" : "paid", load, score });
   }
   return result.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name, "en"));

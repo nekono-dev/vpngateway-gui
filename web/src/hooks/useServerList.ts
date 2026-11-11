@@ -11,7 +11,7 @@ export interface ServerListState {
 }
 
 /** 都市のサーバ一覧を取得する。 */
-export function useServerList(cityId: string): ServerListState {
+export function useServerList(cityId: string, connectionStatus?: string, connectionLocation?: string): ServerListState {
   const [servers, setServers] = useState<GetV1ConnectionLocationsCityIdServers200Item[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ErrorContent>();
@@ -33,7 +33,7 @@ export function useServerList(cityId: string): ServerListState {
       if (!stale) setIsLoading(false);
     });
     return () => { stale = true; };
-  }, [cityId]);
+  }, [cityId, connectionStatus, connectionLocation]);
 
   // お気に入りの登録・解除の成功後に、この一覧の☆の表示だけを直す。
   const patchFavorite = useCallback((serverName: string, favorite: boolean) => {

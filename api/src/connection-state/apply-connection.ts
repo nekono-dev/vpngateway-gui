@@ -20,7 +20,7 @@ import type { Provider } from "../providers/provider-registry.js";
 import type { ConnectionPutBody, ConnectionStatus } from "../schemas/connection.js";
 import { resolveConnectTarget, UnknownConnectTargetError } from "../locations/location-target.js";
 import { readCityList, saveCityList } from "../locations/city-cache-store.js";
-import { readCatalog } from "../locations/server-catalog.js";
+import { availableServers } from "../locations/server-catalog.js";
 import { parseCityList } from "../locations/city-list-parser.js";
 import { readFavoriteLocations, removeFavoriteLocation } from "../locations/favorite-locations-store.js";
 import { toLocationId } from "../locations/location-id.js";
@@ -45,14 +45,12 @@ export async function applyConnectionChange(provider: Provider, body: Connection
   if (body.connect && body.locationId) {
     const connectAction = requireAction(profile, "connect");
     const declaration = profile.serverCatalog;
-    const allServers = declaration
-      ? ((readCatalog(provider.id, declaration) as Record<string, unknown>)[declaration.list] as Record<string, unknown>[]).map((row) => ({ name: String(row[declaration.name]), country: String(row[declaration.country]).toLowerCase(), city: String(row[declaration.city]), tier: Number(row[declaration.tier]) === 0 ? "free" as const : "paid" as const, load: Number(row[declaration.load]), score: Number(row[declaration.score]) }))
-      : [];
+    const loadAllServers = () => declaration ? availableServers(provider.id, declaration) : [];
     const favorites = readFavoriteLocations(provider.id);
     const isServerId = body.locationId.startsWith("srv-");
     if (isServerId) {
       try {
-        const targetResult = await resolveConnectTarget(profile, body.locationId, { locations: [], cities: [], servers: allServers, favorites });
+        const targetResult = await resolveConnectTarget(profile, body.locationId, { locations: [], cities: [], servers: loadAllServers(), favorites });
         if (targetResult.kind === "favoriteUnavailable") throw new PlaceholderValidationError("favorite location is no longer available");
         if (targetResult.kind === "countryFallback") {
           target = { id: body.locationId, country: targetResult.country, countryName: targetResult.country, connectName: targetResult.connectName };
@@ -96,7 +94,7 @@ export async function applyConnectionChange(provider: Provider, body: Connection
     }
     let connectTarget;
     try {
-      connectTarget = await resolveConnectTarget(profile, body.locationId, { locations: cityLocations, cities, servers: allServers, favorites });
+      connectTarget = await resolveConnectTarget(profile, body.locationId, { locations: cityLocations, cities, servers: loadAllServers(), favorites });
     } catch (error) {
       if (error instanceof UnknownConnectTargetError) throw new PlaceholderValidationError(error.message);
       throw error;

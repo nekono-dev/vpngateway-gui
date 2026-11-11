@@ -178,7 +178,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
       const cacheDir = join(process.env.PROVIDER_CACHE_DIR!, "mockproton");
       mkdirSync(join(cacheDir, "VPN"), { recursive: true });
       saveCityList("mockproton", "jp", ["Tokyo"]);
-      writeFileSync(join(cacheDir, "VPN", "serverlist.json"), JSON.stringify({ LogicalServers: [{ Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Features: 0, Status: true, Score: 1, Load: 5 }] }));
+      writeFileSync(join(cacheDir, "VPN", "serverlist.json"), JSON.stringify({ LogicalServers: [{ Name: "JP-SC#1", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 1, Status: true, Score: 0, Load: 1 }, { Name: "JP-OFF#1", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 0, Status: false, Score: 0, Load: 1 }, { Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Features: 0, Status: true, Score: 1, Load: 5 }] }));
       const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-tokyo" } });
       expect(response.statusCode).toBe(200);
       const connectArgv = executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv).find((argv) => argv[0] === "connect");
@@ -258,14 +258,14 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
   describe("GET /v1/connection/available-locations（プランで接続できる接続先の参考一覧）", () => {
     const cacheDir = join(process.env.PROVIDER_CACHE_DIR!, "mockproton");
     const writeServerList = () => {
-      mkdirSync(cacheDir, { recursive: true });
+      mkdirSync(join(cacheDir, "VPN"), { recursive: true });
       writeFileSync(
-        join(cacheDir, "serverlist.json"),
+        join(cacheDir, "VPN", "serverlist.json"),
         JSON.stringify({
-          Servers: [
-            { Country: "JP", City: "Tokyo", Tier: 0, Domain: "secret.example" },
-            { Country: "US", City: "Ashburn", Tier: 0 },
-            { Country: "DE", City: "Berlin", Tier: 2 },
+          LogicalServers: [
+            { Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Status: 1, Score: 0, Features: [], Domain: "secret.example" },
+            { Name: "US#1", ExitCountry: "US", City: "Ashburn", Tier: 0, Status: 1, Score: 0, Features: [] },
+            { Name: "DE#1", ExitCountry: "DE", City: "Berlin", Tier: 2, Status: 1, Score: 0, Features: [] },
           ],
         }),
       );
@@ -296,7 +296,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
     });
 
     it("サーバ一覧のファイルが無くても200で空（エラーにしない）", async () => {
-      rmSync(join(cacheDir, "serverlist.json"), { force: true });
+      rmSync(join(cacheDir, "VPN", "serverlist.json"), { force: true });
       const response = await app.inject({ method: "GET", url: "/v1/connection/available-locations" });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ locations: [] });

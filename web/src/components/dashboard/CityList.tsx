@@ -1,6 +1,7 @@
 import type { GetV1ConnectionLocationsCountryCities200Item } from "../../generated/api/endpoints.schemas";
 import type { ErrorContent } from "../../notifications/describe-api-error";
 import { LocationBackBar } from "../../locations/LocationBackBar";
+import { formatDistance } from "../../locations/format-distance";
 import type { CityTab } from "../../locations/location-browser-state";
 
 interface Props {
@@ -67,7 +68,7 @@ export function CityList({ cities, isLoading, isRefreshing, error, tab, hasServe
                 <span className="location-iso">{city.country.toUpperCase()}</span>
                 <span className="location-name"><span className="location-title"><strong>{city.city}</strong>{city.id === currentId ? <span className="badge badge-ok">接続中</span> : null}{city.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span></span>
                 {city.pingMs === undefined ? null : <span className="location-ping">{city.pingMs} ms</span>}
-                {city.distanceKm === undefined ? null : <span className="location-distance">約 {city.distanceKm.toLocaleString("ja-JP")} km</span>}
+                {city.distanceKm === undefined ? null : <span className="location-distance">約 {formatDistance(city.distanceKm)}</span>}
               </label>
               {showFavorite ? <button type="button" className="star" aria-pressed={city.favorite} aria-label={city.favorite ? `${city.city}のお気に入りを解除` : `${city.city}をお気に入りに追加`} onClick={() => onToggleFavorite(city.id, !city.favorite)}>{city.favorite ? "★" : "☆"}</button> : null}
             </li>

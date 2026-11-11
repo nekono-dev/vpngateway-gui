@@ -156,6 +156,7 @@ describe("ProtonVPN の都市一覧・サーバカタログ・サーバ名での
       expect(connected.exitCode).toBe(0);
       expect(connected.stdout).toContain("Connected to JP-TK#1 in Tokyo, Japan.");
       expect(state.location).toBe("JP-TK#1 in Tokyo, Japan");
+      expect(runCommand("protonvpn", ["status"], state, net).stdout).toContain("Server: JP-TK#1 in Tokyo, Japan");
       expect(net.calls).toEqual(["connect"]);
       const missing = runCommand("protonvpn", ["connect", "NO-SUCH#1"], state, recorder());
       expect(missing.exitCode).toBe(2);

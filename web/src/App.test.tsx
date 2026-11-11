@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   getV1ConnectionLocationsCountries: vi.fn(),
   getV1ConnectionLocationsCountryCities: vi.fn(),
   postV1ConnectionLocationsCountryCitiesRefresh: vi.fn(),
+  postV1ConnectionLocationsRefresh: vi.fn(),
   getV1ConnectionLocationsCityIdServers: vi.fn(),
   getV1ConnectionFavorites: vi.fn(),
   getV1ConnectionCityTab: vi.fn(),
@@ -85,6 +86,25 @@ async function selectLocation(city: RegExp) {
 }
 
 describe("App", () => {
+  it.each(["removed", "retained", "unavailable"] as const)("サーバお気に入り接続後の再取得が %s のとき通知を正しく扱う", async (result) => {
+    const favorite = { id: "srv-jp-zz-9", kind: "server", country: "jp", countryName: "Japan", city: "Tokyo", serverName: "JP-ZZ#9" };
+    api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [favorite] });
+    api.putV1Connection.mockImplementation(async () => {
+      if (result === "unavailable") api.getV1ConnectionFavorites.mockRejectedValue(new Error("offline"));
+      else api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: result === "retained" ? [favorite] : [] });
+      return { status: 200, data: { status: "connected", location: "JAPAN" } };
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("tab", { name: "お気に入り", exact: true }));
+    await userEvent.click(await screen.findByRole("radio", { name: /JP-ZZ#9/ }));
+    await userEvent.click(screen.getByRole("button", { name: "接続", exact: true }));
+    await waitFor(() => expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: favorite.id }));
+    await waitFor(() => expect(api.getV1ConnectionFavorites).toHaveBeenCalledTimes(2));
+    if (result === "removed") await waitFor(() => expect(screen.queryByRole("radio", { name: /JP-ZZ#9/ })).not.toBeInTheDocument());
+    if (result === "retained") expect(await screen.findByRole("status")).toHaveTextContent("接続しました");
+    else expect(document.querySelector(".toast-region")?.textContent).toBe("");
+  });
+
   it("ヘッダーにテーマの切り替えボタンを置く（ログイン後のダッシュボード。1.5）", async () => {
     renderApp();
     const header = document.querySelector("header.app-header") as HTMLElement;
@@ -122,7 +142,7 @@ describe("App", () => {
   it("階層ブラウザを表示し、都市の再計測で保存を破棄するAPIを呼び、ping非対応案内は出さない", async () => {
     api.getV1ConnectionLocationsCountries.mockResolvedValue({ status: 200, data: [{ id: "jp", country: "jp", countryName: "Japan", hasServerStage: true, favorite: false, lastConnected: false }] });
     api.getV1ConnectionLocationsCountryCities.mockResolvedValue({ status: 200, data: [{ id: "tokyo", country: "jp", countryName: "Japan", city: "Tokyo", favorite: false, lastConnected: false }] });
-    api.postV1ConnectionLocationsCountryCitiesRefresh.mockResolvedValue({ status: 200, data: [] });
+    api.postV1ConnectionLocationsRefresh.mockResolvedValue({ status: 200, data: [] });
     api.getV1ConnectionCityTab.mockResolvedValue({ status: 200, data: { tab: "fastest" } });
     api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [] });
     renderApp();
@@ -132,7 +152,11 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("radio", { name: /Japan/ }));
     await screen.findByRole("radio", { name: /Tokyo/ });
     await userEvent.click(screen.getByRole("button", { name: "再計測" }));
-    await waitFor(() => expect(api.postV1ConnectionLocationsCountryCitiesRefresh).toHaveBeenCalledWith("jp"));
+    await waitFor(() => expect(api.postV1ConnectionLocationsRefresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenCalledTimes(2));
+    expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenLastCalledWith("jp");
+    expect(api.postV1ConnectionLocationsRefresh.mock.invocationCallOrder[0]).toBeLessThan(api.getV1ConnectionLocationsCountryCities.mock.invocationCallOrder[1]);
+    expect(api.postV1ConnectionLocationsCountryCitiesRefresh).not.toHaveBeenCalled();
   });
 
   it("リストで選択した接続先へlocationIdで接続し、APIが返す接続国（と接続先）を表示、切断で消える", async () => {
@@ -241,11 +265,16 @@ describe("App", () => {
   });
 
   it("再計測は、都市の保存を破棄する再取得のAPIを呼ぶ", async () => {
+    api.postV1ConnectionLocationsRefresh.mockResolvedValue({ status: 200, data: [] });
     renderApp();
     await userEvent.click(await screen.findByRole("radio", { name: /South Korea/ }));
     await screen.findByRole("radio", { name: /Seoul/ });
     await userEvent.click(screen.getByRole("button", { name: "再計測" }));
-    await waitFor(() => expect(api.postV1ConnectionLocationsCountryCitiesRefresh).toHaveBeenCalledWith("kr"));
+    await waitFor(() => expect(api.postV1ConnectionLocationsRefresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenCalledTimes(2));
+    expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenLastCalledWith("kr");
+    expect(api.postV1ConnectionLocationsRefresh.mock.invocationCallOrder[0]).toBeLessThan(api.getV1ConnectionLocationsCountryCities.mock.invocationCallOrder[1]);
+    expect(api.postV1ConnectionLocationsCountryCitiesRefresh).not.toHaveBeenCalled();
   });
 
   it("接続先が無い（一覧が空・最後の接続先も無い）間は［接続］を押せない", async () => {

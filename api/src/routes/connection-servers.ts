@@ -7,7 +7,7 @@ import { readCatalog, serversInCity } from "../locations/server-catalog.js";
 import { LOCATION_ID_PATTERN, toLocationId, toServerLocationId } from "../locations/location-id.js";
 import { getActiveProvider } from "../providers/active-provider-store.js";
 import { readFavoriteLocationIds } from "../locations/favorite-locations-store.js";
-import { readLastLocationId } from "../locations/last-location-store.js";
+
 
 const ParamsSchema = Type.Object({ cityId: Type.String({ pattern: LOCATION_ID_PATTERN }) });
 
@@ -29,14 +29,16 @@ export const registerConnectionServersRoute: FastifyPluginAsyncTypebox = async (
         .find((row) => row.country === country && toLocationId(country, row.city) === cityId)?.city;
       if (!city) return reply.code(404).send({ error: "not_found", message: "City was not found" });
       const favorites = new Set(readFavoriteLocationIds(provider.id));
-      const lastId = readLastLocationId(provider.id);
+      const statusResponse = await fastify.inject({ method: "GET", url: "/v1/connection", headers: request.headers });
+      const connection = statusResponse.statusCode === 200 ? statusResponse.json<{ status: string; location?: string }>() : undefined;
+      const connectedLocation = connection?.status === "connected" ? connection.location : undefined;
       return serversInCity(provider.id, declaration, country, city).map((server) => ({
         name: server.name,
         tier: server.tier,
         load: server.load,
         score: server.score,
         favorite: favorites.has(toServerLocationId(server.name)),
-        connected: lastId === toServerLocationId(server.name),
+        connected: connectedLocation === server.name || connectedLocation?.startsWith(`${server.name} `) === true,
       }));
     },
   );

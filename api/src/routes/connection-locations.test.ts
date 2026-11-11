@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { ProxyUnavailableError } from "../errors.js";
 
@@ -11,6 +11,7 @@ process.env.VENDORS_DIR = join(import.meta.dirname, "../../../vendors");
 process.env.ENABLED_PROVIDERS = "adguardvpn";
 process.env.AUDIT_LOG_FILE = join(dir, "audit.log");
 process.env.STATE_DIR = dir;
+process.env.PROVIDER_CACHE_DIR = join(dir, "cache");
 /** AdGuard VPNのベンダー別状態ファイルのパス。 */
 const statePath = (name: string) => join(dir, "providers", "adguardvpn", name);
 
@@ -71,9 +72,17 @@ describe("/v1/connection/locations", () => {
 
   it("再計測で都市の保存を破棄してから国一覧を取り直す", async () => {
     saveCityList("adguardvpn", "jp", ["Tokyo"]);
+    saveCityList("adguardvpn", "us", ["Las Vegas"]);
+    saveCityList("protonvpn", "jp", ["Tokyo"]);
+    const catalog = join(process.env.PROVIDER_CACHE_DIR!, "adguardvpn", "serverlist.json");
+    mkdirSync(join(process.env.PROVIDER_CACHE_DIR!, "adguardvpn"), { recursive: true });
+    writeFileSync(catalog, "CLI owned catalog");
     const response = await app.inject({ method: "POST", url: "/v1/connection/locations/refresh" });
     expect(response.statusCode).toBe(200);
     expect(readCityList("adguardvpn", "jp")).toBeUndefined();
+    expect(readCityList("adguardvpn", "us")).toBeUndefined();
+    expect(readCityList("protonvpn", "jp")).toEqual(["Tokyo"]);
+    expect(readFileSync(catalog, "utf8")).toBe("CLI owned catalog");
     expect(executeVendorCommandMock).toHaveBeenCalledTimes(1);
     expect(executeVendorCommandMock.mock.calls[0][0]).toMatchObject({ resolvedArgv: ["list-locations"] });
   });

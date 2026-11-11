@@ -18,6 +18,7 @@ import { getGeoIndex } from "../geo/geo-index.js";
 import { annotateDistances } from "../locations/distance-annotator.js";
 import { readSavedUserCountry } from "../locations/user-location-store.js";
 import { resolveUserLocation } from "../locations/user-location-resolver.js";
+import { fetchLocations } from "../locations/location-fetcher.js";
 import { toLocationId } from "../locations/location-id.js";
 
 const ParamsSchema = Type.Object({ country: Type.String({ pattern: "^[a-z]{2}$" }) });
@@ -30,7 +31,8 @@ export const registerConnectionCitiesRoute: FastifyPluginAsyncTypebox = async (f
     async (request) => {
       const provider = getActiveProvider();
       const country = request.params.country;
-      let cities = readCityList(provider.id, country);
+      const flatRows = provider.profile.actions.listCities ? undefined : (await fetchLocations(provider)).filter((row) => row.country === country && row.city !== undefined);
+      let cities = flatRows ? [...new Set(flatRows.map((row) => row.city!))] : readCityList(provider.id, country);
       if (cities === undefined) {
         const action = requireAction(provider.profile, "listCities");
         const code = country.toUpperCase();
@@ -64,7 +66,7 @@ export const registerConnectionCitiesRoute: FastifyPluginAsyncTypebox = async (f
       const lastId = readLastLocationId(provider.id);
       const rows = cities.map((city) => {
         const id = toLocationId(country, city);
-        return { id, country, countryName, city, favorite: favorites.has(id), lastConnected: lastId === id };
+        return { id, country, countryName, city, favorite: favorites.has(id), lastConnected: lastId === id, ...(flatRows?.find((row) => row.city === city)?.pingMs === undefined ? {} : { pingMs: flatRows.find((row) => row.city === city)!.pingMs }) };
       });
       return annotateDistances(rows, {
         pingMeasurable: isPingMeasurable(provider.profile),
@@ -77,9 +79,13 @@ export const registerConnectionCitiesRoute: FastifyPluginAsyncTypebox = async (f
   fastify.post(
     "/v1/connection/locations/:country/cities/refresh",
     { schema: { params: ParamsSchema, response: { 200: Type.Array(CityRowSchema), 403: ErrorResponseSchema, 422: ErrorResponseSchema, 502: ErrorResponseSchema, 504: ErrorResponseSchema } } },
-    async (request) => {
+    async (request, reply) => {
       const provider = getActiveProvider();
       const country = request.params.country;
+      if (!provider.profile.actions.listCities) {
+        const response = await fastify.inject({ method: "GET", url: `/v1/connection/locations/${country}/cities`, headers: request.headers });
+        return reply.code(response.statusCode as 200 | 403 | 422 | 502 | 504).send(response.json());
+      }
       const action = requireAction(provider.profile, "listCities");
       const code = country.toUpperCase();
       const argv = resolveArgv(provider.profile, "listCities", { LOCATION: code }, { LOCATION: [code] });

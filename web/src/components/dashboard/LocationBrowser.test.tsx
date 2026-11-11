@@ -31,6 +31,16 @@ function renderBrowser(overrides: Partial<React.ComponentProps<typeof LocationBr
 }
 
 describe("LocationBrowser", () => {
+  it.each([[2102.7, "約 2.1k km"], [0, "約 0.0k km"]] as const)("国の距離 %s km を共通の千km形式で表示する", (distanceKm, expected) => {
+    renderBrowser({ countries: [{ ...countries[0], distanceKm }] });
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it("距離のない国には距離を表示しない", () => {
+    renderBrowser();
+    expect(screen.queryByText(/^約 /)).not.toBeInTheDocument();
+  });
+
   it("国から都市、都市からサーバへ遷移し、国行では接続先を選ばない", async () => {
     const user = userEvent.setup();
     const { onSelect } = renderBrowser();

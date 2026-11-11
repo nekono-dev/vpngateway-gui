@@ -2,10 +2,25 @@
 // ProtonVPN はモック CLI（都市一覧・サーバカタログ・サーバ名の接続）、AdGuard VPN はモック CLI（都市名の接続）で確かめる。
 // 直列に実行する（ベンダーの選択と接続の状態を、前の試験から引き継ぐ）。
 
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { test, expect } from "@playwright/test";
-import { apiClient, setMockControl } from "../../fixtures/stack";
+import { apiClient, runnerContainer, setMockControl } from "../../fixtures/stack";
 import { ensureAdminLogin, loginVpn, waitForConnection } from "../../fixtures/gateway";
 import type { ApiClient } from "../../../common/api-client";
+
+const run = promisify(execFile);
+
+/** 目的: 接続状態を変えるCLIの実行回数を、ランナーの実行記録で確認する。 */
+async function connectionCommandCount(): Promise<number> {
+  const { stdout } = await run("sudo", ["docker", "logs", runnerContainer("protonvpn")]);
+  return stdout.split("\n").filter((line) => {
+    try {
+      const event = JSON.parse(line) as { event?: string; argv?: string[] };
+      return event.event === "exec_completed" && ["connect", "disconnect"].includes(event.argv?.[0] ?? "");
+    } catch { return false; }
+  }).length;
+}
 
 type Country = { id: string; country: string; countryName: string; hasServerStage: boolean; favorite: boolean; lastConnected: boolean };
 type City = { id: string; country: string; countryName: string; city: string; favorite: boolean; lastConnected: boolean };
@@ -99,7 +114,13 @@ test.describe.serial("場所の階層（国→都市→サーバ）の受け入�
     await waitForConnection(client, "connected");
     const state = await client.get<Connection>("/v1/connection");
     expect(state.ok && state.body.location).toContain("JP-TK#2");
+    const connectedServers = await client.get<Server[]>("/v1/connection/locations/jp-tokyo/servers");
+    expect(connectedServers.ok).toBe(true);
+    expect(connectedServers.ok && connectedServers.body.filter((server) => server.connected).map((server) => server.name)).toEqual(["JP-TK#2"]);
     await ensureDisconnected(client);
+    const disconnectedServers = await client.get<Server[]>("/v1/connection/locations/jp-tokyo/servers");
+    expect(disconnectedServers.ok).toBe(true);
+    expect(disconnectedServers.ok && disconnectedServers.body.some((server) => server.connected)).toBe(false);
   });
 
   test("ProtonVPN: サーバのお気に入りは、登録・一覧・解除を行える（4.4・4.7）", async () => {
@@ -116,10 +137,12 @@ test.describe.serial("場所の階層（国→都市→サーバ）の受け入�
     const body = { id: "srv-jp-zz-9", kind: "server", country: "jp", countryName: "Japan", city: "Tokyo", serverName: "JP-ZZ#9" };
     const add = await client.put(`/v1/connection/locations/srv-jp-zz-9/favorite`, body);
     expect(add.ok).toBe(true);
+    const before = await connectionCommandCount();
     const res = await client.put("/v1/connection", { connect: true, locationId: "srv-jp-zz-9" });
     expect(res.ok, "一覧に無いお気に入りは接続できてはならない").toBe(false);
     const state = await client.get<Connection>("/v1/connection");
     expect(state.ok && state.body.status).toBe("disconnected");
+    expect(await connectionCommandCount(), "接続・切断CLIを実行してはならない").toBe(before);
     const listed = await client.get<Favorite[]>("/v1/connection/favorites");
     expect(listed.ok && listed.body.some((item) => item.id === "srv-jp-zz-9")).toBe(true);
     await client.delete(`/v1/connection/locations/srv-jp-zz-9/favorite`);
@@ -128,6 +151,7 @@ test.describe.serial("場所の階層（国→都市→サーバ）の受け入�
   test("AdGuard VPN: 都市の一覧と都市名での接続（2.2・6.2）", async () => {
     await switchProvider(client, "adguardvpn");
     const countries = await client.get<Country[]>("/v1/connection/locations");
+    expect(countries.ok).toBe(true);
     expect(countries.ok && countries.body.find((item) => item.country === "jp")?.hasServerStage).toBe(false);
     const cities = await client.get<City[]>("/v1/connection/locations/jp/cities");
     expect(cities.ok).toBe(true);

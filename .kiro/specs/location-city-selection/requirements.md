@@ -97,7 +97,7 @@ ping を計測できるプロバイダでは ping の順、計測できないプ
 
 #### Acceptance Criteria
 1. When ProtonVPN で「最速サーバ」のタブから都市に接続するとき, the system shall その都市の有効なサーバのうち Score が最も小さいサーバに接続する。
-2. When AdGuard VPN で都市に接続するとき, the system shall 都市名をプロバイダに渡す。AdGuard VPN の国単位のフォールバック接続（4-7）では、接続の引数に国名を渡す。
+2. When AdGuard VPN で都市に接続するとき, the system shall 都市名をプロバイダに渡す。同名の都市がある場合に接続先がどの都市になるかは CLI の解決に従う。この同名のリスクは利用者が許容する（2026-11-09 の決定）。AdGuard VPN の国単位のフォールバック接続（4-7）では、接続の引数に国名を渡す。
 3. When サーバに接続するとき, the system shall そのサーバ名をプロバイダに渡す。
 4. While 都市またはサーバに接続している, the system shall その行に「接続中」のバッジを表示する。
 5. Where プランが接続先の選択を許可しない, the system shall 都市とサーバへの接続を行わず、既存の制限の案内を表示する。
@@ -130,7 +130,8 @@ ping を計測できるプロバイダでは ping の順、計測できないプ
 - 旧の国単位のお気に入りは、表示も接続もしない（Requirement 4-8）。
 - 都市一覧の保存は、「再計測」で破棄し、次に国を開いたときに取り直す（Requirement 5-5）。
 - 国の行から国単位の接続は行わない（Requirement 6-6）。
-- AdGuard VPN の都市の接続は都市名のみを渡す（Requirement 6-2）。「都市, 国」の書式は 2026-11-08 に CLI が拒否したため不採用。
+- AdGuard VPN の都市の接続は都市名のみを渡す（Requirement 6-2）。「都市, 国」の書式は 2026-11-08 に CLI が拒否したため不採用（2026-11-09 にも Tokyo で同じ結果）。
+- 2026-11-09 の決定: D1 は (a)（都市名のみ）で確定し、同名の都市が別の場所に解決されるリスクは利用者が許容する。AdGuard VPN CLI 1.7.12 で `connect -l "Tokyo, Japan"` と `connect -l "Tokyo, JP"` はいずれも指定された都市名・国名・ISO コードがないとして拒否された。`connect -l "Tokyo"` は都市として認識されたが、2 回ともエンドポイントが利用できず接続失敗。比較の `connect -l "Seoul"` は接続成功後に切断した。国名接続（Requirement 4-7）は、1.7.12 で「South Korea」の接続に成功し、仕組みを確認した（日本は検証環境の接続先に届かず未確認）。
 - 一覧の UI の未決定事項（`ui-conventions.md`）は、次のとおり決めた。
   - AdGuard VPN（サーバの段がない）では、都市の行に ☆ を出す（Requirement 4-2）。
   - サーバの一覧では Score を値として残し、説明は出さない（Requirement 8-3）。

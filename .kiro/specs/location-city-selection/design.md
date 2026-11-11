@@ -8,7 +8,7 @@
 
 **Impact**: 接続先の一覧の応答が、国の行の一覧（既存）に加えて、都市の一覧・サーバの一覧・お気に入りの一覧を返す。接続は国の行を受け付けなくなり、都市とサーバの行で接続する。
 
-**設計の状態**: 要件 5-5・4-7・6-6 を改訂済み（2026-11-08）。D1 は (a)（都市名のみ）で確定し、(b)（都市と国の両方を渡す形式）は AdGuard VPN CLI に拒否されたため不採用。D7 は方針 A で決定: 一覧に無いお気に入りのサーバは、AdGuard VPN では `connect -l <国名>` で国名接続しお気に入りを削除、ProtonVPN ではフォールバックせず CLI を呼ばずにエラーを返しお気に入りを残す。AdGuard VPN 1.8.2 で Japan の実接続を確認済み。ProtonVPN の国名接続は使わない。D7 の国接続は `connect -l <国名>` の書式で確定。一覧外お気に入りの挙動は profile の locationTarget 宣言で指定し、型はベンダー名を含まない（2026-11-08 改訂）。D5 は実装時の確認事項。
+**設計の状態**: 要件 5-5・4-7・6-6 を改訂済み（2026-11-08）。D1 は (a)（都市名のみ）で確定し、(b)（都市と国の両方を渡す形式）は AdGuard VPN CLI に拒否されたため不採用。2026-11-09 に CLI 1.7.12 でも Tokyo で同じ拒否結果を確認した。D7 は方針 A で決定: 一覧に無いお気に入りのサーバは、AdGuard VPN では `connect -l <国名>` で国名接続しお気に入りを削除、ProtonVPN ではフォールバックせず CLI を呼ばずにエラーを返しお気に入りを残す。2026-11-08 の記録では CLI 1.8.2 とされていたが、検証サーバの導入版は 1.7.12 であり、版の記録に不整合がある。国名接続（`connect -l <国名>`）は、2026-11-09 に CLI 1.7.12 で「South Korea」の接続に成功し確認した。日本は検証環境の接続先に届かず未確認。ProtonVPN の国名接続は使わない。D7 の国接続は `connect -l <国名>` の書式で確定。一覧外お気に入りの挙動は profile の locationTarget 宣言で指定し、型はベンダー名を含まない（2026-11-08 改訂）。D5 は実装時の確認事項。
 
 ### Goals
 - 国 → 都市 →（ProtonVPN のみ）サーバの画面を、両プロバイダで同じ操作にする（要件 1・2・3）
@@ -439,7 +439,7 @@ function resolveConnectTarget(provider: Provider, locationId: string, dependenci
 - `server-catalog.test.ts`: Secure Core の除外（bit 1）、無効なサーバの除外、Score 昇順と同値の決定的な順序、最速サーバの選択（Chicago の例）。
 - `location-tree.test.ts`: ProtonVPN（国の表）と AdGuard（都市の行）の国の行の組み立て、国の行の ping が最小値になること、ping 計測可の並び順。
 - `favorite-locations-store.test.ts`: 表示名付きの保存と読み取り、旧形式の除外、上限 200 件。
-- `location-target.test.ts`: 都市 → 最速サーバ名、サーバ → サーバ名、国の行 → 400、未知の ID → 400。サーバ一覧に無いお気に入りは、AdGuard VPN で `countryFallback`（国名接続・お気に入り削除・無通知）、ProtonVPN で `favoriteUnavailable`（CLI を呼ばず、お気に入りを保持）となることを確認する。AdGuard の国名接続は 2026-11-08 に実接続確認済み（テストでは引数の組み立てを確認）。
+- `location-target.test.ts`: 都市 → 最速サーバ名、サーバ → サーバ名、国の行 → 400、未知の ID → 400。サーバ一覧に無いお気に入りは、AdGuard VPN で `countryFallback`（国名接続・お気に入り削除・無通知）、ProtonVPN で `favoriteUnavailable`（CLI を呼ばず、お気に入りを保持）となることを確認する。2026-11-08 の実接続記録では CLI 1.8.2 とされていたが、検証サーバの導入版は 1.7.12 で版の記録に不整合がある。国名接続の仕組みは 2026-11-09 に CLI 1.7.12 で「South Korea」の接続に成功し確認した。日本は検証環境の接続先に届かず未確認（テストでは引数の組み立てを確認）。
 - `city-cache-store.test.ts`: 保存・読み取り・破棄（再計測）、壊れたファイルは未保存。
 - `city-tab-store.test.ts`: 既定は「最速サーバ」、保存と読み取り。
 
@@ -448,7 +448,7 @@ function resolveConnectTarget(provider: Provider, locationId: string, dependenci
 - `connection-servers` ルート: Secure Core とサーバの無効が除かれ、Score 順になる（要件 3-1・3-4）。
 - `connection-locations` ルート: 再計測で都市の保存が破棄され、サーバ一覧キャッシュは破棄されない（要件 5-5）。AdGuard の一覧は国の下に都市が並ぶ（要件 7-1・7-2）。
 - `apply-connection`: 都市 ID の接続が最速サーバ名で CLI を呼ぶ（要件 6-1）。国の ID は CLI を呼ばずに拒否する（要件 6-6）。一覧に無いお気に入りは、AdGuard VPN で接続中なら切断後に `connect -l <国名>` を呼び、お気に入りを無通知で削除する。ProtonVPN では CLI を呼ばずエラーにし、お気に入りが残ることを確認する（要件 4-7）。
-- `location-target`（要件 4-7）: 一覧に無いお気に入りのサーバについて、AdGuard VPN は `countryFallback` を返す。接続中なら切断後に `connect -l <国名>` で接続し、お気に入りが削除され、表示・通知が無いことを確かめる（国名接続は 2026-11-08 に実接続確認済み）。ProtonVPN は `favoriteUnavailable` のエラーとなり CLI を呼ばず、お気に入りが残ることを確かめる。エラー表示には既存の方法を使う。
+- `location-target`（要件 4-7）: 一覧に無いお気に入りのサーバについて、AdGuard VPN は `countryFallback` を返す。接続中なら切断後に `connect -l <国名>` で接続し、お気に入りが削除され、表示・通知が無いことを確かめる。2026-11-09 に CLI 1.7.12 で「South Korea」の接続に成功し国名接続の仕組みを確認した。日本は検証環境の接続先に届かず未確認。ProtonVPN は `favoriteUnavailable` のエラーとなり CLI を呼ばず、お気に入りが残ることを確かめる。エラー表示には既存の方法を使う。
 
 ### E2E/UI Tests
 - 国 → 都市 → サーバの遷移、「‹ 国一覧」、右スワイプでの戻り、タブの保持（要件 1.1〜1.6）。
@@ -472,10 +472,10 @@ function resolveConnectTarget(provider: Provider, locationId: string, dependenci
 
 ## Open Questions / Risks
 
-- **D1（決定: (a)。(b) は CLI が拒否したため不採用）**: AdGuard VPN の都市の接続は都市名だけを渡す。2026-11-08、検証サーバ（192.168.3.240）で AdGuard VPN CLI 1.8.2 に `connect -l "Tokyo, Japan"` と `connect -l "Tokyo, JP"` を指定したところ、いずれも `There is no location with the specified city name, country name, or ISO code` で拒否された。(b) の「都市, 国」形式は不採用とする。国名による接続は D7 の検証で別途確認した。都市名の重複は検証済み一覧（81 都市）で 0 件。将来の重複は、同じ都市名の候補から人口の多い方を選ぶ規則（distance-sort の 3-3 と同じ考え方）で扱うかを実装時に決める。
+- **D1（決定: (a)。(b) は CLI が拒否したため不採用）**: AdGuard VPN の都市の接続は都市名だけを渡す。2026-11-08 の記録では CLI 1.8.2 とされていたが、検証サーバの導入版は 1.7.12 であり、版の記録に不整合がある。2026-11-09 に導入済み CLI 1.7.12 で `connect -l "Tokyo, Japan"` と `connect -l "Tokyo, JP"` を試し、いずれも `There is no location with the specified city name, country name, or ISO code` で拒否された。`connect -l "Tokyo"` は都市として認識されたが、2 回とも `None of the endpoints are available` で接続失敗した（エンドポイント／ネットワークの問題であり、書式の問題ではない）。比較の `connect -l "Seoul"` は接続成功後に切断した。以上から (b) の「都市, 国」形式は不採用とする。都市名のみを渡し、同名の都市が別の場所に解決されるリスクは利用者が許容する（2026-11-09 の決定）。国名接続（`connect -l <国名>`）は、2026-11-09 に CLI 1.7.12 で「South Korea」の接続に成功し確認した。日本は検証環境の接続先に届かず未確認。
 - **D2（確認済み・2026-11-08）**: 隔離された検証コンテナで、サーバ名（`US-IL#378`）による接続を実際に確認した（`research.md` §8）。無効なサーバ名は拒否され、フォールバックの接続は起きない。都市の行とサーバの行の接続は、サーバ名で行う。`--city` は代替にしない（今回は同じサーバを選んだが、要件 6-1 の Score の規則と常に一致する保証はない）。
 - **D3（決定）**: brief の「国の行からは国を指定して接続する」は、要件 6-6 と食い違う。要件を優先し、国の行からの接続は行わない。
 - **D4（決定）**: 国コードの対応（`countryAliases`）は、プロファイルの最上位に一つだけ置く。参考一覧（`availableLocations`）と距離の注釈（`location-distance-sort`）の両方が、この共通の対応を使う。距離 spec の設計の `locationDistance.countryAliases` は、この共通の対応に改める（同 spec の設計を改訂する）。
 - **D5（Tier の意味）**: サーバ一覧の `Tier` の 0 を無料とみなしている（要確認。表示の階層だけに影響する）。
-- **D7（決定・2026-11-08、方針 A）**: お気に入りのサーバが現在のサーバ一覧に無いときの動作はプロバイダごとに異なる。AdGuard VPN は接続中なら切断し、お気に入りの国名で `connect -l <国名>` を実行する。お気に入りは表示・通知せず削除する。AdGuard VPN CLI 1.8.2 では `connect -l Japan -y` の実接続（TOKYO、TUN mode、出口国コード JP）を確認済み。ProtonVPN は国名接続を使わず、CLI を呼ばずにエラーを返し、お気に入りを残す。エラー表示は既存の方法に従う。国の行（国 ID）からの接続は引き続き拒否する（要件 6-6）。
+- **D7（決定・2026-11-08、方針 A）**: お気に入りのサーバが現在のサーバ一覧に無いときの動作はプロバイダごとに異なる。AdGuard VPN は接続中なら切断し、お気に入りの国名で `connect -l <国名>` を実行する。お気に入りは表示・通知せず削除する。2026-11-08 の記録では CLI 1.8.2 とされ、`connect -l Japan -y` の実接続（TOKYO、TUN mode、出口国コード JP）が記録されているが、検証サーバの導入版は 1.7.12 であり、版の記録に不整合がある。国名接続（`connect -l <国名>`）は、2026-11-09 に CLI 1.7.12 で「South Korea」の接続に成功し確認した。日本は検証環境の接続先に届かず未確認。ProtonVPN は国名接続を使わず、CLI を呼ばずにエラーを返し、お気に入りを残す。エラー表示は既存の方法に従う。国の行（国 ID）からの接続は引き続き拒否する（要件 6-6）。
 - **D6（決定・2026-11-08）**: サーバ一覧キャッシュは CLI が管理する。本 spec は保存・破棄をしない（要件 5-5 を改訂）。キャッシュが古い場合の扱いは、実装時に確かめる。

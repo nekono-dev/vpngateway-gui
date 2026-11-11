@@ -6,6 +6,7 @@ import type {
   GetV1ConnectionLocationsCityIdServers200Item,
 } from "../../generated/api/endpoints.schemas";
 import { LocationBackBar } from "../../locations/LocationBackBar";
+import { formatDistance } from "../../locations/format-distance";
 import { createLocationBrowserState, locationBrowserReducer } from "../../locations/location-browser-state";
 import { CityList } from "./CityList";
 import { ServerList } from "./ServerList";
@@ -75,7 +76,7 @@ export function LocationBrowser({ countries, favorites, cities, servers, isLoadi
               <input type="radio" name="country" className="visually-hidden" checked={state.screen.type !== "countries" && state.screen.countryId === item.id} disabled={disabled} onChange={() => { onCountryChange(item.country); dispatch({ type: "select-country", countryId: item.id }); }} />
               <span className="location-iso">{item.country.toUpperCase()}</span>
               <span className="location-name"><span className="location-title"><strong>{item.countryName}</strong>{item.lastConnected ? <span className="badge badge-muted">前回</span> : null}</span></span>
-              {item.distanceKm === undefined ? null : <span className="location-distance">約 {item.distanceKm.toLocaleString("ja-JP")} km</span>}
+              {item.distanceKm === undefined ? null : <span className="location-distance">約 {formatDistance(item.distanceKm)}</span>}
             </label>
           </li>)}
         </ul>}

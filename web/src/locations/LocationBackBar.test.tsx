@@ -28,6 +28,33 @@ describe("LocationBackBar", () => {
     expect(screen.getByRole("button", { name: "‹ 国一覧" })).toBeInTheDocument();
   });
 
+  it("戻るボタンで始めた操作はボタン自身がポインタを捕捉する", () => {
+    const { container } = render(<LocationBackBar screen={{ type: "cities", countryId: "jp" }} onBack={() => {}} />);
+    const row = container.querySelector(".location-back-bar")!;
+    const button = screen.getByRole("button", { name: "‹ 国一覧" });
+    const captureRow = vi.fn();
+    const captureButton = vi.fn();
+    Object.defineProperty(row, "setPointerCapture", { value: captureRow });
+    Object.defineProperty(button, "setPointerCapture", { value: captureButton });
+    fireEvent.pointerDown(button, { pointerId: 7, clientX: 10, clientY: 10 });
+    expect(captureButton).toHaveBeenCalledWith(7);
+    expect(captureRow).not.toHaveBeenCalled();
+  });
+
+  it("戻るボタンからのスワイプ後の click では二度戻らない", () => {
+    const onBack = vi.fn();
+    render(<LocationBackBar screen={{ type: "servers", countryId: "jp", cityId: "tokyo" }} parentName="Tokyo" onBack={onBack} />);
+    const button = screen.getByRole("button", { name: "‹ Tokyo" });
+    fireEvent.pointerDown(button, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 90, clientY: 10 });
+    fireEvent.click(button, { detail: 1 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+    fireEvent.pointerDown(button, { pointerId: 2, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(button, { pointerId: 2, clientX: 10, clientY: 10 });
+    fireEvent.click(button, { detail: 1 });
+    expect(onBack).toHaveBeenCalledTimes(2);
+  });
+
   it("国一覧では戻るボタンを表示しない", () => {
     render(<LocationBackBar screen={{ type: "countries" }} onBack={() => {}} />);
     expect(screen.queryByRole("button", { name: /‹/ })).not.toBeInTheDocument();

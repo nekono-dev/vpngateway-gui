@@ -190,7 +190,9 @@ function runProton(command: string | undefined, rest: readonly string[], state: 
       state.location = undefined;
       return { exitCode: 0, stdout: "Disconnected.\n" };
     case "status":
-      return { exitCode: 0, stdout: state.connected ? sampleOutput("protonvpn", "status: 接続中") : sampleOutput("protonvpn", "status: 切断中（未ログインでも同じ）") };
+      return { exitCode: 0, stdout: state.connected
+        ? sampleOutput("protonvpn", "status: 接続中").replace(/^Server: .*$/m, `Server: ${state.location ?? "JP-FREE#3 in Osaka, Japan"}`)
+        : sampleOutput("protonvpn", "status: 切断中（未ログインでも同じ）") };
     case "cities": {
       // cities list --country <CC>（都市の一覧）。ログインを要しない（実 CLI と同じ）。
       const idx = rest.indexOf("--country");

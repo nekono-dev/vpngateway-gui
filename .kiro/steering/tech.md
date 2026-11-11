@@ -39,13 +39,13 @@
 
 ### テスト
 - 単体テストは、対象ファイルと同じディレクトリに `*.test.ts` / `*.test.tsx` として置く（Vitest）。
-- Webサーバのコンポーネントのテストだけ jsdom で動かす。
-- 受け入れテストは `tests/`（Vitest、`npm run test:acceptance`）。
-- 実ブラウザの E2E は `tests/e2e/`（Playwright、`npm run test:e2e`）。通常の `npm test` には含めない。
+- フロントエンド（`web/src`）の単体テストは jsdom で動かす。Webの配信サーバ側（`*.server.*`）のテストは node で動かす（`vitest.server.config.ts`）。
+- 実ブラウザの E2E は `e2e/hosted/`（Playwright、`npm run test:e2e` は `sh e2e/hosted/run.sh` を呼ぶ）。通常の `npm test` には含めない。
+- 受け入れテスト層（`tests/`・`test:acceptance`）は、現在のリポジトリにない。
 
 ### コメント
 - 各ファイルの先頭に `// 責務: …` の1行を書き、そのファイルの役割を示す。
-- コメントと識別子は日本語で書く。
+- コメントは日本語で書く。識別子は英語（関数・変数は camelCase、型は PascalCase）。
 
 ## 開発環境
 
@@ -59,9 +59,8 @@
 ```bash
 npm ci                        # 依存の導入
 npm run generate:api-client   # OpenAPI からの API クライアント生成（web/src/generated/）
-npm test                      # 単体テスト・中立性検査・インストーラ検査
-npm run test:acceptance       # 受け入れテスト
-npm run test:e2e              # 実ブラウザの E2E（事前に Playwright を導入）
+npm test                      # 単体テスト（proxy・api・web）・配信サーバのテスト・中立性検査・インストーラ検査
+npm run test:e2e              # 実ブラウザの E2E（e2e/hosted/。事前に Playwright を導入）
 npm run build                 # proxy → api → web の順にビルド
 ```
 
@@ -74,3 +73,5 @@ npm run build                 # proxy → api → web の順にビルド
 - **インストーラのトポロジー固定**: 一度決めた配置先（Web・API・ゲートウェイのホスト）は、`uninstall` を経ないと変更できない。
 
 _標準とパターンを記述する。依存の網羅的な一覧にはしない。_
+
+_updated_at: 2026-11-09（テストの配置・コメントと識別子の規約・テストの実行コマンドを、実装に合わせて修正）_

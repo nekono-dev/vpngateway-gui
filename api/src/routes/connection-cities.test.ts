@@ -35,6 +35,17 @@ describe("GET /v1/connection/locations/:country/cities", () => {
     executeVendorCommandMock.mockReset().mockResolvedValue({ exitCode: 0, stdout: JAPAN, stderr: "" });
   });
 
+  it("都市を含む一覧を返すプロバイダは一覧から都市を取得・再取得する", async () => {
+    saveActiveProviderId("adguardvpn");
+    executeVendorCommandMock.mockResolvedValue({ exitCode: 0, stdout: "ISO   COUNTRY              CITY                           PING ESTIMATE\nJP    Japan                Tokyo                          4\n", stderr: "" });
+    for (const method of ["GET", "POST"] as const) {
+      const response = await app.inject({ method, url: `/v1/connection/locations/jp/cities${method === "POST" ? "/refresh" : ""}` });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual([expect.objectContaining({ id: "jp-tokyo", city: "Tokyo", pingMs: 4 })]);
+    }
+    expect(executeVendorCommandMock).toHaveBeenCalledTimes(2);
+  });
+
   it("初回は CLI で取得して保存し、再訪時はキャッシュを返す", async () => {
     const first = await app.inject({ method: "GET", url: "/v1/connection/locations/jp/cities" });
     const second = await app.inject({ method: "GET", url: "/v1/connection/locations/jp/cities" });

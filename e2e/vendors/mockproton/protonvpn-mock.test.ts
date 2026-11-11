@@ -25,7 +25,7 @@ describe("mockproton CLI", () => {
       const result = runner.run(["cities", "list", "--country", "jp"]);
       expect(result.status).toBe(0);
       expect(result.stdout).toMatch(/^\nCities in Japan:\nCity\s+Features\n-+\s+-+\n(?:.+\n){2,3}\n$/);
-      expect(parseCityList(result.stdout, { city: "City", features: "Features" })).not.toHaveLength(0);
+      expect(parseCityList(result.stdout, { city: "City" })).not.toHaveLength(0);
     } finally { runner.cleanup(); }
   });
 

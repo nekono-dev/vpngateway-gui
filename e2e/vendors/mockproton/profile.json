@@ -61,7 +61,7 @@
             "list": "LogicalServers",
             "country": "ExitCountry",
             "city": "City",
-            "where": [{ "field": "Tier", "equals": 0 }, { "field": "Status", "equals": true }]
+            "where": [{ "field": "Tier", "equals": 0 }, { "field": "Status", "equals": 1 }]
           }
         }
       ],
