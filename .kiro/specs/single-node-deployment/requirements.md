@@ -21,7 +21,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 **Objective:** As a 運用者, I want 全サービスを同じサーバへ Compose で導入したい, so that ホスト間の配置やペアリングを管理せずに利用できる。
 
 #### Acceptance Criteria
-1. The VPN Gateway System shall 全サービスを同じ Linux ノードで動かす構成だけを、サポートする導入構成として提供する。
+1. The VPN Gateway System shall 全サービスを同じ Debian 12 以降または Ubuntu 22.04 以降の Linux ノード上の rootful Docker Engine で動かす構成だけを、サポートする導入構成として提供する。rootless Docker はサポートしない。
 2. When 運用者が文書化されたホスト準備と設定を完了して Docker Compose の起動操作を行う, the VPN Gateway System shall Web・API・Gateway と有効にしたベンダーの実行環境をそのノードで起動する。
 3. The VPN Gateway System shall 既存インストーラによる役割選択や構成ファイル生成を、通常の Compose 起動の前提にしない。
 4. The VPN Gateway System shall 別ホストの Web・API・Gateway の配置先選択、遠隔導入、ペアリング操作を提供しない。
@@ -31,14 +31,14 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 **Objective:** As a 運用者, I want Compose の前提となるホスト設定を明示的に準備・確認したい, so that VPN ゲートウェイを再起動後も運用できる。
 
 #### Acceptance Criteria
-1. When 運用者がホスト準備を実行する, the Host Preparation Tool shall 対応環境・必要な権限・前提ソフトウェアを確認し、不足があれば不足内容と必要な対処を示す。
+1. When 運用者がホスト準備を実行する, the Host Preparation Tool shall Debian 12 以降または Ubuntu 22.04 以降であること、root 実行、必要コマンド、rootful Docker Engine、LAN_IFACE の妥当性、および nftables の構文検査が可能であることを静的に検証する。check は読み取り専用で boot guard を適用せず、boot guard の実適用・確認は apply が担う。apply が失敗した場合は非0で終了し非対応環境とする。rootless Docker は非対応とする。その環境はサポート対象外であり、製品を利用可能と扱わない。
 2. When ホスト準備が成功する, the Host Preparation Tool shall LAN 通信の転送と必要なホスト操作を製品が利用できる状態にする。
 3. When 同じ設定でホスト準備を再実行する, the Host Preparation Tool shall 製品が管理する設定や常駐処理を重複させない。
 4. If ホスト準備の処理が失敗する, the Host Preparation Tool shall 成功として終了せず、失敗した処理と既に適用した変更を運用者が確認できるようにする。
-5. When ホストが再起動する, the VPN Gateway System shall 製品が通信の転送可否を制御できるようになるまで、製品の LAN 転送経路を遮断する。
+5. When ホストが再起動する, the VPN Gateway System shall proxy が API から設定を初回受信して適用し、通信の転送可否を制御できるようになるまで製品の LAN 転送経路を遮断する。proxy の内部既定値を設定通知前に適用済みと扱わない。boot guard を nftables/systemd で実際に適用または確認できない環境では apply を非0で失敗させ、サポート対象外とする。
 6. When 管理者が既存のホスト再起動操作を要求する, the VPN Gateway System shall ホストへ再起動要求を送り、受付結果を管理者へ返す。
 7. When 運用者がホスト準備の確認または解除を行う, the Host Preparation Tool shall 製品が管理する設定・常駐処理と解除対象を識別できるようにし、製品と無関係な設定を変更しない。
-8. While Gateway が停止しており Kill Switch が有効である, the VPN Gateway System shall 製品が管理する LAN 転送経路を遮断する。
+8. When Gateway が停止中または unhealthy であり、透過ゲートウェイと Kill Switch が両方有効である, the VPN Gateway System shall 製品が管理する LAN 転送経路を遮断する。Gateway が healthy の間は通常 ruleset が転送可否を決め、VPN egress forwarding を許可できる。proxy 再起動時は API settings の初回受信・適用まで既存 guard state を変更せず、LEASE は lease の自然失効で遮断し、OFF は OFF のままとする。明示的プロキシのみのモードでは Kill Switch と停止時遮断保証を提供しない。
 
 ### Requirement 3: Web の HTTP 既定と任意の HTTPS
 **Objective:** As a 利用者, I want 証明書を用意せず LAN の管理画面へアクセスしたい, so that 証明書の問題で初期利用を妨げられない。
@@ -70,7 +70,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 2. While API→Gateway の TLS が無効である, the VPN Gateway System shall 証明書・秘密鍵・CA の生成や配置なしで Gateway の状態取得と制御を提供する。
 3. When 運用者が API→Gateway の TLS を有効にし、有効な証明書設定で構成を起動する, the VPN Gateway System shall 通信相手の証明書を検証して Gateway の状態取得と制御を提供する。
 4. If TLS が有効な区間で証明書が不足・不正・期限切れであるか通信相手を検証できない, the VPN Gateway System shall その区間の保護された接続を成功とせず、原因を示して平文へ自動降格しない。
-5. If API と Gateway の通信保護設定が一致せず疎通できない, the VPN Gateway System shall 通信設定の不一致を運用者が確認できるようにし、無断で別の保護方式へ切り替えない。
+5. If API と Gateway の TLS/保護モード設定が一致せず疎通できない, the VPN Gateway System shall 他の TLS エラーと区別できる不一致イベントをログに記録し、status に専用の不一致状態を示し、Web UI に「API と Gateway の通信保護設定が一致しない」旨を表示し、無断で別の保護方式へ切り替えない。
 6. The VPN Gateway System shall Web の HTTPS 設定と API→Gateway の TLS 設定を独立に選択できるようにする。
 7. While 内部制御通信を利用する, the VPN Gateway System shall TLS の有効・無効にかかわらず、LAN 端末から Gateway の内部制御を直接実行できないようにする。
 8. When 運用者が通信保護設定を変更して構成を再起動する, the VPN Gateway System shall 指定した保護方式を適用し、設定していない証明書生成や別ホストとのペアリングを要求しない。
