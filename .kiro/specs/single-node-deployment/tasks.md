@@ -45,7 +45,7 @@
   - 観測できる完了条件: 静的に判定できる前提（対応外 OS・root 不足・必要コマンド不足・rootless Docker・nft 構文・LAN_IFACE の未設定/不正形式/不在）の失敗が `check` で非0となり、boot guard の実適用または確認失敗が `apply` で非0となる。未設定時に既定ルート候補が表示されても `.env` が作成・変更されず、state が root:root 0600 で保持される。
   - _Boundary: host-preparation_
   - _Requirements: 2.1, 2.3, 2.4, 2.7, 6.5_
-- [ ] 2.4 sysctl の適用・復元と ownership drift 検出を作る
+- [x] 2.4 sysctl の適用・復元と ownership drift 検出を作る
   - LAN 転送に必要な値の元値・製品適用値を記録し、apply は冪等に適用する。
   - remove は製品所有対象のみを元値へ戻し、外部変更がある項目を上書きせず競合として報告する。
   - 観測できる完了条件: 二度の apply で重複せず、変更済みの非所有設定は保持され、競合が非0と一覧で報告される。

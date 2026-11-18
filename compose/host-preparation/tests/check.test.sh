@@ -28,7 +28,7 @@ hp_repo_root='$repo'
 hp_state_dir='$case_dir/state'
 EOF
 
-  for command in awk chmod chown dirname grep head id ip ln mkdir mv nft rm sort stat sysctl systemctl tr docker; do
+  for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft rm sed sort stat sysctl systemctl tr docker; do
     if [ "$scenario" != "missing:$command" ]; then
       command_path=$(command -v "$command" || :)
       [ -n "$command_path" ] || command_path=/usr/bin/true
@@ -132,7 +132,7 @@ EOF
 
 run_case unsupported-os unsupported-os 'NG: Debian 12+ または Ubuntu 22.04+ が必要です'
 run_case non-root non-root 'NG: root で実行してください'
-for command in awk chmod chown dirname grep head id ip ln mkdir mv nft rm sort stat sysctl systemctl tr docker; do
+for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft rm sed sort stat sysctl systemctl tr docker; do
   run_case "missing-$command" "missing:$command"
 done
 run_case rootless rootless 'NG: rootless Docker はサポート対象外です'

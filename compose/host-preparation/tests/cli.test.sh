@@ -16,11 +16,13 @@ printf '%s\n' 'LAN_IFACE=eth0' > "$temporary/repo/.env"
 configure_paths() {
   STATE_DIR=$state_dir
   export STATE_DIR
+  mkdir -p "$temporary/sysctl.d"
   cat > "$tree/compose/host-preparation/paths.sh" <<EOF
 # 責務: テスト用の隔離パスを定義する
 hp_os_release_path='$temporary/os-release'
 hp_repo_root='$temporary/repo'
 hp_state_dir='$state_dir'
+hp_sysctl_config_path='$temporary/sysctl.d/$(basename "$state_dir").conf'
 EOF
 }
 state_dir="$temporary/state"
@@ -44,6 +46,14 @@ if hp_read_lan_iface "$temporary" >/dev/null 2>&1; then
 fi
 fixtures="$temporary/bin"
 mkdir -p "$fixtures"
+cat > "$fixtures/sysctl" <<'EOF'
+#!/bin/sh
+case "$1" in
+  -n) case "$2" in net.ipv4.ip_forward) printf '1\n' ;; *) printf '0\n' ;; esac ;;
+  -w) exit 0 ;;
+  *) exit 1 ;;
+esac
+EOF
 cat > "$fixtures/id" <<'EOF'
 #!/bin/sh
 case "$1" in
@@ -128,7 +138,7 @@ chmod +x "$fixtures/id"
 
 # state.sh が apply 中に呼ぶコマンドは、check の必須コマンド一覧にも含まれていなければならない。
 required_line=$(grep -F 'for command in ' "$(dirname "$cli")/host-preparation/common.sh")
-for tool in chmod chown dirname ln mkdir mv rm stat; do
+for tool in cat chmod chown cmp dirname ln mkdir mv rm sed stat sysctl tr; do
   case " $required_line " in
     *" $tool "*) ;;
     *) printf '必須コマンド一覧に %s がありません\n' "$tool" >&2; exit 1 ;;
@@ -217,8 +227,13 @@ state_fixture="$fixtures/stat"
 cat > "$state_fixture" <<'EOF'
 #!/bin/sh
 if [ "$1" = -c ] && [ "$2" = '%u:%g %a' ]; then
-  mode=$(/usr/bin/stat -c '%a' "$3") || exit 1
-  printf '0:0 %s\n' "$mode"
+  case "$3" in
+    "$STATE_DIR"|"$STATE_DIR"/*|*/sysctl.d/*)
+      mode=$(/usr/bin/stat -c '%a' "$3") || exit 1
+      printf '0:0 %s\n' "$mode"
+      ;;
+    *) exec /usr/bin/stat "$@" ;;
+  esac
 else
   exec /usr/bin/stat "$@"
 fi
@@ -234,7 +249,8 @@ if sh "$cli" apply >"$temporary/state-valid.out" 2>&1; then
   printf '%s\n' 'apply unexpectedly succeeded without boot guard support' >&2
   exit 1
 fi
-cmp "$temporary/state-valid.before" "$state_dir/state.json"
+grep -q '"preserved"' "$state_dir/state.json"
+grep -q '"sysctl":\[' "$state_dir/state.json"
 grep -q 'boot guard の適用処理が利用できません' "$temporary/state-valid.out"
 
 # 予測可能な一時名に symlink が置かれても、その参照先へ書き込まない。
@@ -267,7 +283,7 @@ fi
 temp_pid=$(cat "$HP_TEST_PID_FILE")
 [ -L "$state_dir/.state.json.$temp_pid.1" ]
 [ "$(cat "$target")" = 'unrelated content' ]
-grep -q 'boot guard の適用処理が利用できません' "$temporary/state-temp-link.out"
+grep -q 'boot guard の適用処理が利用できません' "$temporary/state-temp-link.out" || { cat "$temporary/state-temp-link.out" >&2; exit 1; }
 
 # state.json が確認後・初回配置前に作られても、内容を上書きしない。
 state_dir="$temporary/state-concurrent"
@@ -286,6 +302,7 @@ if sh "$cli" apply >"$temporary/state-concurrent.out" 2>&1; then
   printf '%s\n' 'apply unexpectedly succeeded without boot guard support' >&2
   exit 1
 fi
-[ "$(cat "$state_dir/state.json")" = '{"version":1,"owned":["concurrent"]}' ]
+grep -q '"concurrent"' "$state_dir/state.json"
+grep -q '"sysctl":\[' "$state_dir/state.json"
 grep -q 'boot guard の適用処理が利用できません' "$temporary/state-concurrent.out"
 

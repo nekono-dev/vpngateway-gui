@@ -14,6 +14,8 @@ script_dir=$(CDPATH='' cd -- "$script_path" && pwd)
 . "$script_dir/host-preparation/common.sh"
 # shellcheck disable=SC1091
 . "$script_dir/host-preparation/state.sh"
+# shellcheck disable=SC1091
+. "$script_dir/host-preparation/sysctl.sh"
 
 usage() {
   printf '%s\n' 'Usage: host-preparation.sh {check|apply|status|remove}'
@@ -30,6 +32,7 @@ case "$1" in
   apply)
     hp_check_prerequisites || hp_error '前提条件を満たさないため apply を中止しました。'
     hp_state_initialize || hp_error '所有状態を初期化できないため apply を中止しました。'
+    hp_apply_sysctl || hp_error 'sysctl の適用に失敗しました。部分適用状態を確認してください。'
     boot_guard_path=$script_dir/host-preparation/boot-guard.sh
     if [ -r "$boot_guard_path" ]; then
       # shellcheck disable=SC1090,SC1091
