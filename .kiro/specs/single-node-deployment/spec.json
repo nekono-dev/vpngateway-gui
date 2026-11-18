@@ -1,7 +1,7 @@
 {
   "feature_name": "single-node-deployment",
   "created_at": "2026-11-11T14:15:05Z",
-  "updated_at": "2026-11-18T10:30:00Z",
+  "updated_at": "2026-11-18T11:00:00Z",
   "language": "ja",
   "phase": "tasks-generated",
   "approvals": {
@@ -15,8 +15,8 @@
     },
     "tasks": {
       "generated": true,
-      "approved": true
+      "approved": false
     }
   },
-  "ready_for_implementation": true
+  "ready_for_implementation": false
 }
