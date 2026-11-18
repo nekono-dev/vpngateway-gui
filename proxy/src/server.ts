@@ -18,6 +18,7 @@ import { logAuditEvent } from "./lib/audit-event.js";
 import { readRequestBody, sendJson } from "./lib/http-json.js";
 import { requestHostReboot } from "./host-control/host-reboot.js";
 import { loadGatewayTlsOptions } from "./gateway-channel/tls-options.js";
+import { listenOnGatewaySocket, type GatewaySocketListener } from "./gateway-channel/server.js";
 import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController } from "./network/gateway-controller.js";
@@ -38,6 +39,7 @@ import { wasJustRedirected } from "./verification/redirect-record.js";
 import { createVerificationRuntime, readSetElements } from "./verification/runtime.js";
 
 const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
+const GATEWAY_SOCKET_PATH = process.env.GATEWAY_SOCKET_PATH ?? "/run/vpngw-gateway/gateway.sock";
 // ゲートウェイ機のファイアウォールでAPIサーバのIPへ絞ることを推奨する（多層防御）。
 // アプリ自身は特定インターフェースへ限定せず、mTLSのクライアント証明書検証を主たる境界とする。
 const GATEWAY_BIND_HOST = "0.0.0.0";
@@ -248,7 +250,7 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
   sendJson(res, 200, { succeeded: outcome.succeeded, applied: outcome.applied });
 }
 
-const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
+const handleGatewayRequest = (req: IncomingMessage, res: ServerResponse): void => {
   if (req.method === "GET" && req.url === "/net/status") {
     // 副作用なしの読み取り専用。メモリ上の状態のみを返す。
     sendJson(res, 200, {
@@ -305,7 +307,11 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
     return;
   }
   sendJson(res, 404, { error: "not_found" });
-});
+};
+
+const gatewayTlsOptions = loadGatewayTlsOptions();
+const server = createHttpsServer(gatewayTlsOptions, handleGatewayRequest);
+const gatewaySocketServer = createHttpsServer(gatewayTlsOptions, handleGatewayRequest);
 
 // ホストのIPフォワーディング設定確認・補正（インストールスクリプト未実行環境向けフォールバック）。
 // Dockerはコンテナの/proc/sysを読み取り専用でマウントするため、このコンテナからの補正は実際には
@@ -327,8 +333,19 @@ if (await ensureIpForwardEnabled()) {
 // ため（api/src/server.ts）、この空白期間は最大でその周期に収まる。
 const stopConnectionMonitor = startConnectionMonitor(gatewayController, LAN_IFACE, CONNECTION_POLL_INTERVAL_MS);
 
-await new Promise<void>((resolve) => server.listen(GATEWAY_PORT, GATEWAY_BIND_HOST, resolve));
-logAuditEvent({ event: "server_started", gatewayPort: GATEWAY_PORT, lanIface: LAN_IFACE, wanIface: WAN_IFACE });
+const gatewaySocketListener: GatewaySocketListener = await listenOnGatewaySocket(
+  gatewaySocketServer,
+  GATEWAY_SOCKET_PATH,
+  10001,
+);
+await new Promise<void>((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(GATEWAY_PORT, GATEWAY_BIND_HOST, () => {
+    server.removeListener("error", reject);
+    resolve();
+  });
+});
+logAuditEvent({ event: "server_started", gatewayPort: GATEWAY_PORT, gatewaySocketPath: GATEWAY_SOCKET_PATH, lanIface: LAN_IFACE, wanIface: WAN_IFACE });
 
 installGatewayStopHandlers({
   signals: process,
@@ -341,9 +358,12 @@ installGatewayStopHandlers({
   ],
   close: async () => {
     gatewayGuard.close();
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => error === undefined ? resolve() : reject(error));
-    });
+    await Promise.all([
+      gatewaySocketListener.close(),
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => error === undefined ? resolve() : reject(error));
+      }),
+    ]);
   },
   exit: (code) => process.exit(code),
   onError: (error) => logAuditEvent({

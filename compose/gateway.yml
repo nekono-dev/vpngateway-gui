@@ -12,7 +12,6 @@ services:
       dockerfile: proxy/Dockerfile
     # 透過ゲートウェイ・明示的プロキシがホストのネットワーク名前空間を直接操作するため（Phase 2で前倒し、Phase 3で確定）。
     network_mode: host
-    user: "10001:10001"
     # nftables・ipの操作に必要。トンネルはランナーが作るため/dev/net/tunは不要。
     cap_add:
       - NET_ADMIN

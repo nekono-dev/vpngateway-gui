@@ -133,15 +133,15 @@
   - 観測できる完了条件: 単体テストで flag true のみ Secure、X-Forwarded-Proto 単独では変化せず、既存認証シナリオが成立する。
   - _Boundary: 通信 transport_
   - _Requirements: 3.5, 3.6_
-- [ ] 4.4 Gateway UDS server と安全な socket ownership を実装する
-  - `proxy/Dockerfile` の `USER vpngwgui` と `compose/gateway.yml` の `user: "10001:10001"` を削除し、entrypoint が root で UDS volume を整えてから `su-exec` で UID/GID 10001 へ降格する。Gateway 制御を `/run/vpngw-gateway/gateway.sock` の単一 owner に bind し、stale socket の安全な判定・除去、通常 close/unlink、API 再接続を実装する。
+- [x] 4.4 Gateway UDS server と安全な socket ownership を実装する
+  - `proxy/Dockerfile` の `USER vpngwgui` と `compose/gateway.yml` の `user: "10001:10001"` を削除し、entrypoint が root で UDS volume を整えてから `su-exec` で UID/GID 10001 へ降格する。Gateway 制御を `/run/vpngw-gateway/gateway.sock` の単一 owner に bind し、stale socket の安全な判定・除去、通常 close/unlink、再起動後の socket 再作成（proxy 側）を実装する。API 側の再接続（socket 消失・`ECONNREFUSED` を transport unavailable として報告し、指数 backoff で再接続）は API の UDS client を作る 4.5 が担当する。
   - entrypoint は root で volume を chown 10001:10001/chmod 0700 してから `su-exec` で降格し、socket mode は 0600 とする。
-  - 観測できる完了条件: integration test で root entrypoint による初回 root-owned volume の初期化、`USER`/Compose `user` 削除後の起動、UID/GID 降格、権限、stale/active/不正 owner socket、再作成と reconnect を確認できる。
+  - 観測できる完了条件: integration test で root entrypoint による初回 root-owned volume の初期化、`USER`/Compose `user` 削除後の起動、UID/GID 降格、権限、stale/active/不正 owner socket、socket の再作成（proxy 側）を確認できる。
   - _Boundary: 通信 transport_
   - _Depends: 1.2, 2.1_
   - _Requirements: 1.2, 5.7, 6.2, 6.7_
 - [ ] 4.5 API Gateway UDS HTTP/HTTPS client を実装する
-  - `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS (CA/SAN/client cert) を実装する。誤設定・期限切れ・不一致時は降格しない。
+  - `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS (CA/SAN/client cert) を実装する。誤設定・期限切れ・不一致時は降格しない。socket の消失・`ECONNREFUSED` は transport unavailable として報告し、指数 backoff で再接続する（4.4 が作る proxy 側の socket 再作成と組み合わせて、再作成後の reconnect を実 UDS で確認する）。
   - 観測できる完了条件: 単体テストで HTTP/HTTPS 選択、CA/SAN/client cert 検証、期限切れ・誤設定失敗を確認できる。TLS/保護モード不一致は専用エラーとしてログ・status・UI に区別して表示するテストを含める。
   - _Boundary: 通信 transport_
   - _Depends: 4.4_
@@ -364,3 +364,4 @@
 - 4.1（Web listener）: `web/server/index.ts` の `startWebServer(env, listenOptions)` が listener を選ぶ。`WEB_HTTPS_ENABLED` 未設定/`false` は証明書なしの HTTP、`true` だけが証明書・鍵を必須にした HTTPS で、不正値・証明書の不備・鍵の不一致は HTTP に降格せず起動失敗にする。試験用の使い捨て証明書は `web/server/testdata/`（README に明記、本番経路は読まない）。Web→API の既定 upstream は HTTP（`/api` の proxy の挙動と 502 は 4.2）。
 - 4.2（同一オリジン API 中継）: API の起動は `api/src/main.ts`（副作用あり）と `startApiServer`（`api/src/server.ts`、副作用なし）に分け、コンテナの `CMD` は `dist/main.js`。API は証明書なしの内部 HTTP（0.0.0.0:`PORT`）で、ホストには公開しない。API サーバ用の TLS loader（`api/src/tls-options.ts`）は削除済み。`compose/api.yml` は旧分離配置の部品で 6.4 が撤去する。
 - 4.3（Cookie Secure）: API の session Cookie の `Secure` は `WEB_HTTPS_ENABLED` だけで決める（`api/src/web-https-options.ts` の `parseWebHttpsEnabled`。未設定/`false`/`true` のみ。それ以外は listen 前に起動失敗。Web サーバと同じ規則）。`trustProxy` や `X-Forwarded-Proto` では判断しない。
+- 4.4（Gateway UDS）: `proxy/src/gateway-channel/server.ts` の `listenOnGatewaySocket(server, socketPath, expectedUid)` が UDS を umask 0177 で bind し（mode 0600）、stale 判定は connect の `ECONNREFUSED` のみ・削除前に dev/ino を再確認、`close()` は自分が作った inode だけを消す。`compose/gateway-entrypoint.sh` は root で `/run/vpngw-gateway` を検証（symlink・非ディレクトリ・root/10001 以外の owner は拒否）してから `chown 10001:10001`・`chmod 0700` し、`su-exec 10001:10001` へ `exec` する。実コンテナの検証は opt-in の `proxy/tests/gateway-entrypoint.docker.test.sh`（Docker が使える環境で実行。7.5 でも実施）。TCP 8443 listener と `GATEWAY_PORT` はまだ残しており、4.6 が除去する。API 側の再接続（指数 backoff）は 4.5 の担当（tasks.md を更新済み）。`ctl-socket` の書き込み権限は `proxy/Dockerfile` の `/var/run/vpngw-ctl`（vpngwgui 所有）を空の名前付き volume が引き継ぐことに依存する。

@@ -1,3 +1,4 @@
+# 責務: network_mode host で Gateway 制御とネットワーク機能を動かすコンテナイメージを構成する。
 # ネットワークコンテナ（`proxy`）のイメージ。透過ゲートウェイ（nftables）・Kill Switch・明示的プロキシ（3proxy）・
 # トンネル検出・接続監視のみを担い、**ベンダーCLIを含まない**（Phase 11でランナーへ分離。
 #ベンダーCLIの実行環境は`Dockerfile.runner-<ベンダー>`。
@@ -49,7 +50,8 @@ COPY --from=proxy-build /src/bin/3proxy /usr/local/bin/3proxy
 # capabilityに含まれる）だけをファイルcapabilityで付与する。
 RUN setcap cap_net_bind_service=+ep /usr/local/bin/node
 RUN mkdir -p /var/run/vpngw-ctl && chown vpngwgui:vpngwgui /var/run/vpngw-ctl
-USER vpngwgui
 ENV CTL_SOCKET_PATH=/var/run/vpngw-ctl/net.sock
 ENV HOME=/home/vpngwgui
-CMD ["node", "dist/server.js"]
+COPY compose/gateway-entrypoint.sh /usr/local/bin/gateway-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/gateway-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/gateway-entrypoint.sh"]
