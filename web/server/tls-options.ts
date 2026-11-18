@@ -1,15 +1,12 @@
-// 責務: Web HTTPS の strict 設定と証明書・鍵の読込、鍵ペア検証および API CA の読込。
+// 責務: Web HTTPS の strict 設定と証明書・鍵の読込および鍵ペア検証。
 
 import { readFileSync } from "node:fs";
 import { createSecureContext } from "node:tls";
-
-const PKI_DIR = process.env.GATEWAY_PKI_DIR ?? "/etc/vpngwgui/pki";
 
 export interface WebServerTlsOptions {
   cert: Buffer;
   key: Buffer;
 }
-
 type Environment = NodeJS.ProcessEnv;
 type FileReader = (path: string) => Buffer;
 type TlsPairValidator = (options: WebServerTlsOptions) => unknown;
@@ -35,15 +32,4 @@ export function loadWebServerHttpsOptions(
   const options = { cert: readFile(certFile), key: readFile(keyFile) };
   validatePair(options);
   return options;
-}
-
-/**
- * 目的: `/api/*`をAPIサーバへプロキシする際、APIサーバのサーバ証明書を検証するためのCA証明書を読み込む。
- * 入力: なし（環境変数`API_TLS_CA_FILE`。省略時は`$GATEWAY_PKI_DIR`配下の既定ファイル名`api-ca.crt`を使う）。
- * 出力: `@fastify/http-proxy`の`agentOptions.ca`へそのまま渡せるBuffer。
- * 失敗時の方針: 証明書ファイルが読めない場合は例外を投げる（無音のフォールバック・検証省略は行わない）。
- */
-export function loadApiCaCertificate(): Buffer {
-  const caFile = process.env.API_TLS_CA_FILE ?? `${PKI_DIR}/api-ca.crt`;
-  return readFileSync(caFile);
 }

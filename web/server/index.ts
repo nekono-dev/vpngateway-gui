@@ -6,7 +6,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyHttpProxy from "@fastify/http-proxy";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { loadApiCaCertificate, loadWebServerHttpsOptions } from "./tls-options.js";
+import { loadWebServerHttpsOptions } from "./tls-options.js";
 import type { ListenOptions } from "node:net";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -24,18 +24,10 @@ export async function startWebServer(
     ? Fastify({ logger: true, https: tlsOptions })
     : Fastify({ logger: true })) as FastifyInstance;
   const upstream = env.API_ORIGIN ?? "http://api:3000";
-  const upstreamOptions = upstream.startsWith("https://") ? {
-    undici: {
-      tls: { rejectUnauthorized: true },
-      connect: { ca: loadApiCaCertificate(), rejectUnauthorized: true },
-    } as never,
-  } : {};
-
   app.register(fastifyHttpProxy, {
     upstream,
     prefix: "/api",
     rewritePrefix: "",
-    ...upstreamOptions,
     replyOptions: {
       onError: (reply, { error }) => {
         reply.log.warn({ err: error }, "failed to proxy request to the API server");

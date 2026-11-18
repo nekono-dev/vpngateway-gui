@@ -1,50 +1,18 @@
-// 責務: APIサーバのエントリポイント。buildApp()で構築したアプリをHTTPSで待ち受ける
-// （Webサーバ⇄APIサーバ間の通信路保護）。
+// 責務: API Fastify アプリを HTTP listener として起動する。
 
+import type { FastifyInstance, FastifyListenOptions } from "fastify";
 import { buildApp } from "./app.js";
-import { loadApiServerTlsOptions } from "./tls-options.js";
-import { notifyCurrentSettings, notifyStartupSettings } from "./settings/settings-notification-queue.js";
-import { getProviders } from "./providers/provider-registry.js";
-import { restoreConnectionOnStartup } from "./connection-state/restore-connection.js";
 
-// 有効なベンダーのプロファイルを起動時に読み込み、不正なら起動を失敗させる（実行時に初めて壊れるのを避ける）。
-const providers = getProviders();
-
-const app = buildApp({ https: loadApiServerTlsOptions() });
-app.log.info({ providers: providers.map((provider) => provider.id) }, "enabled VPN providers loaded");
-const port = Number(process.env.PORT ?? 3000);
-
-app.listen({ port, host: "0.0.0.0" }).catch((error: unknown) => {
-  app.log.error(error);
-  process.exit(1);
-});
-
-// プロキシコンテナは自身の設定を永続化せず、`POST /settings`による通知でのみ現在の
-// killSwitch/transparentGatewayEnabled等を知る。
-// そのため、プロキシコンテナのみが再作成された場合（APIコンテナは再作成されない場合）、
-// 次にユーザが設定を変更するまでプロキシ側が永続化済みの設定を反映できない空白期間が生じうる。
-// これを緩和するため、APIサーバ起動時に現在の永続化済み設定を通知する（加えて下記の定期再通知も行う）
-// （起動順序（proxy→api、docker-compose.yml参照）によりproxy側のソケットlisten未完了と競合しうるため、
-// 数回リトライする。最終的に失敗してもAPIサーバの起動自体は妨げない）。
-async function pushCurrentSettingsToProxy(): Promise<void> {
-  await notifyStartupSettings((error) => {
-    app.log.warn({ error }, "failed to push current settings to proxy at startup");
-  });
+/**
+ * 目的: API アプリを内部 HTTP listener として起動する。
+ * 入力: env（listen port の既定値に使う環境変数）、listenOptions（テスト時などの listener 設定）。
+ * 出力: listen 済みの Fastify インスタンス。
+ */
+export async function startApiServer(
+  env: NodeJS.ProcessEnv = process.env,
+  listenOptions: FastifyListenOptions = { port: Number(env.PORT ?? 3000), host: "0.0.0.0" },
+): Promise<FastifyInstance> {
+  const app = buildApp();
+  await app.listen(listenOptions);
+  return app;
 }
-
-void pushCurrentSettingsToProxy();
-
-// 起動時の接続状態の復元（Phase 16）: 意図せぬプロセス終了（ホスト再起動等）からの復帰時、直前に接続中だった
-// 接続先へ自動的に再接続する。ランナーの起動待ちを内部で行うため、上記の設定通知と同様に起動をブロックしない。
-void restoreConnectionOnStartup(app.log);
-
-// proxyコンテナ単体の再起動・再作成（APIは動き続ける）や、proxy側でのVPNデーモン消滅に追従するため、
-// 現在の設定を定期的に再通知する。通知は冪等（proxy側は受信のたびに全撤去→再適用）であり、
-// proxy不在中の失敗は無視して次周期で再試行する。これが無いと、proxyのみの再起動後、次にユーザが
-// 設定を変更するまでKill Switchのnftルールが再構成されない（実機検証で確認）。
-const SETTINGS_RESYNC_INTERVAL_MS = Number(process.env.SETTINGS_RESYNC_INTERVAL_MS ?? 10_000);
-setInterval(() => {
-  notifyCurrentSettings().catch(() => {
-    // proxy再起動中などの一時的な失敗。次周期で再試行する。
-  });
-}, SETTINGS_RESYNC_INTERVAL_MS).unref();

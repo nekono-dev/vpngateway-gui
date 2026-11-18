@@ -26,9 +26,7 @@ services:
       # ベンダーバンドル（vendors/<ベンダーID>/profile.json）。有効にするのは下のENABLED_PROVIDERS。
       - ./vendors:/etc/vpngwgui/vendors:ro
       - api-data:/var/lib/vpngwgui
-      # ゲートウェイ制御チャネル（mTLS TCP）のクライアント証明書一式、APIサーバ自身のHTTPSサーバ証明書
-      # （api-server.crt/.key）。install.shがホストの/etc/vpngwgui/pki/へローカル生成（単一ホスト構成）
-      # またはscp配布（分離構成）する。
+      # ゲートウェイ制御チャネルの証明書は API→Gateway transport が管理する。
       - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
     environment:
       VENDORS_DIR: /etc/vpngwgui/vendors
