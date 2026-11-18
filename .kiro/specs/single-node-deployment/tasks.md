@@ -24,7 +24,7 @@
 
 ## 2. root Compose とホスト準備
 - [ ] 2. 単一ノード Compose とホスト準備を実装する
-- [ ] 2.1 root Compose と vendor fragment の merge 契約を作る
+- [x] 2.1 root Compose と vendor fragment の merge 契約を作る
   - root Compose に `name: vpngwgui` を宣言し、Web/API/proxy、app-net、gateway-socket、ctl-socket、永続 named volume を集約する。全 lifecycle command で `-p vpngwgui` を明示する。`COMPOSE_PROJECT_NAME` と `-p` は `name:` より優先されるため、他名は非対応（volume 名が変わる）とする。
   - API を LAN 公開せず、Gateway に TCP 制御 listener を置かず、runner の ctl-socket と Gateway UDS volume を分離する。
   - ベンダー fragment の標準 `-f`/`COMPOSE_FILE` merge と fragment 除外・再追加時の volume 再利用を成立させる。

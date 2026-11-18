@@ -1,5 +1,5 @@
-# 責務: このベンダーのランナー（`runner-protonvpn`）のcompose fragment。`.env`の`COMPOSE_FILE`へ、docker-compose.yml（本体）の
-# 後ろに並べて合成する（installer/setup.shが書く）。規約は`vendors/adguardvpn/compose.yml`の冒頭と同じ。
+# 責務: このベンダーのランナー（`runner-protonvpn`）のCompose fragment。標準の`-f docker-compose.yml -f vendors/protonvpn/compose.yml`で
+# root Compose の後ろに加える。root の固定 project 名により、一時的に外しても同じ永続 volume を再利用する。
 # CLIの実行環境（NetworkManager・D-Bus・keyring）はこのコンテナ内で起動する（entrypoint.sh）。
 services:
   runner-protonvpn:
