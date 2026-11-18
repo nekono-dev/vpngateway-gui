@@ -37,7 +37,7 @@ FROM node:22-alpine
 # sudo: nft/ipをvpngwguiから実行するため（cap_add: NET_ADMINを付与していても非root実行では昇格が必要）。
 # libcap-utils: nodeに特権ポート（DNS中継の53番）のbind権限だけを与えるため（下のsetcap）。
 # curl: 設定の動作検証で、経路（VPNトンネルへの束縛・明示的プロキシ経由）を指定して出口IPを取得するため。
-RUN apk add --no-cache sudo nftables iproute2 libcap-utils curl \
+RUN apk add --no-cache sudo nftables iproute2 libcap-utils curl su-exec \
   && addgroup -g 10001 vpngwgui && adduser -D -u 10001 -G vpngwgui vpngwgui \
   && echo "vpngwgui ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vpngwgui \
   && chmod 0440 /etc/sudoers.d/vpngwgui

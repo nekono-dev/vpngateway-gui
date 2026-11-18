@@ -15,7 +15,7 @@
   - 観測できる完了条件: `inventory.md` に検索語・境界ごとの対象パス・所有境界が列挙され、実装タスク間の対象重複が解消され、後続タスクが一覧を参照している。
   - _Boundary: 棚卸し（実装前の横断調整）_
   - _Requirements: 1.3, 1.4, 4.2, 4.3, 4.4, 7.2, 8.6_
-- [ ] 1.2 実行環境の前提を整える
+- [x] 1.2 実行環境の前提を整える
   - `@fastify/http-proxy` を Fastify 5 対応の最新 11.x（11.6.6 以上。調査時点の latest は 11.6.9）へ `web/package.json` と lockfile で限定更新する。
   - nft の構文検証には Debian 12+ または Ubuntu 22.04+ の nftables 環境を使い、boot guard の適用・実確認に失敗する環境は apply を非0で失敗させる。6秒/timeout 実測は対応 OS の検証サーバで行う。
   - 観測できる完了条件: イメージ内で UID/GID 降格コマンドが存在し、`web/package.json` で Fastify 5 と互換の `@fastify/http-proxy` 最新 11.x（11.6.6 以上。調査時点の latest は 11.6.9）が指定され、lockfile と整合する。
