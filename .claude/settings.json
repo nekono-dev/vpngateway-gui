@@ -14,7 +14,8 @@
     ]
   },
   "enabledPlugins": {
-    "password-form-repair@nekono-dev": true
+    "password-form-repair@nekono-dev": true,
+    "branch-release-workflow@nekono-dev": true
   },
   "extraKnownMarketplaces": {
     "nekono-dev": {
