@@ -248,8 +248,8 @@
   - unit/integration coverage を通し、hosted E2E を実資格情報なしで実行する。
   - _Boundary: 統合（Compose・host-preparation・通信・E2E）_
   - _Depends: 2.7, 2.8, 3.5, 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 6.3, 6.4, 6.5_
-  - unit/integration テスト一式、hosted E2E 一式（5.3 の基本シナリオを含む 5.x の全 spec）を統合対象として列挙し、deploy verification は `scripts/deploy-verify.sh` を実行する。
-  - 観測できる完了条件: `scripts/deploy-verify.sh`、unit/integration テスト一式、5.x の全 hosted E2E spec が通り、生成 API client は公式生成手順で更新されている。
+  - 統合対象は次の3種類に固定し、実行したコマンドと件数を `acceptance-env.md` 隣の記録（`integration-report.md`）に列挙する: (a) `scripts/deploy-verify.sh`、(b) api/web/proxy の各パッケージの `package.json` にある unit/integration テストスクリプト全部、(c) 5.3〜5.5 の hosted E2E spec 全部（5.6 の vendor-live-e2e は実資格情報が要る手動試験のため対象外とし、その設定・prepare の関連 test は (b) に含める）。
+  - 観測できる完了条件: `scripts/deploy-verify.sh`、unit/integration テスト一式、5.3〜5.5 の hosted E2E spec が通り、生成 API client は公式生成手順で更新されている。
   - _Requirements: 2.5, 2.6, 2.8, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
 - [ ] 7.3 検証サーバで nft guard の構文・評価順・遮断経路を受け入れる
   - acceptance-env.md の手順で資材を配置し、対象 Debian/Ubuntu の nft/kernel で batch を `nft -c` 検証後に適用する。
