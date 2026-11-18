@@ -22,6 +22,7 @@ import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forwa
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController } from "./network/gateway-controller.js";
 import { GatewayGuard } from "./network/gateway-guard.js";
+import { installGatewayStopHandlers } from "./network/gateway-stop-guard.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
 import { getLanIpv4Address, getLanSubnetCidr } from "./network/lan-subnet.js";
 import { PolicyRouting } from "./network/policy-routing.js";
@@ -321,7 +322,29 @@ if (await ensureIpForwardEnabled()) {
 // VPNを迂回してリークする（実機検証で確認）。既存ルールは最初の`POST /settings`受信時の全撤去→再適用で
 // 置き換わり、その際に前回異常終了時の残骸も同時に掃除される。APIサーバが設定を定期的に再通知する
 // ため（api/src/server.ts）、この空白期間は最大でその周期に収まる。
-startConnectionMonitor(gatewayController, LAN_IFACE, CONNECTION_POLL_INTERVAL_MS);
+const stopConnectionMonitor = startConnectionMonitor(gatewayController, LAN_IFACE, CONNECTION_POLL_INTERVAL_MS);
 
 await new Promise<void>((resolve) => server.listen(GATEWAY_PORT, GATEWAY_BIND_HOST, resolve));
 logAuditEvent({ event: "server_started", gatewayPort: GATEWAY_PORT, lanIface: LAN_IFACE, wanIface: WAN_IFACE });
+
+installGatewayStopHandlers({
+  signals: process,
+  beginShutdown: () => gatewayGuard.beginShutdown(),
+  expireLease: () => gatewayGuard.expireLeaseForShutdown(),
+  stopControllers: [
+    () => stopConnectionMonitor(),
+    () => explicitProxyController.stop(),
+    () => dnsRelayController.stop(),
+  ],
+  close: async () => {
+    gatewayGuard.close();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error === undefined ? resolve() : reject(error));
+    });
+  },
+  exit: (code) => process.exit(code),
+  onError: (error) => logAuditEvent({
+    event: "gateway_shutdown_error",
+    message: error instanceof Error ? error.message : String(error),
+  }),
+});

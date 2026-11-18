@@ -94,7 +94,7 @@
   - _Boundary: Gateway guard_
   - _Depends: 3.1_
   - _Requirements: 2.5, 2.8, 8.2_
-- [ ] 3.3 Gateway 通常停止で lease を先に失効させる
+- [x] 3.3 Gateway 通常停止で lease を先に失効させる
   - SIGTERM/SIGINT/SIGQUIT handler が lease 削除後に listener/server/controller を閉じる。削除失敗時も終了し、timeout に委ねる。
   - 観測できる完了条件: 単体テストで各 signal の lease 削除が close より先になり、OFF は停止時に drop を追加しない。
   - _Boundary: Gateway guard_
@@ -358,3 +358,4 @@
 - 2.3（host-preparation 共通方針）: 本番スクリプトに環境変数での検査回避・パス差し替えを作らない。パスは `compose/host-preparation/paths.sh`（本番値）に集約し、テストは CLI 一式を一時ディレクトリへコピーして `paths.sh` を書き換えて実行する。コマンドの差し替えは PATH の fixture だけで行う。状態ファイル・ディレクトリは symlink／通常ファイル以外を変更前に拒否し、新規作成は検証済みディレクトリ内の一時ファイルから `ln`（上書きしない）で配置する。`apply` が使うコマンドは `check` の必須コマンド一覧に含める。`apply` は boot guard（2.5）が入るまで状態初期化の後に非0で終わり、`status`/`remove` の実体は 2.8 が担当する。
 - 2.5（boot guard）: state の `boot_guard` 記録は `interface` と、保留中だけ `previous_interface` を持ち、状態は `pending`→`applied`。`status`/`remove` の統合（2.8）はこの記録を読む。guard unit は `RequiredBy=docker.service` で Docker の必須依存にし、失敗時は Docker が起動しない。実機の nft の出力（`expires` の残り時間付き要素を含む）と systemd の挙動は 7.3/7.5 で確認する。`npm run test:e2e-unit` は古い作業ツリー（`.claude/worktrees/dev-add-branch-release-workflow`）の複製テストを拾いポート競合するため、`--maxWorkers=1` で実行するか作業ツリーを整理する。
 - 3.2（Gateway guard）: `GatewayGuard.applySettings(next, applyGatewayRuleset)` は Gateway ruleset を先に適用し、その後に guard batch を適用する（両方向）。`ReconcileOutcome.succeeded`（適用と検証の成否。正常な撤去を含む）と `applied`（有効な ruleset の有無）を区別する。ruleset 適用結果は `GatewayControllerOptions.onReconcileResult` で guard の健康に反映される。`GET /net/status` に guard 状態が入り、API の `GatewayStatusSchema` を更新済み。Web の生成クライアントは 7.2 で公式手順により再生成する。3.3 は停止時の lease 削除、3.5 は `POST /settings` の 503 `guard_apply_failed` と Web 表示、4.6 は UDS listener の健康との接続を担当する。
+- 3.3（停止時の遮断）: 停止処理は 新規 guard 作業の停止 → lease 失効（最後の guard 変更）→ 監視・明示プロキシ・DNS 中継の停止 → server close → exit の順で、全体 2 秒の期限を持つ。成功時の終了コードは 143/130/131（従来の既定のシグナル終了と同じ）、失敗・期限超過は 1。Gateway の nft ruleset は停止時に撤去しない（lease 失効後は Kill Switch 有効なら BLOCK、無効なら drop を足さない）。SIGKILL・hang は 7.4 の受入で確認する。

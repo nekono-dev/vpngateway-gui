@@ -95,6 +95,29 @@ describe("ExplicitProxyController", () => {
     expect(controller.getStatus()).toEqual({ state: "active", socksPort: 1080, httpPort: 3128, restartCount: 0 });
   });
 
+  it("stop は子プロセスを終了し、停止後の設定通知で再起動しない", async () => {
+    const { controller, processes } = setup();
+    controller.applySettings({ enabled: true, allowedCidrs: CIDRS });
+
+    await Promise.all([controller.stop(), controller.stop()]);
+    controller.applySettings({ enabled: true, allowedCidrs: CIDRS });
+
+    expect(processes).toHaveLength(1);
+    expect(processes[0].signals).toEqual(["SIGTERM"]);
+  });
+
+  it("SIGTERM に応答しない子へ bounded fallback で SIGKILL を送る", async () => {
+    const { controller, processes } = setup({ killTimeoutMs: 50 });
+    controller.applySettings({ enabled: true, allowedCidrs: CIDRS });
+    processes[0].respondsToSigterm = false;
+
+    const stopping = controller.stop();
+    await vi.advanceTimersByTimeAsync(50);
+    await stopping;
+
+    expect(processes[0].signals).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
   it("有効でもCIDRが空なら起動せずunconfigured", () => {
     const { controller, processes } = setup();
     controller.applySettings({ enabled: true, allowedCidrs: [] });

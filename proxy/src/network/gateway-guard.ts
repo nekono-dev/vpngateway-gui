@@ -37,6 +37,7 @@ export class GatewayGuard {
   private lastUpdatedAt: string | null = null;
   private leaseExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   private queue: Promise<void> = Promise.resolve();
+  private stopping = false;
   private readonly interval: ReturnType<typeof setInterval>;
   private readonly options: Required<Pick<GatewayGuardOptions, "intervalMs" | "now">> & Pick<GatewayGuardOptions, "onEvent">;
 
@@ -51,13 +52,17 @@ export class GatewayGuard {
       onEvent: options.onEvent,
     };
     // 初回 settings 前は timer が動いても何も適用せず、既存 guard state に触れない。
-    this.interval = setInterval(() => this.enqueue(() => this.refreshLease()), this.options.intervalMs);
+    this.interval = setInterval(() => {
+      if (!this.stopping) void this.enqueue(() => this.refreshLease());
+    }, this.options.intervalMs);
   }
 
   /** Gateway ruleset を先に適用し、成功した settings だけ guard へ反映する。 */
   applySettings(settings: GatewayGuardSettings, applyGatewayRuleset: () => Promise<boolean>): Promise<boolean> {
+    if (this.stopping) return Promise.resolve(false);
     const state: GuardState = settings.killSwitch && settings.transparentGatewayEnabled ? "LEASE" : "OFF";
     return this.enqueue(async () => {
+      if (this.stopping) return false;
       const applyGuardState = async (): Promise<boolean> => {
         const result = await this.runBatch(buildGuardStateBatch(state, this.lanIface));
         if (result.exitCode === 0) return true;
@@ -108,7 +113,7 @@ export class GatewayGuard {
 
   /** Gateway ruleset の検証失敗など、外部で健康条件を失ったとき lease 更新を止める。 */
   markUnhealthy(reason: string): void {
-    if (!this.healthy) return;
+    if (this.stopping || !this.healthy) return;
     this.healthy = false;
     this.emit({ event: "gateway_guard_unhealthy", state: this.state, lastUpdatedAt: this.lastUpdatedAt, reason });
     this.scheduleLeaseExpiryEvent();
@@ -116,6 +121,7 @@ export class GatewayGuard {
 
   /** Gateway の再構成結果を受け、失敗時は停止し、回復成功時は guard と lease を再適用する。 */
   handleGatewayReconcileResult(ok: boolean, error?: string): void {
+    if (this.stopping) return;
     if (!ok) {
       this.markUnhealthy(error ?? "gateway_reconcile_failed");
       return;
@@ -123,7 +129,7 @@ export class GatewayGuard {
     if (this.healthy || this.settings === undefined) return;
 
     void this.enqueue(async () => {
-      if (this.healthy || this.settings === undefined) return;
+      if (this.stopping || this.healthy || this.settings === undefined) return;
       const state: GuardState = this.settings.killSwitch && this.settings.transparentGatewayEnabled ? "LEASE" : "OFF";
       const result = await this.runBatch(buildGuardStateBatch(state, this.lanIface));
       if (result.exitCode !== 0) {
@@ -152,6 +158,33 @@ export class GatewayGuard {
     this.clearLeaseExpiryTimer();
   }
 
+  /** 新しい guard 操作を止め、すでに開始した直列処理が終わるまで待つ。 */
+  beginShutdown(): Promise<void> {
+    this.stopping = true;
+    clearInterval(this.interval);
+    this.clearLeaseExpiryTimer();
+    return this.queue;
+  }
+
+  /** 通常停止時に lease を即時失効させる。OFF/BLOCK では nft state を変更しない。 */
+  async expireLeaseForShutdown(): Promise<void> {
+    await this.beginShutdown();
+    await this.enqueue(async () => {
+      this.clearLeaseExpiryTimer();
+      if (this.state !== "LEASE") return;
+
+      const result = await this.runBatch(buildGuardStateBatch("BLOCK", this.lanIface));
+      if (result.exitCode !== 0) {
+        this.emit({ event: "gateway_guard_shutdown_expire_error", state: this.state, lastUpdatedAt: this.lastUpdatedAt, message: result.stderr.trim() });
+        throw new Error(result.stderr.trim() || "gateway guard lease expiration failed");
+      }
+
+      this.state = "BLOCK";
+      this.healthy = false;
+      this.emit({ event: "gateway_guard_shutdown_lease_expired", state: this.state, healthy: false, lastUpdatedAt: this.lastUpdatedAt });
+    });
+  }
+
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.queue.then(operation, operation);
     this.queue = result.then(() => undefined, () => undefined);
@@ -159,7 +192,7 @@ export class GatewayGuard {
   }
 
   private async refreshLease(): Promise<void> {
-    if (!this.healthy || this.state !== "LEASE") return;
+    if (this.stopping || !this.healthy || this.state !== "LEASE") return;
     const result = await this.runBatch(buildGuardLeaseRefreshBatch(this.lanIface));
     if (result.exitCode !== 0) {
       this.healthy = false;

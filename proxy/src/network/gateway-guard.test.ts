@@ -83,6 +83,82 @@ describe("GatewayGuard", () => {
     guard.close();
   });
 
+  it("通常停止で LEASE を即時 BLOCK にし、lease 失効 batch を適用する", async () => {
+    const runNft = vi.fn(async () => ok);
+    const guard = new GatewayGuard("eth0", runNft);
+    await guard.applySettings(settings(true, true), gatewayApplied);
+
+    await guard.expireLeaseForShutdown();
+
+    expect(runNft).toHaveBeenNthCalledWith(2, buildGuardStateBatch("BLOCK", "eth0"));
+    expect(guard.getStatus()).toMatchObject({ state: "BLOCK", healthy: false, leaseValid: false });
+    guard.close();
+  });
+
+  it("通常停止時に OFF の状態を変更せず drop 規則を追加しない", async () => {
+    const runNft = vi.fn(async () => ok);
+    const guard = new GatewayGuard("eth0", runNft);
+    await guard.applySettings(settings(true, false), gatewayApplied);
+
+    await guard.expireLeaseForShutdown();
+
+    expect(runNft).toHaveBeenCalledTimes(1);
+    expect(guard.getStatus()).toMatchObject({ state: "OFF", healthy: true });
+    guard.close();
+  });
+
+  it("停止開始後は settings・reconcile recovery・lease refresh を拒否し、expiry 後に LEASE を発行しない", async () => {
+    vi.useFakeTimers();
+    let finishGateway!: (value: boolean) => void;
+    const runNft = vi.fn(async () => ok);
+    const guard = new GatewayGuard("eth0", runNft);
+    const inFlight = guard.applySettings(settings(true, true), () => new Promise((resolve) => { finishGateway = resolve; }));
+    await Promise.resolve();
+
+    const draining = guard.beginShutdown();
+    expect(await guard.applySettings(settings(true, true), gatewayApplied)).toBe(false);
+    guard.handleGatewayReconcileResult(false, "late_failure");
+    guard.handleGatewayReconcileResult(true);
+    finishGateway(true);
+    await inFlight;
+    await draining;
+    await guard.expireLeaseForShutdown();
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(runNft.mock.calls.map(([batch]) => batch)).toEqual([
+      buildGuardStateBatch("LEASE", "eth0"),
+      buildGuardStateBatch("BLOCK", "eth0"),
+    ]);
+    guard.close();
+  });
+
+  it("停止開始前にキューされた回復処理を失効処理より先に排出する", async () => {
+    const runNft = vi.fn(async () => ok);
+    const guard = new GatewayGuard("eth0", runNft);
+    await guard.applySettings(settings(true, true), gatewayApplied);
+    guard.markUnhealthy("test");
+    guard.handleGatewayReconcileResult(true);
+    const draining = guard.beginShutdown();
+    await draining;
+    await guard.expireLeaseForShutdown();
+    const batches = runNft.mock.calls.map(([batch]) => batch);
+    expect(batches).toEqual([
+      buildGuardStateBatch("LEASE", "eth0"),
+      buildGuardStateBatch("BLOCK", "eth0"),
+    ]);
+    guard.close();
+  });
+
+  it("lease 失効 batch の失敗を停止処理へ返す", async () => {
+    const runNft = vi.fn().mockResolvedValueOnce(ok).mockResolvedValueOnce(fail);
+    const guard = new GatewayGuard("eth0", runNft);
+    await guard.applySettings(settings(true, true), gatewayApplied);
+
+    await expect(guard.expireLeaseForShutdown()).rejects.toThrow("nft failed");
+    expect(guard.getStatus()).toMatchObject({ state: "LEASE", healthy: true });
+    guard.close();
+  });
+
   it("OFF 中の Gateway 失敗と回復では drop 規則を追加せず OFF を再適用する", async () => {
     vi.useFakeTimers();
     const batches: string[] = [];
