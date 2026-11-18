@@ -3,8 +3,7 @@
 
 import { buildApp } from "./app.js";
 import { loadApiServerTlsOptions } from "./tls-options.js";
-import { getSettings, toGatewaySettings } from "./settings/settings-store.js";
-import { notifySettings } from "./proxy-client/proxy-client.js";
+import { notifyCurrentSettings, notifyStartupSettings } from "./settings/settings-notification-queue.js";
 import { getProviders } from "./providers/provider-registry.js";
 import { restoreConnectionOnStartup } from "./connection-state/restore-connection.js";
 
@@ -28,20 +27,9 @@ app.listen({ port, host: "0.0.0.0" }).catch((error: unknown) => {
 // （起動順序（proxy→api、docker-compose.yml参照）によりproxy側のソケットlisten未完了と競合しうるため、
 // 数回リトライする。最終的に失敗してもAPIサーバの起動自体は妨げない）。
 async function pushCurrentSettingsToProxy(): Promise<void> {
-  const settings = getSettings();
-  const retryDelaysMs = [500, 1000, 2000];
-  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
-    try {
-      await notifySettings(toGatewaySettings(settings));
-      return;
-    } catch (error) {
-      if (attempt === retryDelaysMs.length) {
-        app.log.warn({ error }, "failed to push current settings to proxy at startup");
-        return;
-      }
-      await new Promise((resolve) => setTimeout(resolve, retryDelaysMs[attempt]));
-    }
-  }
+  await notifyStartupSettings((error) => {
+    app.log.warn({ error }, "failed to push current settings to proxy at startup");
+  });
 }
 
 void pushCurrentSettingsToProxy();
@@ -56,7 +44,7 @@ void restoreConnectionOnStartup(app.log);
 // 設定を変更するまでKill Switchのnftルールが再構成されない（実機検証で確認）。
 const SETTINGS_RESYNC_INTERVAL_MS = Number(process.env.SETTINGS_RESYNC_INTERVAL_MS ?? 10_000);
 setInterval(() => {
-  notifySettings(toGatewaySettings(getSettings())).catch(() => {
+  notifyCurrentSettings().catch(() => {
     // proxy再起動中などの一時的な失敗。次周期で再試行する。
   });
 }, SETTINGS_RESYNC_INTERVAL_MS).unref();

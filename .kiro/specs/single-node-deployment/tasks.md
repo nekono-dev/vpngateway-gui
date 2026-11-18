@@ -100,7 +100,7 @@
   - _Boundary: Gateway guard_
   - _Depends: 3.2_
   - _Requirements: 2.8, 8.2_
-- [ ] 3.4 API の通知直列キューを実装する
+- [x] 3.4 API の通知直列キューを実装する
   - 起動時・10秒周期・`PUT /v1/connection/config` の3経路すべてが同じ API 所有の通知キューを通り、通知の順序を保証する。有効ガード値（`killSwitch && transparentGatewayEnabled`）変更は proxy 200 の後だけ永続化する。
   - 到達不能/503/5秒超の queue 待ち/timeout は保存せず 503 とする。Kill Switch を含む変更は `kill_switch_not_applied`、それ以外の有効値変更は `gateway_setting_not_applied`。有効値を変えない PUT は現行どおり通知失敗でも保存する。保存後の失敗は周期再通知で永続値へ戻す。
   - 観測できる完了条件: 単体・route test で3経路の順序と各成功/失敗時の保存値・HTTP status・最後に proxy に届く値を確認できる。
@@ -359,3 +359,4 @@
 - 2.5（boot guard）: state の `boot_guard` 記録は `interface` と、保留中だけ `previous_interface` を持ち、状態は `pending`→`applied`。`status`/`remove` の統合（2.8）はこの記録を読む。guard unit は `RequiredBy=docker.service` で Docker の必須依存にし、失敗時は Docker が起動しない。実機の nft の出力（`expires` の残り時間付き要素を含む）と systemd の挙動は 7.3/7.5 で確認する。`npm run test:e2e-unit` は古い作業ツリー（`.claude/worktrees/dev-add-branch-release-workflow`）の複製テストを拾いポート競合するため、`--maxWorkers=1` で実行するか作業ツリーを整理する。
 - 3.2（Gateway guard）: `GatewayGuard.applySettings(next, applyGatewayRuleset)` は Gateway ruleset を先に適用し、その後に guard batch を適用する（両方向）。`ReconcileOutcome.succeeded`（適用と検証の成否。正常な撤去を含む）と `applied`（有効な ruleset の有無）を区別する。ruleset 適用結果は `GatewayControllerOptions.onReconcileResult` で guard の健康に反映される。`GET /net/status` に guard 状態が入り、API の `GatewayStatusSchema` を更新済み。Web の生成クライアントは 7.2 で公式手順により再生成する。3.3 は停止時の lease 削除、3.5 は `POST /settings` の 503 `guard_apply_failed` と Web 表示、4.6 は UDS listener の健康との接続を担当する。
 - 3.3（停止時の遮断）: 停止処理は 新規 guard 作業の停止 → lease 失効（最後の guard 変更）→ 監視・明示プロキシ・DNS 中継の停止 → server close → exit の順で、全体 2 秒の期限を持つ。成功時の終了コードは 143/130/131（従来の既定のシグナル終了と同じ）、失敗・期限超過は 1。Gateway の nft ruleset は停止時に撤去しない（lease 失効後は Kill Switch 有効なら BLOCK、無効なら drop を足さない）。SIGKILL・hang は 7.4 の受入で確認する。
+- 3.4（API 通知キュー）: 起動時・10 秒周期・PUT は `SettingsNotificationQueue`（api/src/settings/settings-notification-queue.ts）の1本の FIFO を通る。5 秒の待機上限は、`killSwitch`/`transparentGatewayEnabled` に触れる PUT のうち、見込み設定で有効ガード値が変わる、または先行の未完了のガード PUT がある場合にだけ付く（それ以外は上限なしで順番に保存）。通知するか先に保存するかの判断は、常にキュー先頭で実際の永続設定から取り直す。proxy 側の `POST /settings` の 503 `guard_apply_failed` と Web の表示は 3.5 が担当する。

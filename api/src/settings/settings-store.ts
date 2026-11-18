@@ -178,16 +178,16 @@ export function getSettings(): UserSettings {
 }
 
 /**
- * 目的: ユーザ向け設定を部分更新し、永続化する。
+ * 目的: ユーザ向け設定の部分更新候補を検証して作成する。
  * 入力: patch(更新したいフィールドのみを含む部分オブジェクト)。
- * 出力: 更新後の完全なUserSettings。
+ * 出力: 更新後の完全なUserSettings。永続化は行わない。
  * 失敗時の方針: `excludedDomains`がドメイン形式（`*.`付きも可）、`explicitProxyAllowedCidrs`がIPv4 CIDR形式、
  *              DNS中継の各項目が形式・項目間の整合を満たさない場合はSettingsValidationErrorを投げる
  *              （呼び出し元でHTTP 400へマッピングする）。
- * 副作用: SETTINGS_FILEへ書き込む。プロキシへの実反映（nftables再構成等）は呼び出し元
- *        （routes/connection-config.ts）がnotifySettings()を介して行う（本関数の責務ではない）。
+ * 副作用: なし。プロキシへの実反映（nftables再構成等）は呼び出し元
+ *        （routes/connection-config.ts）がnotifySettings()を介して行う。
  */
-export function updateSettings(patch: UserSettingsPatch): UserSettings {
+export function prepareSettingsUpdate(patch: UserSettingsPatch): UserSettings {
   if (patch.excludedDomains) {
     validateExcludedDomains(patch.excludedDomains);
   }
@@ -207,7 +207,26 @@ export function updateSettings(patch: UserSettingsPatch): UserSettings {
   if (next.dnsFailureMode === "fallback" && next.dnsFallbackServers.length === 0) {
     throw new SettingsValidationError("dnsFailureMode=fallback requires dnsFallbackServers");
   }
+  return next;
+}
+
+/**
+ * 目的: 検証済みのユーザ向け設定全体を永続化する。
+ * 入力: settings(保存する完全な設定)。
+ * 出力: なし。書き込み失敗時は例外を投げる。
+ */
+export function saveSettings(settings: UserSettings): void {
   mkdirSync(dirname(SETTINGS_FILE), { recursive: true });
-  writeFileSync(SETTINGS_FILE, JSON.stringify(next, null, 2));
+  writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+}
+
+/**
+ * 目的: ユーザ向け設定を部分更新し、永続化する。
+ * 入力: patch(更新したいフィールドのみを含む部分オブジェクト)。
+ * 出力: 更新後の完全なUserSettings。
+ */
+export function updateSettings(patch: UserSettingsPatch): UserSettings {
+  const next = prepareSettingsUpdate(patch);
+  saveSettings(next);
   return next;
 }
