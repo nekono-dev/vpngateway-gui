@@ -75,3 +75,24 @@ E2Eは、Web UI・API・ゲートウェイ（透過ゲートウェイ・Kill Swi
 - 実験の根拠は `.kiro/discovery/multihop-chain-input.md`（section 14〜16 が成立の根拠。section 9〜13 は namespace 方式の不成立の記録）。
 - 異なるプロバイダの組み合わせは `multihop-backend` の範囲に含める（利用者の決定）。今の API と状態モデルは 1 プロバイダ前提のため、段ごとに提供元を持つ形へ変える。実機での共存（同じ経路表・MTU・インターフェース名）は未検証で、design 段階で確認する。
 - 段数は 2 段に限らず n 段に対応する（利用者の決定）。段数の上限は設定値とし、値は design で決める。検証は 2 段で行い、3 段以上の実機確認は design で範囲を決める。
+
+
+## Phase 5（単一ノード導入への統一・分離構成の廃止）
+
+### Approach Decision（2026-11-11）
+- **Chosen**: Compose 直接導入＋最小限のホスト準備。新規仕様 single-node-deployment 1本で扱う（利用者確認済み）。
+- **Why**: 別ホスト配置・証明書配布の複雑さと、Web/API の証明書に起因する疎通失敗を解消する。
+- **Rejected alternatives**: 既存インストーラを単一ノード専用として維持する案は不採用。ホスト準備まで全面廃止する案も採らない。
+
+### Phase 5 Specs
+- [ ] single-node-deployment -- 全サービスを1 Linux ノードの Compose で運用する構成だけに統一し、分離トポロジー・遠隔配置を撤去する。ホスト準備は補助処理へ整理する。Dependencies: 現行の単一ホスト動作（都市選択完了後の 5ab7d2b を基点）
+
+### Phase 5 の通信と責務
+- Web HTTPS は任意で有効化できる機能を残し、既定 OFF。Web→API は信頼された同一ノードの内部 HTTP とし、API の通常のホスト公開と必須 CA 依存を撤去する。
+- API→Gateway の SSL/TLS は選択可能で、既定 OFF。TLS の任意有効化を複数ホスト配置のサポートとはしない。
+- Compose/設定、ホスト準備、ローカル通信、検証/配布の境界で1仕様内のタスクを分ける。Web/API のプロセス統合は範囲外。未リリースのため、旧方式からの移行・互換対応・データ引き継ぎも対象外（利用者の追加決定）。
+- e2e-tests の provision/lifecycle と共通 API client、vendor-live-e2e の API URL/CA 前提、installer の配布 workflow を変更に追従させる。
+- multihop-backend の残作業へ進む前に、API→Gateway、slot worker 配布・依頼経路、Compose 定義の前提を本仕様と再照合する。多段接続本体の実装は本仕様へ含めない。
+- 本 Phase は過去の「分離配置対応・HTTPS 必須」という導入/通信方針を置き換える変更方針であり、要件・設計・タスクの承認後に実装する。過去 Phase の記録と承認フラグを一括で書き換えない。
+
+詳細: `.kiro/specs/single-node-deployment/brief.md`、意思記録 `.kiro/discovery/single-node-deployment-intent.md`。
