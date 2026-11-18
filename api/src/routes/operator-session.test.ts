@@ -42,6 +42,33 @@ describe("POST /v1/operator/session", () => {
     expect(response.headers["set-cookie"]).toBeDefined();
   });
 
+  it("WEB_HTTPS_ENABLED が有効なら login Cookie に Secure を付ける", async () => {
+    const app = buildApp({ webHttpsEnabled: true });
+    await createAccount(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator/session",
+      payload: { username: "admin", password: "correct-password" },
+    });
+
+    expect(response.headers["set-cookie"]).toContain("Secure");
+  });
+
+  it("X-Forwarded-Proto だけでは login Cookie に Secure を付けない", async () => {
+    const app = buildApp();
+    await createAccount(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator/session",
+      headers: { "x-forwarded-proto": "https" },
+      payload: { username: "admin", password: "correct-password" },
+    });
+
+    expect(response.headers["set-cookie"]).not.toContain("Secure");
+  });
+
   it("誤ったパスワードは401（アカウント未作成と同じ応答形状で、作成有無を区別させない）", async () => {
     const app = buildApp();
     await createAccount(app);
@@ -99,6 +126,17 @@ describe("DELETE /v1/operator/session", () => {
 
     const after = await app.inject({ method: "GET", url: "/v1/operator/session", headers: { cookie } });
     expect(after.statusCode).toBe(401);
+  });
+
+  it("HTTPS flag が有効なら logout の期限切れ Cookie にも Secure を付ける", async () => {
+    const app = buildApp({ webHttpsEnabled: true });
+    await createAccount(app);
+    const login = await app.inject({ method: "POST", url: "/v1/operator/session", payload: { username: "admin", password: "correct-password" } });
+    const cookie = cookieHeaderFrom(login.headers["set-cookie"]);
+
+    const logout = await app.inject({ method: "DELETE", url: "/v1/operator/session", headers: { cookie } });
+
+    expect(logout.headers["set-cookie"]).toContain("Secure");
   });
 });
 

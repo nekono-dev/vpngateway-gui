@@ -14,7 +14,7 @@ import {
 import { isRateLimited, recordFailure, clearFailures } from "../auth/login-rate-limiter.js";
 import { UnauthenticatedError, RateLimitedError } from "../errors.js";
 
-export const registerOperatorSessionRoute: FastifyPluginAsyncTypebox = async (fastify) => {
+export const registerOperatorSessionRoute: FastifyPluginAsyncTypebox<{ secureSessionCookies: boolean }> = async (fastify, options) => {
   fastify.post(
     "/v1/operator/session",
     {
@@ -37,7 +37,7 @@ export const registerOperatorSessionRoute: FastifyPluginAsyncTypebox = async (fa
       }
       clearFailures(ip);
       const sessionId = createSession();
-      reply.header("set-cookie", buildSessionCookie(sessionId, request.protocol === "https"));
+      reply.header("set-cookie", buildSessionCookie(sessionId, options.secureSessionCookies));
       return { authenticated: true };
     },
   );
@@ -57,7 +57,7 @@ export const registerOperatorSessionRoute: FastifyPluginAsyncTypebox = async (fa
     async (request, reply) => {
       const sessionId = readSessionIdFromCookieHeader(request.headers.cookie);
       deleteSession(sessionId);
-      reply.header("set-cookie", buildExpiredSessionCookie(request.protocol === "https"));
+      reply.header("set-cookie", buildExpiredSessionCookie(options.secureSessionCookies));
       return { authenticated: false };
     },
   );

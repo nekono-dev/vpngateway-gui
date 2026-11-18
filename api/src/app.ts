@@ -52,12 +52,13 @@ function isSchemaValidationError(error: unknown): boolean {
 
 /**
  * 目的: Fastifyアプリケーションのインスタンスを構築する（listenはしない）。
- * 入力: なし。
+ * 入力: options.webHttpsEnabled（HTTPS設定。trueの場合のみsession CookieへSecure属性を付ける）。
  * 出力: ルート登録・エラーハンドラ設定済みのFastifyインスタンス。
  * 例: const app = buildApp(); await app.listen({ port: 3000 });
  */
-export function buildApp() {
+export function buildApp(options: { webHttpsEnabled?: boolean } = {}) {
   const app = Fastify({ logger: true }).withTypeProvider<TypeBoxTypeProvider>();
+  const secureSessionCookies = options.webHttpsEnabled === true;
 
   app.register(fastifySwagger, {
     openapi: {
@@ -156,8 +157,8 @@ export function buildApp() {
   app.register(registerConnectionGatewayRoute);
   app.register(registerSessionRoute);
   app.register(registerProvidersRoute);
-  app.register(registerOperatorRoute);
-  app.register(registerOperatorSessionRoute);
+  app.register(registerOperatorRoute, { secureSessionCookies });
+  app.register(registerOperatorSessionRoute, { secureSessionCookies });
   app.register(registerVerificationsRoute);
   app.register(registerGatewayRebootRoute);
   app.register(registerUiPreferencesRoute);

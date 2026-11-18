@@ -128,7 +128,7 @@
   - _Boundary: 通信 transport_
   - _Depends: 1.2, 2.1_
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6_
-- [ ] 4.3 Web HTTPS flag と Cookie Secure を連携する
+- [x] 4.3 Web HTTPS flag と Cookie Secure を連携する
   - API の session cookie Secure を `WEB_HTTPS_ENABLED` から決め、`trustProxy`/転送ヘッダーで推定しない。管理者登録・login/logout/session 認可を維持する。
   - 観測できる完了条件: 単体テストで flag true のみ Secure、X-Forwarded-Proto 単独では変化せず、既存認証シナリオが成立する。
   - _Boundary: 通信 transport_
@@ -363,3 +363,4 @@
 - 3.5（settings endpoint と Web 表示）: proxy `POST /net/settings` の 200 応答は `succeeded`（適用と検証の成否。無効化の撤去を含む）と実効状態 `applied` を返し、API は HTTP status と `succeeded === false` で判断する（`applied` では判断しない。`succeeded` が無い旧 proxy の 200 は成功）。本文の読み取りは abort/close/error と 4 秒の期限で終わり、設定要求の待ち行列は失敗・切断のあとも進む。Web の SettingsDialog は `kill_switch_not_applied` と `gateway_setting_not_applied` でトグルを戻して表示する。Web の生成クライアントの再生成は 7.2。
 - 4.1（Web listener）: `web/server/index.ts` の `startWebServer(env, listenOptions)` が listener を選ぶ。`WEB_HTTPS_ENABLED` 未設定/`false` は証明書なしの HTTP、`true` だけが証明書・鍵を必須にした HTTPS で、不正値・証明書の不備・鍵の不一致は HTTP に降格せず起動失敗にする。試験用の使い捨て証明書は `web/server/testdata/`（README に明記、本番経路は読まない）。Web→API の既定 upstream は HTTP（`/api` の proxy の挙動と 502 は 4.2）。
 - 4.2（同一オリジン API 中継）: API の起動は `api/src/main.ts`（副作用あり）と `startApiServer`（`api/src/server.ts`、副作用なし）に分け、コンテナの `CMD` は `dist/main.js`。API は証明書なしの内部 HTTP（0.0.0.0:`PORT`）で、ホストには公開しない。API サーバ用の TLS loader（`api/src/tls-options.ts`）は削除済み。`compose/api.yml` は旧分離配置の部品で 6.4 が撤去する。
+- 4.3（Cookie Secure）: API の session Cookie の `Secure` は `WEB_HTTPS_ENABLED` だけで決める（`api/src/web-https-options.ts` の `parseWebHttpsEnabled`。未設定/`false`/`true` のみ。それ以外は listen 前に起動失敗。Web サーバと同じ規則）。`trustProxy` や `X-Forwarded-Proto` では判断しない。

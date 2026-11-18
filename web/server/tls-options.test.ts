@@ -11,7 +11,7 @@ describe("Web HTTPS 設定", () => {
     expect(readFile).not.toHaveBeenCalled();
   });
 
-  it.each(["", "TRUE", "yes", "1", " false "])('strict boolean 以外の "%s" は失敗する', (value) => {
+  it.each(["", "TRUE", "yes", "1", " true", " false "])('strict boolean 以外の "%s" は失敗する', (value) => {
     expect(() => loadWebServerHttpsOptions({ WEB_HTTPS_ENABLED: value })).toThrow(/WEB_HTTPS_ENABLED/);
   });
 

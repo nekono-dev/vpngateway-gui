@@ -50,6 +50,17 @@ describe("POST /v1/operator", () => {
     expect(response.headers["set-cookie"]).toBeDefined();
   });
 
+  it("WEB_HTTPS_ENABLED が有効な初回登録 Cookie に Secure を付ける", async () => {
+    const app = buildApp({ webHttpsEnabled: true });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/operator",
+      payload: { username: "admin", password: "correct-password" },
+    });
+
+    expect(response.headers["set-cookie"]).toContain("Secure");
+  });
+
   it("作成後にGET /v1/operatorを認証無しで呼ぶと、usernameを含めずconfigured=trueを返す", async () => {
     const app = buildApp();
     await app.inject({ method: "POST", url: "/v1/operator", payload: { username: "admin", password: "correct-password" } });

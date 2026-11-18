@@ -56,3 +56,9 @@ function requestJson(port: number, path: string): Promise<{ statusCode: number; 
     req.end();
   });
 }
+
+describe("API HTTPS flag", () => {
+  it.each(["TRUE", "1", "yes", "", " true"])('不正な WEB_HTTPS_ENABLED "%s" では listener を開始しない', async (value) => {
+    await expect(startApiServer({ WEB_HTTPS_ENABLED: value }, { port: 0, host: "127.0.0.1" })).rejects.toThrow(/WEB_HTTPS_ENABLED/);
+  });
+});

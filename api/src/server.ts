@@ -2,6 +2,7 @@
 
 import type { FastifyInstance, FastifyListenOptions } from "fastify";
 import { buildApp } from "./app.js";
+import { parseWebHttpsEnabled } from "./web-https-options.js";
 
 /**
  * 目的: API アプリを内部 HTTP listener として起動する。
@@ -12,7 +13,8 @@ export async function startApiServer(
   env: NodeJS.ProcessEnv = process.env,
   listenOptions: FastifyListenOptions = { port: Number(env.PORT ?? 3000), host: "0.0.0.0" },
 ): Promise<FastifyInstance> {
-  const app = buildApp();
+  const webHttpsEnabled = parseWebHttpsEnabled(env);
+  const app = buildApp({ webHttpsEnabled });
   await app.listen(listenOptions);
   return app;
 }
