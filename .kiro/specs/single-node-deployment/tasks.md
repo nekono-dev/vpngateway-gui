@@ -31,7 +31,7 @@
   - 観測できる完了条件: root Compose と各 vendor fragment の merge に対する `docker compose -p vpngwgui config --quiet` が成功し、service/volume/network と公開ポートが契約どおりである。未使用の `.env` キーは Compose が無視することをテストで確認し、未知キー拒否を期待しない。
   - _Boundary: root Compose_
   - _Requirements: 1.1, 1.2, 1.5, 4.3, 5.7, 6.2, 6.3, 6.4, 6.7_
-- [ ] 2.2 TLS override fragment と設定例を用意する
+- [x] 2.2 TLS override fragment と設定例を用意する
   - `.env.example` と Web HTTPS/API→Gateway TLS の独立した override fragment を用意し、既定値は両方 OFF とする。
   - TLS OFF 時には対応する証明書 mount が無く、TLS ON 時だけ必要な証明書 mount/環境変数が加わる。
   - 観測できる完了条件: TLS fragment を含む4通りの Compose config が成功し、各構成で `vendors/protonvpn/compose.yml`、`vendors/adguardvpn/compose.yml` の各 fragment と fragment なしを検証し、ON の区間にだけ証明書 mount が現れる。
@@ -351,3 +351,7 @@
 | 8.6 | 1.1, 5.1, 5.6, 7.2 |
 | 8.7 | 5.3, 5.6, 7.2 |
 | 8.8 | 4.6, 5.3, 7.2 |
+
+## Implementation Notes
+- 2.2: 設計表の API クライアント証明書の環境変数名（`GATEWAY_TLS_CLIENT_CERT_FILE`/`GATEWAY_TLS_CLIENT_KEY_FILE`）と、現行 API loader（`api/src/proxy-client/gateway-tls-options.ts`）の名前（`GATEWAY_TLS_CERT_FILE`/`GATEWAY_TLS_KEY_FILE`）が異なる。`compose/api-tls.yml` は両方を設定済み。4.5/4.6 で loader 側の名前を設計に統一し、統一後は片方の設定を外す。
+- 実装補助: 開発ホストの対話シェルの `rg` は関数で、`sh` スクリプトからは使えない。リポジトリのスクリプトは `grep -F` などの POSIX 道具だけを使う。仕様文書（`.kiro/specs`）をテストが読まない。
