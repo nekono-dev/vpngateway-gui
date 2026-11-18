@@ -50,6 +50,10 @@ case "$1" in
     hp_apply_host_reboot || hp_error 'host reboot の固定実行基盤を適用できませんでした。'
     ;;
   status|remove)
+    # shellcheck disable=SC1091
+    . "$script_dir/host-preparation/boot-guard.sh"
+    # shellcheck disable=SC1091
+    . "$script_dir/host-preparation/status.sh"
     handler="$script_dir/host-preparation/$1.sh"
     [ -r "$handler" ] || hp_error "$1 の所有状態処理が利用できません。"
     # shellcheck disable=SC1090

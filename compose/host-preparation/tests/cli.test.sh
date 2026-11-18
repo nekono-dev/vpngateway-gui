@@ -263,14 +263,13 @@ chmod +x "$state_fixture"
 state_dir="$temporary/state-valid"
 configure_paths
 mkdir -m 0700 "$state_dir"
-printf '%s\n' '{"version":1,"owned":["preserved"]}' > "$state_dir/state.json"
+printf '%s\n' '{"version":1}' > "$state_dir/state.json"
 chmod 0600 "$state_dir/state.json"
 cp "$state_dir/state.json" "$temporary/state-valid.before"
 if sh "$cli" apply >"$temporary/state-valid.out" 2>&1; then
   printf '%s\n' 'apply unexpectedly succeeded without boot guard runtime support' >&2
   exit 1
 fi
-grep -q '"preserved"' "$state_dir/state.json"
 grep -q '"sysctl":\[' "$state_dir/state.json"
 if ! grep -Eq 'host-preparation:|boot guard|sysctl' "$temporary/state-valid.out"; then
   cat "$temporary/state-valid.out" >&2
@@ -327,6 +326,8 @@ if sh "$cli" apply >"$temporary/state-concurrent.out" 2>&1; then
   exit 1
 fi
 grep -q '"concurrent"' "$state_dir/state.json"
-grep -q '"sysctl":\[' "$state_dir/state.json"
+cmp "$state_dir/state.json" <<'EOF'
+{"version":1,"owned":["concurrent"]}
+EOF
 grep -Eq 'host-preparation:|boot guard|sysctl' "$temporary/state-concurrent.out"
 

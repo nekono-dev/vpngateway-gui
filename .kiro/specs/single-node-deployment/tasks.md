@@ -71,7 +71,7 @@
   - _Boundary: Root Compose（API・proxy・host-preparation の依頼ディレクトリ接続）_
   - _Depends: 2.1, 2.6, 4.4, 4.6_
   - _Requirements: 2.6_
-- [ ] 2.8 host-preparation の失敗・status・remove を統合する
+- [x] 2.8 host-preparation の失敗・status・remove を統合する
   - check/apply/status/remove を共通 state と接続し、部分失敗時に失敗段階・適用済み変更を表示する。
   - `status` は `.env` の `LAN_IFACE` と state の記録値を比較し、異なれば drifted と報告する。status は設定を変更せず、運用者が `apply` を再実行して一致させる。
   - remove は Compose volume を削除せず、所有差分がある対象を保持して非0で終える。

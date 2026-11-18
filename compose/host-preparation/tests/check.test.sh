@@ -191,7 +191,7 @@ grep -Fq 'hp_os_release_path=/etc/os-release' "$source_root/compose/host-prepara
 grep -Fq 'hp_state_dir=/var/lib/vpngwgui-host-preparation' "$source_root/compose/host-preparation/paths.sh"
 grep -Fq 'hp_boot_guard_docker_requires_path=/etc/systemd/system/docker.service.requires/vpngwgui-boot-guard.service' "$source_root/compose/host-preparation/paths.sh"
 grep -Fq 'script_dir/..' "$source_root/compose/host-preparation/paths.sh"
-if grep -Eq 'HP_(OS_RELEASE_PATH|REPO_ROOT|STATE_DIR|BOOT_GUARD_UNIT_PATH|BOOT_GUARD_RULES_PATH|BOOT_GUARD_DOCKER_REQUIRES_PATH)' "$source_root/compose/host-preparation.sh" "$source_root/compose/host-preparation/common.sh" "$source_root/compose/host-preparation/state.sh" "$source_root/compose/host-preparation/boot-guard.sh" "$source_root/compose/host-preparation/paths.sh"; then
+if grep -Eq 'HP_(OS_RELEASE_PATH|REPO_ROOT|STATE_DIR|BOOT_GUARD_UNIT_PATH|BOOT_GUARD_RULES_PATH|BOOT_GUARD_DOCKER_REQUIRES_PATH)' "$source_root/compose/host-preparation.sh" "$source_root/compose/host-preparation/common.sh" "$source_root/compose/host-preparation/state.sh" "$source_root/compose/host-preparation/boot-guard.sh" "$source_root/compose/host-preparation/status.sh" "$source_root/compose/host-preparation/remove.sh" "$source_root/compose/host-preparation/paths.sh"; then
   printf '%s\n' 'production code contains an environment path seam' >&2
   exit 1
 fi

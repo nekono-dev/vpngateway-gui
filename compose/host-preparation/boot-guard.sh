@@ -14,7 +14,7 @@ hp_boot_guard_previous_iface() {
 }
 
 hp_boot_guard_recorded_status() {
-  sed -n 's/.*"boot_guard":{"interface":"[A-Za-z0-9._-][A-Za-z0-9._-]*"\(,"previous_interface":"[A-Za-z0-9._-][A-Za-z0-9._-]*"\)\?,"status":"\(pending\|applied\)"}.*/\2/p; s/.*"boot_guard":{"lan_iface":"[A-Za-z0-9._-][A-Za-z0-9._-]*","status":"\(pending\|applied\)"}.*/\1/p' "$hp_state_path"
+  sed -n 's/.*"boot_guard":{"interface":"[A-Za-z0-9._-][A-Za-z0-9._-]*"\(,"previous_interface":"[A-Za-z0-9._-][A-Za-z0-9._-]*"\)\?,"status":"\(pending\|applied\|absent\)"}.*/\2/p; s/.*"boot_guard":{"lan_iface":"[A-Za-z0-9._-][A-Za-z0-9._-]*","status":"\(pending\|applied\|absent\)"}.*/\1/p' "$hp_state_path"
 }
 
 hp_boot_guard_state_record() {
@@ -465,6 +465,10 @@ hp_remove_boot_guard() {
   if [ -z "$iface" ]; then return 0; fi
   previous_iface=$(hp_boot_guard_previous_iface)
   recorded_status=$(hp_boot_guard_recorded_status)
+  if [ "$recorded_status" = absent ]; then
+    printf '%s\n' 'absent: boot guard'
+    return 0
+  fi
   if ! printf '%s' "$iface" | grep -Eq '^[A-Za-z0-9._-]+$' ||
     { [ -n "$previous_iface" ] && { [ "$recorded_status" != pending ] || ! printf '%s' "$previous_iface" | grep -Eq '^[A-Za-z0-9._-]+$'; }; } ||
     { [ -z "$previous_iface" ] && [ "$recorded_status" != applied ] && [ "$recorded_status" != pending ]; } ||

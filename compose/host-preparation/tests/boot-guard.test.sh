@@ -237,7 +237,7 @@ grep -Fq 'delete table inet vpngwgui_guard' "$temporary/nft.log"
 # apply は未所有または変更済みの object を nft 書き込み前に拒否する。
 write_state_iface() {
   iface=$1
-  printf '{"version":1,"owned":[],"boot_guard":{"interface":"%s","status":"applied"}}\n' "$iface" > "$state_dir/state.json"
+  printf '{"version":1,"boot_guard":{"interface":"%s","status":"applied"}}\n' "$iface" > "$state_dir/state.json"
   chmod 0600 "$state_dir/state.json"
 }
 write_table_iface() {
