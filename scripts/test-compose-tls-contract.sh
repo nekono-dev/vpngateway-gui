@@ -6,13 +6,13 @@ root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root_dir"
 
 # Compose の Gateway TLS 入力と、API/proxy loader の実際の入力名を確認する。
-for name in GATEWAY_TLS_CA_FILE GATEWAY_TLS_CERT_FILE GATEWAY_TLS_KEY_FILE GATEWAY_TLS_CLIENT_CERT_FILE GATEWAY_TLS_CLIENT_KEY_FILE; do
+for name in GATEWAY_TLS_CA_FILE GATEWAY_TLS_CLIENT_CERT_FILE GATEWAY_TLS_CLIENT_KEY_FILE; do
   grep -Fq "$name" compose/api-tls.yml || { printf 'API TLS fragment に %s がありません\n' "$name" >&2; exit 1; }
 done
 for name in GATEWAY_TLS_CA_FILE GATEWAY_TLS_CERT_FILE GATEWAY_TLS_KEY_FILE; do
   grep -Fq "$name" proxy/src/gateway-channel/tls-options.ts || { printf 'Gateway TLS loader に %s がありません\n' "$name" >&2; exit 1; }
 done
-for name in GATEWAY_TLS_CA_FILE GATEWAY_TLS_CERT_FILE GATEWAY_TLS_KEY_FILE; do
+for name in GATEWAY_TLS_CA_FILE GATEWAY_TLS_CLIENT_CERT_FILE GATEWAY_TLS_CLIENT_KEY_FILE; do
   grep -Fq "$name" api/src/proxy-client/gateway-tls-options.ts || { printf 'API TLS loader に %s がありません\n' "$name" >&2; exit 1; }
 done
 grep -Fq 'WEB_TLS_CERT_FILE' compose/web-tls.yml || { printf 'Web TLS fragment に WEB_TLS_CERT_FILE がありません\n' >&2; exit 1; }
@@ -47,10 +47,10 @@ for vendor in '' vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml; d
         if (webCertMounts.length !== (webTls ? 2 : 0)) throw new Error("web TLS mount does not follow its flag");
         if (apiCertMounts.length !== (gatewayTls ? 3 : 0) || proxyCertMounts.length !== (gatewayTls ? 3 : 0)) throw new Error("gateway TLS mounts do not follow their flag");
         if (webTls && (!enabled(web, "WEB_TLS_CERT_FILE") || !enabled(web, "WEB_TLS_KEY_FILE"))) throw new Error("web TLS file paths missing");
-        if (gatewayTls && ["GATEWAY_TLS_CA_FILE", "GATEWAY_TLS_CERT_FILE", "GATEWAY_TLS_KEY_FILE", "GATEWAY_TLS_CLIENT_CERT_FILE", "GATEWAY_TLS_CLIENT_KEY_FILE"].some((name) => !enabled(api, name))) throw new Error("gateway API TLS paths missing");
+        if (gatewayTls && ["GATEWAY_TLS_CA_FILE", "GATEWAY_TLS_CLIENT_CERT_FILE", "GATEWAY_TLS_CLIENT_KEY_FILE"].some((name) => !enabled(api, name))) throw new Error("gateway API TLS paths missing");
         if (gatewayTls && ["GATEWAY_TLS_CA_FILE", "GATEWAY_TLS_CERT_FILE", "GATEWAY_TLS_KEY_FILE"].some((name) => !enabled(proxy, name))) throw new Error("gateway server TLS paths missing");
-        if (gatewayTls && api.environment.GATEWAY_TLS_CERT_FILE !== api.environment.GATEWAY_TLS_CLIENT_CERT_FILE) throw new Error("API TLS loader and client certificate paths differ");
-        if (gatewayTls && api.environment.GATEWAY_TLS_KEY_FILE !== api.environment.GATEWAY_TLS_CLIENT_KEY_FILE) throw new Error("API TLS loader and client key paths differ");
+        if (gatewayTls && api.environment.GATEWAY_TLS_CERT_FILE !== undefined) throw new Error("legacy API TLS certificate path remains");
+        if (gatewayTls && api.environment.GATEWAY_TLS_KEY_FILE !== undefined) throw new Error("legacy API TLS key path remains");
         if (gatewayTls && proxyCertMounts.every((mount) => mount.target !== "/run/vpngwgui/gateway-tls/ca.crt")) throw new Error("Gateway CA is not mounted into proxy");
       '
     done

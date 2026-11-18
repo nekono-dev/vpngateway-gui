@@ -1,25 +1,21 @@
-// 責務: APIコンテナから、ゲートウェイ（`proxy`が単一の窓口として公開するmTLS TCP、既定ポート8443・
-// 環境変数GATEWAY_PORT）へ、ベンダー別のランナー宛（コマンド実行・利用可否）とネットワークコンテナ宛
-// （設定反映・稼働状況・接続状態の再確認）の要求を送信する。
+// 責務: APIコンテナから、Gateway 制御 UDS（HTTP または任意 mTLS）へ、runner 宛（コマンド実行・利用可否）と
+// ネットワーク機能宛（設定反映・稼働状況・接続状態の再確認）の要求を送信する。
 // 「ゲートウェイとの内部通信仕様」参照。この経路はOpenAPI非公開の内部チャネル。
-// Phase 25で、Phase 11以来のUDS（`ctl-socket`ボリューム上の`net.sock`・`runner-<ベンダーID>.sock`）を廃止し、
-// mTLS TCP（`undici`の`Agent({ connect: { ca, cert, key } })`）へ変更した。ゲートウェイ1台に対し1つの
-// HTTP/1.1 keep-alive接続プールを共有し、ベンダーごとの個別プールは持たない（パスでランナーを識別する）。
+// API と Gateway は専用 UDS と1つのHTTP/1.1 keep-alive接続プールを共有し、runnerごとの個別プールは持たない。
 
 import { Agent } from "undici";
+import { connect as connectTls } from "node:tls";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
 import { GatewaySettingsResultSchema, type GatewaySettingsResult } from "../schemas/settings.js";
-import { ProxyUnavailableError, ProxyTimeoutError, HostControlUnavailableError, RebootAlreadyRequestedError } from "../errors.js";
-import { loadGatewayClientTlsOptions } from "./gateway-tls-options.js";
+import { ProxyUnavailableError, ProxyTimeoutError, GatewayProtectionMismatchError, HostControlUnavailableError, RebootAlreadyRequestedError } from "../errors.js";
+import { loadGatewayTransportOptions } from "./gateway-tls-options.js";
 
-const GATEWAY_HOST = process.env.GATEWAY_HOST ?? "127.0.0.1";
-const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
-const GATEWAY_ORIGIN = `https://${GATEWAY_HOST}:${GATEWAY_PORT}`;
+const gatewayTransport = loadGatewayTransportOptions();
 
-// プロキシは別コンテナ・別プロセスで動くため、TypeScriptの型だけでは実際のレスポンス形状を保証できない
-// （バージョン不一致・実装ミス等でプロトコルが乖離する可能性がある）。mTLS TCP経由の内部通信とはいえ、
+// Gateway は別コンテナ・別プロセスで動くため、TypeScriptの型だけでは実際のレスポンス形状を保証できない
+// （バージョン不一致・実装ミス等でプロトコルが乖離する可能性がある）。UDS経由の内部通信とはいえ、
 // 誤った形状のレスポンスをそのままExecResultとして扱うと後続処理で不可解な失敗を招くため、実行時に検証する。
 const ExecResultSchema = Type.Object({
   exitCode: Type.Union([Type.Number(), Type.Null()]),
@@ -33,9 +29,98 @@ const ExecResultSchema = Type.Object({
 let gatewayAgent: Agent | undefined;
 function getGatewayAgent(): Agent {
   if (!gatewayAgent) {
-    gatewayAgent = new Agent({ connect: loadGatewayClientTlsOptions() });
+    gatewayAgent = new Agent({ connect: gatewayTransport.connect });
   }
   return gatewayAgent;
+}
+
+let reconnectDelayMs = 100;
+let reconnectAt = 0;
+// 失敗が続く間の再接続待機は100msから倍増し、負荷を抑えるため5秒で頭打ちにする。
+const MAX_RECONNECT_DELAY_MS = 5000;
+
+interface GatewayDeadline {
+  expiresAt: number;
+  signal: AbortSignal;
+}
+
+async function requestGateway(options: Parameters<Agent["request"]>[0], deadline?: GatewayDeadline) {
+  const waitMs = reconnectAt - Date.now();
+  if (waitMs > 0) {
+    const boundedWait = deadline === undefined ? waitMs : Math.min(waitMs, Math.max(0, deadline.expiresAt - Date.now()));
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(done, boundedWait);
+      function done() {
+        deadline?.signal.removeEventListener("abort", abort);
+        resolve();
+      }
+      function abort() {
+        clearTimeout(timer);
+        reject(deadline?.signal.reason ?? new Error("gateway request deadline exceeded"));
+      }
+      deadline?.signal.addEventListener("abort", abort, { once: true });
+    });
+  }
+  const remainingMs = deadline === undefined ? undefined : deadline.expiresAt - Date.now();
+  if (remainingMs !== undefined && remainingMs <= 0) throw new ProxyTimeoutError("gateway request exceeded its total deadline");
+  try {
+    const response = await getGatewayAgent().request({
+      ...options,
+      origin: gatewayTransport.origin,
+      ...(deadline === undefined ? {} : { signal: deadline.signal }),
+    });
+    reconnectDelayMs = 100;
+    reconnectAt = 0;
+    return response;
+  } catch (error) {
+    if (gatewayTransport.origin.startsWith("http://") && hasWrittenRequest(error) && await isTlsListener()) {
+      throw new GatewayProtectionMismatchError("API と Gateway の通信保護設定が一致しません");
+    }
+    const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+    if (code === "ENOENT" || code === "ECONNREFUSED" || code === "ECONNRESET") {
+      reconnectAt = Date.now() + reconnectDelayMs;
+      reconnectDelayMs = Math.min(MAX_RECONNECT_DELAY_MS, reconnectDelayMs * 2);
+    }
+    throw error;
+  }
+}
+
+/** エラーに含まれる socket 情報で、接続後に要求を書き込んだ失敗だけを選ぶ。 */
+function hasWrittenRequest(error: unknown): boolean {
+  let current: unknown = error;
+  const visited = new Set<unknown>();
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    const socket = (current as Error & { socket?: { bytesWritten?: number } }).socket;
+    if (socket && typeof socket.bytesWritten === "number" && socket.bytesWritten > 0) return true;
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** HTTP 要求後の reset 時だけ、同じ UDS へ TLS ClientHello を送り listener の方式を確認する。 */
+function isTlsListener(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const socket = connectTls({
+      path: gatewayTransport.socketPath,
+      servername: "GATEWAY_TLS_SERVER_NAME" in process.env ? process.env.GATEWAY_TLS_SERVER_NAME : "gateway.local",
+      rejectUnauthorized: false,
+    });
+    const finish = (isTls: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(isTls);
+    };
+    socket.setTimeout(500, () => finish(false));
+    socket.once("secureConnect", () => finish(true));
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      const receivedCertificate = socket.getPeerCertificate().raw !== undefined;
+      const receivedTlsAlert = error.code?.startsWith("ERR_SSL_TLSV1_ALERT") === true || /tlsv1 alert|tls alert/i.test(error.message);
+      finish(receivedCertificate || receivedTlsAlert);
+    });
+  });
 }
 
 export interface ExecInput {
@@ -70,8 +155,7 @@ export async function executeVendorCommand(providerId: string, input: ExecInput)
   const bodyTimeout = input.timeoutMs + 2000;
 
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: `/runners/${providerId}/exec`,
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -110,16 +194,21 @@ export async function executeVendorCommand(providerId: string, input: ExecInput)
  * 例: await notifySettings({ killSwitch: true, transparentGatewayEnabled: true, ... })
  */
 export async function notifySettings(settings: Record<string, unknown>): Promise<GatewaySettingsResult> {
+  const controller = new AbortController();
+  const deadline: GatewayDeadline = { expiresAt: Date.now() + 5000, signal: controller.signal };
+  const deadlineTimer = setTimeout(
+    () => controller.abort(new ProxyTimeoutError("gateway request exceeded its total deadline")),
+    5000,
+  );
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: "/net/settings",
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(settings),
       bodyTimeout: 5000,
       headersTimeout: 5000,
-    });
+    }, deadline);
     if (response.statusCode !== 200) {
       await response.body.text().catch(() => undefined);
       throw new Error(`unexpected status from proxy: ${response.statusCode}`);
@@ -132,6 +221,8 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
     return body;
   } catch (error) {
     throw toProxyClientError(error);
+  } finally {
+    clearTimeout(deadlineTimer);
   }
 }
 
@@ -145,8 +236,7 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
  */
 export async function fetchProxyStatus(): Promise<GatewayStatus> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: "/net/status",
       method: "GET",
       bodyTimeout: 3000,
@@ -173,8 +263,7 @@ export async function fetchProxyStatus(): Promise<GatewayStatus> {
  */
 export async function checkRunnerHealth(providerId: string): Promise<boolean> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: `/runners/${providerId}/health`,
       method: "GET",
       bodyTimeout: 2000,
@@ -197,8 +286,7 @@ export async function checkRunnerHealth(providerId: string): Promise<boolean> {
  */
 export async function requestConnectionCheck(): Promise<boolean> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: "/net/connection-checks",
       method: "POST",
       bodyTimeout: 5000,
@@ -239,8 +327,7 @@ export interface GatewayCheckInput {
  */
 export async function runGatewayCheck(input: GatewayCheckInput): Promise<GatewayCheckResult> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: "/net/checks",
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -266,8 +353,7 @@ export async function runGatewayCheck(input: GatewayCheckInput): Promise<Gateway
  */
 export async function registerCheckNonce(name: string, ttlSeconds: number): Promise<void> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: "/net/check-nonces",
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -297,8 +383,7 @@ export type CheckNonceRecord = Static<typeof CheckNonceRecordSchema>;
  */
 export async function fetchCheckNonce(name: string): Promise<CheckNonceRecord | undefined> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: `/net/check-nonces/${encodeURIComponent(name)}`,
       method: "GET",
       bodyTimeout: 5000,
@@ -327,8 +412,7 @@ export async function fetchCheckNonce(name: string): Promise<CheckNonceRecord | 
  */
 export async function requestGatewayReboot(): Promise<void> {
   try {
-    const response = await getGatewayAgent().request({
-      origin: GATEWAY_ORIGIN,
+    const response = await requestGateway({
       path: "/net/host-reboot",
       method: "POST",
       bodyTimeout: 5000,
@@ -369,11 +453,30 @@ const GATEWAY_UNAVAILABLE_CODES = new Set([
  * 出力: 到達不能・相互TLSの検証失敗はProxyUnavailableError（502）、応答タイムアウトはProxyTimeoutError（504）、それ以外は元のエラー。
  */
 function toProxyClientError(error: unknown): Error {
-  const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
+  const causes: Error[] = [];
+  let current: unknown = error;
+  while (current instanceof Error && !causes.includes(current)) {
+    causes.push(current);
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+  const codes = causes.map((item) => (item as NodeJS.ErrnoException).code).filter((code): code is string => code !== undefined);
+  const code = codes[0];
+  const message = causes.map((item) => item.message).join(" ");
+  if (causes.some((item) => item.name === "AbortError" || item.name === "TimeoutError") || /operation was aborted due to timeout/i.test(message)) {
+    return new ProxyTimeoutError("proxy did not respond within timeout");
+  }
+  if (
+    codes.includes("ERR_SSL_WRONG_VERSION_NUMBER") ||
+    codes.includes("ERR_SSL_HTTP_REQUEST") ||
+    codes.includes("HPE_INVALID_CONSTANT") ||
+    ((codes.includes("EPROTO") || codes.includes("UND_ERR_SOCKET")) && /wrong version|http request|unknown protocol|expected http\//i.test(message))
+  ) {
+    return new GatewayProtectionMismatchError("API と Gateway の通信保護設定が一致しません");
+  }
   if (code !== undefined && GATEWAY_UNAVAILABLE_CODES.has(code)) {
     return new ProxyUnavailableError("failed to connect to gateway control channel");
   }
-  if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT") {
+  if (code === "UND_ERR_HEADERS_TIMEOUT" || code === "UND_ERR_BODY_TIMEOUT" || code === "UND_ERR_ABORTED" || code === "ABORT_ERR") {
     return new ProxyTimeoutError("proxy did not respond within timeout");
   }
   return error instanceof Error ? error : new Error(String(error));

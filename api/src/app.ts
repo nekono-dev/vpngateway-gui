@@ -28,6 +28,7 @@ import { FavoriteLocationsError } from "./locations/favorite-locations-store.js"
 import {
   ProxyUnavailableError,
   ProxyTimeoutError,
+  GatewayProtectionMismatchError,
   CommandExecutionError,
   OperationRestrictedError,
   OperationUnsupportedError,
@@ -96,6 +97,11 @@ export function buildApp(options: { webHttpsEnabled?: boolean } = {}) {
     }
     if (error instanceof ProxyUnavailableError) {
       reply.code(502).send({ error: "proxy_unavailable", message: error.message });
+      return;
+    }
+    if (error instanceof GatewayProtectionMismatchError) {
+      request.log.error({ event: "protection_mode_mismatch", err: error });
+      reply.code(502).send({ error: "gateway_protection_mismatch", message: error.message, protectionModeMismatch: true });
       return;
     }
     if (error instanceof ProxyTimeoutError) {

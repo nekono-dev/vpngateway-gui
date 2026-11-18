@@ -86,6 +86,13 @@ export function GatewayStatusCard({ gateway, gatewayError, isLoading }: Props) {
   // 失敗理由の全文は1行目にだけ出す（同じ文言を2回alertとして読み上げさせないため）。
   function renderRow(renderStatus: (loaded: GatewayStatus) => ReactNode, showErrorDetail: boolean): ReactNode {
     if (gatewayError) {
+      if (gatewayError === "API と Gateway の通信保護設定が一致しません") {
+        return showErrorDetail ? (
+          <span className="badge badge-danger" role="alert">{gatewayError}</span>
+        ) : (
+          <span className="badge badge-danger">取得失敗</span>
+        );
+      }
       return showErrorDetail ? (
         <span className="badge badge-danger" role="alert">
           取得失敗: {gatewayError}

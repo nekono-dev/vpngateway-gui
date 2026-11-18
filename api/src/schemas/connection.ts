@@ -26,6 +26,13 @@ export type ConnectionPutBody = Static<typeof ConnectionPutBodySchema>;
 export const ErrorResponseSchema = Type.Object({
   error: Type.String(),
   message: Type.Optional(Type.String()),
+  protectionModeMismatch: Type.Optional(Type.Boolean()),
   exitCode: Type.Optional(Type.Number()),
   stderr: Type.Optional(Type.String()),
+});
+
+export const GatewayProtectionMismatchResponseSchema = Type.Object({
+  error: Type.Literal("gateway_protection_mismatch"),
+  message: Type.Optional(Type.String()),
+  protectionModeMismatch: Type.Literal(true),
 });

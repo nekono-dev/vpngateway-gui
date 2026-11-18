@@ -345,6 +345,13 @@ describe("App", () => {
     expect(await screen.findByText(/稼働状況の取得に失敗しました \(status: 502\)/)).toBeInTheDocument();
   });
 
+  it("Gateway の通信保護方式不一致を通常の到達不能と区別して表示する", async () => {
+    api.getV1ConnectionGateway.mockResolvedValue({ status: 502, data: { error: "gateway_protection_mismatch", protectionModeMismatch: true } });
+    renderApp();
+    expect(await screen.findByText("切断")).toBeInTheDocument();
+    expect(await screen.findByText("API と Gateway の通信保護設定が一致しません")).toBeInTheDocument();
+  });
+
   it("接続状態の取得失敗でも稼働状況は表示し、接続操作ボタンは最後の既知状態で使える", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {

@@ -7,8 +7,6 @@ services:
       - ${GATEWAY_TLS_CLIENT_KEY_HOST_PATH:?GATEWAY_TLS_CLIENT_KEY_HOST_PATH must point to the API client private key}:/run/vpngwgui/gateway-tls/client.key:ro
     environment:
       GATEWAY_TLS_CA_FILE: /run/vpngwgui/gateway-tls/ca.crt
-      GATEWAY_TLS_CERT_FILE: /run/vpngwgui/gateway-tls/client.crt
-      GATEWAY_TLS_KEY_FILE: /run/vpngwgui/gateway-tls/client.key
       GATEWAY_TLS_CLIENT_CERT_FILE: /run/vpngwgui/gateway-tls/client.crt
       GATEWAY_TLS_CLIENT_KEY_FILE: /run/vpngwgui/gateway-tls/client.key
       GATEWAY_TLS_SERVER_NAME: ${GATEWAY_TLS_SERVER_NAME:-gateway.local}
