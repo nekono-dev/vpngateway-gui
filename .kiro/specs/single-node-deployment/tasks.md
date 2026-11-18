@@ -82,7 +82,7 @@
 
 ## 3. Gateway Guard と Kill Switch 反映契約
 - [ ] 3. Gateway Guard と Kill Switch 反映契約を実装する
-- [ ] 3.1 Guard nft batch 生成を実装する
+- [x] 3.1 Guard nft batch 生成を実装する
   - boot unit bootstrap は table/set/chain を一度作成して BLOCK にする。状態遷移 batch は既存 chain/set の flush と rules/elements のみを行い、table/set/chain を再宣言せず、LEASE の要素と drop 規則は同一 batch、OFF に drop 規則を含めない。
   - 観測できる完了条件: 単体テストで各 batch の順序・規則・OFF に drop がないことを確認できる。
   - _Boundary: Gateway guard_
