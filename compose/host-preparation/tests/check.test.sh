@@ -28,7 +28,7 @@ hp_repo_root='$repo'
 hp_state_dir='$case_dir/state'
 EOF
 
-  for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft rm sed sort stat sysctl systemctl tr docker; do
+  for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft readlink rm sed sort stat sysctl systemctl tr docker; do
     if [ "$scenario" != "missing:$command" ]; then
       command_path=$(command -v "$command" || :)
       [ -n "$command_path" ] || command_path=/usr/bin/true
@@ -93,7 +93,7 @@ EOF
     unset-host-local-context) unset DOCKER_HOST; FIX_DOCKER_CONTEXT_HOST=unix:///var/run/docker.sock; export FIX_DOCKER_CONTEXT_HOST ;;
   esac
   set +e
-  output=$(/usr/bin/env HP_REPO_ROOT="$case_dir/attacker-repo" HP_OS_RELEASE_PATH="$case_dir/attacker-os-release" HP_STATE_DIR="$case_dir/attacker-state" PATH="$bin" /bin/sh "$cli" "$action" 2>&1)
+  output=$(/usr/bin/env HP_REPO_ROOT="$case_dir/attacker-repo" HP_OS_RELEASE_PATH="$case_dir/attacker-os-release" HP_STATE_DIR="$case_dir/attacker-state" HP_BOOT_GUARD_DOCKER_REQUIRES_PATH="$case_dir/attacker-requires-path" PATH="$bin" /bin/sh "$cli" "$action" 2>&1)
   result=$?
   set -e
   case "$scenario" in
@@ -127,12 +127,13 @@ EOF
   if [ "$scenario" = remote-tcp-apply ]; then
     [ ! -e "$case_dir/attacker-state" ] || { printf '%s\n' 'apply created state before rejecting the remote endpoint' >&2; exit 1; }
   fi
+  [ ! -e "$case_dir/attacker-requires-path" ] || { printf '%s\n' 'check used an environment-provided Docker dependency path' >&2; exit 1; }
   cmp "$case_dir/env.before" "$repo/.env"
 )
 
 run_case unsupported-os unsupported-os 'NG: Debian 12+ または Ubuntu 22.04+ が必要です'
 run_case non-root non-root 'NG: root で実行してください'
-for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft rm sed sort stat sysctl systemctl tr docker; do
+for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft readlink rm sed sort stat sysctl systemctl tr docker; do
   run_case "missing-$command" "missing:$command"
 done
 run_case rootless rootless 'NG: rootless Docker はサポート対象外です'
@@ -152,8 +153,9 @@ run_case satisfied satisfied
 # 本番 paths.sh は固定値を持ち、通常環境変数を参照しない。
 grep -Fq 'hp_os_release_path=/etc/os-release' "$source_root/compose/host-preparation/paths.sh"
 grep -Fq 'hp_state_dir=/var/lib/vpngwgui-host-preparation' "$source_root/compose/host-preparation/paths.sh"
+grep -Fq 'hp_boot_guard_docker_requires_path=/etc/systemd/system/docker.service.requires/vpngwgui-boot-guard.service' "$source_root/compose/host-preparation/paths.sh"
 grep -Fq 'script_dir/..' "$source_root/compose/host-preparation/paths.sh"
-if grep -Eq 'HP_(OS_RELEASE_PATH|REPO_ROOT|STATE_DIR)' "$source_root/compose/host-preparation.sh" "$source_root/compose/host-preparation/common.sh" "$source_root/compose/host-preparation/state.sh"; then
+if grep -Eq 'HP_(OS_RELEASE_PATH|REPO_ROOT|STATE_DIR|BOOT_GUARD_UNIT_PATH|BOOT_GUARD_RULES_PATH|BOOT_GUARD_DOCKER_REQUIRES_PATH)' "$source_root/compose/host-preparation.sh" "$source_root/compose/host-preparation/common.sh" "$source_root/compose/host-preparation/state.sh" "$source_root/compose/host-preparation/boot-guard.sh" "$source_root/compose/host-preparation/paths.sh"; then
   printf '%s\n' 'production code contains an environment path seam' >&2
   exit 1
 fi

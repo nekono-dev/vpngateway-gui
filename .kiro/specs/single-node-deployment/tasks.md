@@ -51,7 +51,7 @@
   - 観測できる完了条件: 二度の apply で重複せず、変更済みの非所有設定は保持され、競合が非0と一覧で報告される。
   - _Boundary: host-preparation_
   - _Requirements: 2.2, 2.3, 2.4, 2.7, 6.5, 6.6_
-- [ ] 2.5 boot guard を初期 BLOCK 専用で設置する
+- [x] 2.5 boot guard を初期 BLOCK 専用で設置する
   - `apply` が検証した `LAN_IFACE` を所有 state に記録し、独立 `inet vpngwgui_guard` table/set/chain を一度作成する bootstrap と初期 BLOCK を適用する systemd unit を設置する。unit は nftables 起動後かつ network-pre/Docker 起動前に実行する。
   - boot unit は初期遮断のみを担い、起動後の切替 watcher/常駐 service や Docker socket 利用を作らない。unit の有効化と guard table/chain/rule の適用を確認できない場合は `apply` を失敗させ、非対応環境として扱う。
   - 観測できる完了条件: state の記録値が unit の BLOCK batch の interface と一致し、unit が Docker より前にその interface を BLOCK にする。unit 有効化・table/chain/rule 検査が失敗すれば非0となる。remove は所有記録に一致する unit/table だけを撤去する。
@@ -356,3 +356,4 @@
 - 2.2: 設計表の API クライアント証明書の環境変数名（`GATEWAY_TLS_CLIENT_CERT_FILE`/`GATEWAY_TLS_CLIENT_KEY_FILE`）と、現行 API loader（`api/src/proxy-client/gateway-tls-options.ts`）の名前（`GATEWAY_TLS_CERT_FILE`/`GATEWAY_TLS_KEY_FILE`）が異なる。`compose/api-tls.yml` は両方を設定済み。4.5/4.6 で loader 側の名前を設計に統一し、統一後は片方の設定を外す。
 - 実装補助: 開発ホストの対話シェルの `rg` は関数で、`sh` スクリプトからは使えない。リポジトリのスクリプトは `grep -F` などの POSIX 道具だけを使う。仕様文書（`.kiro/specs`）をテストが読まない。
 - 2.3（host-preparation 共通方針）: 本番スクリプトに環境変数での検査回避・パス差し替えを作らない。パスは `compose/host-preparation/paths.sh`（本番値）に集約し、テストは CLI 一式を一時ディレクトリへコピーして `paths.sh` を書き換えて実行する。コマンドの差し替えは PATH の fixture だけで行う。状態ファイル・ディレクトリは symlink／通常ファイル以外を変更前に拒否し、新規作成は検証済みディレクトリ内の一時ファイルから `ln`（上書きしない）で配置する。`apply` が使うコマンドは `check` の必須コマンド一覧に含める。`apply` は boot guard（2.5）が入るまで状態初期化の後に非0で終わり、`status`/`remove` の実体は 2.8 が担当する。
+- 2.5（boot guard）: state の `boot_guard` 記録は `interface` と、保留中だけ `previous_interface` を持ち、状態は `pending`→`applied`。`status`/`remove` の統合（2.8）はこの記録を読む。guard unit は `RequiredBy=docker.service` で Docker の必須依存にし、失敗時は Docker が起動しない。実機の nft の出力（`expires` の残り時間付き要素を含む）と systemd の挙動は 7.3/7.5 で確認する。`npm run test:e2e-unit` は古い作業ツリー（`.claude/worktrees/dev-add-branch-release-workflow`）の複製テストを拾いポート競合するため、`--maxWorkers=1` で実行するか作業ツリーを整理する。

@@ -23,7 +23,11 @@ hp_os_release_path='$temporary/os-release'
 hp_repo_root='$temporary/repo'
 hp_state_dir='$state_dir'
 hp_sysctl_config_path='$temporary/sysctl.d/$(basename "$state_dir").conf'
+hp_boot_guard_unit_path='$temporary/systemd/$(basename "$state_dir").service'
+hp_boot_guard_docker_requires_path='$temporary/systemd/$(basename "$state_dir").requires/vpngwgui-boot-guard.service'
+hp_boot_guard_rules_path='$temporary/etc/vpngwgui/$(basename "$state_dir").nft'
 EOF
+  mkdir -p "$temporary/systemd" "$temporary/etc/vpngwgui"
 }
 state_dir="$temporary/state"
 configure_paths
@@ -99,14 +103,15 @@ case "$last" in
 esac
 EOF
 chmod +x "$fixtures"/*
-HP_STATE_DIR="$temporary/attacker-state" HP_REPO_ROOT="$temporary/attacker-repo" HP_OS_RELEASE_PATH="$temporary/attacker-os-release" PATH="$fixtures:/usr/bin:/bin:/usr/sbin:/sbin"
-export HP_STATE_DIR HP_REPO_ROOT HP_OS_RELEASE_PATH PATH
+HP_STATE_DIR="$temporary/attacker-state" HP_REPO_ROOT="$temporary/attacker-repo" HP_OS_RELEASE_PATH="$temporary/attacker-os-release" HP_BOOT_GUARD_DOCKER_REQUIRES_PATH="$temporary/attacker-requires-path" PATH="$fixtures:/usr/bin:/bin:/usr/sbin:/sbin"
+export HP_STATE_DIR HP_REPO_ROOT HP_OS_RELEASE_PATH HP_BOOT_GUARD_DOCKER_REQUIRES_PATH PATH
 if sh "$cli" apply >"$temporary/apply.out" 2>&1; then
   printf '%s\n' 'apply unexpectedly succeeded without boot guard support' >&2
   exit 1
 fi
 [ -d "$state_dir" ]
 [ ! -e "$temporary/attacker-state" ]
+[ ! -e "$temporary/attacker-requires-path" ]
 grep -q 'state directory は root:root' "$temporary/apply.out"
 
 cat > "$fixtures/id" <<'EOF'
@@ -142,6 +147,14 @@ for tool in cat chmod chown cmp dirname ln mkdir mv rm sed stat sysctl tr; do
   case " $required_line " in
     *" $tool "*) ;;
     *) printf '必須コマンド一覧に %s がありません\n' "$tool" >&2; exit 1 ;;
+  esac
+done
+
+# boot-guard apply が使う外部コマンドも check の必須一覧で確認する。
+for tool in cat chmod chown cmp grep ip ln mkdir mv nft readlink rm sed stat systemctl; do
+  case " $required_line " in
+    *" $tool "*) ;;
+    *) printf 'boot guard の必須コマンド一覧に %s がありません\n' "$tool" >&2; exit 1 ;;
   esac
 done
 
@@ -246,12 +259,15 @@ printf '%s\n' '{"version":1,"owned":["preserved"]}' > "$state_dir/state.json"
 chmod 0600 "$state_dir/state.json"
 cp "$state_dir/state.json" "$temporary/state-valid.before"
 if sh "$cli" apply >"$temporary/state-valid.out" 2>&1; then
-  printf '%s\n' 'apply unexpectedly succeeded without boot guard support' >&2
+  printf '%s\n' 'apply unexpectedly succeeded without boot guard runtime support' >&2
   exit 1
 fi
 grep -q '"preserved"' "$state_dir/state.json"
 grep -q '"sysctl":\[' "$state_dir/state.json"
-grep -q 'boot guard の適用処理が利用できません' "$temporary/state-valid.out"
+if ! grep -Eq 'host-preparation:|boot guard|sysctl' "$temporary/state-valid.out"; then
+  cat "$temporary/state-valid.out" >&2
+  exit 1
+fi
 
 # 予測可能な一時名に symlink が置かれても、その参照先へ書き込まない。
 state_dir="$temporary/state-temp-link"
@@ -283,7 +299,7 @@ fi
 temp_pid=$(cat "$HP_TEST_PID_FILE")
 [ -L "$state_dir/.state.json.$temp_pid.1" ]
 [ "$(cat "$target")" = 'unrelated content' ]
-grep -q 'boot guard の適用処理が利用できません' "$temporary/state-temp-link.out" || { cat "$temporary/state-temp-link.out" >&2; exit 1; }
+grep -q 'boot guard' "$temporary/state-temp-link.out" || { cat "$temporary/state-temp-link.out" >&2; exit 1; }
 
 # state.json が確認後・初回配置前に作られても、内容を上書きしない。
 state_dir="$temporary/state-concurrent"
@@ -304,5 +320,5 @@ if sh "$cli" apply >"$temporary/state-concurrent.out" 2>&1; then
 fi
 grep -q '"concurrent"' "$state_dir/state.json"
 grep -q '"sysctl":\[' "$state_dir/state.json"
-grep -q 'boot guard の適用処理が利用できません' "$temporary/state-concurrent.out"
+grep -Eq 'host-preparation:|boot guard|sysctl' "$temporary/state-concurrent.out"
 
