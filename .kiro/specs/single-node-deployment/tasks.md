@@ -2,10 +2,12 @@
 
 共有ファイルと単一の実機検証環境を順に使うため、タスクは逐次実行とし (P) は付けない。
 
+全タスクは、対象ファイルを選ぶ際に `.kiro/specs/single-node-deployment/inventory.md`（タスク 1.1 の成果物）の境界別一覧を参照元とする。
+
 ## 1. 実装前提と対象範囲の確定
 - [ ] 1. 実装前提と対象範囲を確定する
   - 1.1 の棚卸し成果物 `.kiro/specs/single-node-deployment/inventory.md` を、後続の実装・検証・撤去タスクが対象ファイルを選ぶ際の参照元とする。
-- [ ] 1.1 旧方式参照と変更対象ファイルを棚卸しする
+- [x] 1.1 旧方式参照と変更対象ファイルを棚卸しする
   - `rg` で旧 URL、API/Web PKI、TLS 前提、installer の役割選択・SSH/SCP・常設コマンド参照を洗い出す。
   - Kill Switch 切替 Web 部品と関連 API・テストを特定し、design.md の File Structure Plan と照合して対象ファイル一覧をこのタスクの成果にする。
   - 隣接する e2e-tests、vendor-live-e2e、release/installer-check workflow の参照箇所も記録する。
