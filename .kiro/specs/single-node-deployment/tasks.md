@@ -116,7 +116,7 @@
 
 ## 4. 通信 transport と認証
 - [ ] 4. Web/API/Gateway の通信 transport を切り替える
-- [ ] 4.1 Web HTTP/HTTPS listener と証明書検証を切り替える
+- [x] 4.1 Web HTTP/HTTPS listener と証明書検証を切り替える
   - `WEB_HTTPS_ENABLED` の strict boolean により HTTP を既定とし、HTTPS ON 時のみ cert/key を必須化する。不足・不正・鍵不一致は HTTP へ降格せず起動失敗。
   - 観測できる完了条件: 単体テストで OFF の証明書不要、ON の listener、異常証明書の fail closed を確認できる。
   - _Boundary: 通信 transport_
@@ -361,3 +361,4 @@
 - 3.3（停止時の遮断）: 停止処理は 新規 guard 作業の停止 → lease 失効（最後の guard 変更）→ 監視・明示プロキシ・DNS 中継の停止 → server close → exit の順で、全体 2 秒の期限を持つ。成功時の終了コードは 143/130/131（従来の既定のシグナル終了と同じ）、失敗・期限超過は 1。Gateway の nft ruleset は停止時に撤去しない（lease 失効後は Kill Switch 有効なら BLOCK、無効なら drop を足さない）。SIGKILL・hang は 7.4 の受入で確認する。
 - 3.4（API 通知キュー）: 起動時・10 秒周期・PUT は `SettingsNotificationQueue`（api/src/settings/settings-notification-queue.ts）の1本の FIFO を通る。5 秒の待機上限は、`killSwitch`/`transparentGatewayEnabled` に触れる PUT のうち、見込み設定で有効ガード値が変わる、または先行の未完了のガード PUT がある場合にだけ付く（それ以外は上限なしで順番に保存）。通知するか先に保存するかの判断は、常にキュー先頭で実際の永続設定から取り直す。proxy 側の `POST /settings` の 503 `guard_apply_failed` と Web の表示は 3.5 が担当する。
 - 3.5（settings endpoint と Web 表示）: proxy `POST /net/settings` の 200 応答は `succeeded`（適用と検証の成否。無効化の撤去を含む）と実効状態 `applied` を返し、API は HTTP status と `succeeded === false` で判断する（`applied` では判断しない。`succeeded` が無い旧 proxy の 200 は成功）。本文の読み取りは abort/close/error と 4 秒の期限で終わり、設定要求の待ち行列は失敗・切断のあとも進む。Web の SettingsDialog は `kill_switch_not_applied` と `gateway_setting_not_applied` でトグルを戻して表示する。Web の生成クライアントの再生成は 7.2。
+- 4.1（Web listener）: `web/server/index.ts` の `startWebServer(env, listenOptions)` が listener を選ぶ。`WEB_HTTPS_ENABLED` 未設定/`false` は証明書なしの HTTP、`true` だけが証明書・鍵を必須にした HTTPS で、不正値・証明書の不備・鍵の不一致は HTTP に降格せず起動失敗にする。試験用の使い捨て証明書は `web/server/testdata/`（README に明記、本番経路は読まない）。Web→API の既定 upstream は HTTP（`/api` の proxy の挙動と 502 は 4.2）。
