@@ -143,7 +143,7 @@ chmod +x "$fixtures/id"
 
 # state.sh が apply 中に呼ぶコマンドは、check の必須コマンド一覧にも含まれていなければならない。
 required_line=$(grep -F 'for command in ' "$(dirname "$cli")/host-preparation/common.sh")
-for tool in cat chmod chown cmp dirname ln mkdir mv rm sed stat sysctl tr; do
+for tool in cat chmod chown cmp dirname getent ln mkdir mv rm rmdir sed stat sysctl tr; do
   case " $required_line " in
     *" $tool "*) ;;
     *) printf '必須コマンド一覧に %s がありません\n' "$tool" >&2; exit 1 ;;
@@ -155,6 +155,14 @@ for tool in cat chmod chown cmp grep ip ln mkdir mv nft readlink rm sed stat sys
   case " $required_line " in
     *" $tool "*) ;;
     *) printf 'boot guard の必須コマンド一覧に %s がありません\n' "$tool" >&2; exit 1 ;;
+  esac
+done
+
+# host reboot apply が使う外部コマンドも check の必須一覧に含める。
+for tool in cat chmod chown cmp getent ln mkdir mv readlink rm rmdir stat systemctl; do
+  case " $required_line " in
+    *" $tool "*) ;;
+    *) printf 'host reboot の必須コマンド一覧に %s がありません\n' "$tool" >&2; exit 1 ;;
   esac
 done
 

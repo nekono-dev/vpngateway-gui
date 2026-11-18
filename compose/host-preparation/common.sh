@@ -51,7 +51,7 @@ hp_check_prerequisites() {
   failed=0
   if hp_os_supported; then printf '%s\n' 'OK: 対応 OS'; else printf '%s\n' 'NG: Debian 12+ または Ubuntu 22.04+ が必要です' >&2; failed=1; fi
   if [ "$(id -u)" -eq 0 ]; then printf '%s\n' 'OK: root'; else printf '%s\n' 'NG: root で実行してください' >&2; failed=1; fi
-  for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft readlink rm sed sort stat sysctl systemctl tr docker; do
+  for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sort stat sysctl systemctl tr docker; do
     if command -v "$command" >/dev/null 2>&1; then :; else printf 'NG: 必要コマンドがありません: %s\n' "$command" >&2; failed=1; fi
   done
   if command -v docker >/dev/null 2>&1; then

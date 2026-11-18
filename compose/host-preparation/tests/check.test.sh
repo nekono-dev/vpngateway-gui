@@ -28,14 +28,14 @@ hp_repo_root='$repo'
 hp_state_dir='$case_dir/state'
 EOF
 
-  for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft readlink rm sed sort stat sysctl systemctl tr docker; do
+  for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sort stat sysctl systemctl tr docker; do
     if [ "$scenario" != "missing:$command" ]; then
       command_path=$(command -v "$command" || :)
       [ -n "$command_path" ] || command_path=/usr/bin/true
       ln -s "$command_path" "$bin/$command"
     fi
   done
-  /bin/rm -f "$bin/id" "$bin/ip" "$bin/docker" "$bin/nft"
+  /bin/rm -f "$bin/id" "$bin/ip" "$bin/docker" "$bin/nft" "$bin/getent"
   if [ "$scenario" != missing:id ]; then cat > "$bin/id" <<'EOF'
 #!/bin/sh
 case "$1" in -u|-g) printf '%s\n' "${FIX_UID:-0}" ;; *) exit 1 ;; esac
@@ -67,7 +67,24 @@ EOF
 [ "${FIX_NFT:-yes}" = yes ] && [ "$1" = -c ]
 EOF
   fi
-  /bin/chmod +x "$bin/id" "$bin/ip" "$bin/docker" "$bin/nft" 2>/dev/null || :
+  if [ "$scenario" != missing:getent ]; then cat > "$bin/getent" <<'EOF'
+#!/bin/sh
+case "$1:$2" in
+  passwd:10001)
+    [ "${FIX_GETENT_ERROR:-no}" = yes ] && exit 3
+    [ "${FIX_RESERVED_UID:-no}" = yes ] && { printf '%s\n' 'reserved:x:10001:10001:reserved:/nonexistent:/usr/sbin/nologin'; exit 0; }
+    exit 2
+    ;;
+  group:10001)
+    [ "${FIX_GETENT_ERROR:-no}" = yes ] && exit 3
+    [ "${FIX_RESERVED_GID:-no}" = yes ] && { printf '%s\n' 'reserved:x:10001:'; exit 0; }
+    exit 2
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+  fi
+  /bin/chmod +x "$bin/id" "$bin/ip" "$bin/docker" "$bin/nft" "$bin/getent" 2>/dev/null || :
 
   case "$scenario" in
     unsupported-os) printf '%s\n' 'ID=alpine' 'VERSION_ID="3.20"' > "$case_dir/os-release" ;;
@@ -77,6 +94,9 @@ EOF
     no-compose) FIX_COMPOSE=no; export FIX_COMPOSE ;;
     nft-fails) FIX_NFT=no; export FIX_NFT ;;
     unset-lan) : > "$repo/.env"; cp "$repo/.env" "$case_dir/env.before" ;;
+    uid-conflict|uid-conflict-apply) FIX_RESERVED_UID=yes; export FIX_RESERVED_UID ;;
+    gid-conflict|gid-conflict-apply) FIX_RESERVED_GID=yes; export FIX_RESERVED_GID ;;
+    uid-lookup-error) FIX_GETENT_ERROR=yes; export FIX_GETENT_ERROR ;;
     malformed-lan) printf '%s\n' 'LAN_IFACE=bad iface' > "$repo/.env"; cp "$repo/.env" "$case_dir/env.before" ;;
     absent-lan) printf '%s\n' 'LAN_IFACE=missing0' > "$repo/.env"; cp "$repo/.env" "$case_dir/env.before" ;;
   esac
@@ -86,6 +106,7 @@ EOF
   esac
   action=check
   case "$scenario" in
+    uid-conflict-apply|gid-conflict-apply) action=apply ;;
     remote-tcp-apply) action=apply; DOCKER_HOST=tcp://192.0.2.44:2376; export DOCKER_HOST ;;
     remote-tcp) DOCKER_HOST=tcp://192.0.2.44:2376; export DOCKER_HOST ;;
     remote-ssh-context) unset DOCKER_HOST; FIX_DOCKER_CONTEXT_HOST=ssh://operator@192.0.2.44; export FIX_DOCKER_CONTEXT_HOST ;;
@@ -116,6 +137,16 @@ EOF
       printf '%s\n' "$output" | /usr/bin/grep -Fq "$line" || { printf 'missing OK line: %s\n%s\n' "$line" "$output" >&2; exit 1; }
     done
       ;;
+    uid-conflict|gid-conflict|uid-conflict-apply|gid-conflict-apply|uid-lookup-error)
+      [ "$result" -ne 0 ] || { printf 'reserved ID unexpectedly passed: %s\n%s\n' "$scenario" "$output" >&2; exit 1; }
+      case "$scenario" in
+        gid-conflict|gid-conflict-apply) expected='NG: GID 10001' ;;
+        uid-lookup-error) expected='NG: UID 10001 の使用状況を確認できません' ;;
+        *) expected='NG: UID 10001' ;;
+      esac
+      printf '%s\n' "$output" | /usr/bin/grep -Fq "$expected" || { printf '%s\n' "$output" >&2; exit 1; }
+      [ ! -e "$case_dir/state/state.json" ] || { printf 'reserved ID case wrote state: %s\n' "$scenario" >&2; exit 1; }
+      ;;
     *)
     [ "$result" -ne 0 ] || { printf 'case unexpectedly passed: %s\n%s\n' "$name" "$output" >&2; exit 1; }
     printf '%s\n' "$output" | /usr/bin/grep -Fq "$expected" || { printf 'case missing verdict: %s\n%s\n' "$name" "$output" >&2; exit 1; }
@@ -133,7 +164,7 @@ EOF
 
 run_case unsupported-os unsupported-os 'NG: Debian 12+ または Ubuntu 22.04+ が必要です'
 run_case non-root non-root 'NG: root で実行してください'
-for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft readlink rm sed sort stat sysctl systemctl tr docker; do
+for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sort stat sysctl systemctl tr docker; do
   run_case "missing-$command" "missing:$command"
 done
 run_case rootless rootless 'NG: rootless Docker はサポート対象外です'
@@ -149,6 +180,11 @@ run_case unset-lan unset-lan 'NG: repository root の .env に LAN_IFACE を一�
 run_case malformed-lan malformed-lan 'NG: LAN_IFACE に使用できない文字が含まれています'
 run_case absent-lan absent-lan 'NG: LAN_IFACE がホストにありません: missing0'
 run_case satisfied satisfied
+run_case uid-conflict uid-conflict
+run_case gid-conflict gid-conflict
+run_case uid-conflict-apply uid-conflict-apply
+run_case gid-conflict-apply gid-conflict-apply
+run_case uid-lookup-error uid-lookup-error
 
 # 本番 paths.sh は固定値を持ち、通常環境変数を参照しない。
 grep -Fq 'hp_os_release_path=/etc/os-release' "$source_root/compose/host-preparation/paths.sh"

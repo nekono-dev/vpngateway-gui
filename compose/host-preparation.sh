@@ -16,6 +16,8 @@ script_dir=$(CDPATH='' cd -- "$script_path" && pwd)
 . "$script_dir/host-preparation/state.sh"
 # shellcheck disable=SC1091
 . "$script_dir/host-preparation/sysctl.sh"
+# shellcheck disable=SC1091
+. "$script_dir/host-preparation/host-reboot.sh"
 
 usage() {
   printf '%s\n' 'Usage: host-preparation.sh {check|apply|status|remove}'
@@ -28,9 +30,13 @@ if [ "$#" -ne 1 ]; then
 fi
 
 case "$1" in
-  check) hp_check_prerequisites ;;
+  check)
+    hp_check_prerequisites || exit 1
+    hp_check_host_reboot_accounts || exit 1
+    ;;
   apply)
     hp_check_prerequisites || hp_error '前提条件を満たさないため apply を中止しました。'
+    hp_check_host_reboot_accounts || hp_error 'UID/GID 10001 が予約済みのため apply を中止しました。'
     hp_state_initialize || hp_error '所有状態を初期化できないため apply を中止しました。'
     hp_apply_sysctl || hp_error 'sysctl の適用に失敗しました。部分適用状態を確認してください。'
     boot_guard_path=$script_dir/host-preparation/boot-guard.sh
@@ -41,6 +47,7 @@ case "$1" in
     else
       hp_error 'boot guard の適用処理が利用できません。環境はサポート対象外です。'
     fi
+    hp_apply_host_reboot || hp_error 'host reboot の固定実行基盤を適用できませんでした。'
     ;;
   status|remove)
     handler="$script_dir/host-preparation/$1.sh"

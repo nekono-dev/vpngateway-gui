@@ -57,7 +57,7 @@
   - 観測できる完了条件: state の記録値が unit の BLOCK batch の interface と一致し、unit が Docker より前にその interface を BLOCK にする。unit 有効化・table/chain/rule 検査が失敗すれば非0となる。remove は所有記録に一致する unit/table だけを撤去する。
   - _Boundary: host-preparation_
   - _Requirements: 2.5, 2.7, 2.8, 8.2_
-- [ ] 2.6 host-preparation に reboot request の固定実行基盤を設置する
+- [x] 2.6 host-preparation に reboot request の固定実行基盤を設置する
   - proxy image / Compose と一致する製品専用 UID/GID `10001:10001` を予約する。ホスト `/var/lib/vpngwgui-host-ctl` は `10001:10001` / mode 0700 とし、UID/GID 10001 が既存のホスト passwd/group account に使われている場合は `check` と `apply` の双方を失敗させる。ホストに同 ID の汎用アカウントを作成しない。systemd path unit は同ディレクトリの `reboot-request` を監視する。Compose bind mount と API→proxy 接続は 2.7 が所有する。
   - proxy が作成する依頼ファイルは UID/GID `10001:10001` / mode 0600 / 内容 `vpngwgui-host-reboot-v1\n` とする。systemd service は固定の `systemctl reboot` の直前に、symlink でない通常ファイル・owner UID 10001・mode 0600・内容の完全一致を検証する。不一致時は再起動せずログに記録して要求ファイルを安全に除去する。適合時は要求ファイルを削除してから固定の `systemctl reboot` のみを実行し、依頼内容をコマンドとして解釈しない。
   - host-preparation は予約 ID の衝突検査、依頼ホスト directory の owner/mode 設定、systemd path/service の設置、および固定の `systemctl reboot` だけを担当する。Compose bind mount と API→proxy 接続は 2.7 が所有する。`remove` は Compose を `docker compose -p vpngwgui down` した後に行う。
