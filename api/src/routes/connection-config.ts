@@ -47,7 +47,7 @@ export const registerConnectionConfigRoute: FastifyPluginAsyncTypebox = async (f
           if (effectiveGuardChanged) {
             try {
               const result = await notifySettings(toGatewaySettings(next));
-              if (!result.applied) throw new Error("proxy did not apply settings");
+              if (result.succeeded === false) throw new Error("proxy did not apply settings");
             } catch {
               throw new SettingsProxyApplyError(current.killSwitch !== next.killSwitch ? "kill_switch_not_applied" : "gateway_setting_not_applied");
             }

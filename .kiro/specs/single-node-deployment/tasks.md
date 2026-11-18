@@ -106,7 +106,7 @@
   - 観測できる完了条件: 単体・route test で3経路の順序と各成功/失敗時の保存値・HTTP status・最後に proxy に届く値を確認できる。
   - _Boundary: API 通知キュー_
   - _Requirements: 2.8_
-- [ ] 3.5 Gateway settings endpoint と Web Kill Switch 表示を接続する
+- [x] 3.5 Gateway settings endpoint と Web Kill Switch 表示を接続する
   - proxy `POST /settings` は Gateway ruleset 適用後に guard を切替え、guard 失敗は 503 `guard_apply_failed` とする。
   - Web の Kill Switch 部品は `kill_switch_not_applied` または `gateway_setting_not_applied` で関係するトグルを元に戻す。Kill Switch は透過ゲートウェイのみ対象で、明示的プロキシのみでは停止時保証がない旨を表示する。
   - 観測できる完了条件: API・proxy・Web 統合テストで両設定の変更時に適用成功時のみ永続化され、失敗時は表示と永続値が旧値に戻ること、Kill Switch が透過ゲートウェイにのみ適用され明示プロキシのみで停止保証がない UI 表示を確認する。
@@ -360,3 +360,4 @@
 - 3.2（Gateway guard）: `GatewayGuard.applySettings(next, applyGatewayRuleset)` は Gateway ruleset を先に適用し、その後に guard batch を適用する（両方向）。`ReconcileOutcome.succeeded`（適用と検証の成否。正常な撤去を含む）と `applied`（有効な ruleset の有無）を区別する。ruleset 適用結果は `GatewayControllerOptions.onReconcileResult` で guard の健康に反映される。`GET /net/status` に guard 状態が入り、API の `GatewayStatusSchema` を更新済み。Web の生成クライアントは 7.2 で公式手順により再生成する。3.3 は停止時の lease 削除、3.5 は `POST /settings` の 503 `guard_apply_failed` と Web 表示、4.6 は UDS listener の健康との接続を担当する。
 - 3.3（停止時の遮断）: 停止処理は 新規 guard 作業の停止 → lease 失効（最後の guard 変更）→ 監視・明示プロキシ・DNS 中継の停止 → server close → exit の順で、全体 2 秒の期限を持つ。成功時の終了コードは 143/130/131（従来の既定のシグナル終了と同じ）、失敗・期限超過は 1。Gateway の nft ruleset は停止時に撤去しない（lease 失効後は Kill Switch 有効なら BLOCK、無効なら drop を足さない）。SIGKILL・hang は 7.4 の受入で確認する。
 - 3.4（API 通知キュー）: 起動時・10 秒周期・PUT は `SettingsNotificationQueue`（api/src/settings/settings-notification-queue.ts）の1本の FIFO を通る。5 秒の待機上限は、`killSwitch`/`transparentGatewayEnabled` に触れる PUT のうち、見込み設定で有効ガード値が変わる、または先行の未完了のガード PUT がある場合にだけ付く（それ以外は上限なしで順番に保存）。通知するか先に保存するかの判断は、常にキュー先頭で実際の永続設定から取り直す。proxy 側の `POST /settings` の 503 `guard_apply_failed` と Web の表示は 3.5 が担当する。
+- 3.5（settings endpoint と Web 表示）: proxy `POST /net/settings` の 200 応答は `succeeded`（適用と検証の成否。無効化の撤去を含む）と実効状態 `applied` を返し、API は HTTP status と `succeeded === false` で判断する（`applied` では判断しない。`succeeded` が無い旧 proxy の 200 は成功）。本文の読み取りは abort/close/error と 4 秒の期限で終わり、設定要求の待ち行列は失敗・切断のあとも進む。Web の SettingsDialog は `kill_switch_not_applied` と `gateway_setting_not_applied` でトグルを戻して表示する。Web の生成クライアントの再生成は 7.2。

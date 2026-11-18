@@ -28,6 +28,7 @@ import { getLanIpv4Address, getLanSubnetCidr } from "./network/lan-subnet.js";
 import { PolicyRouting } from "./network/policy-routing.js";
 import { DnsRelayController } from "./dns-relay/dns-relay-controller.js";
 import { parseSettingsRequest, toDnsRelaySettings, toGatewayDnsSettings } from "./settings-request.js";
+import { SettingsRequestQueue } from "./settings-request-queue.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 import { REDIRECTED_SET_NAME } from "./network/ruleset.js";
 import { CheckNonceRegistry } from "./verification/check-nonces.js";
@@ -64,6 +65,7 @@ const lanAddress = await getLanIpv4Address(LAN_IFACE);
 const dnsRelayListenAddresses = [...(lanAddress !== undefined ? [lanAddress] : []), "127.0.0.1"];
 // 設定の動作検証の検証名（Web UIの端末のブラウザが解決する使い捨ての名前）の登録と受信の記録。
 const checkNonces = new CheckNonceRegistry();
+const settingsRequestQueue = new SettingsRequestQueue();
 
 const gatewayGuard = new GatewayGuard(LAN_IFACE ?? "", undefined, {
   onEvent: (event) => logAuditEvent(event),
@@ -191,6 +193,7 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
   try {
     parsed = JSON.parse(await readRequestBody(req));
   } catch {
+    if (res.destroyed) return;
     sendJson(res, 400, { error: "invalid_json" });
     return;
   }
@@ -242,7 +245,7 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
       applied: outcome.applied,
     });
   }
-  sendJson(res, 200, { applied: outcome.applied });
+  sendJson(res, 200, { succeeded: outcome.succeeded, applied: outcome.applied });
 }
 
 const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
@@ -265,7 +268,7 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
     return;
   }
   if (req.method === "POST" && req.url === "/net/settings") {
-    handleSettings(req, res).catch((error: unknown) => {
+    settingsRequestQueue.run(() => handleSettings(req, res)).catch((error: unknown) => {
       logAuditEvent({ event: "settings_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });

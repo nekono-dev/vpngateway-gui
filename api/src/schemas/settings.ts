@@ -28,3 +28,10 @@ export type UserSettings = Static<typeof UserSettingsSchema>;
 // スキーマとしては将来の部分更新にも対応できるようPartialにしておく）。
 export const UserSettingsPatchSchema = Type.Partial(UserSettingsSchema);
 export type UserSettingsPatch = Static<typeof UserSettingsPatchSchema>;
+
+// 成功した通知でも applied=false は透過ゲートウェイ無効という実効状態を表す。旧proxyでは succeeded が省略される。
+export const GatewaySettingsResultSchema = Type.Object({
+  succeeded: Type.Optional(Type.Boolean()),
+  applied: Type.Boolean(),
+});
+export type GatewaySettingsResult = Static<typeof GatewaySettingsResultSchema>;

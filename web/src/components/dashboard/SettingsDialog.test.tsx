@@ -40,9 +40,9 @@ const BASE_SETTINGS = {
   verifyEchoUrl: "https://api.ipify.org",
 };
 
-async function renderDialog(overrides: Partial<typeof BASE_SETTINGS> = {}) {
+async function renderDialog(overrides: Partial<typeof BASE_SETTINGS> = {}, onClose = () => undefined) {
   api.getV1ConnectionConfig.mockResolvedValue({ status: 200, data: { ...BASE_SETTINGS, ...overrides } });
-  render(<SettingsDialog open onClose={() => undefined} />);
+  render(<SettingsDialog open onClose={onClose} />);
   await screen.findByRole("tab", { name: "通信制御" });
 }
 
@@ -81,6 +81,7 @@ describe("SettingsDialog: タブ", () => {
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["通信制御", "ゲートウェイ", "上位DNSリゾルバ", "動作検証", "メンテナンス"]);
     expect(screen.getByRole("tab", { name: "通信制御" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("checkbox", { name: /Kill Switch/ })).toBeInTheDocument();
+    expect(screen.getByText("Kill Switch は透過ゲートウェイモードにのみ適用されます。明示的プロキシのみでは Gateway 停止時の遮断を保証しません。")).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /明示的プロキシモード/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /DNS中継を有効にする/ })).not.toBeInTheDocument();
 
@@ -93,6 +94,40 @@ describe("SettingsDialog: タブ", () => {
     expect(screen.getByLabelText(/自宅DNSサーバ（DoHのURL）/)).toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: /明示的プロキシモード/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/公開DNSへ切り替える/)).not.toBeInTheDocument();
+  });
+
+  it("Kill Switch の反映失敗時は元に戻し、Gateway停止または到達不能を表示する", async () => {
+    await renderDialog();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Kill Switch/ }));
+    api.putV1ConnectionConfig.mockResolvedValue({ status: 503, data: { error: "kill_switch_not_applied" } });
+
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await screen.findByRole("checkbox", { name: /Kill Switch/ })).toBeChecked();
+    expect(screen.getByText("ゲートウェイが停止中または到達できないため、設定を反映できませんでした。")).toBeInTheDocument();
+  });
+
+  it("透過ゲートウェイの反映失敗時は元に戻し、成功時は保存して閉じる", async () => {
+    const onClose = vi.fn();
+    await renderDialog({
+      transparentGatewayEnabled: false,
+      explicitProxyEnabled: true,
+      explicitProxyAllowedCidrs: ["192.168.3.0/24"],
+    }, onClose);
+    await openTab("ゲートウェイ");
+    await userEvent.click(screen.getByRole("checkbox", { name: /透過ゲートウェイモード/ }));
+    api.putV1ConnectionConfig.mockResolvedValue({ status: 503, data: { error: "gateway_setting_not_applied" } });
+
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(await screen.findByRole("checkbox", { name: /透過ゲートウェイモード/ })).not.toBeChecked();
+    expect(screen.getByText("ゲートウェイが停止中または到達できないため、設定を反映できませんでした。")).toBeInTheDocument();
+
+    api.putV1ConnectionConfig.mockResolvedValue({ status: 200, data: { ...BASE_SETTINGS, transparentGatewayEnabled: false, explicitProxyEnabled: true, explicitProxyAllowedCidrs: ["192.168.3.0/24"] } });
+    await userEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(api.putV1ConnectionConfig).toHaveBeenCalledTimes(2));
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("「DNS詳細」タブはDNS中継が有効なときだけ表示し、切り替え先・クライアント名・リダイレクトの設定を持つ", async () => {

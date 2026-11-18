@@ -10,6 +10,7 @@ import { Agent } from "undici";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { GatewayStatusSchema, type GatewayStatus } from "../schemas/gateway.js";
+import { GatewaySettingsResultSchema, type GatewaySettingsResult } from "../schemas/settings.js";
 import { ProxyUnavailableError, ProxyTimeoutError, HostControlUnavailableError, RebootAlreadyRequestedError } from "../errors.js";
 import { loadGatewayClientTlsOptions } from "./gateway-tls-options.js";
 
@@ -97,23 +98,18 @@ export async function executeVendorCommand(providerId: string, input: ExecInput)
   }
 }
 
-// レスポンスは`{ applied: boolean }`のみを含む単純な形状。実行系(ExecResultSchema)ほど複雑でないため
-// 個別に定義する。
-const SettingsResultSchema = Type.Object({
-  applied: Type.Boolean(),
-});
-
 /**
  * 目的: ユーザ向け設定の最新値をネットワークコンテナの`/net/settings`へ通知し、nftables等への実反映を要求する。
  *      `executeVendorCommand`（VPNベンダーCLI実行系）とは別の内部プロトコルのため、最初から関数を分離する
  * 入力: settings(UserSettings全体。プロキシ側が実際に用いるのはkillSwitch/transparentGatewayEnabledのみだが、
  *      将来のPhase 4（explicitProxyEnabled等）に備え全体を送信する)。
- * 出力: プロキシがルール再構成を実際に適用できたか（applied）。
+ * 出力: succeededは設定処理の成功、appliedは透過ゲートウェイの実効状態。
+ *       旧proxyはsucceededを返さないため、HTTP 200なら成功として扱う。
  * 失敗時の方針: executeVendorCommandと同じ分類でProxyUnavailableError/ProxyTimeoutErrorへ変換して投げる
  *              （呼び出し元で502/504にマッピングする）。
  * 例: await notifySettings({ killSwitch: true, transparentGatewayEnabled: true, ... })
  */
-export async function notifySettings(settings: Record<string, unknown>): Promise<{ applied: boolean }> {
+export async function notifySettings(settings: Record<string, unknown>): Promise<GatewaySettingsResult> {
   try {
     const response = await getGatewayAgent().request({
       origin: GATEWAY_ORIGIN,
@@ -124,9 +120,13 @@ export async function notifySettings(settings: Record<string, unknown>): Promise
       bodyTimeout: 5000,
       headersTimeout: 5000,
     });
+    if (response.statusCode !== 200) {
+      await response.body.text().catch(() => undefined);
+      throw new Error(`unexpected status from proxy: ${response.statusCode}`);
+    }
     const body: unknown = await response.body.json();
-    if (!Value.Check(SettingsResultSchema, body)) {
-      const errors = [...Value.Errors(SettingsResultSchema, body)].slice(0, 5);
+    if (!Value.Check(GatewaySettingsResultSchema, body)) {
+      const errors = [...Value.Errors(GatewaySettingsResultSchema, body)].slice(0, 5);
       throw new Error(`unexpected response shape from proxy: ${JSON.stringify(errors)}`);
     }
     return body;

@@ -65,13 +65,38 @@ describe("PUT /v1/connection/config", () => {
   it("proxy の503応答も有効ガード値を保存せず503にする", async () => {
     const app = buildApp();
     settingsStore.saveSettings({ ...settingsStore.getSettings(), explicitProxyEnabled: true });
-    notifySettingsMock.mockResolvedValue({ applied: false });
+    notifySettingsMock.mockResolvedValue({ succeeded: false, applied: false });
 
     const response = await app.inject({ method: "PUT", url: "/v1/connection/config", payload: { transparentGatewayEnabled: false } });
 
     expect(response.statusCode).toBe(503);
     expect(response.json()).toMatchObject({ error: "gateway_setting_not_applied" });
     expect(settingsStore.getSettings().transparentGatewayEnabled).toBe(true);
+    await app.close();
+  });
+
+  it("透過ゲートウェイを無効にした成功応答は applied=false でも保存する", async () => {
+    const app = buildApp();
+    settingsStore.saveSettings({ ...settingsStore.getSettings(), killSwitch: true, transparentGatewayEnabled: true, explicitProxyEnabled: true });
+    notifySettingsMock.mockResolvedValue({ succeeded: true, applied: false });
+
+    const response = await app.inject({ method: "PUT", url: "/v1/connection/config", payload: { transparentGatewayEnabled: false } });
+
+    expect(response.statusCode).toBe(200);
+    expect(settingsStore.getSettings().transparentGatewayEnabled).toBe(false);
+    expect(notifySettingsMock).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it("旧proxyのHTTP 200応答は succeeded 欠落かつ applied=false でも成功として保存する", async () => {
+    const app = buildApp();
+    settingsStore.saveSettings({ ...settingsStore.getSettings(), killSwitch: true, transparentGatewayEnabled: true, explicitProxyEnabled: true });
+    notifySettingsMock.mockResolvedValue({ applied: false });
+
+    const response = await app.inject({ method: "PUT", url: "/v1/connection/config", payload: { transparentGatewayEnabled: false } });
+
+    expect(response.statusCode).toBe(200);
+    expect(settingsStore.getSettings().transparentGatewayEnabled).toBe(false);
     await app.close();
   });
 

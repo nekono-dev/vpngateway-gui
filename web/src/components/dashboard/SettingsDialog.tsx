@@ -48,6 +48,25 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   maintenance: "メンテナンス",
 };
 const TAB_KEYS = Object.keys(TAB_LABELS) as SettingsTab[];
+const GUARD_APPLY_ERROR_CODES = new Set([
+  "kill_switch_not_applied",
+  "gateway_setting_not_applied",
+]);
+const GUARD_APPLY_ERROR_MESSAGE =
+  "ゲートウェイが停止中または到達できないため、設定を反映できませんでした。";
+
+function getGuardApplyErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const value = error as { status?: unknown; data?: unknown; response?: unknown };
+  const response = typeof value.response === "object" && value.response !== null
+    ? value.response as { status?: unknown; data?: unknown }
+    : undefined;
+  const status = value.status ?? response?.status;
+  const data = value.data ?? response?.data;
+  if (status !== 503 || typeof data !== "object" || data === null) return undefined;
+  const code = (data as { error?: unknown }).error;
+  return typeof code === "string" && GUARD_APPLY_ERROR_CODES.has(code) ? code : undefined;
+}
 
 export function SettingsDialog({
   open,
@@ -136,6 +155,16 @@ export function SettingsDialog({
         verifyEchoUrl: settings.verifyEchoUrl.trim(),
       });
       if (response.status !== 200) {
+        const guardErrorCode = getGuardApplyErrorCode(response);
+        if (guardErrorCode !== undefined && loadedSettings !== undefined) {
+          setSettings({
+            ...settings,
+            killSwitch: loadedSettings.killSwitch,
+            transparentGatewayEnabled: loadedSettings.transparentGatewayEnabled,
+          });
+          setError(GUARD_APPLY_ERROR_MESSAGE);
+          return;
+        }
         setError(
           describeApiError(
             response.status,
@@ -147,6 +176,16 @@ export function SettingsDialog({
       }
       onClose();
     } catch (caughtError) {
+      const guardErrorCode = getGuardApplyErrorCode(caughtError);
+      if (guardErrorCode !== undefined && loadedSettings !== undefined) {
+        setSettings((current) => current ? {
+          ...current,
+          killSwitch: loadedSettings.killSwitch,
+          transparentGatewayEnabled: loadedSettings.transparentGatewayEnabled,
+        } : current);
+        setError(GUARD_APPLY_ERROR_MESSAGE);
+        return;
+      }
       setError(
         describeThrownError(caughtError, "設定の保存に失敗しました").summary,
       );
@@ -264,7 +303,7 @@ export function SettingsDialog({
                       Kill Switch
                     </label>
                     <p className="hint">
-                      VPN切断を検知したら、LAN側の通信を遮断します。
+                      Kill Switch は透過ゲートウェイモードにのみ適用されます。明示的プロキシのみでは Gateway 停止時の遮断を保証しません。
                     </p>
                   </div>
 

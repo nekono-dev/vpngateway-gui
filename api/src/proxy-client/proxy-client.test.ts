@@ -82,6 +82,27 @@ describe("notifySettings", () => {
     expect(result).toEqual({ applied: true });
   });
 
+  it("成功応答の succeeded と effective applied を別々に返す", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ succeeded: true, applied: false }));
+
+    await expect(notifySettings({ killSwitch: true, transparentGatewayEnabled: false }))
+      .resolves.toEqual({ succeeded: true, applied: false });
+  });
+
+  it("旧proxyの succeeded 欠落応答もHTTP 200なら成功として扱う", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ applied: false }));
+
+    await expect(notifySettings({ killSwitch: true, transparentGatewayEnabled: false }))
+      .resolves.toEqual({ applied: false });
+  });
+
+  it("proxyのHTTP 503は適用失敗として通知をrejectする", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ error: "guard_apply_failed" }, 503));
+
+    await expect(notifySettings({ killSwitch: false, transparentGatewayEnabled: true }))
+      .rejects.toThrow(/unexpected status from proxy: 503/);
+  });
+
   it("プロキシが期待と異なる形状で応答した場合は例外を投げる", async () => {
     requestMock.mockResolvedValue(jsonResponse({ applied: "yes" }));
 
