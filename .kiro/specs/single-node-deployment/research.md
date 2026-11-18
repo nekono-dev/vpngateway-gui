@@ -167,6 +167,13 @@
 2. **常設コマンドの廃止（要件6.1・7.4）**: `installer/main.sh` の `update`/`uninstall`/`status` 等の常設コマンド層は廃止する。
    - 設計への含意: 更新・停止・削除は Compose の標準操作と文書化した手順で行い、ホスト準備ツールは check/apply/status/remove だけを担う。`installer/main.sh`・`bootstrap.sh.tmpl`・`app.sh` と、それを配布する `release-installer.yml`・検査用の `installer/tests/run.sh` は撤去または新しい配布物（Compose 資材とホスト準備）へ置き換える。持ち越し事項の2.8の許容窓と8（配布物の形）はこれで解消。
 
+## 利用者の決定（2026-11-18、host-reboot 依頼の専用 ID と検証）
+
+- proxy image の `vpngwgui` と Compose の実行 UID/GID `10001:10001` を host-reboot 用の製品専用予約 ID として維持する。host-preparation はホストに同 UID/GID の passwd/group account が存在しないことを `check` と `apply` の両方で検査し、衝突時は非0で失敗する。ホスト依頼 directory を `10001:10001` / 0700 とし、他のホスト UID/GID に書き込み権限を与えない。
+- systemd は request file が symlink でない通常ファイルであること、owner UID 10001、mode 0600、内容が `vpngwgui-host-reboot-v1\n` と完全一致することを実行直前に検証する。無効依頼は実行せず記録し、適合依頼は削除後に固定の `systemctl reboot` だけを実行する。
+- この決定により、以前の root:10001 / 0730 directory 契約を廃止する。依頼 directory は root 所有ではなく予約された proxy UID/GID の所有とする。
+
+
 ## 設計の合成結果（2026-11-15、watcher-era guard 方針は2026-11-18に superseded）
 
 設計前調査と当日付のギャップ分析・利用者決定を統合し、以下の責務・契約に一般化した。既存コードのファイル単位の差分は設計書の File Structure Plan として具体化し、ここでは判断の根拠を保持する。

@@ -56,15 +56,16 @@
   - _Boundary: host-preparation_
   - _Requirements: 2.5, 2.7, 2.8, 8.2_
 - [ ] 2.6 host-preparation に reboot request の固定実行基盤を設置する
-  - ホスト `/var/lib/vpngwgui-host-ctl` を root:10001 / mode 0730 で作成し、systemd path unit は同じディレクトリの `reboot-request` を監視する。Compose bind mount と API→proxy 接続は 2.7 が所有する。proxy が作成する依頼ファイルは UID 10001 / mode 0600 とする。path/service は依頼ファイルの検出後に固定の `systemctl reboot` だけを実行し、依頼内容をコマンドとして解釈しない。
-  - host-preparation は依頼ホスト directory の owner/mode 設定と systemd path/service の設置、および固定の `systemctl reboot` だけを担当する。Compose bind mount と API→proxy 接続は 2.7 が所有する。`remove` は Compose を `docker compose -p vpngwgui down` した後に行う。
-  - 観測できる完了条件: ホスト directory owner/mode と systemd path unit の監視先が規定どおりで、systemd が所定の依頼ファイルを検出すると固定の再起動要求だけを実行し、任意コマンド文字列を実行しない。
+  - proxy image / Compose と一致する製品専用 UID/GID `10001:10001` を予約する。ホスト `/var/lib/vpngwgui-host-ctl` は `10001:10001` / mode 0700 とし、UID/GID 10001 が既存のホスト passwd/group account に使われている場合は `check` と `apply` の双方を失敗させる。ホストに同 ID の汎用アカウントを作成しない。systemd path unit は同ディレクトリの `reboot-request` を監視する。Compose bind mount と API→proxy 接続は 2.7 が所有する。
+  - proxy が作成する依頼ファイルは UID/GID `10001:10001` / mode 0600 / 内容 `vpngwgui-host-reboot-v1\n` とする。systemd service は固定の `systemctl reboot` の直前に、symlink でない通常ファイル・owner UID 10001・mode 0600・内容の完全一致を検証する。不一致時は再起動せずログに記録して要求ファイルを安全に除去する。適合時は要求ファイルを削除してから固定の `systemctl reboot` のみを実行し、依頼内容をコマンドとして解釈しない。
+  - host-preparation は予約 ID の衝突検査、依頼ホスト directory の owner/mode 設定、systemd path/service の設置、および固定の `systemctl reboot` だけを担当する。Compose bind mount と API→proxy 接続は 2.7 が所有する。`remove` は Compose を `docker compose -p vpngwgui down` した後に行う。
+  - 観測できる完了条件: `check`/`apply` が UID または GID 10001 の既存アカウント衝突で非0となり、適用後の directory owner/mode・path watch 先が規定どおりである。検証テストで有効依頼だけが削除後に固定再起動へ進み、symlink・非通常ファイル・誤 owner・誤 mode・誤内容はいずれも再起動せず拒否ログが出て安全に除去され、任意コマンド文字列が実行されないことを確認する。
   - _Boundary: host-preparation_
   - _Requirements: 2.6, 2.7_
 - [ ] 2.7 root Compose で API の reboot 要求を host-preparation の依頼先へ接続する
-  - Compose は rootful Docker で動作させる。entrypoint の root 起動、`USER`/Compose `user` の削除、`su-exec` による UID/GID 10001 への権限降格は 4.4 の成果に依存し、本タスクでは実装・テストしない。依頼先をホスト `/var/lib/vpngwgui-host-ctl`、proxy 内 `/var/run/vpngw-host-ctl` に統一する。ホスト dir は root:10001 / 0730、request file は UID 10001 / 0600。root Compose は proxy だけに read-write bind mount し、API は依頼 dir を mount しない。API は `requestGatewayReboot()` から新 gateway UDS 経由で proxy `/net/host-reboot` を呼ぶ。systemd path unit はホスト側の同一ディレクトリを監視する。
+  - Compose は rootful Docker で動作させる。entrypoint の root 起動、`USER`/Compose `user` の削除、`su-exec` による UID/GID `10001:10001` への権限降格は 4.4 の成果に依存し、本タスクでは実装・テストしない。依頼先をホスト `/var/lib/vpngwgui-host-ctl`、proxy 内 `/var/run/vpngw-host-ctl` に統一する。ホスト dir は `10001:10001` / 0700、request file は UID/GID `10001:10001` / 0600 / 固定内容形式。root Compose は proxy だけに read-write bind mount し、API は依頼 dir を mount しない。API は `requestGatewayReboot()` から新 gateway UDS 経由で proxy `/net/host-reboot` を呼ぶ。あわせて `proxy/src/host-control/host-reboot.ts` が依頼ファイルを固定内容・mode 0600 で排他的に作成するよう改め（現行は空ファイルを作る）、そのユニットテストを置く。systemd path unit はホスト側の同一ディレクトリを監視する。
   - 認証済み API 要求から依頼ファイル作成までの経路を接続し、systemd の固定実行基盤と依頼先を一致させる。
-  - 観測できる完了条件: 管理者の API 要求が proxy UDS 経由で依頼ファイルを作り、受付結果（202/既存依頼/利用不可）が API 応答で返る。ホストとコンテナのパス、mount の proxy 限定、owner/mode、systemd watch path が一致する。
+  - 観測できる完了条件: 管理者の API 要求が proxy UDS 経由で規定の内容・owner/mode の依頼ファイルを作り、受付結果（202/既存依頼/利用不可）が API 応答で返る。ホストとコンテナのパス、mount の proxy 限定、owner/mode/content、systemd watch path が 2.6 と一致する。
   - _Boundary: Root Compose（API・proxy・host-preparation の依頼ディレクトリ接続）_
   - _Depends: 2.1, 2.6, 4.4, 4.6_
   - _Requirements: 2.6_

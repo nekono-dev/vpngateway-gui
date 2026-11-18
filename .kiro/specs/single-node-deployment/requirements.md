@@ -36,7 +36,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 3. When 同じ設定でホスト準備を再実行する, the Host Preparation Tool shall 製品が管理する設定や常駐処理を重複させない。
 4. If ホスト準備の処理が失敗する, the Host Preparation Tool shall 成功として終了せず、失敗した処理と既に適用した変更を運用者が確認できるようにする。
 5. When ホストが再起動する, the VPN Gateway System shall proxy が API から設定を初回受信して適用し、通信の転送可否を制御できるようになるまで製品の LAN 転送経路を遮断する。proxy の内部既定値を設定通知前に適用済みと扱わない。boot guard を nftables/systemd で実際に適用または確認できない環境では apply を非0で失敗させ、サポート対象外とする。
-6. When 管理者が既存のホスト再起動操作を要求する, the VPN Gateway System shall ホストへ再起動要求を送り、受付結果を管理者へ返す。
+6. When 管理者が既存のホスト再起動操作を要求する, the VPN Gateway System shall 製品専用 UID/GID 10001 の proxy だけが書き込めるホスト依頼先へ再起動要求を送り、ホスト側は通常ファイル・専用 UID 所有・mode 0600・固定内容形式を検証した場合だけ依頼を消費して固定の再起動操作を行い、受付結果を管理者へ返す。検証に失敗した依頼は実行せず記録する。
 7. When 運用者がホスト準備の確認または解除を行う, the Host Preparation Tool shall 製品が管理する設定・常駐処理と解除対象を識別できるようにし、製品と無関係な設定を変更しない。
 8. When Gateway が停止中または unhealthy であり、透過ゲートウェイと Kill Switch が両方有効である, the VPN Gateway System shall 製品が管理する LAN 転送経路を遮断する。Gateway が healthy の間は通常 ruleset が転送可否を決め、VPN egress forwarding を許可できる。proxy 再起動時は API settings の初回受信・適用まで既存 guard state を変更せず、LEASE は lease の自然失効で遮断し、OFF は OFF のままとする。明示的プロキシのみのモードでは Kill Switch と停止時遮断保証を提供しない。
 
