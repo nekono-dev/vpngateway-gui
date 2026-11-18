@@ -1,4 +1,4 @@
-# Implementation Plan (Draft)
+# Implementation Plan
 
 共有ファイルと単一の実機検証環境を順に使うため、タスクは逐次実行とし (P) は付けない。
 
@@ -165,9 +165,9 @@
   - _Depends: 2.1, 2.2, 4.1, 4.2, 4.4, 4.5, 4.6_
   - _Requirements: 1.1, 1.2, 6.1, 6.2, 6.3, 6.4, 6.7, 8.3, 8.5_
 - [ ] 5.3 hosted UI/API/Gateway シナリオを新しい到達経路に更新する
-  - hosted API 呼び出しを Web 公開 origin `/api` 経由にし、管理者認証、mock VPN 操作、Gateway 機能、runner allowlist 拒否を維持する。
+  - hosted API 呼び出しを Web 公開 origin `/api` 経由にし、管理者認証、runner allowlist 拒否を維持する。mock VPN 操作はベンダー切替、接続・切断、都市・サーバー選択、お気に入り、距離順を列挙して検証する。Gateway 機能は透過ゲートウェイ、明示的プロキシ、DNS 中継、迂回の通常動作を列挙して検証する。
   - 実 VPN 資格情報を hosted CI の環境・secret・artifact に渡さない。
-  - 観測できる完了条件: hosted E2E が default HTTP/no-cert 構成で login と mock VPN 操作を完了する。
+  - 観測できる完了条件: hosted E2E が default HTTP/no-cert 構成で login、上記の mock VPN 操作の各項目、Gateway 通常動作の各項目を完了し、結果が項目ごとに記録される。
   - _Boundary: E2E_
   - _Depends: 5.1, 5.2, 4.2, 4.6_
   - _Requirements: 8.1, 8.2, 8.3, 8.7, 8.8_
