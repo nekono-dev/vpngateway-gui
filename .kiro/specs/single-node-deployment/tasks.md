@@ -38,7 +38,7 @@
   - _Boundary: root Compose_
   - _Depends: 2.1_
   - _Requirements: 3.1, 3.2, 3.3, 5.1, 5.2, 5.6, 5.8_
-- [ ] 2.3 host-preparation CLI と安全な共通処理を作る
+- [x] 2.3 host-preparation CLI と安全な共通処理を作る
   - `check|apply|status|remove` のみを受け付ける dispatcher とする。`check` は読み取り専用の静的 prerequisite 検査（OS Debian 12+/Ubuntu 22.04+、root、必要コマンド、rootful Docker、nft availability と許可時の `nft -c`、LAN_IFACE）を行い、rootless Docker を拒否する。boot guard の実適用・確認は `apply` が担い、失敗時は非0で非対応環境とする。標準エラー報告と所有状態記録も作る。
   - LAN interface は Compose と同じ repository root の `.env` にある `LAN_IFACE` だけから取得する。`check` と `apply` は未設定・`[A-Za-z0-9._-]` 以外を含む形式不正・ホスト上に interface が存在しない場合に非0で終了する。未設定時は既定ルートの interface を候補表示するだけとし、`.env` を生成・変更せず、自動検出値を適用しない。
   - Docker の導入・更新や daemon 設定変更、常設 update/uninstall/status コマンドを追加しない。
@@ -355,3 +355,4 @@
 ## Implementation Notes
 - 2.2: 設計表の API クライアント証明書の環境変数名（`GATEWAY_TLS_CLIENT_CERT_FILE`/`GATEWAY_TLS_CLIENT_KEY_FILE`）と、現行 API loader（`api/src/proxy-client/gateway-tls-options.ts`）の名前（`GATEWAY_TLS_CERT_FILE`/`GATEWAY_TLS_KEY_FILE`）が異なる。`compose/api-tls.yml` は両方を設定済み。4.5/4.6 で loader 側の名前を設計に統一し、統一後は片方の設定を外す。
 - 実装補助: 開発ホストの対話シェルの `rg` は関数で、`sh` スクリプトからは使えない。リポジトリのスクリプトは `grep -F` などの POSIX 道具だけを使う。仕様文書（`.kiro/specs`）をテストが読まない。
+- 2.3（host-preparation 共通方針）: 本番スクリプトに環境変数での検査回避・パス差し替えを作らない。パスは `compose/host-preparation/paths.sh`（本番値）に集約し、テストは CLI 一式を一時ディレクトリへコピーして `paths.sh` を書き換えて実行する。コマンドの差し替えは PATH の fixture だけで行う。状態ファイル・ディレクトリは symlink／通常ファイル以外を変更前に拒否し、新規作成は検証済みディレクトリ内の一時ファイルから `ln`（上書きしない）で配置する。`apply` が使うコマンドは `check` の必須コマンド一覧に含める。`apply` は boot guard（2.5）が入るまで状態初期化の後に非0で終わり、`status`/`remove` の実体は 2.8 が担当する。
