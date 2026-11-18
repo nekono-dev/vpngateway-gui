@@ -87,7 +87,7 @@
   - 観測できる完了条件: 単体テストで各 batch の順序・規則・OFF に drop がないことを確認できる。
   - _Boundary: Gateway guard_
   - _Requirements: 2.5, 2.8, 8.2_
-- [ ] 3.2 Gateway guard 状態機械と lease 更新を実装する
+- [x] 3.2 Gateway guard 状態機械と lease 更新を実装する
   - proxy を起動後の唯一の guard 切替主体とし、適用中の有効ガード値 `killSwitch && transparentGatewayEnabled` に応じて BLOCK→LEASE/OFF、LEASE↔OFF を切り替える。透過ゲートウェイ無効時は Kill Switch 値にかかわらず OFF とし、停止時保証の対象外とする。
   - 健康時のみ1秒周期で4秒 timeout lease を更新し、失敗/不健康時は更新停止、batch 失敗時は状態を変えない。GET status/監査ログに状態と最終更新を示す。
   - 観測できる完了条件: 遷移表全行、API settings を初回受信・適用するまで healthy とせず boot BLOCK を維持すること、proxy 再起動時は初回 settings 適用まで既存 state を操作せず LEASE は自然失効で drop、OFF は OFF のままであること、透過有効時だけ有効値で LEASE/OFF となること、健康前の無変更、更新失敗後の失効を単体テストで確認できる。
@@ -357,3 +357,4 @@
 - 実装補助: 開発ホストの対話シェルの `rg` は関数で、`sh` スクリプトからは使えない。リポジトリのスクリプトは `grep -F` などの POSIX 道具だけを使う。仕様文書（`.kiro/specs`）をテストが読まない。
 - 2.3（host-preparation 共通方針）: 本番スクリプトに環境変数での検査回避・パス差し替えを作らない。パスは `compose/host-preparation/paths.sh`（本番値）に集約し、テストは CLI 一式を一時ディレクトリへコピーして `paths.sh` を書き換えて実行する。コマンドの差し替えは PATH の fixture だけで行う。状態ファイル・ディレクトリは symlink／通常ファイル以外を変更前に拒否し、新規作成は検証済みディレクトリ内の一時ファイルから `ln`（上書きしない）で配置する。`apply` が使うコマンドは `check` の必須コマンド一覧に含める。`apply` は boot guard（2.5）が入るまで状態初期化の後に非0で終わり、`status`/`remove` の実体は 2.8 が担当する。
 - 2.5（boot guard）: state の `boot_guard` 記録は `interface` と、保留中だけ `previous_interface` を持ち、状態は `pending`→`applied`。`status`/`remove` の統合（2.8）はこの記録を読む。guard unit は `RequiredBy=docker.service` で Docker の必須依存にし、失敗時は Docker が起動しない。実機の nft の出力（`expires` の残り時間付き要素を含む）と systemd の挙動は 7.3/7.5 で確認する。`npm run test:e2e-unit` は古い作業ツリー（`.claude/worktrees/dev-add-branch-release-workflow`）の複製テストを拾いポート競合するため、`--maxWorkers=1` で実行するか作業ツリーを整理する。
+- 3.2（Gateway guard）: `GatewayGuard.applySettings(next, applyGatewayRuleset)` は Gateway ruleset を先に適用し、その後に guard batch を適用する（両方向）。`ReconcileOutcome.succeeded`（適用と検証の成否。正常な撤去を含む）と `applied`（有効な ruleset の有無）を区別する。ruleset 適用結果は `GatewayControllerOptions.onReconcileResult` で guard の健康に反映される。`GET /net/status` に guard 状態が入り、API の `GatewayStatusSchema` を更新済み。Web の生成クライアントは 7.2 で公式手順により再生成する。3.3 は停止時の lease 削除、3.5 は `POST /settings` の 503 `guard_apply_failed` と Web 表示、4.6 は UDS listener の健康との接続を担当する。

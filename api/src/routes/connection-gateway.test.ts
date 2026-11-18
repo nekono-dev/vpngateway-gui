@@ -36,6 +36,7 @@ describe("GET /v1/connection/gateway", () => {
     const status = {
       transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
       explicitProxy: { state: "crashLoop", restartCount: 4 },
+      gatewayGuard: { state: "LEASE", healthy: true, leaseValid: true, lastUpdatedAt: "2026-11-18T00:00:00.000Z" },
     };
     fetchProxyStatusMock.mockResolvedValue(status);
 
@@ -50,6 +51,7 @@ describe("GET /v1/connection/gateway", () => {
       transparentGateway: { state: "active", killSwitchBlocking: false },
       explicitProxy: { state: "stopped", restartCount: 0 },
       dnsRelay: { state: "active", upstream: "failing", bypassEntries: 12 },
+      gatewayGuard: { state: "UNKNOWN", healthy: false, leaseValid: false, lastUpdatedAt: null },
     };
     fetchProxyStatusMock.mockResolvedValue(status);
 

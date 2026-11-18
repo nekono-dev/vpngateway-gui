@@ -96,6 +96,7 @@ describe("fetchProxyStatus", () => {
     const status = {
       transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
       explicitProxy: { state: "active", socksPort: 1080, httpPort: 3128, restartCount: 0 },
+      gatewayGuard: { state: "LEASE", healthy: true, leaseValid: true, lastUpdatedAt: "2026-11-18T00:00:00.000Z" },
     };
     requestMock.mockResolvedValue(jsonResponse(status));
 
@@ -109,6 +110,7 @@ describe("fetchProxyStatus", () => {
     const status = {
       transparentGateway: { state: "stopped", killSwitchBlocking: false },
       explicitProxy: { state: "stopped", restartCount: 0 },
+      gatewayGuard: { state: "OFF", healthy: true, leaseValid: false, lastUpdatedAt: "2026-11-18T00:00:00.000Z" },
     };
     requestMock.mockResolvedValue(jsonResponse(status));
     await expect(fetchProxyStatus()).resolves.toEqual(status);
@@ -118,6 +120,7 @@ describe("fetchProxyStatus", () => {
     const status = {
       transparentGateway: { state: "stopped", killSwitchBlocking: false },
       explicitProxy: { state: "crashLoop", restartCount: 5 },
+      gatewayGuard: { state: "UNKNOWN", healthy: false, leaseValid: false, lastUpdatedAt: null },
     };
     requestMock.mockResolvedValue(jsonResponse(status));
     await expect(fetchProxyStatus()).resolves.toEqual(status);

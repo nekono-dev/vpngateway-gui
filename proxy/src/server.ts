@@ -21,6 +21,7 @@ import { loadGatewayTlsOptions } from "./gateway-channel/tls-options.js";
 import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
 import { GatewayController } from "./network/gateway-controller.js";
+import { GatewayGuard } from "./network/gateway-guard.js";
 import { checkConnectionOnce, startConnectionMonitor } from "./network/connection-monitor.js";
 import { getLanIpv4Address, getLanSubnetCidr } from "./network/lan-subnet.js";
 import { PolicyRouting } from "./network/policy-routing.js";
@@ -63,11 +64,15 @@ const dnsRelayListenAddresses = [...(lanAddress !== undefined ? [lanAddress] : [
 // 設定の動作検証の検証名（Web UIの端末のブラウザが解決する使い捨ての名前）の登録と受信の記録。
 const checkNonces = new CheckNonceRegistry();
 
+const gatewayGuard = new GatewayGuard(LAN_IFACE ?? "", undefined, {
+  onEvent: (event) => logAuditEvent(event),
+});
 const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE, undefined, {
   policyRouting: new PolicyRouting(LAN_IFACE),
   // 3proxyはこのプロセスから起動するため、実行ユーザーが同じ。迂回の対象にするホスト自身の発信の判定に使う。
   explicitProxyUid: process.getuid?.(),
   onEvent: (event) => logAuditEvent(event),
+  onReconcileResult: ({ ok, error }) => gatewayGuard.handleGatewayReconcileResult(ok, error),
 });
 const dnsRelayController = new DnsRelayController({
   port: DNS_RELAY_PORT,
@@ -201,11 +206,22 @@ async function handleSettings(req: IncomingMessage, res: ServerResponse): Promis
   // 待受に失敗している間（ポート衝突等）は、名前解決を中継へ向ける設定（53番リダイレクト・3proxyの名前解決先）を
   // 入れない。入れると、中継が応答しないため名前解決が止まる。次回の再通知（10秒周期）で待受を再試行し、回復すれば入る。
   const relayActive = dnsRelayController.getStatus().state === "active";
-  const outcome = await gatewayController.applySettings({
+  let outcome: Awaited<ReturnType<GatewayController["applySettings"]>> | undefined;
+  const guardApplied = await gatewayGuard.applySettings({
     killSwitch: body.killSwitch,
     transparentGatewayEnabled: body.transparentGatewayEnabled,
-    dns: toGatewayDnsSettings(body, lanAddress, DNS_RELAY_PORT, relayActive),
+  }, async () => {
+    outcome = await gatewayController.applySettings({
+      killSwitch: body.killSwitch,
+      transparentGatewayEnabled: body.transparentGatewayEnabled,
+      dns: toGatewayDnsSettings(body, lanAddress, DNS_RELAY_PORT, relayActive),
+    });
+    return outcome.succeeded;
   });
+  if (!guardApplied || outcome === undefined) {
+    sendJson(res, 503, { error: "guard_apply_failed" });
+    return;
+  }
   // 明示的プロキシの起動・停止は透過ゲートウェイのnft再構成とは独立して行う。同期的に状態を更新し、
   // プロセスの起動・停止イベントは監査ログへ出力される（ExplicitProxyControllerのonEvent）。
   // 中継リゾルバが待受中なら、3proxyの名前解決も中継リゾルバ（127.0.0.1）へ向ける。
@@ -233,6 +249,7 @@ const server = createHttpsServer(loadGatewayTlsOptions(), (req, res) => {
     // 副作用なしの読み取り専用。メモリ上の状態のみを返す。
     sendJson(res, 200, {
       transparentGateway: gatewayController.getStatus(),
+      gatewayGuard: gatewayGuard.getStatus(),
       explicitProxy: explicitProxyController.getStatus(),
       dnsRelay: dnsRelayController.getStatus(),
       lanCidr,
