@@ -19,6 +19,7 @@ compose/gateway-entrypoint.sh
 compose/host-preparation/boot-guard.sh
 compose/host-preparation/common.sh
 compose/host-preparation/docker-forward.sh
+compose/host-preparation/docker-install.sh
 compose/host-preparation/host-reboot.sh
 compose/host-preparation/paths.sh
 compose/host-preparation/remove.sh

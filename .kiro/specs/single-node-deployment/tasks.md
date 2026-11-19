@@ -281,7 +281,7 @@
   - _Boundary: Host Preparation CLI, Docker Install, Docker Forward, state orchestration_
   - _Depends: 7.3, 2.9_
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.9, 2.14, 2.15, 2.16, 6.5_
-- [ ] 7.5 README に Docker 前提・導入分岐・運用制約を反映する
+- [x] 7.5 README に Docker 前提・導入分岐・運用制約を反映する
   - README の記述だけを担当し、対応する Docker 配布元、Docker CE 28 未満だけの更新、標準版28未満は apply でも更新しないこと、Debian 12 の Compose 導入制約、Docker/Compose/追加 repository は remove で撤去しないこと、自動 rollback をしないことを導入手順と合わせて説明する。
   - 観測できる完了条件: README の新規導入手順と各制約が実装契約に整合し、文面レビューで運用者が手順と制約を正しく理解できる。README 契約検査の追加・更新・最終実行は 7.7 が担当する。
   - _Boundary: README documentation_
@@ -294,7 +294,7 @@
   - _Boundary: Docker Install verification_
   - _Depends: 7.3, 7.4_
   - _Requirements: 2.1, 2.10, 2.11, 2.12, 2.13, 2.14, 7.6_
-- [ ] 7.7 Compose bundle と README の配布検査を更新する
+- [x] 7.7 Compose bundle と README の配布検査を更新する
   - `scripts/bundle-manifest.txt` に Docker install/common 関連スクリプトと必要テスト実行資材を追加し、bundle 展開後にも apply が成立する構成を検査する。
   - `scripts/test-compose-bundle.sh` と `scripts/test-readme-contract.sh` を更新し、新規スクリプトの manifest 収録、実行権限/呼出関係、Docker 導入文書の契約を検査する。README 契約検査の最終実行も本タスクで行う。
   - 観測できる完了条件: `sh scripts/test-compose-bundle.sh` と `sh scripts/test-readme-contract.sh` が成功し、bundle 内で manifest 対象が欠落しない。

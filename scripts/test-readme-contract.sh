@@ -39,6 +39,13 @@ check_readme() {
   contains '明示的プロキシだけを使う場合、停止時の通信遮断は保証されません'
   contains '旧方式からの移行・互換対応・保存データの引き継ぎには対応しません'
   contains '永続データを削除します。管理者アカウント'
+  contains '同意'
+  contains '`--yes`'
+  contains '自動では元に戻さず'
+  contains '撤去しません'
+  contains '自動更新せず'
+  contains 'docker-compose-plugin'
+  contains 'Docker 公式配布元'
 
   if grep -F 'docker compose pull' "$readme" >/dev/null; then
     fail 'docker compose pull を手順に含めないでください'
@@ -89,6 +96,30 @@ fi
 sed '/sudo docker compose -p vpngwgui config --quiet$/d' "$readme" >"$temporary_dir/missing-install-config.md"
 if (check_readme "$temporary_dir/missing-install-config.md") >/dev/null 2>&1; then
   fail '初回導入節から config を除いた README を拒否できません'
+fi
+sed '/同意/d' "$readme" >"$temporary_dir/missing-docker-consent.md"
+if (check_readme "$temporary_dir/missing-docker-consent.md") >/dev/null 2>&1; then
+  fail 'Docker/Compose 導入の同意説明を除いた README を拒否できません'
+fi
+sed '/`--yes`/d' "$readme" >"$temporary_dir/missing-yes.md"
+if (check_readme "$temporary_dir/missing-yes.md") >/dev/null 2>&1; then
+  fail '--yes の説明を除いた README を拒否できません'
+fi
+sed '/撤去しません/d' "$readme" >"$temporary_dir/missing-remove-contract.md"
+if (check_readme "$temporary_dir/missing-remove-contract.md") >/dev/null 2>&1; then
+  fail 'remove の Docker 非撤去説明を除いた README を拒否できません'
+fi
+sed '/自動更新せず/d' "$readme" >"$temporary_dir/missing-os-standard-version.md"
+if (check_readme "$temporary_dir/missing-os-standard-version.md") >/dev/null 2>&1; then
+  fail 'OS 標準版 Docker の自動更新制約を除いた README を拒否できません'
+fi
+sed '/docker-compose-plugin/d' "$readme" >"$temporary_dir/missing-debian-12-repository.md"
+if (check_readme "$temporary_dir/missing-debian-12-repository.md") >/dev/null 2>&1; then
+  fail 'Debian 12 の Compose 導入説明を除いた README を拒否できません'
+fi
+sed '/自動では元に戻さず/d' "$readme" >"$temporary_dir/missing-no-rollback.md"
+if (check_readme "$temporary_dir/missing-no-rollback.md") >/dev/null 2>&1; then
+  fail '失敗時の自動 rollback なし説明を除いた README を拒否できません'
 fi
 
 printf '%s\n' 'README contract and negative self-tests: OK'

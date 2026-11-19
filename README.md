@@ -12,7 +12,25 @@ VPN 接続を複数の LAN 機器で共有するための Web 管理画面付き
 | ホスト機能 | nftables と systemd が必要。起動時の Kill Switch guard を適用・確認できない環境は非対応 |
 | 非対応 | rootless Docker、リモート Docker Engine、複数ホストへの分離配置 |
 
-Docker 28 以降と Compose plugin は事前に導入してください。ホスト準備処理は Docker を導入・更新しません。`apply` は Docker が管理する FORWARD chain の DROP policy が LAN forwarding を遮断しないように、`/etc/docker/daemon.json` が存在しない場合だけ `{"ip-forward-no-drop": true}` を作成して Docker を再起動します。既存ファイルは変更しません。既存ファイルにこのキーがない場合は、運用者が設定を追加して Docker を再起動してください。
+`check` はホスト設定を変更せず、OS・権限・必要コマンド・LAN interface・Docker の状態を確認します。Docker 未導入、Docker 公式版の 28 未満、Compose plugin の不足は `apply` で解消できる項目として表示します。OS 標準 Docker が 28 未満、rootless Docker、対応外 OS など、自動で解消できない状態は失敗として表示します。必要コマンド、LAN interface、権限などの前提条件を満たさない場合も失敗します。
+
+`apply` は Docker と Compose plugin の状態を先に整え、その後にホスト設定を適用します。Docker または Compose plugin の導入・更新が必要な場合は、内容を表示して同意を求めます。同意しない場合、または対話端末がなく `--yes` も指定されていない場合は、Docker 以外のホスト設定を変更せず中止します。端末のない自動実行では `--yes` を指定してください。`--yes` は同意の問い合わせを省略します。同意前の中止では何も変更しません。Docker 処理の途中で失敗した場合は自動では元に戻さず、失敗した段階と手動で確認する事項を表示します。
+
+| apply 開始時の Docker 状態 | `apply` の動作 |
+|---|---|
+| 未導入 | `https://get.docker.com` から公式導入スクリプトを取得し、取得元・取得内容の SHA-256・Docker Engine と関連パッケージ（Compose plugin を含む）の導入内容を表示して同意後に実行します。取得には `curl` を優先し、なければ `wget` を使います。どちらもなければ、`curl` と CA 証明書の導入にも同意を得てから取得します。 |
+| Docker 公式版（`docker-ce`）が 28 未満 | 公式導入スクリプトで更新します。Docker と稼働中コンテナが再起動され、スクリプトは既存 Docker の検出後に約20秒待機して続行することを表示して同意を求めます。 |
+| OS 標準版（`docker-ce` 以外）が 28 未満 | 自動更新せず中止します。Docker を手動で更新してから再度確認してください。 |
+| 28 以上 | Docker の導入・更新には触れません。 |
+
+| Compose plugin の状態（Docker Engine 28 以上） | `apply` の動作 |
+|---|---|
+| Docker 公式版 | Docker 公式配布元の `docker-compose-plugin` を同意後に導入します。 |
+| Ubuntu 標準版 `docker.io` | Ubuntu 標準配布元の `docker-compose-v2` を同意後に導入します。 |
+| Debian 12 標準版 `docker.io` | Docker 公式配布元を追加して `docker-compose-plugin` のみを導入します。Docker 本体は更新しません。 |
+| 上記以外 | 自動導入せず中止し、手動導入を案内します。 |
+
+Docker と Compose plugin の再検査に成功した後、`apply` は sysctl、boot guard、Docker forwarding 設定を適用します。Docker が管理する FORWARD chain の DROP policy が LAN forwarding を遮断しないように、`/etc/docker/daemon.json` が存在しない場合だけ `{"ip-forward-no-drop": true}` を作成して Docker を再起動します。既存ファイルは変更しません。既存ファイルにこのキーがない場合は、運用者が設定を追加して Docker を再起動してください。
 
 ## 配布物の取得
 
@@ -62,14 +80,15 @@ VPN_PROVIDERS=adguardvpn
 | `ip-forward-no-drop: true` 設定済み | policy が DROP の場合だけ Docker を再起動 |
 | 設定キーなしの既存ファイル | 変更せず失敗。運用者がキーを追加して Docker を再起動 |
 
-`remove` は製品が作成した内容と完全一致する daemon.json だけを削除します。削除後の設定を反映する Docker 再起動は運用者が行ってください。
+`remove` は製品が作成した内容と完全一致する daemon.json だけを削除します。削除後の設定を反映する Docker 再起動は運用者が行ってください。Docker Engine、Compose plugin、追加した Docker 公式配布元は撤去しません。必要なら運用者が手動で撤去してください。
 
-```sh
-sudo compose/host-preparation.sh check
-sudo compose/host-preparation.sh apply
-sudo docker compose -p vpngwgui config --quiet
-sudo docker compose -p vpngwgui up -d --build
-```
+| コマンド | 効果 |
+|---|---|
+| `sudo compose/host-preparation.sh check` | ホストの前提条件を読み取り専用で確認します。 |
+| `sudo compose/host-preparation.sh apply` | 必要な同意を得て Docker/Compose を整え、ホスト設定を適用します。 |
+| `sudo compose/host-preparation.sh apply --yes` | 同意の問い合わせを省略して Docker/Compose とホスト設定を適用します。端末のない自動実行ではこの指定が必要です。 |
+| `sudo docker compose -p vpngwgui config --quiet` | Compose 設定を検査し、問題があれば起動前に終了します。 |
+| `sudo docker compose -p vpngwgui up -d --build` | イメージを構築し、選択したサービスをバックグラウンドで起動します。 |
 
 `config --quiet` が設定エラーを返した場合は `up` を実行せず、`.env` と選択した Compose fragment を修正してください。boot guard の適用または確認が失敗した環境はサポート対象外です。
 
