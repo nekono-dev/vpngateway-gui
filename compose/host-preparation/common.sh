@@ -1,5 +1,5 @@
 #!/bin/sh
-# 責務: 対応 OS、実行権限、コマンド、Docker、nft、LAN interface の前提を検査する
+# 責務: Docker 非依存の OS、実行権限、コマンド、nft、LAN interface の前提を検査する
 # shellcheck disable=SC2154
 
 hp_error() {
@@ -51,41 +51,9 @@ hp_check_prerequisites() {
   failed=0
   if hp_os_supported; then printf '%s\n' 'OK: 対応 OS'; else printf '%s\n' 'NG: Debian 12+ または Ubuntu 22.04+ が必要です' >&2; failed=1; fi
   if [ "$(id -u)" -eq 0 ]; then printf '%s\n' 'OK: root'; else printf '%s\n' 'NG: root で実行してください' >&2; failed=1; fi
-  for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sleep sort stat sysctl systemctl tr docker; do
+  for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sleep sort stat sysctl systemctl tr ; do
     if command -v "$command" >/dev/null 2>&1; then :; else printf 'NG: 必要コマンドがありません: %s\n' "$command" >&2; failed=1; fi
   done
-  if command -v docker >/dev/null 2>&1; then
-    # Docker Engine info に接続先の local/remote を確実に示す属性がないため、CLI の endpoint を判定する。
-    if [ "${DOCKER_HOST+x}" = x ]; then
-      docker_endpoint=$DOCKER_HOST
-    elif docker_endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null); then
-      :
-    else
-      docker_endpoint=
-    fi
-    case "$docker_endpoint" in
-      unix:///*)
-        if docker info --format '{{json .SecurityOptions}}' 2>/dev/null | grep -qi rootless; then
-          printf '%s\n' 'NG: rootless Docker はサポート対象外です' >&2
-          failed=1
-        elif docker info >/dev/null 2>&1; then
-          printf '%s\n' 'OK: rootful Docker Engine'
-        else
-          printf '%s\n' 'NG: Docker Engine に接続できません' >&2
-          failed=1
-        fi
-        ;;
-      '')
-        printf '%s\n' 'NG: Docker endpoint を確認できません' >&2
-        failed=1
-        ;;
-      *)
-        printf '%s\n' 'NG: Docker endpoint はローカルの unix:// socket である必要があります' >&2
-        failed=1
-        ;;
-    esac
-    if docker compose version >/dev/null 2>&1; then printf '%s\n' 'OK: Docker Compose plugin'; else printf '%s\n' 'NG: Docker Compose plugin が必要です' >&2; failed=1; fi
-  fi
   if command -v nft >/dev/null 2>&1; then
     if printf 'add table inet vpngwgui_host_preparation_check_%s\n' "$$" | nft -c -f - >/dev/null 2>&1; then
       printf '%s\n' 'OK: nftables 構文検査'

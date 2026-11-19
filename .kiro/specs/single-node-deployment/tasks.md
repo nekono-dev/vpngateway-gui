@@ -250,14 +250,14 @@
 
 ## 7. Docker 導入対応とホスト準備の統合
 - [ ] 7. Docker/Compose 導入を含む host-preparation を実装し検証する
-- [ ] 7.1 CLI 引数と Docker 非依存の前提検査を分離する
+- [x] 7.1 CLI 引数と Docker 非依存の前提検査を分離する
   - `apply [--yes]` だけを受け付け、`--yes` は `apply` の後ろに限る。他の操作・位置・重複・余分な引数は usage error 2 とする。
   - `/dev/tty` から同意を取得し、stdin のリダイレクトを対話同意と誤認しない。tty がなく `--yes` もない場合は変更前に非0終了し `--yes` を案内する。
   - `common.sh` に OS/root/Docker 非依存コマンド/LAN_IFACE/nft 検査を集約し、Docker/Compose/version/rootful 検査を分離する。
   - 観測できる完了条件: CLI の引数表と tty の有無ごとの終了コード・出力がテストされ、Docker 未導入時も静的検査が Docker 検査と独立して実行される。
   - _Boundary: Host Preparation CLI, common preconditions_
   - _Requirements: 2.1, 2.13_
-- [ ] 7.2 Docker 配布元・版・Compose 状態を読み取り専用で判定する
+- [x] 7.2 Docker 配布元・版・Compose 状態を読み取り専用で判定する
   - Docker CE、OS 標準 docker.io、併存・その他・判定不能を区別し、daemon 稼働時と停止時の Engine 実効版、rootless/remote endpoint、Compose plugin を診断する。
   - Docker 未導入、対応する docker-ce 28 未満、対応配布元の Compose 欠落は apply 解消候補として check を合格扱いする。rootless、remote、曖昧な配布元、標準版28未満は不合格とする。
   - 観測できる完了条件: 判定 fixture の各組合せで check の終了コード、機械判定値、説明が要件どおりで、check はホスト状態を変更しない。
