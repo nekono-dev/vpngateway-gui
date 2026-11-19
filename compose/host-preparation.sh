@@ -38,25 +38,54 @@ hp_load_docker_os() {
   export hp_docker_os_id hp_docker_os_version
 }
 
+hp_report_docker() {
+  hp_load_docker_os
+  hp_cli_docker_action=$(hp_docker_assess) || hp_cli_docker_action=unsupported
+  hp_cli_docker_source=未導入
+  hp_cli_ce=$(hp_docker_package_status docker-ce 2>/dev/null || :)
+  hp_cli_io=$(hp_docker_package_status docker.io 2>/dev/null || :)
+  if [ -n "$hp_cli_ce" ]; then hp_cli_docker_source=Docker公式
+  elif [ -n "$hp_cli_io" ]; then hp_cli_docker_source=OS標準
+  elif [ "$hp_cli_docker_action" = unsupported ]; then hp_cli_docker_source=判定不能
+  fi
+  case "$hp_cli_docker_action" in
+    ready)
+      hp_cli_docker_version=$(hp_docker_engine_version 2>/dev/null || printf '%s' unknown)
+      printf 'Docker: 配布元=%s Engine=%s Compose plugin=利用可能 apply 対処=なし\n' "$hp_cli_docker_source" "$hp_cli_docker_version"
+      ;;
+    install) printf '%s\n' 'Docker 未導入: 配布元=未導入 Engine=なし Compose plugin=未確認 apply 対処=Docker Engine と Compose plugin を同意のうえ導入' ;;
+    upgrade)
+      hp_cli_docker_version=$(hp_docker_engine_version 2>/dev/null || printf '%s' unknown)
+      printf 'Docker: 配布元=%s Engine=%s Compose plugin=要確認 apply 対処=Docker 公式版を28以上へ更新\n' "$hp_cli_docker_source" "$hp_cli_docker_version"
+      ;;
+    compose)
+      hp_cli_docker_version=$(hp_docker_engine_version 2>/dev/null || printf '%s' unknown)
+      printf 'Docker: 配布元=%s Engine=%s Compose plugin=欠落 apply 対処=対応配布元から導入\n' "$hp_cli_docker_source" "$hp_cli_docker_version"
+      ;;
+    *) printf '%s\n' 'Docker: 配布元=判定不能 Engine=判定不能 Compose plugin=判定不能 apply 対処=自動処理不可' ;;
+  esac
+  return 0
+}
+
 case "$command_name" in
   check)
     hp_check_prerequisites || exit 1
     hp_load_docker_os
     docker_action=$(hp_docker_assess) || exit 1
+    hp_report_docker
     case "$docker_action" in
       unsupported) printf '%s\n' 'NG: Docker の状態を自動解消できません' >&2; exit 1 ;;
-      install) printf '%s\n' 'OK: Docker 未導入（apply が同意のうえ導入します）' ;;
-      upgrade) printf '%s\n' 'OK: docker-ce 28 未満（apply が同意のうえ更新します）' ;;
-      compose) printf '%s\n' 'OK: Compose plugin 欠落（apply が同意のうえ導入します）' ;;
-      ready) printf '%s\n' 'OK: Docker Engine と Compose plugin' ;;
+      install|upgrade|compose|ready) printf 'OK: Docker action=%s\n' "$docker_action" ;;
     esac
     hp_check_host_reboot_accounts || exit 1
     if [ "$docker_action" = ready ]; then hp_check_docker_forward || exit 1; fi
     ;;
   apply)
-    hp_check_prerequisites || hp_error '前提条件を満たさないため apply を中止しました.'
+    hp_check_prerequisites || hp_error '前提条件を満たさないため apply を中止しました。'
     hp_load_docker_os
-    hp_docker_prepare_gate "$apply_yes" || hp_error 'Docker が利用可能でないため apply を中止しました。Docker 以外のホスト設定は変更していません。'
+    hp_docker_prepare "$apply_yes" || hp_error 'Docker の準備に失敗したため apply を中止しました。Docker 以外のホスト設定は変更していません。'
+    docker_action=$(hp_docker_assess) || docker_action=unsupported
+    [ "$docker_action" = ready ] || hp_error 'Docker の再検査に失敗しました。Docker 以外のホスト設定は変更していません。'
     hp_check_host_reboot_accounts || hp_error 'UID/GID 10001 が予約済みのため apply を中止しました。'
     hp_state_initialize || hp_error '所有状態を初期化できないため apply を中止しました。'
     hp_apply_sysctl || hp_error 'sysctl の適用に失敗しました。部分適用状態を確認してください。'
@@ -78,6 +107,13 @@ case "$command_name" in
     [ -r "$handler" ] || hp_error "$command_name の所有状態処理が利用できません。"
     # shellcheck disable=SC1090
     . "$handler"
-    "hp_$command_name"
+    if [ "$command_name" = status ]; then
+      hp_report_docker
+      hp_status
+    else
+      if hp_remove; then hp_remove_result=0; else hp_remove_result=$?; fi
+      printf '%s\n' 'Docker・Compose plugin・追加した配布元は残ります。必要なら手動で撤去してください'
+      exit "$hp_remove_result"
+    fi
     ;;
 esac

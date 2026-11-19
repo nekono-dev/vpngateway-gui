@@ -332,3 +332,26 @@ cmp "$state_dir/state.json" <<'EOF'
 EOF
 grep -Eq 'host-preparation:|boot guard|sysctl' "$temporary/state-concurrent.out"
 
+# remove は state の有無・解除成功・state 検査失敗の全経路で Docker 残置を案内する。
+state_dir="$temporary/remove-absent"
+configure_paths
+PATH="$fixtures:/usr/bin:/bin:/usr/sbin:/sbin" sh "$cli" remove >"$temporary/remove-absent.out" 2>&1
+grep -Fq 'Docker・Compose plugin・追加した配布元は残ります。必要なら手動で撤去してください' "$temporary/remove-absent.out"
+state_dir="$temporary/remove-success"
+configure_paths
+mkdir -m 0700 "$state_dir"
+printf '%s\n' '{"version":1}' > "$state_dir/state.json"
+chmod 0600 "$state_dir/state.json"
+PATH="$fixtures:/usr/bin:/bin:/usr/sbin:/sbin" sh "$cli" remove >"$temporary/remove-success.out" 2>&1
+grep -Fq 'Docker・Compose plugin・追加した配布元は残ります。必要なら手動で撤去してください' "$temporary/remove-success.out"
+state_dir="$temporary/remove-failure"
+configure_paths
+mkdir -m 0700 "$state_dir"
+printf '%s\n' '{invalid' > "$state_dir/state.json"
+chmod 0600 "$state_dir/state.json"
+if PATH="$fixtures:/usr/bin:/bin:/usr/sbin:/sbin" sh "$cli" remove >"$temporary/remove-failure.out" 2>&1; then
+  printf '%s\n' 'remove accepted invalid ownership state' >&2
+  exit 1
+fi
+grep -Fq 'Docker・Compose plugin・追加した配布元は残ります。必要なら手動で撤去してください' "$temporary/remove-failure.out"
+

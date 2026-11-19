@@ -273,7 +273,7 @@
   - _Boundary: Docker Install_
   - _Depends: 7.2_
   - _Requirements: 2.10, 2.11, 2.12, 2.13, 2.14_
-- [ ] 7.4 apply の処理順と check/status/remove 表示を統合する
+- [x] 7.4 apply の処理順と check/status/remove 表示を統合する
   - apply を静的検査 → Docker 判定/同意/導入 → Docker 再検査 → UID/GID 予約確認 → state 初期化 → sysctl → boot guard → reboot 基盤 → daemon forwarding の順にする。前段失敗時は後続変更へ進めない。
   - check/status は 7.2 の読み取り専用判定結果を統合して表示する。daemon.json の所有状態と実効 FORWARD policy は既存 `docker-forward.sh` の機能から取得して表示し、新たな判定ロジックを作らない。
   - remove は Docker、Compose plugin、追加 apt repository を撤去せず、Docker が残ることと必要なら手動撤去する案内を常に表示する。

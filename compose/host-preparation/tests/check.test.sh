@@ -28,7 +28,7 @@ hp_host_reboot_enable_link_path='$temporary/reboot.enabled'
 hp_host_reboot_spool_dir='$temporary/spool'
 EOF
 
-for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mv nft readlink rm rmdir sed sleep sort stat sysctl systemctl tr sha256sum; do
+for command in awk cat chmod chown cmp dirname grep head id ip ln mkdir mktemp mv nft readlink rm rmdir sed sleep sort stat sysctl systemctl tr sha256sum; do
   command_path=$(command -v "$command")
   ln -s "$command_path" "$base/$command"
 done
@@ -164,7 +164,7 @@ PATH="$base" /usr/bin/env HP_DOCKER_TTY="$temporary/no-tty" /bin/sh "$tree/compo
 result=$?
 set -e
 [ "$result" -ne 0 ]
-grep -Fq '必要な対処: Docker Engine と Compose plugin を導入します。' "$temporary/yes.out"
+grep -Fq 'Docker Engine と関連パッケージ（Compose plugin 含む）を導入します。' "$temporary/yes.out"
 grep -Fq 'Docker 以外のホスト設定は変更していません' "$temporary/yes.out"
 [ ! -e "$temporary/state" ]
 
