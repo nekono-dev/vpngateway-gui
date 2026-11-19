@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { filterLocations, type LocationItem } from "./location-filter";
 import { findCurrentLocationId, resolveEffectiveId } from "./current-location";
 
-const location = (id: string, country: string, countryName: string, city: string, favorite = false): LocationItem => ({
-  id, country, countryName, city, favorite, lastConnected: false, pingMs: 1,
+const location = (id: string, country: string, countryName: string, city: string, favorite = false): LocationItem & { city: string; pingMs: number } => ({
+  id, country, countryName, city, hasServerStage: true, favorite, lastConnected: false, pingMs: 1,
 });
 const LOCATIONS = [
   location("jp-tokyo", "jp", "Japan", "Tokyo", true),

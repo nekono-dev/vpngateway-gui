@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 import { LocationRow } from "./LocationRow";
 import type { LocationItem } from "../../locations/location-filter";
 
-const base: LocationItem = { id: "gb-london", country: "gb", countryName: "United Kingdom", city: "London", favorite: false, lastConnected: false };
+const base: LocationItem & { city: string } = { id: "gb-london", country: "gb", countryName: "United Kingdom", city: "London", hasServerStage: true, favorite: false, lastConnected: false };
 
-function renderRow(location: LocationItem, showPing = false) {
+function renderRow(location: LocationItem) {
   return render(
-    <LocationRow location={location} selected={false} current={false} disabled={false} showPing={showPing} onSelect={() => {}} onToggleFavorite={() => {}} />,
+    <LocationRow location={location} selected={false} current={false} disabled={false} showPing={false} onSelect={() => {}} onToggleFavorite={() => {}} />,
   );
 }
 

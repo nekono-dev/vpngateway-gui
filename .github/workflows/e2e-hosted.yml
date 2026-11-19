@@ -1,10 +1,8 @@
 # hosted runner の E2E（e2e-tests）。npm run test:e2e（sh e2e/hosted/run.sh）を、GitHub-hosted runner で実行する。
-# 検証のための実行（feat/e2e-tests への push と手動実行）。cicd の spec で、main への組み込みを決める。
+# hosted E2E は実行時間が長いため、GitHub Actions から手動実行する。
 name: e2e-hosted
 
 on:
-  push:
-    branches: [feat/e2e-tests]
   workflow_dispatch:
     inputs:
       intentional_failure:

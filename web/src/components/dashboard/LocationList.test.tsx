@@ -7,8 +7,8 @@ import { describe, expect, it, vi } from "vitest";
 import { LocationList } from "./LocationList";
 import type { LocationItem } from "../../locations/location-filter";
 
-const item = (id: string, country: string, countryName: string, city: string, pingMs: number | undefined, extra = {}): LocationItem => ({
-  id, country, countryName, city, pingMs, favorite: false, lastConnected: false, ...extra,
+const item = (id: string, country: string, countryName: string, city: string, pingMs: number | undefined, extra = {}): LocationItem & { city: string; pingMs?: number } => ({
+  id, country, countryName, city, pingMs, hasServerStage: true, favorite: false, lastConnected: false, ...extra,
 });
 const LOCATIONS = [
   item("jp-tokyo", "jp", "Japan", "Tokyo", 4, { favorite: true }),

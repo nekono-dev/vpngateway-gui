@@ -6,6 +6,10 @@ import type { GetV1ConnectionLocations200Item } from "../generated/api/endpoints
 export type LocationItem = GetV1ConnectionLocations200Item;
 export type LocationTab = "all" | "favorites";
 
+function optionalCity(location: LocationItem): string | undefined {
+  return "city" in location && typeof location.city === "string" ? location.city : undefined;
+}
+
 /**
  * 目的: 接続先の表示名を返す。都市を持たない接続先（国単位の一覧）は国名にする。
  * 入力: location(APIが返した接続先)。
@@ -14,7 +18,7 @@ export type LocationTab = "all" | "favorites";
  *     locationLabel({ countryName: "Japan", ... }) // => "Japan"
  */
 export function locationLabel(location: LocationItem): string {
-  return location.city ?? location.countryName;
+  return optionalCity(location) ?? location.countryName;
 }
 
 /**
@@ -29,7 +33,7 @@ export function filterLocations(locations: LocationItem[], tab: LocationTab, que
   const terms = query.toLowerCase().split(/\s+/).filter((term) => term.length > 0);
   return locations.filter((location) => {
     if (tab === "favorites" && !location.favorite) return false;
-    const haystack = `${location.country} ${location.countryName} ${location.city ?? ""}`.toLowerCase();
+    const haystack = `${location.country} ${location.countryName} ${optionalCity(location) ?? ""}`.toLowerCase();
     return terms.every((term) => haystack.includes(term));
   });
 }
