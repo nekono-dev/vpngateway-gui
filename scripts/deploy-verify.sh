@@ -149,4 +149,10 @@ cleanup_lab() { remote_ssh "rm -f '$remote_bundle'" >/dev/null 2>&1 || true; rm 
 trap cleanup_lab EXIT HUP INT TERM
 printf '== lab prerequisite check: %s (%s)\n' "$VERIFY_HOST" "$VERIFY_LAB"
 remote_scp "$bundle_file" "$VERIFY_USER@$VERIFY_HOST:$remote_bundle"
-remote_ssh "lxc file push '$remote_bundle' '$VERIFY_LAB/tmp/vpngwgui-verify.tar.gz' && lxc exec '$VERIFY_LAB' -- sh -c 'set -eu; mkdir -p /root/vpngwgui; tar -xzf /tmp/vpngwgui-verify.tar.gz -C /root/vpngwgui --strip-components=1; rm -f /tmp/vpngwgui-verify.tar.gz; cd /root/vpngwgui; sh compose/host-preparation.sh check; docker compose -p vpngwgui config --quiet; echo PASS lab prerequisite and Compose config'"
+remote_ssh "lxc file push '$remote_bundle' '$VERIFY_LAB/tmp/vpngwgui-verify.tar.gz' && lxc exec '$VERIFY_LAB' -- sh -c 'set -eu; mkdir -p /root/vpngwgui; tar -xzf /tmp/vpngwgui-verify.tar.gz -C /root/vpngwgui --strip-components=1; rm -f /tmp/vpngwgui-verify.tar.gz'"
+if remote_ssh "lxc exec '$VERIFY_LAB' -- sh -s" < "$root/scripts/deploy-verify-lab-check.sh"; then
+  printf '%s\n' 'PASS lab: all prerequisite checks passed (host-preparation and Compose config)'
+else
+  printf '%s\n' 'FAIL lab: one or more prerequisite checks failed (host-preparation or Compose config)' >&2
+  exit 1
+fi

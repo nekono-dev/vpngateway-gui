@@ -6,6 +6,39 @@ root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
+mkdir "$tmp/bin"
+cat > "$tmp/bin/sh" <<'FAKE_SH'
+#!/bin/sh
+if [ "$1" = compose/host-preparation.sh ] && [ "$2" = check ]; then
+  test -f .env || exit 21
+  grep -qx 'LAN_IFACE=lo' .env || grep -qx 'LAN_IFACE=existing0' .env || exit 22
+  exit "${FAKE_CHECK_STATUS:-0}"
+fi
+exec /bin/sh "$@"
+FAKE_SH
+cat > "$tmp/bin/docker" <<'FAKE_DOCKER'
+#!/bin/sh
+test "$*" = 'compose -p vpngwgui config --quiet' || exit 31
+test -f .env || exit 32
+FAKE_DOCKER
+chmod +x "$tmp/bin/sh" "$tmp/bin/docker"
+mkdir "$tmp/no-env"
+if PATH="$tmp/bin:$PATH" sh "$root/scripts/deploy-verify-lab-check.sh" "$tmp/no-env"; then :; else
+  printf '%s\n' 'lab checker failed without an existing .env' >&2
+  exit 1
+fi
+[ ! -e "$tmp/no-env/.env" ] || { printf '%s\n' 'temporary .env was not removed' >&2; exit 1; }
+mkdir "$tmp/with-env"
+printf '%s\n' 'LAN_IFACE=existing0' 'CUSTOM=value' > "$tmp/with-env/.env"
+cp "$tmp/with-env/.env" "$tmp/original-env"
+PATH="$tmp/bin:$PATH" sh "$root/scripts/deploy-verify-lab-check.sh" "$tmp/with-env"
+cmp "$tmp/original-env" "$tmp/with-env/.env"
+if PATH="$tmp/bin:$PATH" FAKE_CHECK_STATUS=1 sh "$root/scripts/deploy-verify-lab-check.sh" "$tmp/no-env" >/dev/null 2>&1; then
+  printf '%s\n' 'lab checker unexpectedly passed failed host-preparation check' >&2
+  exit 1
+fi
+[ ! -e "$tmp/no-env/.env" ] || { printf '%s\n' 'temporary .env remained after failure' >&2; exit 1; }
+
 if ! (cd "$root" && env -i PATH="$PATH" HOME="${HOME:-/tmp}" sh scripts/deploy-verify.sh static); then
   printf '%s\n' 'deploy-verify static が失敗しました' >&2
   exit 1

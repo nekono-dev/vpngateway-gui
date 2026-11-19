@@ -6,6 +6,8 @@
 
 開発ホストからの task 7.2 `scripts/deploy-verify.sh lab` は `VERIFY_HOST`（この環境では `192.168.3.240`）、`VERIFY_USER`（既定 `ubuntu`）、`VERIFY_LAB`（既定 `acc-vpngwgui`）を環境変数から受け取る。開発用設定例は `scripts/deploy-verify.env.example` にあり、配布 `.env.example` には含めない。`VERIFY_SSH_PASSWORD` は必要時のみ環境変数で指定し、プロセス引数・ファイル・記録へ出さない。
 
+lab phase は bundle 展開後に `host-preparation.sh check` と Compose config の前提検査だけを行い、apply / up は実行しない。container 内 bundle に `.env` がない場合、静的 check 用に `LAN_IFACE=lo` だけの一時 `.env` を作る（実際の LAN_IFACE は LAN topology 準備後の受入時に選ぶ）; 終了時に削除する。既存 `.env` は変更せず、その `LAN_IFACE` を使う。終了表示で前提検査全体の成否を明示する。
+
 接続先は `ubuntu@192.168.3.240`。接続認証情報は既存の利用者側 SSH 設定から取得し、この文書、コマンド引数、結果記録へ書かない。以降は開発ホスト上で次を定義して `$SSH` / `$SCP` を使う。
 
 ```sh
