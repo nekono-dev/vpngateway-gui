@@ -166,7 +166,7 @@
   - _Boundary: E2E_
   - _Depends: 2.1, 2.2, 4.1, 4.2, 4.4, 4.5, 4.6_
   - _Requirements: 1.1, 1.2, 6.1, 6.2, 6.3, 6.4, 6.7, 8.3, 8.5_
-- [ ] 5.3 hosted VPN 操作シナリオを新しい到達経路に更新する
+- [x] 5.3 hosted VPN 操作シナリオを新しい到達経路に更新する
   - hosted API 呼び出しを Web 公開 origin `/api` 経由にし、管理者認証、runner allowlist 拒否を維持する。mock VPN 操作としてベンダー切替、接続・切断、都市・サーバー選択、お気に入り、距離順を列挙して検証する。Gateway の通信経路・転送シナリオは 5.7 が所有する。
   - 実 VPN 資格情報を hosted CI の環境・secret・artifact に渡さない。
   - 観測できる完了条件: hosted E2E が default HTTP/no-cert 構成で login、上記の mock VPN 操作の各項目を完了し、Gateway 通信シナリオを重複して扱わず、結果が項目ごとに記録される。
@@ -370,3 +370,4 @@
 - 2.7（再起動要求の配線）: proxy の `requestHostReboot()` は、同じディレクトリに隠し一時ファイル（`.reboot-request.tmp.<数字>.<32 桁の hex>`、`O_EXCL|O_NOFOLLOW`・mode 0600）へ固定内容を書いて fsync し、排他的なハードリンクで `reboot-request` として公開する（先に存在すれば already-requested）。proxy は自分の古い一時ファイル（60 秒超）を次の要求で片付ける。ホスト準備の precheck/remove/status は、この名前の形に完全一致する通常ファイル（所有者 10001・mode 0600）だけを製品所有の残骸として片付け可能と扱い、それ以外は競合のまま。root Compose の proxy だけが `/var/lib/vpngwgui-host-ctl` を `/var/run/vpngw-host-ctl` に mount する。`package.json` の `test:e2e-unit` は `.claude` と `node_modules` を除外する（古い作業ツリーの複製テストとのポート競合を避けるため）。実機の systemd・Docker 動作は 7.5。
 - 5.1（E2E 共通 API client）: `e2e/common/api-client.ts` の `createApiClient` は Web origin（HTTP/HTTPS はスキームで選ぶ）の `/api/v1` に要求し、HTTPS の CA は任意の Web CA（未指定は標準 trust store。自己署名は拒否）。API CA への依存はない。既存の呼び出し側は、API の origin と API CA のパスを渡す旧い形のままで、5.2〜5.6 が移行する: `e2e/hosted/fixtures/stack.ts`・`e2e/hosted/specs/api/auth.spec.ts`・hosted の他の spec は 5.2/5.3/5.7（Web 公開 origin の `/api` 経由へ）、`e2e/vendor-live/lib/prepare.ts`・`config.ts` は 5.6。それまで hosted E2E は新旧の混在で動かない（5.2 が fixture を Compose 方式にするまでの途中状態）。
 - 5.2（hosted の Compose fixture）: `e2e/hosted/fixtures/compose.ts` が全操作に `-p vpngwgui` を付け（`COMPOSE_PROJECT_NAME`/`-p` が `name:` より優先されること、別名では volume 名が変わることを `docker compose config` で契約テスト）、root-first の `-f` merge（vendor fragment、`compose/web-tls.yml`、`compose/api-tls.yml`）、既定 HTTP、up/down/`down -v` を提供する。起動は `e2e/hosted/fixtures/compose-cli.ts` を通る共通の経路（`provision.sh` もここを使う）で、注入した runner の引数をテストする。`e2e/hosted/lib/cleanup.sh` が EXIT/INT/TERM/HUP で固定 project の down（`-v` なし）と topology の後始末をする。volume 保持は実 Docker の統合テスト `e2e/hosted/fixtures/volume-retention.integration.test.ts`（既存の `vpngwgui*` 資源があれば skip。作った volume だけ後始末）で確認済み。実スタックの Playwright は hosted CI（と 7.x の実機）で実行する。hosted workflow のブランチ trigger は変えていない。
+- 5.3（hosted VPN 操作）: `e2e/hosted/specs/api/{vpn,locations}.spec.ts` は Web origin `/api` の共通 client で、ベンダー切替・接続・切断・都市/サーバー選択・お気に入り・距離順を項目別のケースにした。接続のケースは `finally` で必ず切断する。runner の許可リストの拒否は、runner の制御 UDS へ許可コマンドと許可外コマンドを送り、200 と 403 `binary_not_allowed` を確認する独立ケース。hosted Playwright は開発ホストでは実行しておらず（型検査・`--list`・独立レビューのみ）、実行は hosted の CI で行う。

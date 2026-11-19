@@ -84,6 +84,26 @@ test.describe.serial("接続先・お気に入り・ベンダー切り替え（s
     expect(after.ok && after.body.find((item) => item.id === id)?.favorite).toBe(false);
   });
 
+  test("8.1: ping 非対応ベンダーの接続先は利用者の国から近い順になる", async () => {
+    const location = await client.put("/v1/user-location", { country: "JP" });
+    expect(location.ok, "利用者の国を保存できない").toBe(true);
+    try {
+      const res = await client.get<{ country: string; distanceKm?: number }[]>("/v1/connection/locations");
+      expect(res.ok, "接続先の一覧が得られない").toBe(true);
+      if (!res.ok) return;
+
+      const japanIndex = res.body.findIndex((row) => row.country === "jp");
+      const unitedStatesIndex = res.body.findIndex((row) => row.country === "us");
+      expect(japanIndex, "日本の接続先がある").toBeGreaterThanOrEqual(0);
+      expect(unitedStatesIndex, "米国の接続先がある").toBeGreaterThanOrEqual(0);
+      expect(res.body[japanIndex]?.distanceKm, "基点の国に距離 0 が付く").toBe(0);
+      expect(res.body[unitedStatesIndex]?.distanceKm, "他国にも距離が付く").toBeGreaterThan(0);
+      expect(japanIndex, "日本が米国より先に並ぶ").toBeLessThan(unitedStatesIndex);
+    } finally {
+      await client.delete("/v1/user-location");
+    }
+  });
+
   test("4.4: ベンダーを切り替えると、切り替え後のベンダーが有効になる", async () => {
     expect(await switchTo(client, "adguardvpn")).toBe(200);
     expect(await activeProviderId(client)).toBe("adguardvpn");
