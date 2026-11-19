@@ -70,3 +70,24 @@ rg -n -i 'kill.?switch|killSwitch|installer|vpngwgui-ctl|api.?ca|https?://|SSH|S
 ## 後続タスクの対象ファイル選定
 
 1.1 以降のすべてのタスクは、実装・検証・撤去の対象ファイルを選ぶ際に、まず本 inventory の境界別一覧を参照する。該当する所有タスクの範囲と現行コードを照合し、検索で追加の関連ファイルが見つかった場合は、その所有境界の対象として一覧に追記してから作業する。
+
+## 6.3 撤去後の残存参照調査
+
+2026-11-19、installer 撤去後の現在の作業ツリーで下記を実行した。検索は大文字小文字を無視し、Git の追跡状態・ignore 設定に依存しないため、未追跡・ignored の作業ファイル（`e2e/artifacts/` を含む）も対象にした。`.claude` はその中の worktree checkout を除外するため対象外。依存物、生成物・ビルド出力、lockfile は除外した。検索結果は 137 行（.kiro 文書 115 行、その他 22 行）。
+
+```sh
+grep -rInIiE 'installer|installer/|installer-check|release-installer|test:install|vpngwgui-ctl|VPNGW_INSTALL_LIB|--only-roles|rotate-pairing|remote_role_args|build-bootstrap|bootstrap\.sh|install\.sh|setup\.sh' . --exclude-dir=.git --exclude-dir=.claude --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build --exclude-dir=coverage --exclude-dir=.next --exclude-dir=generated --exclude='openapi.json' --exclude='*.lock' > /tmp/task63-grep-hits.txt
+wc -l /tmp/task63-grep-hits.txt
+```
+
+`grep -rInIiE` は再帰・行番号・ファイル名・大文字小文字無視を指定する。出力ファイルはリポジトリ外の `/tmp` に置いた。以下は全ヒットファイルと件数、および残存理由である（該当語の説明自体を含む仕様・履歴文書も同じ検索に一致する）。
+
+- **6.1 が所有する配布 workflow（1 hit）**: `.github/workflows/release-installer.yml` 15 行目は `installer-check.yml` の呼び出し。workflow は Compose bundle 配布・検査へ置換済みで、旧 installer の実行経路ではない。
+- **維持する npm test 契約（2 hits）**: `package.json` 12 行目の `test:install` 呼び出しと 16 行目の `compose/host-preparation/tests/run.sh` への割当て。6.3 の要件どおりテスト名を保ち、runner は置換済み。
+- **6.4 所有の fragment 整理（compose/api.yml 2、compose/gateway.yml 3、compose/web.yml 4 hits）**: 旧 installer/setup.sh や install.sh が fragment、証明書、環境値を設定していた旨のコメント・案内。専用 fragment の廃止・更新は 6.4 の境界なので 6.3 では変更しない。
+- **7.2 所有（1 hit）**: `scripts/deploy-verify.sh` 9 行目は旧 install.sh 再実行へのコメントで、統合検証スクリプトの更新は 7.2 の対象。
+- **現行の負例検査（1 hit）**: `scripts/test-readme-contract.sh` 72 行目は README に旧コマンド語が現れたら拒否するテスト式であり、旧経路ではない。
+- **過去の実行記録（8 hits）**: `e2e/artifacts/hosted/2026-11-11/full-run.log`（487、1006、1460 行）、`e2e/artifacts/hosted/2026-11-11/gateway-final.log`（7、479 行）、`e2e/artifacts/hosted/2026-11-11-city-acceptance/final/full-run.log`（495、1020、1478 行）。過去の E2E 出力であり、現在の実行資材ではないため保持。
+- **履歴・別タスク資料（115 hits）**: `.kiro/discovery/single-node-deployment-intent.md`（1）、`.kiro/handoff/2026-11-11-city-selection-complete.md`（1）、`.kiro/specs/cicd/brief.md`（10）、`.kiro/specs/e2e-tests/{brief.md (3),design.md (14),requirements.md (1),research.md (6),tasks.md (4)}`、`.kiro/specs/location-city-selection/acceptance-2026-11-11.md`（1）、`.kiro/specs/multihop-backend/{design.md (2),research.md (2)}`、`.kiro/specs/single-node-deployment/{brief.md (1),design.md (11),inventory.md (15),research.md (20),tasks.md (19)}`、`.kiro/specs/vendor-live-e2e/{design.md (1),research.md (1)}`、`.kiro/steering/{roadmap.md (1),tech.md (1)}`。これらは調査経緯、要件・設計・タスク境界、過去の検証結果を記録する文書で、現行コード経路ではない。別仕様資料と inventory 以外の文書は変更しない。
+
+この調査で、6.3 の境界（installer command 層・設定・bootstrap 生成・専用テスト）に属する実ファイルの残存は見つからなかった。`installer/` の実体は撤去済みで、旧経路を参照する現行実行設定はない。host reboot は既存の 2.6（`compose/host-preparation/host-reboot.sh`）・2.7（API→proxy→依頼ファイル接続）の所有範囲であり、6.3 では移管・変更していない。

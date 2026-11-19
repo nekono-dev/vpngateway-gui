@@ -25,7 +25,7 @@ mkdir -p "$bundle"
 check_path() {
   candidate=$1
   case "$candidate" in
-    /*|..|../*|*/../*|*/..|.env|.env/*|installer|installer/*|.git|.git/*|.claude|.claude/*)
+    /*|..|../*|*/../*|*/..|.env|.env/*|.git|.git/*|.claude|.claude/*)
       printf '禁止された bundle path: %s\n' "$candidate" >&2
       exit 1
       ;;
@@ -69,8 +69,8 @@ do
   }
 done
 
-if find "$bundle" \( -name installer -o -name .env -o -name '*.key' -o -name '*.pem' -o -name '*.p12' -o -name '*.pfx' \) -print | grep . >/dev/null; then
-  printf '%s\n' 'bundle に禁止された installer・環境・鍵ファイルがあります' >&2
+if find "$bundle" \( -name .env -o -name '*.key' -o -name '*.pem' -o -name '*.p12' -o -name '*.pfx' \) -print | grep . >/dev/null; then
+  printf '%s\n' 'bundle に禁止された環境・鍵ファイルがあります' >&2
   exit 1
 fi
 if find "$bundle/compose/host-preparation" -type d -name tests -print | grep . >/dev/null; then

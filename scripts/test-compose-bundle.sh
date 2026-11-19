@@ -23,7 +23,7 @@ do
   fi
 done
 
-if grep -E '(^|/)(installer|\.env|.*\.(key|pem|p12|pfx))(/|$)|(^|/)\.git(/|$)' "$TMP_ROOT/contents.txt" >/dev/null; then
+if grep -E '(^|/)(\.env|.*\.(key|pem|p12|pfx))(/|$)|(^|/)\.git(/|$)' "$TMP_ROOT/contents.txt" >/dev/null; then
   printf 'bundle に禁止パスが含まれています\n' >&2
   exit 1
 fi
