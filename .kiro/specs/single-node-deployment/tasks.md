@@ -264,7 +264,7 @@
   - _Boundary: Docker Install read-only assessment_
   - _Depends: 7.1_
   - _Requirements: 2.1, 2.11, 2.12_
-- [ ] 7.3 同意後の Docker/Compose 導入・限定更新と再検査を実装する
+- [x] 7.3 同意後の Docker/Compose 導入・限定更新と再検査を実装する
   - 未導入時は HTTPS で公式 install script を取得し、URL/hash/副作用を表示して同意を得た後に実行する。curl、wget、どちらも無い場合の同意対象を設計どおりに扱う。
   - docker-ce 28 未満だけを更新対象とし、OS 標準版28未満や非対応配布元を自動更新しない。Compose 導入は Docker 公式、Ubuntu 標準 docker.io、Debian 12 標準 docker.io の3分岐とする。Debian repository 追加は apt simulation で Engine 削除・置換や docker-ce 導入を拒否する。
   - 導入後に rootful Engine、Compose plugin、Engine 28+ を再検査し、失敗時は Docker 以外のホスト変更へ進まず、rollback せず段階と手動確認を報告する。
