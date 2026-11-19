@@ -146,7 +146,7 @@
   - _Boundary: 通信 transport_
   - _Depends: 4.4_
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.8_
-- [ ] 4.6 Gateway listener と設定通知の lifecycle を接続する
+- [x] 4.6 Gateway listener と設定通知の lifecycle を接続する
   - Gateway（proxy）の TCP 8443 listener を除去し、UDS の HTTP/HTTPS listener と TLS options を接続する。
   - 観測できる完了条件: integration test で Gateway TCP port 不在、UDS 経由制御、保護方式不一致時の専用ログ/status/UI 表示と復旧を確認できる。
   - _Boundary: 通信 transport_
@@ -366,3 +366,4 @@
 - 4.3（Cookie Secure）: API の session Cookie の `Secure` は `WEB_HTTPS_ENABLED` だけで決める（`api/src/web-https-options.ts` の `parseWebHttpsEnabled`。未設定/`false`/`true` のみ。それ以外は listen 前に起動失敗。Web サーバと同じ規則）。`trustProxy` や `X-Forwarded-Proto` では判断しない。
 - 4.4（Gateway UDS）: `proxy/src/gateway-channel/server.ts` の `listenOnGatewaySocket(server, socketPath, expectedUid)` が UDS を umask 0177 で bind し（mode 0600）、stale 判定は connect の `ECONNREFUSED` のみ・削除前に dev/ino を再確認、`close()` は自分が作った inode だけを消す。`compose/gateway-entrypoint.sh` は root で `/run/vpngw-gateway` を検証（symlink・非ディレクトリ・root/10001 以外の owner は拒否）してから `chown 10001:10001`・`chmod 0700` し、`su-exec 10001:10001` へ `exec` する。実コンテナの検証は opt-in の `proxy/tests/gateway-entrypoint.docker.test.sh`（Docker が使える環境で実行。7.5 でも実施）。TCP 8443 listener と `GATEWAY_PORT` はまだ残しており、4.6 が除去する。API 側の再接続（指数 backoff）は 4.5 の担当（tasks.md を更新済み）。`ctl-socket` の書き込み権限は `proxy/Dockerfile` の `/var/run/vpngw-ctl`（vpngwgui 所有）を空の名前付き volume が引き継ぐことに依存する。
 - 4.5（API の Gateway UDS client）: `loadGatewayTransportOptions` が `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS（CA・SAN・クライアント証明書・期限。降格しない）を選ぶ。`requestGateway` は socket 消失・`ECONNREFUSED` を通信不可として扱い、上限つきの指数 backoff で再接続する。`notifySettings` は backoff・接続・headers・body を合わせた1つの 5 秒の総期限を持ち、期限切れは `ProxyTimeoutError`（504）。保護方式の不一致は、要求後に接続が切れたとき同じ UDS へ TLS の probe を送り、TLS と確認できたときだけ `GatewayProtectionMismatchError`（`gateway_protection_mismatch`、`protectionModeMismatch: true`）にして、ログ・API status・Web 表示で区別する。`api/openapi.json` と `web/src/generated` は git 管理外の生成物で、4.5 で `npm run generate:api-client` を実行して最新にした（7.2 でも再生成して確認する）。環境変数名は設計の名前（`GATEWAY_TLS_CLIENT_CERT_FILE` など）に統一済み。
+- 4.6（Gateway listener の切替）: Gateway の TCP 8443 listener と `GATEWAY_PORT` は除去済みで、制御は UDS の listener（HTTP、または `GATEWAY_TLS_ENABLED=true` の strict mTLS）だけ。proxy の設定・status の本番ハンドラは `proxy/src/gateway-channel/gateway-routes.ts` の `createGatewayRequestHandler`（依存を注入）に切り出してあり、`proxy/src/server.ts` が本物のコントローラを渡す。guard の健康は「UDS listener が稼働」かつ「直近の ruleset 適用と検証が成功」の両方（`GatewayGuard.setListenerAvailable`）。listener が予期せず閉じたら guard を unhealthy にして非 0 で終了し、Compose の再起動に任せる。統合テストは `e2e/gateway-control.integration.test.ts`（実 UDS・実 API client で HTTP/mTLS、保護方式不一致の status とログと復旧）。`npx tsc -p web/tsconfig.json --noEmit` の `city`/`pingMs` に関する8件のエラーは、このスペック以前からあるもので触っていない。

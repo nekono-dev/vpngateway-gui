@@ -25,6 +25,7 @@ export interface GatewayGuardStatus {
 export interface GatewayGuardOptions {
   intervalMs?: number;
   now?: () => Date;
+  listenerAvailable?: boolean;
   onEvent?: (event: Record<string, unknown>) => void;
 }
 
@@ -33,6 +34,7 @@ const LEASE_REFRESH_INTERVAL_MS = 1000;
 export class GatewayGuard {
   private state: GatewayGuardState = "UNKNOWN";
   private healthy = false;
+  private listenerAvailable: boolean;
   private settings: GatewayGuardSettings | undefined;
   private lastUpdatedAt: string | null = null;
   private leaseExpiryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -51,6 +53,7 @@ export class GatewayGuard {
       now: options.now ?? (() => new Date()),
       onEvent: options.onEvent,
     };
+    this.listenerAvailable = options.listenerAvailable ?? true;
     // 初回 settings 前は timer が動いても何も適用せず、既存 guard state に触れない。
     this.interval = setInterval(() => {
       if (!this.stopping) void this.enqueue(() => this.refreshLease());
@@ -92,11 +95,11 @@ export class GatewayGuard {
 
       this.state = state;
       this.settings = settings;
-      this.healthy = true;
+      this.healthy = this.listenerAvailable;
       this.lastUpdatedAt = this.options.now().toISOString();
       this.clearLeaseExpiryTimer();
-      this.emit({ event: "gateway_guard_state_changed", state, healthy: true, lastUpdatedAt: this.lastUpdatedAt });
-      return true;
+      this.emit({ event: "gateway_guard_state_changed", state, healthy: this.healthy, lastUpdatedAt: this.lastUpdatedAt });
+      return this.healthy;
     });
   }
 
@@ -119,6 +122,17 @@ export class GatewayGuard {
     this.scheduleLeaseExpiryEvent();
   }
 
+  /** listener 稼働状態を Gateway reconcile とは独立した健康条件として反映する。 */
+  setListenerAvailable(available: boolean): void {
+    if (this.stopping || this.listenerAvailable === available) return;
+    this.listenerAvailable = available;
+    if (!available) {
+      this.markUnhealthy("gateway_listener_unavailable");
+      return;
+    }
+    if (this.settings !== undefined) this.handleGatewayReconcileResult(true);
+  }
+
   /** Gateway の再構成結果を受け、失敗時は停止し、回復成功時は guard と lease を再適用する。 */
   handleGatewayReconcileResult(ok: boolean, error?: string): void {
     if (this.stopping) return;
@@ -129,7 +143,7 @@ export class GatewayGuard {
     if (this.healthy || this.settings === undefined) return;
 
     void this.enqueue(async () => {
-      if (this.stopping || this.healthy || this.settings === undefined) return;
+      if (this.stopping || this.healthy || !this.listenerAvailable || this.settings === undefined) return;
       const state: GuardState = this.settings.killSwitch && this.settings.transparentGatewayEnabled ? "LEASE" : "OFF";
       const result = await this.runBatch(buildGuardStateBatch(state, this.lanIface));
       if (result.exitCode !== 0) {

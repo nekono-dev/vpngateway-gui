@@ -71,7 +71,7 @@ describe("Gateway UDS reconnect", () => {
     await close(server);
   });
 
-  it("HTTP client が TLS listener の reset を TLS probe で確認して保護方式不一致にする", async () => {
+  it("HTTP client がTLS listenerとの不一致を報告し、設定一致後に同じUDSへ復旧する", async () => {
     mkdirSync(directory, { recursive: true });
     const server = createTlsServer({
       cert: testCertificate,
@@ -91,6 +91,14 @@ describe("Gateway UDS reconnect", () => {
     const { fetchProxyStatus } = await import("./proxy-client.js");
 
     await expect(fetchProxyStatus()).rejects.toThrow("API と Gateway の通信保護設定が一致しません");
+    process.env.GATEWAY_TLS_ENABLED = "true";
+    process.env.GATEWAY_TLS_CA_FILE = join(testCertificateDirectory, "web-test.crt");
+    process.env.GATEWAY_TLS_CLIENT_CERT_FILE = join(testCertificateDirectory, "web-test.crt");
+    process.env.GATEWAY_TLS_CLIENT_KEY_FILE = join(testCertificateDirectory, "web-test.key");
+    process.env.GATEWAY_TLS_SERVER_NAME = "localhost";
+    vi.resetModules();
+    const recoveredClient = await import("./proxy-client.js");
+    await expect(recoveredClient.fetchProxyStatus()).resolves.toMatchObject(status);
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   });
 

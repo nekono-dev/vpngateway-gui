@@ -9,34 +9,18 @@ services:
     networks:
       - app-net
     user: "10001:10001"
-    ports:
-      # 単一ホスト構成ではweb→apiはDockerネットワーク内の名前解決（api:3000）で届くため本来不要だが、
-      # 分離構成（webが別ホスト）ではホストのアドレス経由で到達する必要があるため、常に公開する
-      # （APIサーバ自身のTLS＋web側でのCA検証が実質的な境界。proxyのGATEWAY_PORTと同じ考え方）。
-      - "${API_PORT:-3000}:3000"
-
-    # proxy（ゲートウェイ）・ランナーは分離構成では別ホストのため、depends_on（同一Compose project内限定）は
-    # 指定しない（起動していないランナーは、APIが「利用不可」として扱う）。
-    # 単一ホスト構成では、network_mode: hostのproxyが公開するGATEWAY_PORTへ、ホストのゲートウェイIP経由で
-    # 到達する（apiはブリッジネットワーク上のため、コンテナから見た「ホスト自身」を名前解決する必要がある）。
-    # 分離構成ではGATEWAY_HOSTを相手ホストのアドレスへ上書きするため、この行は無害。
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       # ベンダーバンドル（vendors/<ベンダーID>/profile.json）。有効にするのは下のENABLED_PROVIDERS。
       - ./vendors:/etc/vpngwgui/vendors:ro
       - api-data:/var/lib/vpngwgui
-      # ゲートウェイ制御チャネルの証明書は API→Gateway transport が管理する。
-      - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
+      - gateway-socket:/run/vpngw-gateway
     environment:
       VENDORS_DIR: /etc/vpngwgui/vendors
       # 有効なベンダー（カンマ区切り）。既定は無い。installer/setup.shが.envのVPN_PROVIDERSとCOMPOSE_FILE（有効なベンダーの
       # compose fragment）を書く。
       ENABLED_PROVIDERS: ${VPN_PROVIDERS:?VPN_PROVIDERSが未設定です。installer/setup.sh --providers <ベンダーID>,... で有効にするベンダーを指定してください}
-      # ゲートウェイ制御チャネル（mTLS TCP）の接続先。単一ホスト構成の既定はhost.docker.internal:8443
-      # （上のextra_hosts参照）。分離構成ではinstall.shが.envのGATEWAY_HOST・GATEWAY_PORTを書く。
-      GATEWAY_HOST: ${GATEWAY_HOST:-host.docker.internal}
-      GATEWAY_PORT: ${GATEWAY_PORT:-8443}
+      GATEWAY_SOCKET_PATH: /run/vpngw-gateway/gateway.sock
+      GATEWAY_TLS_ENABLED: ${GATEWAY_TLS_ENABLED:-false}
       # ベンダーCLIのキャッシュ（読み取り専用）の置き場（<置き場>/<ベンダーID>/）。プランで接続できる接続先の参考一覧を読むため。
       # 各ベンダーのキャッシュのボリュームは、そのバンドルのcompose.yml（services.apiのvolumes）が、この置き場の下へ読み取り専用でマウントする
       # （ベンダーバンドルはgatewayロールと合成するため、apiがgatewayと別ホストの分離構成では、このマウントは反映されない。
@@ -51,3 +35,4 @@ networks:
 
 volumes:
   api-data: {}
+  gateway-socket: {}

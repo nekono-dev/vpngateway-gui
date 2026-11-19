@@ -95,9 +95,9 @@ describe("App", () => {
       return { status: 200, data: { status: "connected", location: "JAPAN" } };
     });
     renderApp();
-    await userEvent.click(await screen.findByRole("tab", { name: "お気に入り", exact: true }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^お気に入り$/ }));
     await userEvent.click(await screen.findByRole("radio", { name: /JP-ZZ#9/ }));
-    await userEvent.click(screen.getByRole("button", { name: "接続", exact: true }));
+    await userEvent.click(screen.getByRole("button", { name: /^接続$/ }));
     await waitFor(() => expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: favorite.id }));
     await waitFor(() => expect(api.getV1ConnectionFavorites).toHaveBeenCalledTimes(2));
     if (result === "removed") await waitFor(() => expect(screen.queryByRole("radio", { name: /JP-ZZ#9/ })).not.toBeInTheDocument());

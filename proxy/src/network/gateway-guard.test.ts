@@ -110,7 +110,7 @@ describe("GatewayGuard", () => {
   it("停止開始後は settings・reconcile recovery・lease refresh を拒否し、expiry 後に LEASE を発行しない", async () => {
     vi.useFakeTimers();
     let finishGateway!: (value: boolean) => void;
-    const runNft = vi.fn(async () => ok);
+    const runNft = vi.fn(async (_script: string) => ok);
     const guard = new GatewayGuard("eth0", runNft);
     const inFlight = guard.applySettings(settings(true, true), () => new Promise((resolve) => { finishGateway = resolve; }));
     await Promise.resolve();
@@ -133,7 +133,7 @@ describe("GatewayGuard", () => {
   });
 
   it("停止開始前にキューされた回復処理を失効処理より先に排出する", async () => {
-    const runNft = vi.fn(async () => ok);
+    const runNft = vi.fn(async (_script: string) => ok);
     const guard = new GatewayGuard("eth0", runNft);
     await guard.applySettings(settings(true, true), gatewayApplied);
     guard.markUnhealthy("test");
@@ -146,6 +146,29 @@ describe("GatewayGuard", () => {
       buildGuardStateBatch("LEASE", "eth0"),
       buildGuardStateBatch("BLOCK", "eth0"),
     ]);
+    guard.close();
+  });
+
+  it("listener 復旧までは Gateway reconcile 成功で healthy/lease を回復しない", async () => {
+    vi.useFakeTimers();
+    const runNft = vi.fn(async (_script: string) => ok);
+    const guard = new GatewayGuard("eth0", runNft);
+    await guard.applySettings(settings(true, true), gatewayApplied);
+
+    guard.setListenerAvailable(false);
+    guard.handleGatewayReconcileResult(false, "gateway_listener_closed");
+    guard.handleGatewayReconcileResult(true);
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(guard.getStatus()).toMatchObject({ state: "LEASE", healthy: false });
+    expect(runNft).toHaveBeenCalledTimes(1);
+
+    guard.setListenerAvailable(true);
+    guard.handleGatewayReconcileResult(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(guard.getStatus()).toMatchObject({ state: "LEASE", healthy: true });
+    expect(runNft).toHaveBeenCalledTimes(2);
     guard.close();
   });
 
@@ -216,7 +239,7 @@ describe("GatewayGuard", () => {
     const guard = new GatewayGuard("eth0", runNft, { now: () => new Date("2026-01-01T00:00:00.000Z") });
     await guard.applySettings(settings(true, true), gatewayApplied);
     const before = guard.getStatus();
-    await expect(guard.applySettings(settings(false, false))).resolves.toBe(false);
+    await expect(guard.applySettings(settings(false, false), gatewayApplied)).resolves.toBe(false);
 
     expect(guard.getStatus()).toMatchObject({
       state: before.state,

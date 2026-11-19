@@ -19,6 +19,7 @@ export interface GatewaySocketListener {
 
 export interface GatewaySocketHooks {
   readonly beforeStaleUnlink?: (socketPath: string) => void;
+  readonly onUnavailable?: (reason: string) => void;
 }
 
 function readSocketIdentity(path: string): SocketIdentity {
@@ -112,8 +113,19 @@ export async function listenOnGatewaySocket(
     chmodSync(socketPath, SOCKET_MODE);
     const identity = readSocketIdentity(socketPath);
     if (identity.uid !== expectedUid) throw new Error("Gateway socket owner does not match expected uid");
+    let closing = false;
+    const notifyUnavailable = (reason: string): void => {
+      if (!closing) hooks.onUnavailable?.(reason);
+    };
+    const onUnexpectedClose = (): void => notifyUnavailable("gateway_listener_closed");
+    const onUnexpectedError = (): void => notifyUnavailable("gateway_listener_error");
+    server.on("close", onUnexpectedClose);
+    server.on("error", onUnexpectedError);
     return {
       close: async () => {
+        closing = true;
+        server.removeListener("close", onUnexpectedClose);
+        server.removeListener("error", onUnexpectedError);
         let displacedPath: string | undefined;
         try {
           lstatSync(socketPath);
@@ -125,6 +137,7 @@ export async function listenOnGatewaySocket(
 
         let closeError: Error | undefined;
         await new Promise<void>((resolve) => {
+          if (!server.listening) return resolve();
           server.close((error) => {
             closeError = error ?? undefined;
             resolve();

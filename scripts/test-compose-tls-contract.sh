@@ -5,6 +5,16 @@ set -eu
 root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root_dir"
 
+# Gateway の TCP 制御 port を Compose・起動経路から除き、UDS のみを残す。
+if grep -Eq 'GATEWAY_PORT|8443' proxy/src/server.ts; then
+  printf 'Gateway の旧 TCP port 設定が残っています\n' >&2
+  exit 1
+fi
+if grep -Eq 'GATEWAY_PORT|8443' compose/gateway.yml compose/api.yml; then
+  printf 'Compose fragment に Gateway TCP port の設定があります\n' >&2
+  exit 1
+fi
+
 # Compose の Gateway TLS 入力と、API/proxy loader の実際の入力名を確認する。
 for name in GATEWAY_TLS_CA_FILE GATEWAY_TLS_CLIENT_CERT_FILE GATEWAY_TLS_CLIENT_KEY_FILE; do
   grep -Fq "$name" compose/api-tls.yml || { printf 'API TLS fragment に %s がありません\n' "$name" >&2; exit 1; }
@@ -41,6 +51,10 @@ for vendor in '' vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml; d
         if (enabled(web, "WEB_HTTPS_ENABLED") !== String(webTls)) throw new Error("web flag mismatch");
         if (enabled(api, "WEB_HTTPS_ENABLED") !== String(webTls)) throw new Error("api cookie flag mismatch");
         if (enabled(api, "GATEWAY_TLS_ENABLED") !== String(gatewayTls) || enabled(proxy, "GATEWAY_TLS_ENABLED") !== String(gatewayTls)) throw new Error("gateway flags must match");
+        if ((proxy.ports ?? []).length !== 0) throw new Error("Gateway proxy must not publish a TCP control port");
+        const gatewaySocketMounts = mounts(api).filter((mount) => mount.target === "/run/vpngw-gateway");
+        const proxySocketMounts = mounts(proxy).filter((mount) => mount.target === "/run/vpngw-gateway");
+        if (gatewaySocketMounts.length !== 1 || proxySocketMounts.length !== 1 || gatewaySocketMounts[0].source !== proxySocketMounts[0].source) throw new Error("API and Gateway must share one UDS volume");
         const webCertMounts = mounts(web).filter((mount) => mount.target.startsWith("/run/vpngwgui/web-tls/"));
         const apiCertMounts = mounts(api).filter((mount) => mount.target.startsWith("/run/vpngwgui/gateway-tls/"));
         const proxyCertMounts = mounts(proxy).filter((mount) => mount.target.startsWith("/run/vpngwgui/gateway-tls/"));

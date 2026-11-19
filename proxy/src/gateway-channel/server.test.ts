@@ -67,6 +67,34 @@ describe("listenOnGatewaySocket", () => {
     await restartedListener.close();
   });
 
+  it("listener が予期せず閉じたら guard unhealthy 通知を行う", async () => {
+    const { path } = createSocketPath();
+    const server = createHttpServer();
+    let unavailableReason: string | undefined;
+    const listener = await listenOnGatewaySocket(server, path, process.getuid?.() ?? 0, {
+      onUnavailable: (reason) => { unavailableReason = reason; },
+    });
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    expect(unavailableReason).toBe("gateway_listener_closed");
+    await listener.close();
+  });
+
+  it("listener の error を guard unhealthy 通知へ渡す", async () => {
+    const { path } = createSocketPath();
+    const server = createHttpServer();
+    let unavailableReason: string | undefined;
+    const listener = await listenOnGatewaySocket(server, path, process.getuid?.() ?? 0, {
+      onUnavailable: (reason) => { unavailableReason = reason; },
+    });
+
+    server.emit("error", new Error("listener failed"));
+
+    expect(unavailableReason).toBe("gateway_listener_error");
+    await listener.close();
+  });
+
   it("removes a stale socket owned by the expected uid and rebinds", async () => {
     const { path } = createSocketPath();
     const staleServer = createHttpServer();

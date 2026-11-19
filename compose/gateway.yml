@@ -16,21 +16,17 @@ services:
     cap_add:
       - NET_ADMIN
     init: true
-    # network_mode: hostのためポートマッピングは書かず、GATEWAY_PORT（既定8443）をホストの全インターフェースへ
-    # 直接bindする（proxy/src/server.ts。mTLSのクライアント証明書検証が主たる境界。ファイアウォールでの
-    # 到達元制限（APIサーバのIPのみ）を推奨する）。
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
-      # ゲートウェイ制御チャネル（mTLS TCP）のサーバ証明書一式。install.shがホストの
-      # /etc/vpngwgui/pki/へローカル生成（単一ホスト構成）またはscp配布（分離構成）する。
-      - /etc/vpngwgui/pki:/etc/vpngwgui/pki:ro
+      - gateway-socket:/run/vpngw-gateway
       # ホスト再起動の依頼用ディレクトリ。installer/setup.shがホストに作成し（所有者は10001）、proxyは依頼ファイルを置くだけ
       # （再起動はホストのsystemdが行う）。
       - /var/lib/vpngwgui-host-ctl:/var/run/vpngw-host-ctl
     environment:
       # ランナーのUDS（runner-<ベンダーID>.sock）を探すディレクトリ（gateway-channel/runner-forward.ts）。
       CTL_SOCKET_DIR: /var/run/vpngw-ctl
-      GATEWAY_PORT: ${GATEWAY_PORT:-8443}
+      GATEWAY_SOCKET_PATH: /run/vpngw-gateway/gateway.sock
+      GATEWAY_TLS_ENABLED: ${GATEWAY_TLS_ENABLED:-false}
       # DNS中継リゾルバの待受ポート（既定53。ホストの他のDNSサーバと衝突する場合に変更する）。
       DNS_RELAY_PORT: ${DNS_RELAY_PORT:-53}
       # installer/setup.shがリポジトリルートの.envへ書き出すLAN側インターフェース名
@@ -42,3 +38,4 @@ services:
 
 volumes:
   ctl-socket: {}
+  gateway-socket: {}

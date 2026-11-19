@@ -1,8 +1,4 @@
-// 責務: ネットワークコンテナ（`proxy`）のエントリポイント。透過ゲートウェイ・Kill Switch・明示的プロキシ・
-// トンネル検出・接続監視を担い、APIサーバからゲートウェイ制御チャネル（mTLS TCP、既定ポート8443。
-// 環境変数GATEWAY_PORT）経由で設定反映・状態取得・接続状態の再確認を受ける内部専用HTTPSサーバ。
-// クライアント証明書（requestCert・rejectUnauthorized）でAPIサーバを認証する
-// （Phase 25。Phase 24までのUDS限定方針からの転換）。
+// 責務: Gateway のネットワーク機能と、API専用UDS制御listenerの起動・停止を管理する。
 // ベンダーCLIは実行しない（Phase 11でランナー`runner.ts`へ分離）。
 //   POST /net/settings         : ユーザ向け設定の反映
 //   GET  /net/status           : 稼働状況の取得
@@ -12,12 +8,11 @@
 //   GET  /net/check-nonces/<名前>: 検証名の受信の記録と、53番リダイレクトで誘導した送信元の数
 //   /runners/<ベンダーID>/*    : 対応するランナーのUDS（runner-<ベンダーID>.sock）へ転送（gateway-channel/runner-forward.ts）
 
-import { createServer as createHttpsServer } from "node:https";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { logAuditEvent } from "./lib/audit-event.js";
 import { readRequestBody, sendJson } from "./lib/http-json.js";
 import { requestHostReboot } from "./host-control/host-reboot.js";
-import { loadGatewayTlsOptions } from "./gateway-channel/tls-options.js";
+import { createGatewayChannelServer } from "./gateway-channel/control-server.js";
 import { listenOnGatewaySocket, type GatewaySocketListener } from "./gateway-channel/server.js";
 import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
 import { ensureIpForwardEnabled, isIpForwardEnabled } from "./network/ip-forward.js";
@@ -28,8 +23,8 @@ import { checkConnectionOnce, startConnectionMonitor } from "./network/connectio
 import { getLanIpv4Address, getLanSubnetCidr } from "./network/lan-subnet.js";
 import { PolicyRouting } from "./network/policy-routing.js";
 import { DnsRelayController } from "./dns-relay/dns-relay-controller.js";
-import { parseSettingsRequest, toDnsRelaySettings, toGatewayDnsSettings } from "./settings-request.js";
 import { SettingsRequestQueue } from "./settings-request-queue.js";
+import { createGatewayRequestHandler } from "./gateway-channel/gateway-routes.js";
 import { ExplicitProxyController } from "./explicit-proxy/explicit-proxy-controller.js";
 import { REDIRECTED_SET_NAME } from "./network/ruleset.js";
 import { CheckNonceRegistry } from "./verification/check-nonces.js";
@@ -38,11 +33,7 @@ import { runGatewayCheck } from "./verification/gateway-checks.js";
 import { wasJustRedirected } from "./verification/redirect-record.js";
 import { createVerificationRuntime, readSetElements } from "./verification/runtime.js";
 
-const GATEWAY_PORT = Number(process.env.GATEWAY_PORT ?? 8443);
 const GATEWAY_SOCKET_PATH = process.env.GATEWAY_SOCKET_PATH ?? "/run/vpngw-gateway/gateway.sock";
-// ゲートウェイ機のファイアウォールでAPIサーバのIPへ絞ることを推奨する（多層防御）。
-// アプリ自身は特定インターフェースへ限定せず、mTLSのクライアント証明書検証を主たる境界とする。
-const GATEWAY_BIND_HOST = "0.0.0.0";
 
 // インストールスクリプトが検出しnetwork.env経由で渡すLAN側インターフェース名。未設定（インストールスクリプト未実行環境）の場合、透過ゲートウェイは
 // 安全側として構成しない（GatewayController参照）。
@@ -70,6 +61,7 @@ const checkNonces = new CheckNonceRegistry();
 const settingsRequestQueue = new SettingsRequestQueue();
 
 const gatewayGuard = new GatewayGuard(LAN_IFACE ?? "", undefined, {
+  listenerAvailable: false,
   onEvent: (event) => logAuditEvent(event),
 });
 const gatewayController = new GatewayController(LAN_IFACE, WAN_IFACE, undefined, {
@@ -190,88 +182,20 @@ async function handleCheckNonceRecord(name: string, res: ServerResponse): Promis
   sendJson(res, 200, { ...record, recentRedirectedClients: redirectedClients.length });
 }
 
-async function handleSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readRequestBody(req));
-  } catch {
-    if (res.destroyed) return;
-    sendJson(res, 400, { error: "invalid_json" });
-    return;
-  }
-
-  const body = parseSettingsRequest(parsed);
-  if (body === undefined) {
-    sendJson(res, 400, { error: "invalid_request_shape" });
-    return;
-  }
-
-  // 中継リゾルバを先に構成する（53番リダイレクトの宛先・3proxyの名前解決先が待受を前提とするため）。
-  // 待受の成否は状態（GET /net/status）で示し、失敗しても設定反映自体は続ける。
-  await dnsRelayController.applySettings(toDnsRelaySettings(body));
-  // 待受に失敗している間（ポート衝突等）は、名前解決を中継へ向ける設定（53番リダイレクト・3proxyの名前解決先）を
-  // 入れない。入れると、中継が応答しないため名前解決が止まる。次回の再通知（10秒周期）で待受を再試行し、回復すれば入る。
-  const relayActive = dnsRelayController.getStatus().state === "active";
-  let outcome: Awaited<ReturnType<GatewayController["applySettings"]>> | undefined;
-  const guardApplied = await gatewayGuard.applySettings({
-    killSwitch: body.killSwitch,
-    transparentGatewayEnabled: body.transparentGatewayEnabled,
-  }, async () => {
-    outcome = await gatewayController.applySettings({
-      killSwitch: body.killSwitch,
-      transparentGatewayEnabled: body.transparentGatewayEnabled,
-      dns: toGatewayDnsSettings(body, lanAddress, DNS_RELAY_PORT, relayActive),
-    });
-    return outcome.succeeded;
-  });
-  if (!guardApplied || outcome === undefined) {
-    sendJson(res, 503, { error: "guard_apply_failed" });
-    return;
-  }
-  // 明示的プロキシの起動・停止は透過ゲートウェイのnft再構成とは独立して行う。同期的に状態を更新し、
-  // プロセスの起動・停止イベントは監査ログへ出力される（ExplicitProxyControllerのonEvent）。
-  // 中継リゾルバが待受中なら、3proxyの名前解決も中継リゾルバ（127.0.0.1）へ向ける。
-  explicitProxyController.applySettings({
-    enabled: body.explicitProxyEnabled,
-    allowedCidrs: body.explicitProxyAllowedCidrs,
-    nameServer: relayActive ? (DNS_RELAY_PORT === 53 ? "127.0.0.1" : `127.0.0.1:${DNS_RELAY_PORT}`) : undefined,
-  });
-  // APIの定期再通知（変更なし）のたびに監査ログが埋まらないよう、実際に再構成した場合のみ記録する。
-  if (outcome.reconciled) {
-    logAuditEvent({
-      event: "settings_applied",
-      killSwitch: body.killSwitch,
-      transparentGatewayEnabled: body.transparentGatewayEnabled,
-      dnsRelayEnabled: body.dnsRelayEnabled,
-      vpnIface: outcome.vpnIface,
-      applied: outcome.applied,
-    });
-  }
-  sendJson(res, 200, { succeeded: outcome.succeeded, applied: outcome.applied });
-}
-
-const handleGatewayRequest = (req: IncomingMessage, res: ServerResponse): void => {
-  if (req.method === "GET" && req.url === "/net/status") {
-    // 副作用なしの読み取り専用。メモリ上の状態のみを返す。
-    sendJson(res, 200, {
-      transparentGateway: gatewayController.getStatus(),
-      gatewayGuard: gatewayGuard.getStatus(),
-      explicitProxy: explicitProxyController.getStatus(),
-      dnsRelay: dnsRelayController.getStatus(),
-      lanCidr,
-    });
-    return;
-  }
+const handleGatewayRequest = createGatewayRequestHandler({
+  gatewayController,
+  gatewayGuard,
+  dnsRelayController,
+  explicitProxyController,
+  settingsRequestQueue,
+  lanAddress,
+  lanCidr,
+  dnsRelayPort: DNS_RELAY_PORT,
+  logAuditEvent,
+}, (req, res) => {
   if (req.method === "POST" && req.url === "/net/connection-checks") {
     handleConnectionCheck(res).catch((error: unknown) => {
       logAuditEvent({ event: "connection_check_error", message: error instanceof Error ? error.message : String(error) });
-      sendJson(res, 500, { error: "internal_error" });
-    });
-    return;
-  }
-  if (req.method === "POST" && req.url === "/net/settings") {
-    settingsRequestQueue.run(() => handleSettings(req, res)).catch((error: unknown) => {
-      logAuditEvent({ event: "settings_error", message: error instanceof Error ? error.message : String(error) });
       sendJson(res, 500, { error: "internal_error" });
     });
     return;
@@ -307,11 +231,11 @@ const handleGatewayRequest = (req: IncomingMessage, res: ServerResponse): void =
     return;
   }
   sendJson(res, 404, { error: "not_found" });
-};
+  return true;
+});
 
-const gatewayTlsOptions = loadGatewayTlsOptions();
-const server = createHttpsServer(gatewayTlsOptions, handleGatewayRequest);
-const gatewaySocketServer = createHttpsServer(gatewayTlsOptions, handleGatewayRequest);
+// Gateway 制御は UDS だけで受け付ける。TLS OFF はHTTP、ON は必須client証明書検証付きmTLS。
+const gatewaySocketServer = createGatewayChannelServer(handleGatewayRequest);
 
 // ホストのIPフォワーディング設定確認・補正（インストールスクリプト未実行環境向けフォールバック）。
 // Dockerはコンテナの/proc/sysを読み取り専用でマウントするため、このコンテナからの補正は実際には
@@ -337,15 +261,17 @@ const gatewaySocketListener: GatewaySocketListener = await listenOnGatewaySocket
   gatewaySocketServer,
   GATEWAY_SOCKET_PATH,
   10001,
+  {
+    onUnavailable: (reason) => {
+      logAuditEvent({ event: "gateway_control_listener_unavailable", reason });
+      gatewayGuard.setListenerAvailable(false);
+      // UDS listener は自動再 bind せず、lease 更新を止めて Compose の再起動へ委ねる。
+      process.exit(1);
+    },
+  },
 );
-await new Promise<void>((resolve, reject) => {
-  server.once("error", reject);
-  server.listen(GATEWAY_PORT, GATEWAY_BIND_HOST, () => {
-    server.removeListener("error", reject);
-    resolve();
-  });
-});
-logAuditEvent({ event: "server_started", gatewayPort: GATEWAY_PORT, gatewaySocketPath: GATEWAY_SOCKET_PATH, lanIface: LAN_IFACE, wanIface: WAN_IFACE });
+gatewayGuard.setListenerAvailable(true);
+logAuditEvent({ event: "server_started", gatewaySocketPath: GATEWAY_SOCKET_PATH, lanIface: LAN_IFACE, wanIface: WAN_IFACE });
 
 installGatewayStopHandlers({
   signals: process,
@@ -358,12 +284,7 @@ installGatewayStopHandlers({
   ],
   close: async () => {
     gatewayGuard.close();
-    await Promise.all([
-      gatewaySocketListener.close(),
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => error === undefined ? resolve() : reject(error));
-      }),
-    ]);
+    await gatewaySocketListener.close();
   },
   exit: (code) => process.exit(code),
   onError: (error) => logAuditEvent({

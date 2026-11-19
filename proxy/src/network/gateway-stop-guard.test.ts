@@ -7,12 +7,15 @@ import { GatewayGuard } from "./gateway-guard.js";
 import type { NftResult } from "./nft-client.js";
 
 const nftOk: NftResult = { exitCode: 0, stdout: "", stderr: "" };
+type TestSignals = EventEmitter & Pick<NodeJS.Process, "once">;
+const createSignals = (): TestSignals => new EventEmitter() as unknown as TestSignals;
 
 describe("installGatewayStopHandlers", () => {
   it("SIGTERM・SIGINT・SIGQUIT を一度ずつ登録する", () => {
-    const signals = new EventEmitter();
+    const signals = createSignals();
     installGatewayStopHandlers({
       signals,
+      beginShutdown: () => undefined,
       expireLease: async () => undefined,
       close: async () => undefined,
       exit: () => undefined,
@@ -24,7 +27,7 @@ describe("installGatewayStopHandlers", () => {
   });
 
   it.each(["SIGTERM", "SIGINT", "SIGQUIT"] as const)("%s では lease 失効後に終了処理を行う", async (signal) => {
-    const signals = new EventEmitter();
+    const signals = createSignals();
     const order: string[] = [];
     const exit = vi.fn(() => order.push("exit"));
     const shutdown = installGatewayStopHandlers({
@@ -44,7 +47,7 @@ describe("installGatewayStopHandlers", () => {
   });
 
   it("controller stop failure は他の controller を止めてから非0終了する", async () => {
-    const signals = new EventEmitter();
+    const signals = createSignals();
     const order: string[] = [];
     const onError = vi.fn();
     const shutdown = installGatewayStopHandlers({
@@ -67,7 +70,7 @@ describe("installGatewayStopHandlers", () => {
   });
 
   it("lease 失効に失敗しても終了処理を続ける", async () => {
-    const signals = new EventEmitter();
+    const signals = createSignals();
     const order: string[] = [];
     const onError = vi.fn();
     const shutdown = installGatewayStopHandlers({
@@ -86,7 +89,7 @@ describe("installGatewayStopHandlers", () => {
   });
 
   it("close failure は非0終了として報告する", async () => {
-    const signals = new EventEmitter();
+    const signals = createSignals();
     const exit = vi.fn();
     const shutdown = installGatewayStopHandlers({
       signals,
@@ -103,7 +106,7 @@ describe("installGatewayStopHandlers", () => {
 
   it("期限内に失効しない場合も close を開始して deadline code で終了する", async () => {
     vi.useFakeTimers();
-    const signals = new EventEmitter();
+    const signals = createSignals();
     let releaseExpiry!: () => void;
     const close = vi.fn(async () => undefined);
     const exit = vi.fn();
@@ -130,7 +133,7 @@ describe("installGatewayStopHandlers", () => {
 
   it("in-flight nft とその queue drain が停止期限を超えた場合も期限内に終了する", async () => {
     vi.useFakeTimers();
-    const signals = new EventEmitter();
+    const signals = createSignals();
     let releaseNft!: (result: NftResult) => void;
     const runNft = vi.fn().mockResolvedValueOnce(nftOk).mockImplementationOnce(() => new Promise<NftResult>((resolve) => { releaseNft = resolve; }));
     const guard = new GatewayGuard("eth0", runNft);
@@ -160,7 +163,7 @@ describe("installGatewayStopHandlers", () => {
   });
 
   it("停止要求が重なっても終了処理を一度だけ行う", async () => {
-    const signals = new EventEmitter();
+    const signals = createSignals();
     const expireLease = vi.fn(async () => undefined);
     const close = vi.fn(async () => undefined);
     const exit = vi.fn();
@@ -177,7 +180,7 @@ describe("installGatewayStopHandlers", () => {
 
   it("controller stop が停止期限を超えても listener を閉じて期限内に終了する", async () => {
     vi.useFakeTimers();
-    const signals = new EventEmitter();
+    const signals = createSignals();
     const close = vi.fn(async () => undefined);
     const exit = vi.fn();
     const shutdown = installGatewayStopHandlers({

@@ -1,6 +1,6 @@
 // 責務: Fastifyアプリケーションの構築。ルート登録、OpenAPI仕様生成、エラーハンドリングの一元化を行う。
 
-import Fastify from "fastify";
+import Fastify, { type FastifyServerOptions } from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { registerConnectionLocationsRoute } from "./routes/connection-locations.js";
@@ -57,8 +57,8 @@ function isSchemaValidationError(error: unknown): boolean {
  * 出力: ルート登録・エラーハンドラ設定済みのFastifyインスタンス。
  * 例: const app = buildApp(); await app.listen({ port: 3000 });
  */
-export function buildApp(options: { webHttpsEnabled?: boolean } = {}) {
-  const app = Fastify({ logger: true }).withTypeProvider<TypeBoxTypeProvider>();
+export function buildApp(options: { webHttpsEnabled?: boolean; logger?: FastifyServerOptions["logger"] } = {}) {
+  const app = Fastify({ logger: options.logger ?? true }).withTypeProvider<TypeBoxTypeProvider>();
   const secureSessionCookies = options.webHttpsEnabled === true;
 
   app.register(fastifySwagger, {
