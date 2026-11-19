@@ -154,8 +154,14 @@ async function loginAndCheck(page: import("@playwright/test").Page, origin: stri
   // headers() は set-cookie を含まないため、全ヘッダーを取得できる headerValue で読む
   await expectSessionCookieSecurity((await loginResponse.headerValue("set-cookie")) ?? undefined, origin.startsWith("https://"));
   await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
-  const apiStatus = await page.evaluate(async () => (await fetch("/api/v1/operator")).status);
-  expect(apiStatus).toBe(200);
+  await expect.poll(async () => page.evaluate(async (): Promise<{ status: number } | { error: string }> => {
+    try {
+      const response = await fetch("/api/v1/operator");
+      return { status: response.status };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  }), { intervals: [500], timeout: 15_000 }).toEqual({ status: 200 });
 }
 
 async function expectSessionCookieSecurity(setCookie: string | undefined, secureExpected: boolean): Promise<void> {
