@@ -1,6 +1,6 @@
 # 統合検証記録（task 8.2）
 
-最終更新: 2026-11-19 06:24 UTC
+最終更新: 2026-11-19 13:45 UTC
 
 ## (a) deploy-verify
 
@@ -31,4 +31,19 @@
 
 ## (c) GitHub-hosted runner の hosted E2E
 
-**to be filled after the hosted CI run**。controller が実行する workflow URL、commit、5.3〜5.5 および 5.7 の spec ごとの結果を追記する。実 VPN 資格情報を使う 5.6 vendor-live はこの対象外。
+- 実施: `gh workflow run e2e-hosted.yml --ref dev/single-node-deployment`（手動実行）。run 44533301738（https://github.com/nekono-dev/vpngateway-gui/actions/runs/44533301738）、commit `8f6e8c9`、2026-11-19 13:25–13:42 UTC。
+- 結果: **88 件中 88 件合格**。群ごとに lifecycle・stack・gateway・tls のすべてが pass。ホスト準備は Docker 導入を含む新しい `apply`（タスク 7.1〜7.7）で適用・撤去した。
+- 実 VPN 資格情報を使う 5.6 vendor-live はこの対象外。
+
+### 全件合格までに直した不具合
+
+| run | 結果 | 原因 | 対応 |
+|---|---|---|---|
+| 44480071273 | 67/88 | Docker が転送の既定を DROP にして LAN 転送が落ちる（製品側の欠落） | ホスト準備 `apply` が `/etc/docker/daemon.json` に `ip-forward-no-drop` を作り Docker を再起動（92b8d55） |
+| 同上 | 同上 | TLS 試験の set-cookie 読み取り、再起動試験の unit 名、lifecycle 群の経路切替（試験側） | 0de9dc9 |
+| 44497211124 | 80/88 | TLS 試験用証明書を UID 10001 が読めない（試験側） | 5280781 |
+| 44501675942 | 80/88 | ブラウザ起動後に CA を登録していた（試験側） | 58a65a4 |
+| 44508278841 | 83/88 | TLS 異常系で Web の HTTP 待受を拒否扱いしていた（試験側） | ab2162f |
+| 44515779429 | 80/88 | ログイン直後の API 確認が一時的なネットワーク変化で失敗（試験側） | 02ecc3c |
+| 44520427462 | 86/88 | missing-client で Web の静的応答だけで起動成功と判定（試験側） | e540ded |
+| 44529101430 | 86/88 | 再起動中の API の終了コードを compose ps から取得していた（試験側） | 8f6e8c9 |

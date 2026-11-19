@@ -313,7 +313,7 @@
   - 観測できる完了条件: `acceptance-env.md` に接続、Debian 12+/Ubuntu 22.04+ の対応 OS、nftables と systemd boot guard 適用・確認可否、Docker/Compose、空き容量、LAN interface/端末役、scp、初期状態と必要時の片付け手順が具体的に記録され、8.x の実機受入タスクがこの文書の手順だけで開始できる。
   - _Boundary: 実機受入環境_
   - _Requirements: 8.3, 8.4, 8.5_
-- [ ] 8.2 Compose・host-preparation・通信を統合検証する
+- [x] 8.2 Compose・host-preparation・通信を統合検証する
   - `scripts/deploy-verify.sh` を新構成に合わせ、Compose merge/config、固定名、公開ポート、TLS mount、UDS volume、host-preparation 実行前提を検査する。検証サーバ接続先・認証等は `acceptance-env.md` に記録された `VERIFY_HOST` 等の環境変数を使う。
   - unit/integration coverage を通し、GitHub-hosted runner 上の disposable/privileged 環境で hosted E2E を実資格情報なしで実行する。開発ホスト上では hosted E2E を実行しない。
   - _Boundary: 統合（Compose・host-preparation・通信・E2E）_
