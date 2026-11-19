@@ -2,7 +2,7 @@
 # 責務: root Compose と vendor fragment の merge 契約を検証する。
 set -eu
 
-root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+root_dir=${COMPOSE_CONTRACT_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
 cd "$root_dir"
 
 for legacy_fragment in compose/web.yml compose/api.yml compose/gateway.yml; do

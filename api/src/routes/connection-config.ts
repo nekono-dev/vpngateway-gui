@@ -3,7 +3,7 @@
 // nftables等への実反映（透過ゲートウェイ・Kill Switch）を即時に要求する。
 
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { UserSettingsSchema, UserSettingsPatchSchema } from "../schemas/settings.js";
+import { SettingsApplyErrorResponseSchema, UserSettingsSchema, UserSettingsPatchSchema } from "../schemas/settings.js";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import { getSettings, prepareSettingsUpdate, saveSettings, SettingsValidationError, toGatewaySettings } from "../settings/settings-store.js";
 import { notifySettings } from "../proxy-client/proxy-client.js";
@@ -33,7 +33,7 @@ export const registerConnectionConfigRoute: FastifyPluginAsyncTypebox = async (f
     {
       schema: {
         body: UserSettingsPatchSchema,
-        response: { 200: UserSettingsSchema, 400: ErrorResponseSchema, 500: ErrorResponseSchema, 503: ErrorResponseSchema },
+        response: { 200: UserSettingsSchema, 400: ErrorResponseSchema, 500: ErrorResponseSchema, 503: SettingsApplyErrorResponseSchema },
       },
     },
     async (request, reply) => {

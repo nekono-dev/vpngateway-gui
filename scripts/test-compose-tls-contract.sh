@@ -2,7 +2,7 @@
 # 責務: TLS override fragment の独立性と証明書 mount 条件を検証する。
 set -eu
 
-root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+root_dir=${COMPOSE_CONTRACT_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}
 cd "$root_dir"
 
 # Gateway の TCP 制御 port を Compose・起動経路から除き、UDS のみを残す。
@@ -48,6 +48,7 @@ for vendor_set in none proton adguard both; do
       WEB_HTTPS_ENABLED="$web_tls" GATEWAY_TLS_ENABLED="$gateway_tls" WEB_TLS_CERT_HOST_PATH=/tmp/web.crt WEB_TLS_KEY_HOST_PATH=/tmp/web.key GATEWAY_TLS_CA_HOST_PATH=/tmp/gateway-ca.crt GATEWAY_TLS_CLIENT_CERT_HOST_PATH=/tmp/api-client.crt GATEWAY_TLS_CLIENT_KEY_HOST_PATH=/tmp/api-client.key GATEWAY_TLS_SERVER_CERT_HOST_PATH=/tmp/gateway-server.crt GATEWAY_TLS_SERVER_KEY_HOST_PATH=/tmp/gateway-server.key docker compose -p vpngwgui $files config --quiet
       # shellcheck disable=SC2086
       config=$(WEB_HTTPS_ENABLED="$web_tls" GATEWAY_TLS_ENABLED="$gateway_tls" WEB_TLS_CERT_HOST_PATH=/tmp/web.crt WEB_TLS_KEY_HOST_PATH=/tmp/web.key GATEWAY_TLS_CA_HOST_PATH=/tmp/gateway-ca.crt GATEWAY_TLS_CLIENT_CERT_HOST_PATH=/tmp/api-client.crt GATEWAY_TLS_CLIENT_KEY_HOST_PATH=/tmp/api-client.key GATEWAY_TLS_SERVER_CERT_HOST_PATH=/tmp/gateway-server.crt GATEWAY_TLS_SERVER_KEY_HOST_PATH=/tmp/gateway-server.key docker compose -p vpngwgui $files config --format json)
+      # shellcheck disable=SC2016
       printf '%s' "$config" | WEB_TLS="$web_tls" GATEWAY_TLS="$gateway_tls" VENDOR_SET="$vendor_set" node --input-type=module -e '
         let input = "";
         for await (const chunk of process.stdin) input += chunk;

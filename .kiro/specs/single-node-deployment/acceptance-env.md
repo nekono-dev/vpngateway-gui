@@ -4,6 +4,8 @@
 
 ## 1. 接続と権限
 
+開発ホストからの task 7.2 `scripts/deploy-verify.sh lab` は `VERIFY_HOST`（この環境では `192.168.3.240`）、`VERIFY_USER`（既定 `ubuntu`）、`VERIFY_LAB`（既定 `acc-vpngwgui`）を環境変数から受け取る。開発用設定例は `scripts/deploy-verify.env.example` にあり、配布 `.env.example` には含めない。`VERIFY_SSH_PASSWORD` は必要時のみ環境変数で指定し、プロセス引数・ファイル・記録へ出さない。
+
 接続先は `ubuntu@192.168.3.240`。接続認証情報は既存の利用者側 SSH 設定から取得し、この文書、コマンド引数、結果記録へ書かない。以降は開発ホスト上で次を定義して `$SSH` / `$SCP` を使う。
 
 ```sh

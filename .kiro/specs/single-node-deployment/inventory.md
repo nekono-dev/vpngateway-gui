@@ -131,3 +131,16 @@ wc -l /tmp/task65-final-all-files.txt
 旧方式の具体的な command/path (`vpngwgui-ctl`, `GATEWAY_HOST`, `GATEWAY_BASE_URL`, `/etc/vpngwgui/pki`, `api-ca.crt`, pairing/role-selection の実装、installer の certificate generation/distribution) は現 worktree の実行コード、Compose/config、schema/OpenAPI、API/Web UI、generation script に0件。release workflow と workflow-call の `.github/workflows/{release-installer.yml,installer-check.yml}` は task 6.1 で Compose bundle の build/check に置換済みであり、`scripts/test-compose-bundle.sh` が `scripts/bundle-manifest.txt` の資材と展開後 Compose config を検査する。残る workflow 名は既存の呼び出し path であり、旧 installer の処理・資材参照ではない。
 
 別 worktree の検索内訳も確認した。`.claude/worktrees/dev-add-branch-release-workflow/` には旧 `installer/`、API HTTPS listener、分離配置 Compose fragment、旧 E2E fixture などの snapshot が残るが、現 branch の実行経路・Git index に属さないため本 task では変更しない。
+
+
+## 7.2 deploy-verify 更新後の旧方式参照調査
+
+2026-11-19 に deploy-verify の実行ファイルと配布 env 雛形を再調査した。実行経路に紛れる旧遠隔配置、installer、素の lifecycle、`.env` コピー、rsync、旧 install path の語を検索し、配布 `.env.example` 内の `VERIFY_*` も個別に確認した。
+
+```sh
+if rg --hidden -n -i 'VERIFY_INSTALL_DIR|VERIFY_INSTALL|rsync|install\.sh|installer|docker compose (build|up|ps)|cp .*\.env|\.env.*(copy|cp)' scripts/deploy-verify.sh; then exit 1; else echo 'legacy deploy-verify patterns: 0'; fi
+if rg -n 'VERIFY_' .env.example; then exit 1; else echo '.env.example VERIFY_*: 0'; fi
+rg -n 'VERIFY_' scripts/deploy-verify.sh scripts/deploy-verify.env.example .kiro/specs/single-node-deployment/acceptance-env.md
+```
+
+最初の2検索はともに0件。3つ目は `VERIFY_HOST`, `VERIFY_USER`, `VERIFY_SSH_PASSWORD`, `VERIFY_LAB` の script/documentation 参照だけを表示した。旧 install 先・installer・rsync・作業ツリー転送・`.env` copy・`docker compose build/up/ps` は deploy-verify の実行コードに残らず、lab は既設 `.env` を維持したまま `/root/vpngwgui` に bundle を展開する。

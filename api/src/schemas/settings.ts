@@ -35,3 +35,8 @@ export const GatewaySettingsResultSchema = Type.Object({
   applied: Type.Boolean(),
 });
 export type GatewaySettingsResult = Static<typeof GatewaySettingsResultSchema>;
+
+export const SettingsApplyErrorResponseSchema = Type.Object({
+  error: Type.Union([Type.Literal("kill_switch_not_applied"), Type.Literal("gateway_setting_not_applied")]),
+});
+export type SettingsApplyErrorResponse = Static<typeof SettingsApplyErrorResponseSchema>;

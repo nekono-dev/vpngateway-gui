@@ -13,7 +13,7 @@
     "export-openapi": "npm run export-openapi -w api",
     "generate:api-client": "npm run export-openapi && npm run generate:api-client -w web",
     "check:neutrality": "node scripts/check-vendor-neutrality.mjs",
-    "test:install": "sh compose/host-preparation/tests/run.sh",
+    "test:install": "sh compose/host-preparation/tests/run.sh && sh scripts/test-deploy-verify.sh",
     "test:e2e": "sh e2e/hosted/run.sh",
     "test:vendor-live": "tsx e2e/vendor-live/main.ts",
     "test:e2e-unit": "vitest run e2e --exclude \"**/*.spec.ts\" --exclude \"**/.claude/**\" --exclude \"**/node_modules/**\""
