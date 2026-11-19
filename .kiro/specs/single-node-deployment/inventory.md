@@ -91,3 +91,19 @@ wc -l /tmp/task63-grep-hits.txt
 - **履歴・別タスク資料（115 hits）**: `.kiro/discovery/single-node-deployment-intent.md`（1）、`.kiro/handoff/2026-11-11-city-selection-complete.md`（1）、`.kiro/specs/cicd/brief.md`（10）、`.kiro/specs/e2e-tests/{brief.md (3),design.md (14),requirements.md (1),research.md (6),tasks.md (4)}`、`.kiro/specs/location-city-selection/acceptance-2026-11-11.md`（1）、`.kiro/specs/multihop-backend/{design.md (2),research.md (2)}`、`.kiro/specs/single-node-deployment/{brief.md (1),design.md (11),inventory.md (15),research.md (20),tasks.md (19)}`、`.kiro/specs/vendor-live-e2e/{design.md (1),research.md (1)}`、`.kiro/steering/{roadmap.md (1),tech.md (1)}`。これらは調査経緯、要件・設計・タスク境界、過去の検証結果を記録する文書で、現行コード経路ではない。別仕様資料と inventory 以外の文書は変更しない。
 
 この調査で、6.3 の境界（installer command 層・設定・bootstrap 生成・専用テスト）に属する実ファイルの残存は見つからなかった。`installer/` の実体は撤去済みで、旧経路を参照する現行実行設定はない。host reboot は既存の 2.6（`compose/host-preparation/host-reboot.sh`）・2.7（API→proxy→依頼ファイル接続）の所有範囲であり、6.3 では移管・変更していない。
+
+## 6.4 撤去後の残存参照調査
+
+2026-11-19、3つの分離配置用 Compose fragment を作業ツリーから削除した後、リポジトリルートで大文字小文字を無視して検索した。`grep -r` は ignore 設定に従わないため `e2e/artifacts/` 等の ignored 資材も走査対象。依存物だけを除外した。`.claude/worktrees/` の別 worktree は検索に含めて残存理由を記録し、現 worktree の対象ファイルとは扱わない。
+
+```sh
+grep -rInIiE 'compose/(web|api|gateway)\.yml|docker compose.*-f.*compose/(web|api|gateway)\.yml|COMPOSE_FILE.*(web|api|gateway)\.yml' . --exclude-dir=.git --exclude-dir=node_modules
+```
+
+検索結果は29行。内訳は現 worktree 18行、`.claude/worktrees/` 内の別 worktree 11行。現 worktree で実行経路として旧 fragment を読む参照は0件。残りは次のとおり。
+
+- **負例テスト（1 hit）**: `scripts/test-compose-contract.sh` は撤去対象の3パス名を検査用文字列として列挙し、ファイルが存在すれば失敗する。
+- **履歴・仕様資料（17 hits）**: `.kiro/specs/e2e-tests/brief.md`（1）、`.kiro/specs/single-node-deployment/{inventory.md,design.md,tasks.md,research.md}`（各2/3/3/4）、`.kiro/specs/multihop-backend/{brief.md,design.md,research.md}`（各1/2/1）。過去の構成調査・設計・タスク境界を記録した参照で、実行資材ではない。利用者指示により、inventory.md 以外の spec 文書は変更しない。
+- **別 worktree（11 hits）**: `.claude/worktrees/dev-add-branch-release-workflow/` 内の旧 Compose、installer、テスト、仕様記録。現在の worktree の実行経路ではなく、別 worktree の所有物なので変更しない。
+
+Compose 設定検査は `scripts/test-compose-contract.sh` と `scripts/test-compose-tls-contract.sh` に集約し、root 単体、各 vendor、両 vendor、Web HTTPS/Gateway TLS の4組合せを含む各構成で `docker compose -p vpngwgui ... config --quiet` を実行する。root 側の service・volume・network・公開 port と proxy の host networking/capability/mount 契約も検査する。README、steering、workflow、bundle manifest、E2E 実行 fixture、`.dockerignore` に旧 fragment の実行参照はなかった。

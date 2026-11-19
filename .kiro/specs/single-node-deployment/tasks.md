@@ -225,7 +225,7 @@
   - _Boundary: installer command・bootstrap_
   - _Depends: 1.1, 2.3, 2.5, 2.6, 2.7, 6.2_
   - _Requirements: 1.3, 1.4, 7.2_
-- [ ] 6.4 分離配置用 Compose fragment を撤去し root Compose へ統合する
+- [x] 6.4 分離配置用 Compose fragment を撤去し root Compose へ統合する
   - inventory.md に列挙した compose/web.yml・compose/api.yml・compose/gateway.yml と関連する分離配置用設定・テストを削除し、必要な定義は root Compose に移管済みであることを確認する。
   - fragment 別検査を root Compose と vendor/TLS fragment の新しい config 検査へ置き換える。
   - 観測できる完了条件: 3つの旧 fragment と関連撤去対象が不在で、対象構成ごとの `docker compose -p vpngwgui config --quiet` が成功し、root Compose の service・volume・network・公開 port が契約どおりである。
@@ -377,3 +377,4 @@
 - 5.6（vendor-live）: `e2e/vendor-live/lib/config.ts` の `parseConfig` は `webBaseUrl`（Web の公開 URL。`/api` を付けない。HTTP/HTTPS）と任意の `webCaPath`（HTTPS で証明書がシステムに信頼されていないときだけ）を読み、旧キー `apiBaseUrl`/`caPath` は値を出さずに拒否して移行先を案内する。`probeApi` は 5.1 の共通 client（Web origin の `/api`）を使う。CI からの起動拒否は維持し、hosted の workflow には vendor-live の環境・資格情報を渡さない。作業者の手元の `e2e/vendor-live/config.local.json`（git 管理外）は旧キーのままなので、新しいキーへの書き換えが必要（README に手順）。
 - 6.2（README と steering）: README は 導入（`.env` と `LAN_IFACE` → `host-preparation.sh check` → `apply` → `docker compose -p vpngwgui config --quiet` → `up -d --build`）・更新（新しい配布物の全体を展開し、`.env` と作業者が置いた証明書を残す → `apply` → `config --quiet` → `up -d --build`。`pull` は使わない）・停止削除（`docker compose -p vpngwgui down` の後に host-preparation `remove`。`down -v` は保存データを消す）を、全 Compose コマンドに `-p vpngwgui` を付けて書く。対応環境（Debian 12+/Ubuntu 22.04+、rootful のローカル Docker）、TLS の既定（Web HTTPS・API→Gateway TLS とも OFF）と有効化の手順、Kill Switch の対象（透過ゲートウェイのみ）、旧方式の移行は非対応、を記す。`scripts/test-readme-contract.sh` が節ごとに順序と事実を確認し、壊した README を拒否する自己検査を持つ。steering の roadmap は、完成後の姿（installer 撤去後）で書き、6.3 の撤去前は旧資材がチェックアウトに残ることを区別している。
 - 6.3（installer 撤去）: `installer/` の8ファイル（setup/main/app/bootstrap の生成/config schema/専用テスト）を撤去済み。root `package.json` の `test:install` は `sh compose/host-preparation/tests/run.sh`（ホスト準備の6つのシェルテストを実行し、1つでも失敗すれば失敗）を呼び、`npm test` から実行される。`scripts/check-vendor-neutrality.mjs` の検査対象から `installer` を外した（`compose/` は引き続き対象）。撤去後の残存参照調査は `inventory.md` に実行した検索コマンドと範囲を含めて記録した。旧い再起動の部品は撤去のみで、新しい経路は 2.6/2.7 が担う。
+- 6.4（分離配置用 Compose の撤去）: `compose/web.yml`・`compose/api.yml`・`compose/gateway.yml` を撤去済み。各定義は root `docker-compose.yml`（proxy の host network・`NET_ADMIN`・`init`・restart・socket volume・ホストの依頼用 bind mount・環境変数の既定）に引き継ぎ済みで、旧い installer 前提の設定（PKI の mount、TCP の制御ポート、役割ごとの分離）は引き継いでいない。`scripts/test-compose-contract.sh`・`scripts/test-compose-tls-contract.sh` は root と vendor/TLS 構成の組み合わせごとに `docker compose -p vpngwgui config --quiet` と、service・volume・network・公開 port の契約を確認する。

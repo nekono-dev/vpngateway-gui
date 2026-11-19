@@ -10,8 +10,8 @@ if grep -Eq 'GATEWAY_PORT|8443' proxy/src/server.ts; then
   printf 'Gateway の旧 TCP port 設定が残っています\n' >&2
   exit 1
 fi
-if grep -Eq 'GATEWAY_PORT|8443' compose/gateway.yml compose/api.yml; then
-  printf 'Compose fragment に Gateway TCP port の設定があります\n' >&2
+if grep -Eq 'GATEWAY_PORT|8443' docker-compose.yml compose/api-tls.yml compose/web-tls.yml; then
+  printf 'Compose 構成に Gateway TCP port の設定があります\n' >&2
   exit 1
 fi
 
@@ -28,16 +28,27 @@ done
 grep -Fq 'WEB_TLS_CERT_FILE' compose/web-tls.yml || { printf 'Web TLS fragment に WEB_TLS_CERT_FILE がありません\n' >&2; exit 1; }
 grep -Fq 'WEB_TLS_KEY_FILE' compose/web-tls.yml || { printf 'Web TLS fragment に WEB_TLS_KEY_FILE がありません\n' >&2; exit 1; }
 
-for vendor in '' vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml; do
+for vendor_set in none proton adguard both; do
+  vendor_files=''
+  case "$vendor_set" in
+    proton) vendor_files='vendors/protonvpn/compose.yml' ;;
+    adguard) vendor_files='vendors/adguardvpn/compose.yml' ;;
+    both) vendor_files='vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml' ;;
+  esac
   for web_tls in false true; do
     for gateway_tls in false true; do
       files='-f docker-compose.yml'
-      if [ -n "$vendor" ]; then files="$files -f $vendor"; fi
+      if [ -n "$vendor_files" ]; then
+        # shellcheck disable=SC2086
+        for vendor_file in $vendor_files; do files="$files -f $vendor_file"; done
+      fi
       if [ "$web_tls" = true ]; then files="$files -f compose/web-tls.yml"; fi
       if [ "$gateway_tls" = true ]; then files="$files -f compose/api-tls.yml"; fi
       # shellcheck disable=SC2086
+      WEB_HTTPS_ENABLED="$web_tls" GATEWAY_TLS_ENABLED="$gateway_tls" WEB_TLS_CERT_HOST_PATH=/tmp/web.crt WEB_TLS_KEY_HOST_PATH=/tmp/web.key GATEWAY_TLS_CA_HOST_PATH=/tmp/gateway-ca.crt GATEWAY_TLS_CLIENT_CERT_HOST_PATH=/tmp/api-client.crt GATEWAY_TLS_CLIENT_KEY_HOST_PATH=/tmp/api-client.key GATEWAY_TLS_SERVER_CERT_HOST_PATH=/tmp/gateway-server.crt GATEWAY_TLS_SERVER_KEY_HOST_PATH=/tmp/gateway-server.key docker compose -p vpngwgui $files config --quiet
+      # shellcheck disable=SC2086
       config=$(WEB_HTTPS_ENABLED="$web_tls" GATEWAY_TLS_ENABLED="$gateway_tls" WEB_TLS_CERT_HOST_PATH=/tmp/web.crt WEB_TLS_KEY_HOST_PATH=/tmp/web.key GATEWAY_TLS_CA_HOST_PATH=/tmp/gateway-ca.crt GATEWAY_TLS_CLIENT_CERT_HOST_PATH=/tmp/api-client.crt GATEWAY_TLS_CLIENT_KEY_HOST_PATH=/tmp/api-client.key GATEWAY_TLS_SERVER_CERT_HOST_PATH=/tmp/gateway-server.crt GATEWAY_TLS_SERVER_KEY_HOST_PATH=/tmp/gateway-server.key docker compose -p vpngwgui $files config --format json)
-      printf '%s' "$config" | WEB_TLS="$web_tls" GATEWAY_TLS="$gateway_tls" node --input-type=module -e '
+      printf '%s' "$config" | WEB_TLS="$web_tls" GATEWAY_TLS="$gateway_tls" VENDOR_SET="$vendor_set" node --input-type=module -e '
         let input = "";
         for await (const chunk of process.stdin) input += chunk;
         const config = JSON.parse(input);
@@ -46,6 +57,14 @@ for vendor in '' vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml; d
         const web = config.services.web;
         const api = config.services.api;
         const proxy = config.services.proxy;
+        for (const name of ["web", "api", "proxy"]) if (!config.services[name]) throw new Error(`root service ${name} missing`);
+        if ((api.ports ?? []).length !== 0 || (proxy.ports ?? []).length !== 0) throw new Error("API and Gateway must not publish ports");
+        if (web.ports?.length !== 1 || web.ports[0].target !== 8080 || web.ports[0].published !== (process.env.WEB_PORT ?? "8080")) throw new Error("web published port contract changed");
+        if (!config.networks?.["app-net"]) throw new Error("app-net missing");
+        for (const name of ["api-data", "gateway-socket", "ctl-socket"]) if (!config.volumes?.[name]) throw new Error(`root volume ${name} missing`);
+        if (proxy.network_mode !== "host" || !(proxy.cap_add ?? []).includes("NET_ADMIN")) throw new Error("proxy host networking or NET_ADMIN contract changed");
+        const expectedVendors = { none: [], proton: ["runner-protonvpn"], adguard: ["runner-adguardvpn"], both: ["runner-protonvpn", "runner-adguardvpn"] }[process.env.VENDOR_SET];
+        for (const runner of ["runner-protonvpn", "runner-adguardvpn"]) if (Boolean(config.services[runner]) !== expectedVendors.includes(runner)) throw new Error(`unexpected runner ${runner}`);
         const webTls = process.env.WEB_TLS === "true";
         const gatewayTls = process.env.GATEWAY_TLS === "true";
         if (enabled(web, "WEB_HTTPS_ENABLED") !== String(webTls)) throw new Error("web flag mismatch");

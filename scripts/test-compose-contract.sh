@@ -5,6 +5,13 @@ set -eu
 root_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root_dir"
 
+for legacy_fragment in compose/web.yml compose/api.yml compose/gateway.yml; do
+  if [ -e "$legacy_fragment" ]; then
+    printf '分離配置用 Compose fragment が残っています: %s\n' "$legacy_fragment" >&2
+    exit 1
+  fi
+done
+
 expected_volumes=''
 proton_volumes=''
 adguard_volumes=''
@@ -29,6 +36,19 @@ for fragment in '' vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml 
     const services = config.services;
     const expected = ["web", "api", "proxy"];
     for (const name of expected) if (!services[name]) throw new Error(`missing service ${name}`);
+    for (const name of expected) {
+      if (services[name].restart !== "always") throw new Error(`${name} restart policy changed`);
+      if (services[name].build?.context !== process.cwd()) throw new Error(`${name} build context changed`);
+      if (services[name].build?.args) throw new Error(`${name} must not require legacy build args`);
+    }
+    if (services.web.build.dockerfile !== "web/Dockerfile" || services.api.build.dockerfile !== "api/Dockerfile" || services.proxy.build.dockerfile !== "proxy/Dockerfile") {
+      throw new Error("service Dockerfile mapping changed");
+    }
+    if (services.web.environment.API_ORIGIN !== "http://api:3000") throw new Error("web must use the root Compose internal HTTP API origin");
+    if (services.api.user !== "10001:10001") throw new Error("api service user changed");
+    if (services.proxy.init !== true || !(services.proxy.cap_add ?? []).includes("NET_ADMIN")) throw new Error("proxy init/capability contract changed");
+    if (services.proxy.environment.DNS_RELAY_PORT !== (process.env.DNS_RELAY_PORT ?? "53")) throw new Error("proxy DNS relay default changed");
+    if (services.proxy.environment.LAN_IFACE !== (process.env.LAN_IFACE ?? "")) throw new Error("proxy LAN_IFACE default changed");
     const webPorts = services.web.ports ?? [];
     const configuredWebPort = process.env.WEB_PORT ?? "8080";
     if (webPorts.length !== 1 || webPorts[0].target !== 8080 || webPorts[0].published !== configuredWebPort) {
