@@ -36,7 +36,13 @@ jobs:
           docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml -f e2e/hosted/vendors/protonvpn/compose.yml -f e2e/hosted/vendors/adguardvpn/compose.yml config --quiet
 
       - name: E2E unit と Compose 契約
-        run: npm run test:e2e-unit
+        run: |
+          set -eux
+          # api-types の契約テストが読む OpenAPI 定義（git の対象外の生成物）を先に作る
+          npm run export-openapi
+          # 実 Docker の volume 保持テストが使うイメージ（ない場合はテストが skip されるため先に取得する）
+          docker pull alpine:3.21
+          npm run test:e2e-unit
 
       - name: E2E（hosted）
         env:
