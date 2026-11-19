@@ -83,6 +83,23 @@ function readApiLifetime(fragments: readonly string[], env: NodeJS.ProcessEnv): 
   return inspect.code === 0 ? inspect.output.trim() : undefined;
 }
 
+function readApiExitState(fragments: readonly string[], env: NodeJS.ProcessEnv): { state: string; exitCode: number; restartCount: number } | undefined {
+  const idResult = command([...composeArgs([], fragments), "ps", "-q", "api"], env);
+  const containerId = idResult.output.trim().split(/\s+/)[0];
+  if (idResult.code !== 0 || !containerId) return undefined;
+  const inspect = command(["inspect", "--format", "{{json .State}} {{.RestartCount}}", containerId], env);
+  if (inspect.code !== 0) return undefined;
+  const match = inspect.output.trim().match(/^(\{.*\}) (\d+)$/);
+  if (match === null) return undefined;
+  try {
+    const state = JSON.parse(match[1] ?? "") as { Status?: unknown; ExitCode?: unknown };
+    if (typeof state.Status !== "string" || typeof state.ExitCode !== "number") return undefined;
+    return { state: state.Status.toLowerCase(), exitCode: state.ExitCode, restartCount: Number(match[2]) };
+  } catch {
+    return undefined;
+  }
+}
+
 function apiProbe(origin: string, webTls: boolean): { ok: boolean; detail: string } {
   const args = ["--silent", "--show-error", "--noproxy", "*", "--max-time", "2", "--output", "/dev/null", "--write-out", "%{http_code}"];
   if (webTls) args.push("--cacert", join(certDir, "web/ca.crt"));
@@ -137,13 +154,19 @@ async function start(case_: TlsCase, apiTlsOverride = false): Promise<TlsStartRe
     }
     if (api?.state === "exited" || api?.state === "restarting") {
       stableSince = undefined;
-      const diagnosticLogs = withLogs(logs);
-      if (case_.variant === "missing-client" && diagnosticLogs.includes("Gateway TLS configuration missing required environment variables: GATEWAY_TLS_CLIENT_CERT_FILE, GATEWAY_TLS_CLIENT_KEY_FILE")) {
-        logs = diagnosticLogs;
-        return { started: false, exitCodes, logs, states, origin: setup.origin, failure: { phase: "api-state", message: `expected fail-closed API state: ${api.state}` } };
+      const apiExit = readApiExitState(fragments, setup.env);
+      if (apiExit !== undefined && (apiExit.state === "exited" || (apiExit.restartCount > 0 && apiExit.exitCode > 0))) {
+        exitCodes.api = apiExit.exitCode;
+        const diagnosticLogs = withLogs(logs);
+        if (case_.variant === "missing-client" && apiExit.exitCode > 0 && diagnosticLogs.includes("Gateway TLS configuration missing required environment variables: GATEWAY_TLS_CLIENT_CERT_FILE, GATEWAY_TLS_CLIENT_KEY_FILE")) {
+          logs = diagnosticLogs;
+          return { started: false, exitCodes, logs, states, origin: setup.origin, failure: { phase: "api-state", message: `expected fail-closed API state: ${apiExit.state} (exit=${apiExit.exitCode}, restarts=${apiExit.restartCount})` } };
+        }
+        if (apiExit.state === "exited" || apiExit.state === "restarting") {
+          logs = diagnosticLogs;
+          return { started: false, exitCodes, logs, states, origin: setup.origin, failure: { phase: "api-state", message: `API entered ${apiExit.state} (exit=${apiExit.exitCode}, restarts=${apiExit.restartCount})` } };
+        }
       }
-      logs = diagnosticLogs;
-      return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "api-state", message: `API entered ${api.state}` } };
     }
     if (api?.state === "running") {
       const apiLifetime = readApiLifetime(fragments, setup.env);
