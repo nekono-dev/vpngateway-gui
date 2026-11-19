@@ -2,66 +2,37 @@
 
 ## 組織の方針
 
-アプリケーションは `api`・`proxy`・`web` の3つに分け、それぞれの内部は **ドメイン（機能の単位）ごとのディレクトリ** で整理する。共通の部品は `lib/` に置く。
+アプリケーションは `api`・`proxy`・`web` に分け、内部は機能ドメイン単位に整理する。共通の小さな部品は `lib/` に置く。ベンダー固有の差分は `vendors/<ID>/` に閉じ込める。
 
-ベンダー固有の差分は、アプリケーションのコードではなく `vendors/<ID>/` に閉じ込める。
+## ディレクトリ
 
-## ディレクトリのパターン
+| パス | 役割 |
+|---|---|
+| `<app>/src/<domain>/` | API、proxy、Web の機能処理・型・テスト |
+| `vendors/<ID>/` | `profile.json`、runner Dockerfile、Compose fragment と任意の起動資材 |
+| `compose/` | root Compose の override fragment とホスト準備 CLI・処理 |
+| `scripts/` | bundle 作成、配布物・文書の検査などの開発支援 |
+| `e2e/` | hosted E2E、vendor-live E2E、共有クライアント |
+| `.kiro/steering/` | プロダクト・技術・構造・ロードマップの共有方針 |
 
-### アプリケーションの内部（`api/src/`・`proxy/src/`・`web/src/`）
-**配置**: `<app>/src/<ドメイン>/`
-**役割**: ドメインごとに、そのドメインの処理・型・テストをまとめる。
-**例**: `api/src/routes/`（HTTPルート）、`api/src/providers/`（ベンダーの切り替え）、`proxy/src/network/`（nftables・ルーティング）、`proxy/src/dns-relay/`（DNS中継）
+### アプリケーション
 
-`lib/` には、ドメインに依存しない小さな共通部品だけを置く（例: `ipv4-cidr.ts`・`redact.ts`）。
+アプリ内は `<app>/src/<domain>/` に機能ごとに配置する。API の route は入出力変換を担い、処理は providers や domain module に委ねる。アプリ間の通信は API/HTTP または共有 UDS とし、別アプリのソースを直接 import しない。
 
-### ルートの定義（`api/src/routes/`）
-**配置**: `<機能>.ts`（`connection-*.ts`・`operator*.ts` のように、関連する機能はハイフンで前置きをそろえる）
-**役割**: `registerXxxRoute` という名前の Fastify プラグインを1つ export する。TypeBox でリクエストと応答の型を定義する。
+### ベンダーと Compose
 
-### ベンダーの追加（`vendors/<ID>/`）
-**配置**: `vendors/<ID>/` に、`profile.json`・`Dockerfile`・`compose.yml` を置く（任意で `entrypoint.sh`・`install-host.sh`・`samples.json`）。
-**役割**: そのベンダーのCLIの操作と出力の宣言を置く。本体のコードには書かない。
-**例**: `vendors/adguardvpn/profile.json` の `actions.connect.argv` に、接続コマンドの引数と場所のプレースホルダを宣言する。
+ベンダー追加時は `vendors/<ID>/` に宣言と runner 資材を置く。`docker-compose.yml` が Web/API/proxy、共通 network、socket と永続 volume の基礎を定義する。利用する runner は `vendors/<ID>/compose.yml` を root の後ろに merge する。TLS override は `compose/web-tls.yml` と `compose/api-tls.yml` に分け、必要なときだけ追加する。
 
-### テスト
-**配置**: 単体テストは、対象と同じディレクトリに `<名前>.test.ts`。E2E は `e2e/`（`hosted/`・`vendor-live/`・`common/`）。
-**役割**: 単体テストは、そのファイルの振る舞いを確かめる。E2E は、実際の画面と装置の動作を利用者の観点で確かめる。
+### テストと配布
 
-### ビルド・配布の資材
-**配置**: `compose/`（コンテナ定義の断片）、`installer/`（シェルのインストーラ）、`scripts/`（検査スクリプト）
-**役割**: 配置・導入の処理を、アプリケーションのコードから切り離す。
+Vitest の単体テストは機能の近くに置く。E2E は `e2e/hosted/`、`e2e/vendor-live/`、`e2e/common/` に整理する。`scripts/` は配布 bundle と契約チェックを担う。利用者向けの導入・運用説明は README に記載する。
 
-## 命名規約
+## 命名・編集規約
 
-- **ファイル**: `kebab-case`（例: `gateway-controller.ts`、`dns-relay-controller.ts`）
-- **テスト**: 対象のファイル名に `.test` を付ける（`bypass-set.test.ts`）
-- **関数・変数**: `camelCase`。プラグインは `registerXxx`、データ読み込みは `readXxx`、判定は `isXxx` / `hasXxx` のように動詞を前置きする
-- **型・スキーマ**: 型は `PascalCase`。TypeBox のスキーマ変数は `XxxSchema`（例: `AvailableLocationsResponseSchema`）
-- **環境変数**: `SCREAMING_SNAKE_CASE`（例: `PROVIDER_CACHE_DIR`）
+- ファイル名は `kebab-case`、テスト名は対象名に `.test` を付ける。
+- 関数・変数は `camelCase`、型は `PascalCase`、環境変数は `SCREAMING_SNAKE_CASE`。
+- ソースファイルの先頭に `// 責務: …` の日本語コメントを置く。
+- `api/openapi.json`、`web/src/generated/`、`dist/` は生成物として扱い、直接編集しない。
+- 本体コードにベンダー分岐を追加せず、宣言を読んで動かす。
 
-## import の整理
-
-```typescript
-// 外部パッケージ（node: 組み込みを先頭に置く）
-import { join } from "node:path";
-import Fastify from "fastify";
-
-// 同一アプリ内の相対 import（必ず .js 拡張子を付ける）
-import { getActiveProvider } from "../providers/active-provider-store.js";
-import { loadApiCaCertificate } from "./tls-options.js";
-```
-
-- 絶対パス（`@/` などのエイリアス）は使わず、相対 import で書く。
-- アプリ間の直接 import は行わない。アプリどうしは HTTP（HTTPS）で通信する。
-
-## コードの構成の原則
-
-- **責務の分離**: ルートは入出力の変換だけを担い、処理は `providers/`・`network/` などのドメインへ委ねる。
-- **生成物は編集しない**: `web/src/generated/`・`api/openapi.json`・`dist/` は、生成コマンドで作る。直接編集しない。
-- **ベンダーの分岐を増やさない**: 本体のコードにベンダーごとの `if` を書かず、`profile` の宣言を読んで動かす。
-- **外部コマンドの実行**: 外部コマンドは `child_process` を直接呼ぶ箇所と、`proxy/src/exec/command-runner.ts` を経由する箇所がある。ネットワーク操作（`nft`・`ip`）は `proxy/src/network/` 配下のモジュールが直接呼んでいる。新しく外部コマンドを呼ぶときは、既存の `command-runner` の利用を検討する。
-
-_新しいファイルが既存のパターンに従うなら、この文書を更新する必要はない。_
-
-_updated_at: 2026-11-09（テストの配置を `e2e/` に合わせ、受け入れテストの記述を削除）_
+_updated_at: 2026-11-19_

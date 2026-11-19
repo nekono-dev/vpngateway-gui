@@ -1,226 +1,172 @@
 # VPNGateway-GUI
 
-## 概要
+VPN 接続を複数の LAN 機器で共有するための Web 管理画面付きゲートウェイです。VPN ランナー、API、Web はすべて同じ Linux ノード上の Docker Compose で動作します。Web UI から接続先やネットワーク設定を管理できます。
 
-VPNベンダー（AdGuard VPN・Proton VPN等）のCLIをLinuxサーバ上に導入し、そのサーバをLAN向けのVPNゲートウェイとして使うためのWeb UIである。LAN機器はこのサーバをゲートウェイまたはプロキシに指定するだけで、個別に設定しなくてもVPN経由で通信できる。特定のVPNベンダーに依存せず、複数ベンダーを導入して後からWeb UI上で切り替えられる。
+## 対応環境
 
-## インストール
+| 項目 | 対応内容 |
+|---|---|
+| OS | Debian 12 以降または Ubuntu 22.04 以降 |
+| 配置 | 全サービスを同一ノードで動かす構成のみ |
+| Docker | ローカル Docker Engine と Compose plugin を使う rootful Docker のみ |
+| ホスト機能 | nftables と systemd が必要。起動時の Kill Switch guard を適用・確認できない環境は非対応 |
+| 非対応 | rootless Docker、リモート Docker Engine、複数ホストへの分離配置 |
 
-対象は、クリーンなDebian系のベアメタル（Debian・Raspberry Pi OS・Ubuntu 24.04 LTS等。検証済みはUbuntu 24.04）である。Docker・git等をホストに事前導入しておく必要はない。
+Docker Engine と Compose plugin は事前に導入してください。ホスト準備処理は Docker を導入・更新せず、Docker の daemon 設定も変更しません。
+
+## 配布物の取得
+
+[GitHub Releases](https://github.com/nekono-dev/vpngateway-gui/releases) から同じ版の `vpngwgui-<版>.tar.gz` と `vpngwgui-<版>.tar.gz.sha256` を取得します。チェックサムファイルで tarball を検証してから展開してください。以下の `<版>` は取得したリリース版に置き換えます。
 
 ```sh
-curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- install --set PROVIDERS=<ベンダーID>[,<ベンダーID>...]
+sha256sum -c vpngwgui-<版>.tar.gz.sha256
+mkdir vpngwgui
+tar -xzf vpngwgui-<版>.tar.gz -C vpngwgui --strip-components=1
+cd vpngwgui
 ```
 
-設定は `--set KEY=VALUE` で渡す。値は `/etc/vpngwgui/vpngwgui.env` に保存され、以後の更新でも使われる（変える項目だけ指定すればよい）。
+展開したディレクトリを運用ディレクトリとして使います。`.env` と証明書は配布物に含まれないため、運用者が準備します。
 
-| キー | 意味 |
-|---|---|
-| `PROVIDERS` | 有効にするベンダー（`vendors/<ID>/`のディレクトリ名をカンマ区切り）。空なら、その時点で`vendors/`にある全ベンダー（all）を有効にする |
-| `WEB_PORT` | Web UIを配信するホスト側のポート番号（1〜65535）。空なら保存済みの値、無ければ443 |
-| `LAN_IFACE` | LAN側インターフェース名。空なら自動検出する。自動検出できない場合、または複数NICがある場合に指定する |
-| `API_HOST` | APIサーバの配置先ホスト。空ならこのコマンドを実行したホスト（ローカル） |
-| `WEB_HOST` | Webサーバの配置先ホスト。空ならローカル |
-| `GATEWAY_HOST` | ゲートウェイ（VPN通信を実際に中継する機体）の配置先ホスト。空ならローカル |
+## 初回導入
 
-不正な値（存在しないベンダー、範囲外のポートなど）は、何も変更せずに中止する。
-
-導入後は常設コマンド `vpngwgui-ctl` で更新・状態確認・削除を行う（`curl`は不要）。
-
-| 目的 | コマンド |
-|---|---|
-| アップデート | `sudo vpngwgui-ctl update`（導入中のブランチ・タグの最新へ更新する。設定・ログイン情報は保持される） |
-| 有効なベンダーを絞る・増やす | `sudo vpngwgui-ctl update --set PROVIDERS=adguardvpn,protonvpn` |
-| Web UIのポートを変更する | `sudo vpngwgui-ctl update --set WEB_PORT=8443` |
-| 版・ブランチを切り替える | `sudo vpngwgui-ctl update --ref <タグ・ブランチ名>`（一覧は `vpngwgui-ctl refs`） |
-| 導入情報を見る | `vpngwgui-ctl status` |
-
-次の一回限りの操作は、取得先の本体インストーラを直接実行する（設定は保存されない）。
-
-| 操作 | コマンド |
-|---|---|
-| LAN側インターフェースの再検出（VPN未接続の状態で実行する） | `sudo sh /opt/vpngwgui/installer/setup.sh --redetect-lan-iface` |
-| 各ホスト間の通信を保護する証明書一式の再生成・再配布 | `sudo sh /opt/vpngwgui/installer/setup.sh --rotate-pairing` |
-| コンテナを起動せずに設定だけ反映する | `sudo sh /opt/vpngwgui/installer/setup.sh --no-start` |
-
-いずれも、分離配置では保存済みと同じ `--api`・`--web`・`--gateway` も付けて実行する。
-
-初回アクセス時、Web UIは自己署名証明書を使ったHTTPS（`https://<ホストのアドレス>:<ポート>`）で応答する。ブラウザが表示する証明書の警告は、自己署名証明書によるもので想定内であるため、許可して進めてよい。アクセス後、最初に開いた人がWeb UIの利用者アカウント（ユーザー名・パスワード）を作成する（複数人が同時にアクセスした場合、先に作成した方が優先される）。
-
-### 複数ホストへの分離配置
-
-`API_HOST`・`WEB_HOST`・`GATEWAY_HOST`を指定すると、Webサーバ・APIサーバ・ゲートウェイをそれぞれ別のホストへ分離して配置できる（いずれも省略した場合は、全体を1台へまとめる単一ホスト構成になる）。指定しなかったロールは、このコマンドを実行したホスト（オーケストレーター）へ配置される。
+最初に `.env` を作成し、ホスト側の LAN インターフェース名を `LAN_IFACE` に設定してください。値はこのノードの `ip link` で確認できる実在の interface 名です。
 
 ```sh
-curl -fsSL https://github.com/nekono-dev/vpngateway-gui/releases/latest/download/install.sh | sudo sh -s -- install \
-  --set WEB_HOST=192.168.1.10 --set API_HOST=192.168.1.11 --set GATEWAY_HOST=192.168.1.12 --set PROVIDERS=adguardvpn
+cp .env.example .env
 ```
 
-- 配置先に指定するリモートホストへは、このコマンドを実行するユーザーと同じユーザー名でのSSH鍵認証によるアクセスが、事前に確立できていること（`ssh <ホスト>`がパスワード入力なしで通ること）。ユーザー名・秘密鍵・ポートを個別に指定する引数は無いため、ホストごとに設定が要る場合は`~/.ssh/config`側で吸収する。
-- リモートホストにDocker・gitなどを事前に導入しておく必要はない（オーケストレーター側のインストーラが、対象ホストへ導入する）。
-- ホスト間の通信（ブラウザ⇄Webサーバ・Webサーバ⇄APIサーバ・APIサーバ⇄ゲートウェイ）は、いずれもこのコマンドが生成・配布する証明書によって暗号化・認証される。
-- 一度決めたロールの配置先（トポロジー）は、`uninstall`で後始末してから新しい配置で再インストールするまで変更できない（配置を変えて再実行すると、記録済みの配置と異なる旨のエラーで停止する）。
-- 旧版（`install.sh --providers …` の形）で分離配置した環境を新しいインストーラで更新するときは、最初の `install` で、そのときと同じ配置先を `--set` で指定する。
+`.env` を編集して、例えば次のように設定します。
 
-## 設定方法
+```dotenv
+LAN_IFACE=br0
+VPN_PROVIDERS=
+WEB_PORT=8080
+WEB_HTTPS_ENABLED=false
+GATEWAY_TLS_ENABLED=false
+```
 
-### 迂回ドメインとDNS中継
+`VPN_PROVIDERS` は有効にする runner のディレクトリ名をカンマ区切りで指定します。利用する各 runner の Compose fragment も追加します。例えば次の例では `adguardvpn` runner を選びます。
 
-VPNを経由させたくない通信は、Web UIの設定ダイアログで迂回ドメインとして登録する。登録したドメイン宛の通信は、VPNを経由せず通常の回線から直接送出される（透過ゲートウェイ・明示的プロキシのどちらも対象）。迂回ドメインは、DNS中継を有効にしたときだけ機能する。
+```dotenv
+COMPOSE_FILE=docker-compose.yml:vendors/adguardvpn/compose.yml
+VPN_PROVIDERS=adguardvpn
+```
 
-DNS中継は、LAN機器の名前解決をゲートウェイが受け取り、自宅などに構築したDNSサーバ（DoHに対応した、AdGuard Home等）へ転送する機能である。DNSのフィルタリングとクエリ履歴を自宅のDNSサーバへ集約しつつ、迂回ドメインの判定をゲートウェイで行える。LAN機器のDNSサーバには、ゲートウェイのアドレスを指定する（DHCPで配布するのが簡単である）。
+複数の fragment を使う場合は、root の `docker-compose.yml` を先頭にし、選択する `vendors/<ID>/compose.yml` を後ろへ追加します。`COMPOSE_FILE` の代わりに、すべての Compose command で `-f docker-compose.yml -f vendors/<ID>/compose.yml` のように指定することもできます。Compose の file 指定は root を先に、vendor fragment を後に並べてください。
 
-| 迂回ドメインの表記 | 対象 |
-|---|---|
-| `example.com` | `example.com`のみ（サブドメインは含まない） |
-| `*.example.com` | `example.com`のすべてのサブドメイン（`example.com`自身は含まない） |
-
-`example.com`とそのサブドメインの両方を迂回するには、`example.com`と`*.example.com`の両方を登録する。
-
-| 設定項目 | 意味 |
-|---|---|
-| DNS中継を有効にする | ゲートウェイがLAN機器の名前解決を中継する |
-| 自宅DNSサーバ（DoHのURL） | 転送先。例: `https://dns.home.example/dns-query`。`https://`のURLのみ指定できる |
-| 自宅DNSサーバの証明書を発行したCA | 自宅DNSサーバの証明書が自己署名・私的な認証局のものである場合に、その認証局の証明書（PEM形式）を貼り付ける。公的な認証局の証明書であれば空でよい |
-| 応答しないとき | 「名前解決を止める」（フィルタと履歴を優先）か、「公開DNSへ切り替える」（名前解決を優先。切り替え先を1〜3件指定する。この間、自宅DNSサーバのフィルタと履歴は効かない）を選ぶ |
-| クライアント名の取得先 | DHCPサーバ・ルータのDNSアドレス（1〜3件）。クライアントの名前を得る逆引きの問い合わせ先で、空ならIPアドレスで記録する。ルータが逆引きに答えるかは、`dig -x <クライアントのIP> @<ルータのアドレス>`で確認できる |
-| 手動でDNSを指定した端末の問い合わせも中継する | ゲートウェイを通る宛先ポート53の通信を、宛先にかかわらず中継する。既定は無効 |
-| 中継しない宛先 | 上記を有効にしたとき、中継の対象から外す宛先（LAN内のDNSサーバ等）をCIDRで指定する |
-
-自宅DNSサーバには、問い合わせたLAN機器を区別できる識別子（ClientID）が付いて届く。既定ではIPアドレスのドットをハイフンにした`192-168-3-25`である（識別子にドットは使えない）。「クライアント名の取得先」にDHCPサーバ・ルータのDNSアドレス（例: `192.168.3.254`）を指定すると、DHCPで配られた名前（例: `Macmini.lan`）が得られるクライアントは、その名前（`macmini-lan`。小文字にし、英数字以外をハイフンにする）で記録される。名前が得られないクライアントはIPアドレスのままである。AdGuard Homeでは、この識別子をクライアントの識別子（ClientID）として登録すると、名前を付けて管理できる。自宅DNSサーバ側では、DoHを受け付ける設定（暗号化の有効化と証明書）が必要である。明示的プロキシを経由した通信の名前解決は、プロキシ利用者ごとには区別されず、`explicit-proxy`という識別子で届く。
-
-### 自宅DNSサーバ（AdGuard Home）のDoH用証明書の発行
-
-DNS中継は、自宅DNSサーバへDoH（HTTPS）で転送する。自宅DNSサーバのHTTPS用に、証明書と秘密鍵が必要である。公的な認証局の証明書（Let's Encrypt等）を使える場合は、この手順は不要で、Web UIの「自宅DNSサーバの証明書を発行したCA」は空でよい。ここでは、自前の認証局（CA）を作り、それで自宅DNSサーバの証明書を発行する手順を示す。`openssl`が使える任意のホストで実行してよい。
-
-証明書に含めるアドレスは、Web UIの「自宅DNSサーバ（DoHのURL）」に書くホスト名またはIPアドレスと一致させる。一致しないと、ゲートウェイは接続を拒否する。以下では、自宅DNSサーバのアドレスを`192.168.3.240`、ホスト名を`dns.home.example`とする（環境に合わせて読み替える）。
+`check` は前提条件を読むだけの検査です。LAN interface が未設定なら既定ルートの interface を候補として表示しますが、`.env` は作成・変更しません。候補を確認して `.env` に `LAN_IFACE` を明記してから再実行してください。`apply` は sysctl と起動時の boot guard など、製品が所有するホスト設定を適用し、適用後の guard を確認します。
 
 ```sh
-# 1. 認証局（CA）の鍵と証明書を作る（有効期間10年）
-openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-  -keyout ca.key -out ca.pem -subj "/CN=home-dns-ca" \
-  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
-
-# 2. 自宅DNSサーバの鍵と証明書要求を作る
-openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr -subj "/CN=dns.home.example"
-
-# 3. アドレスを指定して、CAで署名する（有効期間1年）
-printf 'subjectAltName=DNS:dns.home.example,IP:192.168.3.240\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n' > san.ext
-openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -days 365 -extfile san.ext -out server.pem
+sudo compose/host-preparation.sh check
+sudo compose/host-preparation.sh apply
+sudo docker compose -p vpngwgui config --quiet
+sudo docker compose -p vpngwgui up -d --build
 ```
 
-| 生成物 | 使い道 |
-|---|---|
-| `server.pem`（証明書） | AdGuard Homeの暗号化設定の「証明書」に貼り付ける |
-| `server.key`（秘密鍵） | AdGuard Homeの暗号化設定の「秘密鍵」に貼り付ける。他へ渡さない |
-| `ca.pem`（CAの証明書） | Web UIの「自宅DNSサーバの証明書を発行したCA」に貼り付ける |
-| `ca.key`（CAの秘密鍵） | 証明書の再発行に使うため、安全な場所に保管する。他へ渡さない |
+`config --quiet` が設定エラーを返した場合は `up` を実行せず、`.env` と選択した Compose fragment を修正してください。boot guard の適用または確認が失敗した環境はサポート対象外です。
 
-AdGuard Homeでは、「設定」→「暗号化設定」で、暗号化を有効にし、サーバー名に上記のアドレス（ホスト名またはIPアドレス）、HTTPSポートに任意のポート（既定443）を指定して、証明書と秘密鍵を貼り付ける。Web UIの「自宅DNSサーバ（DoHのURL）」には、`https://<アドレス>:<ポート>/dns-query`を指定する。
+初回起動後は `http://<サーバーのアドレス>:8080` を開きます。最初にアクセスした利用者が管理者アカウントを作成します。`WEB_PORT` を変更した場合は、そのポートを使います。
 
-サーバの証明書の有効期限（1年）が切れたら、手順2・3をやり直して`server.pem`・`server.key`を差し替える。CAは変わらないため、Web UIの設定を変更する必要はない。
+## TLS 設定
 
-アドレスを追加・変更する場合（`server.csr`は再利用できる）は、`san.ext`の`subjectAltName`を書き換えて手順3だけをやり直し、`server.pem`だけを差し替える（秘密鍵は変わらない）。
+| 通信区間 | 既定値 | 有効化 |
+|---|---|---|
+| ブラウザから Web | `WEB_HTTPS_ENABLED=false`（HTTP） | Web 用証明書と秘密鍵を用意し、`compose/web-tls.yml` を追加 |
+| API から Gateway | `GATEWAY_TLS_ENABLED=false`（UDS 上の HTTP） | Gateway の server 証明書・秘密鍵、API client 証明書・秘密鍵、信頼 CA を用意し、`compose/api-tls.yml` を追加 |
 
-| 表示・症状 | 原因と対処 |
-|---|---|
-| AdGuard Homeに「証明書チェーンが無効です」と表示される | AdGuard Home自身が、自前のCAを信頼していないために出る警告である。証明書の内容（件名・発行者・有効期限・ホスト名）が表示されていて、DoHは動作する。ゲートウェイはWeb UIに貼り付けた`ca.pem`で検証するため、無視してよい。警告を消すには、AdGuard Homeを動かす環境の信頼済み認証局へ`ca.pem`を登録する（Dockerの場合はコンテナ内の`/etc/ssl/certs`へ登録する） |
-| Web UIの稼働状況が「自宅DNSサーバに接続できません」になる | 次のいずれかである。①証明書のアドレス（`subjectAltName`）に、DoHのURLのホスト名またはIPアドレスが含まれていない（`openssl s_client -connect <アドレス>:<ポート> -CAfile ca.pem -verify_hostname <ホスト名>`で`hostname mismatch`と出る）。②ゲートウェイ機が、DoHのURLのホスト名を名前解決できない。ホスト名が自宅DNSサーバ自身にしか登録されていない場合に起こるため、DoHのURLにはIPアドレス（例: `https://192.168.3.252/dns-query`）を指定し、証明書のアドレスにそのIPアドレスを含める |
+Web HTTPS と API→Gateway mTLS は独立した設定です。既定ではどちらも TLS 無効です。Web→API は同一ノード内部ネットワークの HTTP で、API の host port は公開しません。Web HTTPS を有効にしても API→Gateway の TLS は有効にならず、その逆も同様です。
 
-### 動作検証
+証明書と秘密鍵は運用者が準備し、Compose に読み取り専用 mount します。秘密鍵をリポジトリや `.env` に置かず、ホスト上の保護された場所へ保存してください。`.env` にはファイルのホストパスを設定します。
 
-Web UIの設定ダイアログの「動作検証」タブで［検証を実行］を押すと、有効にしている機能が実際に動作しているかを確認できる。VPNの接続や設定は変更しない。確認するのは保存済みの設定である（未保存の変更は反映されない）。検証中に端末で操作を行う必要はない。
+Web HTTPS の設定例です。証明書は PEM 形式とし、`WEB_PORT` は HTTPS 用に利用可能なポート（例: `8443`）を指定します。
 
-項目は次の3つのグループに分かれ、上から順に処理される。無効にしている機能の項目は「対象外の項目」にまとめて表示され、実行されない。
+```dotenv
+COMPOSE_FILE=docker-compose.yml:vendors/adguardvpn/compose.yml:compose/web-tls.yml
+WEB_HTTPS_ENABLED=true
+WEB_PORT=8443
+WEB_TLS_CERT_HOST_PATH=/etc/vpngwgui/tls/web.crt
+WEB_TLS_KEY_HOST_PATH=/etc/vpngwgui/tls/web.key
+```
 
-| グループ | 確認する内容 |
-|---|---|
-| 設定の確認 | 透過ゲートウェイ・Kill Switch・53番リダイレクトのルールが設定どおりに適用されているか。DNS中継・明示的プロキシが待ち受けているか |
-| ゲートウェイの通信確認 | VPNトンネル経由の出口IP、DNS中継による名前解決（自宅DNSサーバへの転送）、迂回ドメインが迂回されること、迂回ドメイン以外が迂回されないこと、明示的プロキシ経由の出口IP |
-| この端末からの確認 | Web UIを開いている端末の通信がVPNを経由していること（出口IPの一致）、端末のDNS問い合わせが53番リダイレクトで中継されること |
+ブラウザは `https://<サーバーのアドレス>:8443` で接続します。証明書の SAN はアクセスする名前または IP アドレスに一致させてください。
 
-各項目の結果は次のとおりである。グループは既定で折りたたまれ、実行中の項目、完了後は最初のNG（なければ最初の未確認）が表示される。グループの見出しを押すと、すべての項目を表示する。
+API→Gateway mTLS を有効にする場合は、`GATEWAY_TLS_ENABLED=true` と `compose/api-tls.yml` を設定し、次のファイルパスを `.env` に指定します。
 
-| 結果 | 意味 |
-|---|---|
-| OK | 設定どおりに動作している |
-| NG | 設定どおりに動作していない。期待した状態・観測した状態・対処が表示される |
-| 未確認 | 前提を満たさない（VPN未接続等）、または端末側の事情により判定できなかった。状況と対処が表示される |
+```dotenv
+GATEWAY_TLS_ENABLED=true
+GATEWAY_TLS_CA_HOST_PATH=/etc/vpngwgui/tls/ca.crt
+GATEWAY_TLS_CLIENT_CERT_HOST_PATH=/etc/vpngwgui/tls/api-client.crt
+GATEWAY_TLS_CLIENT_KEY_HOST_PATH=/etc/vpngwgui/tls/api-client.key
+GATEWAY_TLS_SERVER_CERT_HOST_PATH=/etc/vpngwgui/tls/gateway-server.crt
+GATEWAY_TLS_SERVER_KEY_HOST_PATH=/etc/vpngwgui/tls/gateway-server.key
+GATEWAY_TLS_SERVER_NAME=gateway.local
+```
 
-「この端末からの確認」は、Web UIを開いている端末1台の経路を対象とする。ゲートウェイを経由しない端末（LAN外・別のVPNから開いている等）で実行すると、出口IPはNGになる。53番リダイレクトの確認は、端末が暗号化DNS（DoH・DoT・プライベートDNS）を使っている場合、またはゲートウェイ自身をDNSサーバに指定している場合は、未確認になる（直近10分に他の端末の問い合わせを中継した実績があればOKになる）。
+証明書の SAN に `GATEWAY_TLS_SERVER_NAME` の値を含めます。CA と各証明書の発行・更新・安全な保管は運用者が行います。TLS の有効化・無効化や fragment の変更後は、必ず `config --quiet` で構成を確認してサービスを再作成してください。
 
-| 設定項目 | 意味 |
-|---|---|
-| IP確認サービスのURL | 出口IPの取得に使うサービス。ゲートウェイと、Web UIを開いているブラウザの双方が使う。既定は`https://api.ipify.org`。応答本文がIPv4アドレスのみで、ブラウザからの接続（CORS）を許可する`https://`のサービスを指定する（例: `https://ipinfo.io/ip`、`https://checkip.amazonaws.com`） |
+## 更新
 
-自宅DNSサーバには、検証による問い合わせが`vpngw-selfcheck`という識別子（ClientID）で届く。
+新しい版の tarball と sha256 ファイルを取得し、チェックサムを確認します。bundle には `api/`、`web/`、`proxy/`、`vendors/`、`compose/`、ホスト準備スクリプト、`.env.example`、`docker-compose.yml` など、イメージの build に必要な資材がすべて含まれます。Compose 資材や `compose/` だけでなく、bundle 全体を展開して既存の配布資材を置き換えてください。
 
-### ゲートウェイ機の再起動
-
-Web UIの［設定］の「メンテナンス」タブにある［ゲートウェイ再起動］から、ゲートウェイ機（ベンダーが動作しているサーバ）のOSを再起動できる。確認ダイアログでWeb UIのパスワードを再入力すると実行される。再起動が完了するまでの間、VPN・LAN機器の通信とWeb UIへの接続が止まる。再起動後は、保存済みの設定と接続状態が自動的に復元される。依頼した操作は接続ログに記録される。
-
-この機能はインストーラが導入する。以前の版でインストールした環境では、インストーラを再実行すると使えるようになる（未導入の場合、ダイアログに「導入されていません」と表示される）。
-
-## 注意事項
-
-### アンインストール
-
-対象ホスト上で以下を実行する。docker composeスタック、証明書一式、IPフォワーディングの設定、起動時のKill Switchガード、ゲートウェイ機の再起動の仕組み、常設コマンド、ソース一式の取得先ディレクトリ（`/opt/vpngwgui`自体）を削除する。設定（`/etc/vpngwgui`）とベンダーのログイン情報（Dockerボリューム）は残すため、再度 `install` すると引き継げる。複数ホストへ分離配置した場合は、インストールを実行したホスト（オーケストレーター）上で実行すること。配置した全ホストの後始末をまとめて行う（後始末の範囲は記録済みの配置から自動的に決まる）。
+安全に更新するには、bundle を新しいディレクトリへ展開し、運用者が管理する `.env` をコピーします。`.env` に `COMPOSE_FILE` の選択があればそのまま引き継がれます。証明書を既存インストールディレクトリ内に置いている場合は、そのディレクトリも新しい場所へコピーし、`.env` の証明書パスがコピー先を指すようにします。証明書を `/etc/vpngwgui/tls` などインストールディレクトリ外に置いている場合は、移動せずそのまま使います。
 
 ```sh
-sudo vpngwgui-ctl uninstall
+sha256sum -c vpngwgui-<版>.tar.gz.sha256
+mkdir -p ../vpngwgui-<版>
+tar -xzf vpngwgui-<版>.tar.gz -C ../vpngwgui-<版> --strip-components=1
+cp .env ../vpngwgui-<版>/.env
+# 証明書が既存の配布ディレクトリ内にある場合だけ、該当ディレクトリもコピーする。
+# 例: cp -a ./certs ../vpngwgui-<版>/certs
+cd ../vpngwgui-<版>
+sudo compose/host-preparation.sh apply
+sudo docker compose -p vpngwgui config --quiet
+sudo docker compose -p vpngwgui up -d --build
 ```
 
-`--purge` を付けると、設定・ベンダーのログイン情報・導入メタ情報も削除する。
+`apply` はホスト準備を現在の `.env` と新しい資材に合わせます。`config --quiet` が成功した後に `up -d --build` を実行すると、新しい `api/`・`web/`・`proxy/`・選択した runner からイメージを再構築します。更新時にレジストリからイメージを取得する必要はありません。Compose project 名 `vpngwgui` の named volume は更新後も使われ、管理者設定、監査ログ、runner の認証状態が保持されます。更新のために `down -v` を実行しないでください。これは保存データを削除する操作です。
+
+## 停止と削除
+
+通常の停止は Compose のコンテナとネットワークを停止・削除します。named volume の設定、監査ログ、runner の保存状態は残ります。
 
 ```sh
-sudo vpngwgui-ctl uninstall --purge
+sudo docker compose -p vpngwgui down
 ```
 
-以下は対象外であり、手動で削除・無効化する。
-
-| 変更対象 | 内容 |
-|---|---|
-| `/etc/apt/keyrings/docker.asc`・`/etc/apt/sources.list.d/docker.list` | Docker公式リポジトリの設定 |
-| Docker本体・依存パッケージ | `apt`で導入したもの（他の用途と共有されうるため対象外） |
-
-### 既知の制約
-
-| 制約 | 内容 |
-|---|---|
-| 動作検証済みの環境 | Ubuntu 24.04・Debian 12（bookworm、LXCのクリーンなコンテナ）・Raspberry Pi OS Lite arm64（trixie。QEMUのarm64エミュレーション） |
-| 未検証の環境 | Raspberry Pi OSの32bit（armhf）、Raspberry Pi実機 |
-| Raspberry Pi OSでの順序 | `nftables.service`が既定で有効なため、起動時のKill Switchガードはその後に適用されるよう順序付けている（設定済みであれば利用者が意識する必要はない） |
-| 他のファイアウォール設定 | `/etc/nftables.conf`等の別テーブルで`forward`が`policy drop`になっていると、Dockerのブリッジ（`docker0`・`br-*`）の通信が遮断され、インストール中のイメージのビルドが名前解決の失敗で止まる。インストーラは該当を検出すると警告を表示する。導入前に、以前のゲートウェイ構成の設定を削除するか、Dockerのブリッジを許可すること |
-| `curl`が無いホスト | 先に`sudo apt-get install -y curl`を実行してからインストーラを実行する |
-| 迂回ドメイン | 暗号化DNS（DoH・DoT）を使う端末の問い合わせはゲートウェイで中継できないため、迂回が効かない（端末側の「安全なDNS」等の設定を無効にする）。迂回はIPアドレス単位で判定するため、迂回するドメインとIPアドレスを共有する他のドメイン（CDN等）宛の通信も迂回される。IPv6は対象外である |
-| 動作検証 | 「この端末からの確認」は、Web UIを開いている端末1台だけを対象とする。出口IPの一致で判定するため、同じVPNの出口IPを使う別の経路（別のVPNゲートウェイ等）を通る端末は区別できない。Kill Switchは、ルールの構成だけを確認する（VPNを切断して遮断を確かめることはしない）。IPv6は対象外である |
-| DNS中継のポート | ゲートウェイはUDP/TCPの53番で待ち受ける。同じホストで他のDNSサーバが53番を使っている場合、DNS中継は起動しない（Web UIの稼働状況に「待受に失敗」と表示される） |
-| 配布の信頼方式 | `curl \| sh`はGitHub ReleaseのHTTPS配布を信頼する方式である。配布物は取得するコミットを固定してあり、取得後に照合される。気になる場合はスクリプトをダウンロードして`install.sh.sha256`で検証してから実行してもよい |
-
-## ベンダーの追加
-
-対応済みのVPNベンダー以外（AdGuard VPN・Proton VPN以外のCLIを持つVPN）を使いたい場合、`vendors/<新しいベンダーID>/`ディレクトリを1つ追加するだけで対応できる。API・Web UI・ネットワークコンテナ・インストーラなど共通部分の改修は不要である。追加するファイルは以下のとおり。
-
-| ファイル | 役割 |
-|---|---|
-| `profile.json`（必須） | 接続・切断・ログイン等の各操作に対応するCLIコマンド、機能差・プラン制限・ログイン方式の宣言。ベンダー固有の値はここにだけ書く |
-| `Dockerfile`（必須） | ベンダーCLIを同梱したランナーのイメージ |
-| `compose.yml`（必須） | ランナーのcomposeサービス定義 |
-| `entrypoint.sh`（任意） | そのベンダー固有の起動処理 |
-| `install-host.sh`（任意） | CLIがホスト（ベアメタル）側への追加導入を要する場合だけ |
-| `samples.json`（推奨） | 実CLIの出力サンプルと期待値（適合テストが使う） |
-
-各ファイルの書式は、既存の`vendors/adguardvpn/`・`vendors/protonvpn/`を参照。
-
-## 開発
-
-このリポジトリのコードに変更を加える場合のコマンドである（利用者としてWeb UIを使うだけなら不要）。
+ホスト設定も解除する場合は、必ず先に Compose を停止し、その後 `remove` を実行します。ホスト準備の解除は Compose volume を削除しません。
 
 ```sh
-npm ci                        # このリポジトリの開発用パッケージ一式を導入する
-npm run generate:api-client   # APIサーバのOpenAPI定義から、Web UIが使うAPIクライアントのコードを生成する（web/src/generated/。git管理外なので変更のたびに要実行）
-npm test                      # 単体テスト・ベンダー中立性の検査（本番コードにベンダー固有の値が紛れていないかの静的チェック）・インストーラの検査をまとめて実行する
+sudo docker compose -p vpngwgui down
+sudo compose/host-preparation.sh remove
 ```
 
-実VPN・実LAN・LXCを使ったE2Eテストの手順は[e2e/README.md](e2e/README.md)を参照。
+`down -v` は永続データを削除します。管理者アカウント、設定、お気に入り、監査ログ、runner の認証状態を含む named volume が削除され、復元できません。
+
+```sh
+sudo docker compose -p vpngwgui down -v
+```
+
+データを消去してホスト設定も解除する場合は、`down -v` の完了後に `sudo compose/host-preparation.sh remove` を実行してください。
+
+すべての Compose 操作では project 名 `vpngwgui` を固定します。`-p vpngwgui` またはこの値と一致する `name:` を使ってください。`COMPOSE_PROJECT_NAME` や別の `-p` 値は Compose の `name:` より優先され、volume 名を変えるためサポートしません。
+
+## 通信保護と Kill Switch
+
+Kill Switch は透過ゲートウェイのみを対象とし、VPN が利用できない間の LAN 転送を boot guard で遮断します。明示的プロキシだけを使う場合、停止時の通信遮断は保証されません。
+
+Web UI の設定にあるゲートウェイ再起動操作は、認証済み要求をホストの固定 systemd 処理へ渡して OS を再起動します。再起動中は Gateway と Web UI が利用できません。
+
+## 旧環境について
+
+旧方式は未リリースのため、旧方式からの移行・互換対応・保存データの引き継ぎには対応しません。新しい Compose 方式で新規導入してください。旧方式で保存した設定や runner の認証情報は新方式へ移行されません。
+
+## 開発者向け
+
+以下はリポジトリの開発・検証用です。
+
+```sh
+npm ci
+npm test
+npm run build
+npm run test:e2e-unit
+```

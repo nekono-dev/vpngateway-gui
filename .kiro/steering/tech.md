@@ -2,76 +2,58 @@
 
 ## アーキテクチャ
 
-3つのアプリケーション（`api`・`proxy`・`web`）を、npm workspaces のモノレポとして構成する。配置は Docker Compose で行い、ホスト側の導入はシェルのインストーラが担う。
+`api`・`proxy`・`web` の3アプリを npm workspaces のモノレポとして構成し、root Compose と選択した runner fragment で単一ノードに配置する。
 
 | 役割 | 実体 | ネットワーク |
-|------|------|-------------|
-| ゲートウェイ（VPN中継・DNS中継） | `proxy`（ベンダーのランナーを含む） | `network_mode: host`、API 制御は共有 UDS |
-| APIサーバ（認証・設定・ベンダー操作） | `api` | 内部ネットワーク |
-| Webサーバ（SPA配信・APIへのリバースプロキシ） | `web` | 公開ポート |
+|---|---|---|
+| VPN・DNS 中継 | `proxy` と選択した runner | host network、ネットワーク操作に必要な権限 |
+| API | 認証・設定・runner 操作 | Compose 内部 network、host port 非公開 |
+| Web | SPA と API reverse proxy | 利用者向け host port |
 
-ブラウザは `web` の単一オリジンだけにアクセスする。`web` から `api` へは内部 HTTP、`api` から `proxy` へは共有 UDS 上の HTTP または設定で有効化した厳格な mTLS を使う。
+ブラウザから Web への HTTPS は `WEB_HTTPS_ENABLED` で任意に有効化し、既定は `false`。Web から API は同一ノード内の HTTP。API から Gateway は共有 UDS 上の HTTP を既定とし、`GATEWAY_TLS_ENABLED=true` のときだけ UDS 上の厳格な mTLS を使う。TLS 有効時の証明書は運用者が用意し、用途別 Compose fragment が read-only mount する。TLS 失敗を平文へ降格しない。
+
+ホスト準備は `compose/host-preparation.sh` の `check|apply|status|remove` に限定する。Debian 12+/Ubuntu 22.04+、rootful のローカル Docker、nftables、systemd を前提とする。起動時 boot guard の実適用・確認に失敗する環境はサポート対象外。guard は透過ゲートウェイの転送を保護し、明示的プロキシだけを利用する場合の停止時遮断は保証しない。
+
+導入・更新・停止・削除は Compose lifecycle で行い、すべての Compose command に `-p vpngwgui` を付ける。通常の `down` は named volume を保持し、`down -v` は明示的なデータ削除操作。ホスト設定の `remove` は Compose を `down` した後に行う。常設 installer や update command は提供しない。旧方式からの移行・データ引き継ぎは対象外。
 
 ## 中核技術
 
-- **言語**: TypeScript（`strict`）。ESM（`"type": "module"`）、モジュール解決は `NodeNext`。ローカルの import は `.js` 拡張子を付ける。
-- **ランタイム**: Node.js 22（CIの指定に従う）
-- **APIサーバ・Webサーバ**: Fastify 5
-- **スキーマ**: TypeBox（`@sinclair/typebox`）。Fastify のルート定義で型付きスキーマとして使う。
-- **フロントエンド**: React 18、Vite 5
-- **APIクライアント**: `api` が出力する OpenAPI 定義から、`orval` で `web/src/generated/` に生成する。生成物は手で編集しない。
-- **インストーラ**: POSIX `sh`。`shellcheck` で検査する。
-
-## 主要ライブラリ
-
-- `undici`: `api` からゲートウェイへの HTTP 接続
-- `@fastify/swagger`・`@fastify/http-proxy`・`@fastify/static`: API定義の出力、リバースプロキシ、SPA の配信
+- 言語: TypeScript strict、ESM、Node.js 22
+- API/Web server: Fastify 5、スキーマ: TypeBox
+- フロントエンド: React 18、Vite 5
+- API client: OpenAPI から `web/src/generated/` に生成し、生成物を直接編集しない
+- 開発・配布資材: POSIX `sh`、Docker Compose、nftables、systemd
+- ゲートウェイ制御: API と proxy の共有 UDS。runner 用制御 socket volume は Gateway socket volume と分離
 
 ## 開発の標準
 
-### 型安全性
-- TypeScript の `strict` を有効にする（`tsconfig.base.json`）。
-- 静的検査は `typescript-eslint` の recommended を使う（`api` の `eslint.config.js`）。未使用の引数は `_` で始めて許可する。
+### 型・構成
+
+- TypeScript の `strict` を使う。ローカル import は相対パスと `.js` 拡張子を使う。
+- ルートは入出力変換に限り、処理を機能ドメインへ委ねる。
+- ベンダーの挙動は `profile.json` と vendor fragment に置き、本体のコードへベンダー固有分岐を追加しない。
+- `api/openapi.json` と `web/src/generated/` は生成コマンドで更新する。
 
 ### ベンダー中立性
-- 本番のコード（コメントを含む）に、VPNベンダーの ID・表示名・CLI のバイナリ名を書かない。`scripts/check-vendor-neutrality.mjs` が、`vendors/*/profile.json` から禁止語を作って検査する。
-- テスト（`*.test.*`）・生成物・`vendors/` の中身は、この検査の対象外である。
 
-### テスト
-- 単体テストは、対象ファイルと同じディレクトリに `*.test.ts` / `*.test.tsx` として置く（Vitest）。
-- フロントエンド（`web/src`）の単体テストは jsdom で動かす。Webの配信サーバ側（`*.server.*`）のテストは node で動かす（`vitest.server.config.ts`）。
-- 実ブラウザの E2E は `e2e/hosted/`（Playwright、`npm run test:e2e` は `sh e2e/hosted/run.sh` を呼ぶ）。通常の `npm test` には含めない。
-- 受け入れテスト層（`tests/`・`test:acceptance`）は、現在のリポジトリにない。
+本番コードとそのコメントに、ベンダー固有の ID・表示名・CLI 名を書かない。`scripts/check-vendor-neutrality.mjs` が profile から禁止語を作って検査する。テスト・生成物・`vendors/` は検査対象外。
 
-### コメント
-- 各ファイルの先頭に `// 責務: …` の1行を書き、そのファイルの役割を示す。
-- コメントは日本語で書く。識別子は英語（関数・変数は camelCase、型は PascalCase）。
+### テストとコメント
 
-## 開発環境
+- Vitest の単体テストは対象ファイルの近くに置き、Web server test は node 環境で実行する。
+- 実ブラウザ E2E は `e2e/hosted/`、実 VPN の検証は `e2e/vendor-live/` に分ける。
+- 各ソースファイルの先頭に `// 責務: …` の1行を書く。コメントは日本語、識別子は英語。
 
-### 必要なツール
-- Node.js 22 以上、npm
-- Docker（実際のゲートウェイ動作の確認に必要）
-- Linux（ネットワーク操作は `nftables`・policy routing を使う）
+## 開発環境とコマンド
 
-### 主要コマンド
+必要なものは Node.js 22 以上、npm。Compose や nftables を使ったゲートウェイ検証には対応 Linux 環境が必要。
 
-```bash
-npm ci                        # 依存の導入
-npm run generate:api-client   # OpenAPI からの API クライアント生成（web/src/generated/）
-npm test                      # 単体テスト（proxy・api・web）・配信サーバのテスト・中立性検査・インストーラ検査
-npm run test:e2e              # 実ブラウザの E2E（e2e/hosted/。事前に Playwright を導入）
-npm run build                 # proxy → api → web の順にビルド
+```sh
+npm ci
+npm test
+npm run test:e2e-unit
+npm run build
+npm run generate:api-client
 ```
 
-## 主要な技術的判断
-
-- **ベンダーの宣言化**: 各ベンダーの操作（接続・切断・ログイン・状態取得）は、`profile.json` の宣言で表す。出力の解析も宣言（正規表現・プレースホルダ）で行う。
-  - 根拠: ベンダーの追加を、本体の改修なしで行えるようにするため。
-- **proxy は `network_mode: host`**: ゲートウェイは、ホストの nftables・ルーティング・TUN デバイスを直接操作する必要がある。
-- **自己署名 CA によるホスト間 TLS**: インストーラが CA と証明書を生成・配布する。ブラウザ向けの証明書は自己署名である。
-- **インストーラのトポロジー固定**: 一度決めた配置先（Web・API・ゲートウェイのホスト）は、`uninstall` を経ないと変更できない。
-
-_標準とパターンを記述する。依存の網羅的な一覧にはしない。_
-
-_updated_at: 2026-11-09（テストの配置・コメントと識別子の規約・テストの実行コマンドを、実装に合わせて修正）_
+_updated_at: 2026-11-19_
