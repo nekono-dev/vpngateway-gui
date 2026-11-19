@@ -274,7 +274,7 @@ hp_boot_guard_verify_resources() {
     printf '%s\n' "$table_output" | grep -Fq 'type ifname' &&
     printf '%s\n' "$table_output" | grep -Fq 'flags timeout' &&
     printf '%s\n' "$table_output" | grep -Fq 'chain guard_forward' &&
-    printf '%s\n' "$table_output" | grep -Eq 'hook forward priority (filter - 1|-1); policy accept;'; then
+    printf '%s\n' "$table_output" | grep -Eq 'hook[[:space:]]+forward[[:space:]]+priority[[:space:]]+(filter[[:space:]]+-[[:space:]]+1|-1);[[:space:]]+policy[[:space:]]+accept;'; then
     return 0
   fi
   printf '%s\n' 'host-preparation: boot guard table/chain の確認に失敗しました' >&2
@@ -299,9 +299,10 @@ hp_boot_guard_verify_owned_table() {
     }
     {
       line = trim($0)
-      if (line == "table inet vpngwgui_guard {") { table_count++; next }
-      if (line == "set healthy_lease4 {") { set_count++; section = "set"; next }
-      if (line == "chain guard_forward {") { chain_count++; section = "chain"; next }
+      if (line == "") next
+      if (line ~ /^table[[:space:]]+inet[[:space:]]+vpngwgui_guard[[:space:]]*\{$/) { table_count++; section = "table"; next }
+      if (line ~ /^set[[:space:]]+healthy_lease4[[:space:]]*\{$/) { set_count++; section = "set"; next }
+      if (line ~ /^chain[[:space:]]+guard_forward[[:space:]]*\{$/) { chain_count++; section = "chain"; next }
       if (section == "set" && elements_open) {
         if (line ~ /}/) {
           close_position = index(line, "}")
@@ -316,8 +317,8 @@ hp_boot_guard_verify_owned_table() {
         next
       }
       if (line == "}") { section = ""; close_count++; next }
-      if (section == "set" && line == "type ifname") { set_type++; next }
-      if (section == "set" && line == "flags timeout") { set_flags++; next }
+      if (section == "set" && line ~ /^type[[:space:]]+ifname$/) { set_type++; next }
+      if (section == "set" && line ~ /^flags[[:space:]]+timeout$/) { set_flags++; next }
       if (section == "set" && line ~ /^elements[[:space:]]*=[[:space:]]*\{/) {
         sub(/^elements[[:space:]]*=[[:space:]]*\{/, "", line)
         if (line ~ /}/) {
@@ -331,7 +332,7 @@ hp_boot_guard_verify_owned_table() {
         }
         next
       }
-      if (section == "chain" && (line == "type filter hook forward priority -1; policy accept;" || line == "type filter hook forward priority filter - 1; policy accept;")) { chain_type++; next }
+      if (section == "chain" && line ~ /^type[[:space:]]+filter[[:space:]]+hook[[:space:]]+forward[[:space:]]+priority[[:space:]]+(filter[[:space:]]+-[[:space:]]+1|-1);[[:space:]]+policy[[:space:]]+accept;$/) { chain_type++; next }
       if (section == "chain" && line == "iifname \"" iface "\" drop") { drop_rule++; next }
       if (section == "chain" && line == "iifname @healthy_lease4 return") { return_rule++; next }
       invalid = 1

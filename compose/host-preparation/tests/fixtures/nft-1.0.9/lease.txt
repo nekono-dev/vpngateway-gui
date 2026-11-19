@@ -1,0 +1,13 @@
+table inet vpngwgui_guard {
+	set healthy_lease4 {
+		type ifname
+		flags timeout
+		elements = { "acclan0" timeout 4s expires 3s985ms }
+	}
+
+	chain guard_forward {
+		type filter hook forward priority filter - 1; policy accept;
+		iifname @healthy_lease4 return
+		iifname "acclan0" drop
+	}
+}

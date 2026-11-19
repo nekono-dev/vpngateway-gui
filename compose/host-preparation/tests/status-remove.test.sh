@@ -329,4 +329,24 @@ PRECHECK_SCRIPT
 remove_classification_case
 remove_conflict_classification_case
 sysctl_preflight_original_case
+
+# status/remove が共有する所有検証器は nft 1.0.9 の実 listing を受理する。
+real_listing_case() (
+  . "$root/compose/host-preparation/boot-guard.sh"
+  . "$root/compose/host-preparation/status.sh"
+  . "$root/compose/host-preparation/remove.sh"
+  real_listing_dir="$root/compose/host-preparation/tests/fixtures/nft-1.0.9"
+  real_listing_path=
+  nft() { cat "$real_listing_path"; }
+  for real_state in block lease lease-refreshed off; do
+    real_listing_path="$real_listing_dir/$real_state.txt"
+    table_output=$(nft list table inet vpngwgui_guard)
+    hp_boot_guard_verify_resources
+    hp_boot_guard_verify_owned_table acclan0 || {
+      printf 'RED: status/remove rejected real nft 1.0.9 %s listing\n' "$real_state" >&2
+      exit 1
+    }
+  done
+)
+real_listing_case
 printf '%s\n' 'host-preparation status/remove cases passed'

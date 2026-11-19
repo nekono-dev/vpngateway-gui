@@ -311,7 +311,7 @@ rm -f "$requires_link"
 hp_remove_boot_guard
 : > "$temporary/nft.log"
 : > "$temporary/nft-batches.log"
-for conflict in extra-rule extra-chain extra-set other-interface; do
+for conflict in extra-rule extra-chain extra-set other-interface wrong-hook wrong-policy wrong-priority; do
   write_state_iface eth0
   write_table_iface eth0
   case "$conflict" in
@@ -330,6 +330,18 @@ for conflict in extra-rule extra-chain extra-set other-interface; do
       ;;
     other-interface)
       awk '{ print; if ($0 ~ /iifname "eth0" drop/) print "  iifname \"eth9\" drop" }' "$temporary/table.txt" > "$temporary/table.changed"
+      mv "$temporary/table.changed" "$temporary/table.txt"
+      ;;
+    wrong-hook)
+      sed 's/hook forward/hook input/' "$temporary/table.txt" > "$temporary/table.changed"
+      mv "$temporary/table.changed" "$temporary/table.txt"
+      ;;
+    wrong-policy)
+      sed 's/policy accept/policy drop/' "$temporary/table.txt" > "$temporary/table.changed"
+      mv "$temporary/table.changed" "$temporary/table.txt"
+      ;;
+    wrong-priority)
+      sed 's/priority -1;/priority 0;/' "$temporary/table.txt" > "$temporary/table.changed"
       mv "$temporary/table.changed" "$temporary/table.txt"
       ;;
   esac
@@ -661,5 +673,17 @@ fi
 [ "$(readlink "$requires_link")" = "$foreign_dependency_target" ]
 [ "$(cat "$foreign_dependency_target")" = 'foreign dependency' ]
 grep -Fq 'Docker dependency link が外部所有のため保持します' "$temporary/foreign-dependency.out"
+
+# nft 1.0.9 の実出力を BLOCK/LEASE/更新済み LEASE/OFF それぞれで検証する。
+real_listing_dir="$tree/compose/host-preparation/tests/fixtures/nft-1.0.9"
+for real_state in block lease lease-refreshed off; do
+  cp "$real_listing_dir/$real_state.txt" "$temporary/table.txt"
+  table_output=$(nft list table inet vpngwgui_guard)
+  hp_boot_guard_verify_resources
+  hp_boot_guard_verify_owned_table acclan0 || {
+    printf 'RED: real nft 1.0.9 %s listing was rejected\n' "$real_state" >&2
+    exit 1
+  }
+done
 
 printf '%s\n' 'host-preparation boot guard cases passed'
