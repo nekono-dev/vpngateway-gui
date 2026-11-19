@@ -342,7 +342,8 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
     const result = await start({ name: "mode-mismatch", web: false, gateway: true }, true);
     expect(result.started, `failure=${JSON.stringify(result.failure)}; up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
     await loginAndCheck(page, result.origin);
-    await expect(page.getByText("API と Gateway の通信保護設定が一致しません")).toBeVisible();
+    // 同じ文言は接続操作のエラー欄にも出ることがあるため、専用状態の表示（透過ゲートウェイの状態欄）で確かめる
+    await expect(page.getByTestId("status-transparent-gateway").getByText("API と Gateway の通信保護設定が一致しません")).toBeVisible();
     const status = await page.evaluate(async () => {
       const response = await fetch("/api/v1/connection/gateway");
       return { status: response.status, body: await response.json() as { error?: string; protectionModeMismatch?: boolean } };
