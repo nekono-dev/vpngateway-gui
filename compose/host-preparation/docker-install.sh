@@ -58,7 +58,6 @@ hp_docker_assess() {
       printf '%s\n' 'Docker 実行ファイルはありますが、dpkg 配布元を判定できません。' >&2
       printf '%s\n' unsupported
     else
-      printf '%s\n' 'Docker は未導入です。' >&2
       printf '%s\n' install
     fi
     return 0
@@ -96,7 +95,6 @@ hp_docker_assess() {
     fi
     return 0
   fi
-  printf 'Docker Engine %s と Compose plugin を確認しました。\n' "$hp_di_version" >&2
   printf '%s\n' ready
 }
 
@@ -104,12 +102,15 @@ hp_docker_consent() {
   hp_di_yes=${1:-0}
   [ "$hp_di_yes" -eq 1 ] && return 0
   hp_di_tty=${HP_DOCKER_TTY:-/dev/tty}
-  if [ ! -r "$hp_di_tty" ] || [ ! -w "$hp_di_tty" ]; then
-    printf '%s\n' '対話端末がありません。変更前に終了します。--yes を指定してください。' >&2
+  if ! ( : <"$hp_di_tty" && : >>"$hp_di_tty" ) 2>/dev/null; then
+    printf '%s\n' "対話端末がないため同意を確認できません。自動実行では \`sh compose/host-preparation.sh apply --yes\` を指定してください。" >&2
     return 1
   fi
   printf '%s' '続行しますか [y/N]: ' >"$hp_di_tty"
-  IFS= read -r hp_di_answer <"$hp_di_tty" || return 1
+  if ! IFS= read -r hp_di_answer <"$hp_di_tty" 2>/dev/null; then
+    printf '%s\n' "対話端末がないため同意を確認できません。自動実行では \`sh compose/host-preparation.sh apply --yes\` を指定してください。" >&2
+    return 1
+  fi
   case "$hp_di_answer" in
     y|Y|yes|YES) return 0 ;;
     *) printf '%s\n' '同意が得られなかったため中止しました。' >&2; return 1 ;;
@@ -303,8 +304,6 @@ hp_docker_prepare() {
         printf '再検査に失敗しました（状態: %s）。失敗段階: Compose plugin 導入済み。自動で元に戻さず、rootful Engine・Compose plugin・Engine 28 以上を手動確認してください。\n' "$hp_di_action" >&2
         return 1
       fi
-      hp_di_version=$(hp_docker_engine_version)
-      printf 'Docker Engine %s と Compose plugin を確認しました。\n' "$hp_di_version" >&2
       return 0
       ;;
     unsupported) printf '%s\n' 'Docker の状態を自動解消できません。配布元と Engine を確認してください。' >&2; return 1 ;;
@@ -319,8 +318,7 @@ hp_docker_prepare() {
     printf '再検査に失敗しました（状態: %s）。失敗段階: 取得・実行済み。Docker 以外のホスト設定は変更していません。自動で元に戻さず、rootful Engine・Compose plugin・Engine 28 以上を手動確認してください。\n' "$hp_di_action" >&2
     return 1
   fi
-  hp_di_version=$(hp_docker_engine_version)
-  printf 'Docker Engine %s と Compose plugin を確認しました。\n' "$hp_di_version" >&2
+  return 0
 }
 
 # apply の処理順への接続は後続タスクで行う。

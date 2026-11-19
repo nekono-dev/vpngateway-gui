@@ -39,8 +39,7 @@ hp_load_docker_os() {
 }
 
 hp_report_docker() {
-  hp_load_docker_os
-  hp_cli_docker_action=$(hp_docker_assess) || hp_cli_docker_action=unsupported
+  hp_cli_docker_action=${1:-unsupported}
   hp_cli_docker_source=未導入
   hp_cli_ce=$(hp_docker_package_status docker-ce 2>/dev/null || :)
   hp_cli_io=$(hp_docker_package_status docker.io 2>/dev/null || :)
@@ -52,6 +51,7 @@ hp_report_docker() {
     ready)
       hp_cli_docker_version=$(hp_docker_engine_version 2>/dev/null || printf '%s' unknown)
       printf 'Docker: 配布元=%s Engine=%s Compose plugin=利用可能 apply 対処=なし\n' "$hp_cli_docker_source" "$hp_cli_docker_version"
+      printf 'Docker Engine %s と Compose plugin を確認しました。\n' "$hp_cli_docker_version"
       ;;
     install) printf '%s\n' 'Docker 未導入: 配布元=未導入 Engine=なし Compose plugin=未確認 apply 対処=Docker Engine と Compose plugin を同意のうえ導入' ;;
     upgrade)
@@ -72,7 +72,7 @@ case "$command_name" in
     hp_check_prerequisites || exit 1
     hp_load_docker_os
     docker_action=$(hp_docker_assess) || exit 1
-    hp_report_docker
+    hp_report_docker "$docker_action"
     case "$docker_action" in
       unsupported) printf '%s\n' 'NG: Docker の状態を自動解消できません' >&2; exit 1 ;;
       install|upgrade|compose|ready) printf 'OK: Docker action=%s\n' "$docker_action" ;;
@@ -86,6 +86,8 @@ case "$command_name" in
     hp_docker_prepare "$apply_yes" || hp_error 'Docker の準備に失敗したため apply を中止しました。Docker 以外のホスト設定は変更していません。'
     docker_action=$(hp_docker_assess) || docker_action=unsupported
     [ "$docker_action" = ready ] || hp_error 'Docker の再検査に失敗しました。Docker 以外のホスト設定は変更していません。'
+    docker_version=$(hp_docker_engine_version 2>/dev/null || printf '%s' unknown)
+    printf 'Docker Engine %s と Compose plugin を確認しました。\n' "$docker_version" >&2
     hp_check_host_reboot_accounts || hp_error 'UID/GID 10001 が予約済みのため apply を中止しました。'
     hp_state_initialize || hp_error '所有状態を初期化できないため apply を中止しました。'
     hp_apply_sysctl || hp_error 'sysctl の適用に失敗しました。部分適用状態を確認してください。'
@@ -108,7 +110,9 @@ case "$command_name" in
     # shellcheck disable=SC1090
     . "$handler"
     if [ "$command_name" = status ]; then
-      hp_report_docker
+      hp_load_docker_os
+      docker_action=$(hp_docker_assess) || docker_action=unsupported
+      hp_report_docker "$docker_action"
       hp_status
     else
       if hp_remove; then hp_remove_result=0; else hp_remove_result=$?; fi

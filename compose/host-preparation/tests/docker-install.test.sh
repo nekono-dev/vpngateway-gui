@@ -122,6 +122,14 @@ if printf '%s\n' yes | hp_docker_consent 0 >/dev/null 2>&1; then exit 1; fi
 hp_docker_consent 1
 HP_DOCKER_TTY=$temporary/missing; export HP_DOCKER_TTY
 if hp_docker_consent 0 >/dev/null 2>&1; then exit 1; fi
+mkdir "$temporary/unopenable-tty"
+HP_DOCKER_TTY=$temporary/unopenable-tty; export HP_DOCKER_TTY
+if hp_docker_consent 0 >"$temporary/unopenable.out" 2>&1; then exit 1; fi
+grep -Fq "対話端末がないため同意を確認できません。自動実行では \`sh compose/host-preparation.sh apply --yes\` を指定してください。" "$temporary/unopenable.out"
+if grep -Eq 'cannot (create|open)' "$temporary/unopenable.out"; then exit 1; fi
+HP_DOCKER_TTY=$temporary/empty-tty; : > "$HP_DOCKER_TTY"; export HP_DOCKER_TTY
+if hp_docker_consent 0 >"$temporary/eof-tty.out" 2>&1; then exit 1; fi
+grep -Fq "対話端末がないため同意を確認できません。自動実行では \`sh compose/host-preparation.sh apply --yes\` を指定してください。" "$temporary/eof-tty.out"
 
 # 判定と同意の入口はファイル・state を作成しない。
 [ ! -e "$temporary/state" ]

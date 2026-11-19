@@ -27,6 +27,7 @@ COMMON
 cat > "$tree/compose/host-preparation/docker-install.sh" <<'DOCKER'
 hp_docker_prepare() { printf 'docker-prepare\n' >> "$record"; [ "${FAIL-}" != docker ] && [ "${CONSENT-yes}" = yes ] && [ "${TTY-yes}" = yes ]; }
 hp_docker_assess() { printf 'docker-assess\n' >> "$record"; printf '%s\n' "${ASSESS-ready}"; }
+hp_docker_engine_version() { printf '%s\n' 28.0.0; }
 DOCKER
 cat > "$tree/compose/host-preparation/host-reboot.sh" <<'HOST'
 hp_check_host_reboot_accounts() { printf 'accounts\n' >> "$record"; [ "${FAIL-}" != accounts ]; }
@@ -60,6 +61,7 @@ expect_no_host_changes() {
   [ ! -e "$record.state" ] && [ ! -e "$record.sysctl" ] && [ ! -e "$record.daemon.json" ]
 }
 run_case ok
+[ "$(grep -Fc 'Docker Engine 28.0.0 と Compose plugin を確認しました。' "$temporary/output")" -eq 1 ]
 expect_calls 'static
 docker-prepare
 docker-assess

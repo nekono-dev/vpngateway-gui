@@ -96,7 +96,8 @@ run_check() (
       [ "$result" -eq 0 ] || { printf '%s\n' "$output" >&2; exit 1; }
       for line in 'OK: 対応 OS' 'OK: root' 'OK: nftables 構文検査' 'OK: LAN_IFACE=eth0' 'Docker 未導入'; do
         printf '%s\n' "$output" | grep -Fq "$line"
-      done ;;
+      done
+      [ "$(printf '%s\n' "$output" | grep -Fc 'Docker 未導入:')" -eq 1 ] ;;
     uid-conflict|gid-conflict|uid-lookup-error)
       [ "$result" -ne 0 ] || exit 1
       case "$scenario" in uid-conflict) expected='NG: UID 10001' ;; gid-conflict) expected='NG: GID 10001' ;; *) expected='NG: UID 10001 の使用状況を確認できません' ;; esac
@@ -158,7 +159,7 @@ PATH="$base" /usr/bin/env HP_DOCKER_TTY="$temporary/no-tty" /bin/sh "$tree/compo
 result=$?
 set -e
 [ "$result" -ne 0 ]
-grep -Fq -- '--yes を指定してください' "$temporary/no-tty.out"
+grep -Fq "対話端末がないため同意を確認できません。自動実行では \`sh compose/host-preparation.sh apply --yes\` を指定してください。" "$temporary/no-tty.out"
 set +e
 PATH="$base" /usr/bin/env HP_DOCKER_TTY="$temporary/no-tty" /bin/sh "$tree/compose/host-preparation.sh" apply --yes >"$temporary/yes.out" 2>&1
 result=$?
