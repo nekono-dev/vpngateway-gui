@@ -31,7 +31,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 **Objective:** As a 運用者, I want Compose の前提となるホスト設定を明示的に準備・確認したい, so that VPN ゲートウェイを再起動後も運用できる。
 
 #### Acceptance Criteria
-1. When 運用者が `check` を実行する, the Host Preparation Tool shall Debian 12 以降または Ubuntu 22.04 以降であること、root 実行、必要コマンド、LAN_IFACE の妥当性、および nftables の構文検査が可能であることを読み取り専用で検証する。Docker が導入済みの場合は rootful Docker Engine であり rootless でないことも読み取り専用で検証する。Docker 未導入・Docker 28 未満・Compose plugin 欠落は `apply` が同意を得て導入または更新する項目として表示する。対応 OS 外、rootless Docker、または `apply` でも解消できない条件は不合格とし、boot guard を適用しない。
+1. When 運用者が `check` を実行する, the Host Preparation Tool shall Debian 12 以降または Ubuntu 22.04 以降であること、root 実行、必要コマンド、LAN_IFACE の妥当性、および nftables の構文検査が可能であることを読み取り専用で検証する。Docker が導入済みの場合は rootful Docker Engine であり rootless でないことも読み取り専用で検証する。Docker 未導入・Docker 公式版の 28 未満・Compose plugin 欠落は `apply` が同意を得て導入または更新する項目として表示し合格扱いする。OS 標準版（`docker-ce` 以外）の Docker 28 未満は `apply` でも解消できない条件として不合格とし、boot guard を適用しない。対応 OS 外および rootless Docker も不合格とする。
 2. When ホスト準備が成功する, the Host Preparation Tool shall LAN 通信の転送と必要なホスト操作を製品が利用できる状態にする。
 3. When 同じ設定でホスト準備を再実行する, the Host Preparation Tool shall 製品が管理する設定や常駐処理を重複させない。
 4. If ホスト準備の処理が失敗する, the Host Preparation Tool shall 成功として終了せず、失敗した処理と既に適用した変更を運用者が確認できるようにする。
@@ -40,11 +40,11 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 7. When 運用者がホスト準備の確認または解除を行う, the Host Preparation Tool shall 製品が管理する設定・常駐処理と解除対象を識別できるようにし、製品と無関係な設定を変更しない。
 8. When Gateway が停止中または unhealthy であり、透過ゲートウェイと Kill Switch が両方有効である, the VPN Gateway System shall 製品が管理する LAN 転送経路を遮断する。Gateway が healthy の間は通常 ruleset が転送可否を決め、VPN egress forwarding を許可できる。proxy 再起動時は API settings の初回受信・適用まで既存 guard state を変更せず、LEASE は lease の自然失効で遮断し、OFF は OFF のままとする。明示的プロキシのみのモードでは Kill Switch と停止時遮断保証を提供しない。
 9. When `apply` が Docker daemon の forwarding 設定を必要とする, the Host Preparation Tool shall Docker 28 以降を確認し、既存の `/etc/docker/daemon.json` がない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成して所有状態を記録し、Docker を再起動する。再起動後に FORWARD の既定ポリシーが ACCEPT と確認できた場合だけ成功とし、確認できない場合または拒否のままの場合は失敗とする。既存ファイルに設定がなければ変更せず手動設定を案内し、設定後の再起動が必要な場合は運用者へ知らせる。
-10. When 対応 OS 上で Docker が未導入の状態で運用者が `apply` を実行する, the Host Preparation Tool shall HTTPS で `https://get.docker.com` から取得した公式導入スクリプトについて、取得元 URL、取得内容の SHA-256、および当該スクリプトが Docker Engine と関連パッケージ（Compose plugin を含む）を OS のパッケージ管理で導入することを表示し、運用者の同意後に実行する。`--yes` が指定された場合は同意の問い合わせを省略するが表示は行い、製品側でハッシュを固定して照合しない。
-11. When 対応 OS 上で Docker が導入済みかつバージョンが 28 未満である, the Host Preparation Tool shall Docker の現在の版と、更新後に必要な最低版が 28 以上であることを表示し、運用者の同意（`--yes` による省略を含む）を得た後に公式導入スクリプトで更新する。更新後は実際に導入された版を表示する。Docker が導入済みかつ 28 以上であれば、Docker の導入・更新に触れない。
-12. When 対応 OS 上で Docker があり Compose plugin がない状態で運用者が `apply` を実行する, the Host Preparation Tool shall 導入するパッケージ名を表示して運用者の同意（`--yes` による省略を含む）を得た後に、当該 OS で利用可能なパッケージ管理を用いて Compose plugin を導入する。
+10. When 対応 OS 上で Docker が未導入の状態で運用者が `apply` を実行する, the Host Preparation Tool shall HTTPS で `https://get.docker.com` から取得した公式導入スクリプトについて、取得元 URL、取得内容の SHA-256、および当該スクリプトが Docker Engine と関連パッケージ（Compose plugin を含む）を OS のパッケージ管理で導入することを表示し、運用者の同意後に実行する。取得には `curl` を優先し、利用できなければ `wget` を使う。どちらも利用できない場合は、同意対象に `curl` と CA 証明書の導入を含めて取得手段を用意する。`--yes` が指定された場合は同意の問い合わせを省略するが表示は行い、製品側でハッシュを固定して照合しない。
+11. When 対応 OS 上で Docker が導入済みかつバージョンが 28 未満である, the Host Preparation Tool shall Docker の配布元と現在の版、28 以上が必要なことを判定する。Docker 公式版（`docker-ce`）の場合は、Docker と稼働中コンテナが再起動されること、および公式スクリプトが既存 Docker の検出時に約20秒待機して続行することを表示し、運用者の同意（`--yes` による省略を含む）後に公式導入スクリプトで更新して実際の版を表示する。OS 標準版（`docker-ce` 以外）の場合は更新せず、Docker を手動更新する方法を案内して非0で中止する。Docker が導入済みかつ 28 以上であれば Docker の導入・更新に触れない。
+12. When 対応 OS 上で Docker があり Compose plugin がない状態で運用者が `apply` を実行する, the Host Preparation Tool shall Docker の入手元を判定し、Docker 公式版には Docker 公式の `docker-compose-plugin`、Ubuntu 標準版 `docker.io` には Ubuntu 標準の Compose v2 パッケージ `docker-compose-v2`、Debian 12 標準版 `docker.io` には Docker 公式配布元を追加して `docker-compose-plugin` のみを導入する。Debian 12 では実行前に `apt-get -s install --no-install-recommends docker-compose-plugin` で模擬実行し、`docker.io`、`containerd` 等の Engine 関連パッケージの削除・置換または `docker-ce` の導入が含まれないことを確認する。該当する3分岐以外の入手元は自動導入せず、案内して中止する。導入パッケージ名と配布元追加の有無を表示し、運用者の同意（`--yes` による省略を含む）後に実行する。
 13. When 運用者が `apply` を実行し、Docker の導入・更新または Compose plugin の導入が必要な場合, the Host Preparation Tool shall Docker 関連の処理を最初に行い、運用者が同意しない場合または対話端末がなく `--yes` も指定されていない場合は Docker 以外のホスト設定を変更せず非0で終了し、`--yes` の指定方法を案内する。
-14. When 運用者が `apply` を実行する, the Host Preparation Tool shall Docker 関連処理の完了後に rootful Docker Engine と Compose が利用可能であることを確認し、利用できない場合は失敗として報告する。対応 OS 外または rootless Docker の環境では導入・更新を行わず、サポート対象外と報告する。
+14. When 運用者が `apply` を実行する, the Host Preparation Tool shall Docker 関連処理の完了後、ホスト state 初期化を含む Docker 以外のホスト設定より前に、rootful Docker Engine、Compose plugin、および Docker Engine 28 以上を再検査する。いずれかが利用不能または Engine 28 未満なら失敗として報告し、Docker 以外のホスト設定を変更しない。対応 OS 外または rootless Docker の環境では導入・更新を行わず、サポート対象外と報告する。
 15. When 運用者が `remove` を実行する, the Host Preparation Tool shall Docker Engine と Compose plugin を撤去せず、製品が作成した daemon.json など製品固有の設定だけを解除し、Docker がホストに残ることと必要時の手動撤去を運用者に示す。
 16. When 対応 OS 上で rootful Docker Engine と Compose が利用可能であり、ホスト準備の前提条件を満たして運用者が `apply` を実行する, the Host Preparation Tool shall boot guard を実際に適用して確認し、適用または確認に失敗した場合は非0で終了して当該環境をサポート対象外と報告する。
 
@@ -104,7 +104,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 3. The Product Documentation shall Web HTTPS と API→Gateway TLS の既定値、任意有効化の設定と証明書の準備方法を区間ごとに説明する。
 4. When 現行版の配布・導入案内を提供する, the Product Distribution shall Compose を使う導入方法と必要なホスト準備を利用可能にし、旧インストーラで分離配置を新規導入させない。
 5. The Product Documentation shall 新方式への新規導入を案内し、未リリースの旧方式からの移行・互換対応・保存データの引き継ぎをサポート対象として案内しない。
-6. The Product Documentation shall `apply` による Docker の導入・更新と Compose plugin の導入、公式導入スクリプトおよびパッケージ導入に対する同意と `--yes` の動作、ならびに `remove` が Docker を撤去しないことを README で説明する。
+6. The Product Documentation shall `apply` による Docker の導入・更新と Compose plugin の配布元別導入（Debian 12 では Docker 公式配布元を追加することを含む）、公式導入スクリプトおよびパッケージ導入に対する同意と `--yes` の動作、OS 標準版 Docker 28 未満は自動更新しないこと、導入・更新失敗時に自動で戻さないこと、ならびに `remove` が Docker を撤去しないことを README で説明する。
 
 ### Requirement 8: 既存機能と隣接検証の維持
 **Objective:** As a 利用者と運用者, I want 導入方式を変えても既存の VPN 操作が使えることを確認したい, so that 構成の簡略化を機能の後退なしで受け入れられる。

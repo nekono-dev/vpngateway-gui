@@ -150,7 +150,7 @@
 7. **Compose の mount 分離**: API の PKI mount を Gateway TLS 用だけに限定する方法（TLS 無効時に不要）。
 8. **配布物の形（7.4）**: `installer/main.sh` の常設コマンド層を廃止するか、ホスト準備と独立した配布手段として残すか。
 9. **E2E**: 4通りの組み合わせの起動方式。`certs.sh` は ISP/DoH 模擬サーバの証明書にも使われており、API/Web 用 CA の廃止時に巻き込まない。
-10. ~~ホスト準備の対象 OS・Docker 自動導入の継続可否~~: Debian 12+/Ubuntu 22.04+ を対象とし、Docker 自動導入は行わない。当時は `daemon.json` を変更しない案だったが、後続の要件・設計で、未作成時に限り設定を作成して Docker を再起動する契約へ更新した。
+10. ~~ホスト準備の対象 OS・Docker 自動導入の継続可否~~（旧記録）: 当時は Debian 12+/Ubuntu 22.04+ を対象とし Docker 自動導入を行わない案だった。2026-11-19 の利用者決定でこの判断は無効となり、apply の同意付き導入・限定更新へ変更した。当時は `daemon.json` を変更しない案だったが、後続の決定で未作成時に限り設定を作成して Docker を再起動する契約へ更新した。
 11. **`@fastify/http-proxy`**: 10.0.2 は公式 advisory の影響範囲。Fastify 5 対応の 11.6.6 以上へ限定更新し、確認時点の latest 11.6.9 を使用する（上の記録のとおり）。
 12. **参照の洗い出し**: `:3000` への直接接続（E2E・診断・手動ツール）と、steering（tech.md の HTTPS 必須・PKI 自動配置の記述）の更新。
 13. **隣接仕様**: multihop-backend の API→Gateway の HTTPS 前提と slot worker の配布元・依頼ディレクトリの再確認（既存承認は自動変更しない）。
@@ -179,7 +179,7 @@
 設計前調査と当日付のギャップ分析・利用者決定を統合し、以下の責務・契約に一般化した。既存コードのファイル単位の差分は設計書の File Structure Plan として具体化し、ここでは判断の根拠を保持する。
 
 - **一般化**: 通信保護を Web HTTPS と API→Gateway TLS の独立した2設定へまとめた。API→Gateway は dedicated filesystem UDS を唯一の経路とし、HTTP/HTTPS は UDS 上の protocol 選択として扱う。LAN 制御口の公開、任意転送ヘッダーの信頼、複数ホスト用 endpoint abstraction を作らない。
-- **Build vs. Adopt**: Compose の標準 `-f`/`COMPOSE_FILE` merge、Node/Undici の socketPath/TLS、Fastify proxy adapter を採用し、専用 Compose generator・新 transport library は作らない。ホスト固有の所有状態記録、boot guard、reboot unit、nft guard を製品コードとして実装する。当時案に含まれた設定・起動回復 watcher は2026-11-18に廃止を決定した。Docker/Compose 自動導入は行わない。既存 `/etc/docker/daemon.json` は編集せず、未作成の場合だけ `ip-forward-no-drop` を含む製品所有設定を作成して Docker を再起動する。ホスト準備対象を Debian 12+/Ubuntu 22.04+ としたのは、systemd・nftables・sysctl の既知契約に絞り、配布元の Docker 設定を破壊しないため。
+- **Build vs. Adopt**: Compose の標準 `-f`/`COMPOSE_FILE` merge、Node/Undici の socketPath/TLS、Fastify proxy adapter を採用し、専用 Compose generator・新 transport library は作らない。ホスト固有の所有状態記録、boot guard、reboot unit、nft guard を製品コードとして実装する。当時案に含まれた設定・起動回復 watcher は2026-11-18に廃止を決定した。旧記録では Docker/Compose 自動導入を行わない判断だったが、これは2026-11-19利用者決定で superseded し、apply に限定した同意付き導入・配布元別 Compose 導入を採用した。既存 `/etc/docker/daemon.json` は編集せず、未作成の場合だけ `ip-forward-no-drop` を含む製品所有設定を作成して Docker を再起動する。ホスト準備対象を Debian 12+/Ubuntu 22.04+ としたのは、systemd・nftables・sysctl の既知契約に絞り、配布元の Docker 設定を破壊しないため。
 - **簡素化**: installer の role selection、SSH/SCP、pairing、PKI 配布、常設 update/uninstall/status を撤去し、Compose の標準操作へ寄せる。ホスト準備 CLI は `check/apply/status/remove` の4操作に限定。vendor fragment は残し、固定 project 名で runner volume を再利用する。旧方式互換・データ移行、Web/API 統合、多段接続実装を追加しない。
 - **停止遮断の合成（2026-11-17 旧案、2026-11-18 superseded）**: 当時は watcher を含む方針を記録した。現在有効な条件は後段の「Guard の切替主体を proxy に一本化し watcher を廃止（2026-11-18 決定）」だけを参照する。
 - **参照した設計ルール**: `.claude/skills/kiro-spec-design/rules/design-principles.md`、`design-synthesis.md`、`design-review-gate.md`。原則に沿って責務境界と所有者を明示し、build/adopt と簡素化の判断を記録した。review gate の要件ID網羅、boundary/file alignment、placeholder と未解決事項を自己点検した。
@@ -271,3 +271,25 @@ nft batch の失敗は transaction の原子性を前提に直前状態を維持
 - `check` は静的・読み取り専用の prerequisite 検査、guard の実適用・確認は `apply` の責務。rootless Docker は非対応。
 - rootful Docker、root entrypoint と `su-exec` 降格を前提とする。`proxy/Dockerfile` の `USER vpngwgui` と `compose/gateway.yml` の `user: "10001:10001"` は削除対象。
 - 全 Compose lifecycle command は `-p vpngwgui` を付け、root Compose は top-level `name: vpngwgui` を持つ。`COMPOSE_PROJECT_NAME`/`-p` は `name:` より優先され、他名は volume 名を変えるため非対応。
+
+
+## Docker 導入・更新の追加調査と決定（2026-11-19）
+
+### 調査結果
+- **Context**: `apply` に Docker 導入と不足する Compose plugin の導入を含める利用者決定に伴い、配布元別の安全な分岐と受入範囲を整理した。
+- **Sources Consulted**: [docker-install](https://github.com/docker/docker-install)、[Debian install](https://docs.docker.com/engine/install/debian/)、[Ubuntu install](https://docs.docker.com/engine/install/ubuntu/)、[Compose Linux install](https://docs.docker.com/compose/install/linux/)、[Debian bookworm docker-compose](https://packages.debian.org/bookworm/docker-compose)。
+- **Findings**: `get.docker.com` は既存 Docker を検出すると約20秒待機して続行する。スクリプトに `--dry-run` がある。通常の導入では Docker Engine と関連 package に Compose plugin が含まれる。apt `-y` は非対話導入に使われる。Debian 12 標準 `docker.io` には Compose v2 package がなく、Ubuntu 標準 `docker.io` は universe の `docker-compose-v2` を提供する。curl と ca-certificates は HTTPS 取得より先に必要である。
+- **Implications**: Docker 導入が必要な場合、取得手段の bootstrap も同じ同意に含める。Debian 12 の標準 Docker へ Compose だけ追加する際は公式 apt repository を追加し、`apt-get install --no-install-recommends docker-compose-plugin` の1パッケージに限定する。事前の `apt-get -s` で docker.io/containerd 等 Engine 関連の削除・置換や docker-ce 導入を検出したら中止する。後日の apt upgrade/unattended-upgrades は未導入の docker-ce を新規導入せず docker.io を外さない。unattended-upgrades の既定対象はセキュリティ配布元のみ。apt preferences pin は製品所有設定を増やすため採用しない。手動で docker-ce を入れた場合等は運用者責任として README で案内する。ホスト受入試験は未導入の新規 LXD container と既存の導入済み container を分ける。
+
+### 利用者決定（2026-11-19）
+- CLI は `check|apply|status|remove` とし、`--yes` は apply のみ。常設 installer は作らない。Docker 関連処理は apply の先頭で行い、Engine・Compose・28+ を再検査してから他のホスト設定や state 初期化へ進む。
+- 未導入時は公式 HTTPS URL を一時ファイルへ取得し、URL・SHA-256・導入内容を表示して同意後に無改変で `sh` 実行する。ハッシュは固定照合しない。curl、次点 wget、どちらもなければ curl と ca-certificates の apt 導入を同意対象に含める。
+- Docker CE 28 未満だけ公式スクリプトで更新し、稼働中 Docker/containers の再起動と既存検出時の約20秒待機を警告する。OS 標準版 28 未満は更新せず案内して中止。28+ は不変更。Compose 欠落時は Docker 公式版に `docker-compose-plugin`、Ubuntu 標準 `docker.io` に `docker-compose-v2`、Debian 12 標準 `docker.io` に公式 apt repository と `docker-compose-plugin` を使う。
+- check は読み取り専用とし、未導入・docker-ce 28 未満・Compose 欠落を apply 同意後の解消項目として合格扱いする。OS 外/rootless/標準版28未満は不合格。remove は Docker/Compose/repository を残し、Docker が残ることを常に表示する。導入の state 記録は不要。
+- 同意拒否または tty 不在かつ `--yes` なしでは、製品設定・state を含め Docker 以外を変更せず中止する。失敗時にロールバックせず、段階と手動確認を示す。既存 daemon.json の処理は導入後に従来どおり行う。
+
+### 設計スキル参照
+- `kiro-spec-design/rules/design-principles.md`、`design-synthesis.md`、`design-review-gate.md` を参照し、境界・一般化/build-vs-adopt/簡素化・traceability機械確認へ反映した。
+
+### 旧論点10の更新
+- 旧記録「Docker 自動導入しない」は利用者の2026-11-19決定により無効。apply に限る同意付き導入/限定更新を採用し、check と remove の read-only/非撤去境界は維持する。

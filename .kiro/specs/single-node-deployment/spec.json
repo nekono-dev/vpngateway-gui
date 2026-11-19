@@ -1,13 +1,13 @@
 {
   "feature_name": "single-node-deployment",
   "created_at": "2026-11-11T14:15:05Z",
-  "updated_at": "2026-11-19T00:00:00Z",
+  "updated_at": "2026-11-19T02:00:00Z",
   "language": "ja",
-  "phase": "requirements-generated",
+  "phase": "design-generated",
   "approvals": {
     "requirements": {
       "generated": true,
-      "approved": false
+      "approved": true
     },
     "design": {
       "generated": true,

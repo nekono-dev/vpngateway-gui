@@ -15,7 +15,7 @@ Web HTTPS は既定 OFF、API→Gateway TLS も既定 OFF とし、2区間を独
 ### Non-Goals
 - 複数ノード、役割選択・遠隔配置・ペアリング、旧方式からの移行。
 - Web/API のプロセス統合、外部向け証明書自動取得、VPN 機能やベンダー固有動作の変更。
-- ホスト準備による Docker の導入・更新。Docker daemon の `ip-forward-no-drop` 設定だけは、透過ゲートウェイの LAN forwarding に必要なため、所有状態を記録して管理する。
+- Docker Engine または Compose plugin の撤去、常設の Docker installer/update/uninstall コマンド、Docker 28 以上の導入済み版の更新。
 
 ## Boundary Commitments
 
@@ -90,11 +90,15 @@ flowchart LR
 compose/
   host-preparation.sh                 # 管理コマンド dispatcher の薄い入口
   host-preparation/                   # check/apply/status/remove と個別所有機能
-    common.sh                         # OS・root・state・安全なログ共通処理
+    common.sh                         # OS・root・Docker非依存静的前提・state・安全なログ共通処理
+    docker-install.sh                 # Docker/Compose の判定・同意・導入/更新・再検査
+    docker-forward.sh                 # daemon.json forwarding の適用・復元と実効値確認
     state.sh                          # 元値・所有対象の読み書きと差分判定
     sysctl.sh                         # IP forwarding の適用・復元
     boot-guard.sh                     # 独立 guard table の初期 BLOCK と systemd unit
     host-reboot.sh                    # reboot request の systemd path/service
+    tests/docker-install.test.sh      # Docker配布元判定・同意・導入/更新のスタブ単体テスト
+    tests/run.sh                      # host-preparation の単体テスト実行入口
   gateway-entrypoint.sh              # root で共有 volume を初期化後 UID/GID 10001 へ降格
 api/src/
   server.ts                           # HTTP listener 起動
@@ -117,11 +121,12 @@ installer/                            # 旧 installer command 群を撤去
 
 ### New Files
 
-- `compose/host-preparation.sh` — `check|apply|status|remove` の CLI 引数検証と dispatcher。更新・起動・停止・uninstall を実装しない。
-- `compose/host-preparation/common.sh` — 対応 OS (Debian 12+ / Ubuntu 22.04+)、root、依存コマンドの確認、標準エラー報告。
+- `compose/host-preparation.sh` — `check|apply|status|remove` の CLI 引数検証と dispatcher。`--yes` は `apply` のみ受け付ける。更新・起動・停止・uninstall の常設コマンドを実装しない。
+- `compose/host-preparation/common.sh` — 対応 OS (Debian 12+ / Ubuntu 22.04+)、root、Docker判定前の依存・静的前提検査、標準エラー報告。Docker の有無に依存する Compose/version/rootful 検査を分離する。
 - `compose/host-preparation/state.sh` — `/var/lib/vpngwgui-host-preparation/state.json` を root:root 0600 で管理。初回値、現在値、製品所有パス、版を記録し、既存ファイルを無断上書きしない。
 - `compose/host-preparation/sysctl.sh` — `net.ipv4.ip_forward` 等の必要値を確認・適用し、remove で記録済み元値へ戻す。外部変更が検出された値は上書きせず競合として報告。
-- `compose/host-preparation/docker-forward.sh` — Docker 28+ と daemon.json、実効 FORWARD policy を確認する。設定ファイルがない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成し、pending/applied を state に記録して Docker を再起動する。既存 JSON は編集せず、同じキーがない場合は競合として手動設定を案内する。remove は byte-identical な製品所有ファイルだけを削除し、Docker は再起動しない。
+- `compose/host-preparation/docker-install.sh` — Docker/Compose の配布元・rootful 状態・実効版・Compose plugin の read-only 判定と、apply 専用の同意・取得・導入/更新・再検査だけを担う。docker-ce と docker.io の併存、どちらでもない配布元（snap/手動バイナリ等）、判定不能は OS 標準版扱いとして自動更新・Compose 自動導入をせず案内して中止する。docker-ce 以外の28未満も更新しない。Compose 自動導入は Docker 公式版、Ubuntu標準 docker.io、Debian 12標準 docker.io の3分岐に限る。導入/更新・再検査は他のホスト変更・state 初期化より先に行う。Docker の導入記録は state に持たない。同意拒否または tty がなく `--yes` もない場合は非0終了し、`--yes` を案内する。daemon forwarding は扱わない。
+- `compose/host-preparation/docker-forward.sh` — Docker 28+、daemon.json、実効 FORWARD policy を確認し、設定ファイルがない場合だけ `ip-forward-no-drop` を管理する。daemon forwarding の適用・復元を一本化し、Docker/Compose の導入判断・更新処理は持たない。
   - 所有する sysctl は、現行 installer（`installer/setup.sh` の `setup_sysctl`）が設定してきた値をそのまま引き継ぐ次の4つに限る: `net.ipv4.ip_forward=1`（LAN 転送に必要）、`net.ipv4.conf.all.send_redirects=0`、`net.ipv4.conf.default.send_redirects=0`、`net.ipv4.conf.<LAN_IFACE>.send_redirects=0`（透過ゲートウェイが LAN 端末へ ICMP redirect を送って経路が迂回されるのを避ける。現行の動作の維持であり、新しい挙動の追加ではない）。これ以外の sysctl を所有・永続化しない。単体テストで所有キーの完全な一覧を固定する。
 - `compose/host-preparation/boot-guard.sh` — oneshot の systemd unit を設置し、ホスト起動ごとに独立 `inet vpngwgui_guard` table を `BLOCK` 状態で作り直す（nftables.service の後、network-pre.target と docker.service の前）。unit は `[Install] RequiredBy=docker.service` を持ち、enable が作る `docker.service.requires/` の製品所有 symlink と systemd の `RequiredBy` を apply 後に検証する。guard の起動・適用が失敗すれば Docker の起動も失敗し、gateway/proxy は停止したままになる。`remove` はリンク先がこの製品 unit と一致する依存 symlink、所有記録に一致する unit と guard table だけを削除し、外部リンクは保持する。起動後の状態切替は行わない。
 - `compose/host-preparation/host-reboot.sh` — ホスト `/var/lib/vpngwgui-host-ctl` を専用 UID/GID `10001:10001` / mode 0700 で作り、systemd path unit が同ディレクトリの `reboot-request` を監視する。10001 は proxy image の `vpngwgui` UID/GID および Compose の `user: "10001:10001"` と一致する製品専用予約 ID であり、ホスト側に passwd/group の利用があれば `check` と `apply` は失敗する。root Compose は proxy だけにこの host dir を `/var/run/vpngw-host-ctl` へ read-write bind mount し、API/他 service には mount しない。proxy が作る request file は UID/GID `10001:10001` / mode 0600 / 内容 `vpngwgui-host-reboot-v1\n` とする。systemd service は実行前に symlink でない通常ファイル、owner UID 10001、mode 0600、固定内容の完全一致を検証する。検証失敗時は固定の再起動を行わず、要求を拒否・記録する。受理した要求はファイルを消費・削除した後、固定された `systemctl reboot` 以外を実行しない。
@@ -269,7 +274,9 @@ flowchart TD
 | Component | Intent | Req Coverage | Contract |
 |---|---|---|---|
 | Root Compose | サービス・内部 network・volume・公開ポートを定義し、runner 制御用 `ctl-socket` を所有 | 1.1–1.5, 6.1–6.7 | project `vpngwgui` 固定、標準 merge。proxy と vendor runners が `/var/run/vpngw-ctl` に共有 |
-| Host Preparation CLI | ホスト設定の確認・適用・表示・解除 | 2.1–2.7 | `check|apply|status|remove` のみ |
+| Host Preparation CLI | ホスト設定の確認・適用・表示・解除 | 2.1–2.16 | `check|apply|status|remove` のみ。apply は静的検査、Docker導入処理、Docker再検査、予約ID確認、state初期化、ホスト設定の順 |
+| Docker Install | Engine/Compose 配布元判定、同意、限定導入/更新、再検査 | 2.1, 2.10–2.14, 7.6, 8.9 | apply の前段のみ。daemon forwarding は所有しない |
+| Docker Forward | Docker daemon forwarding 設定 | 2.9 | `daemon.json` と実効 FORWARD policy。導入後に動作 |
 | Boot/Stop Guard | boot unit が初期 `BLOCK`。以後は proxy が適用中の Kill Switch に従い `LEASE`（失効時 drop）／`OFF`（drop なし）を切替 | 2.5, 2.8, 8.2 | 独立 host nft table、priority -1、状態ごとの単一 batch、4秒 timeout lease、最大6秒 |
 | 有効ガード値変更の反映契約 | Gateway に反映できない有効ガード値変更を保存しない | 2.8 | `killSwitch && transparentGatewayEnabled` が変わる PUT は proxy 200 の後に保存、失敗は 503 |
 | Web Transport | Browser→Web と Web→API | 3.1–3.6, 4.1–4.6 | HTTPS flag、内部 HTTP、Cookie flag |
@@ -290,22 +297,44 @@ flowchart TD
 
 ### Host Preparation CLI
 
-**要件**: 2.1–2.8, 6.5–6.6
+**要件**: 2.1–2.16, 6.5–6.6
 
 | Command | 契約 |
 |---|---|
-| `check` | 読み取り専用の静的 prerequisite 検査。Debian 12+/Ubuntu 22.04+、root、systemd、nft availability（許可される場合は `nft -c`）、sysctl、rootful Docker/Compose、LAN_IFACE を検査。boot guard は試験適用しない。rootless Docker は拒否。不足・競合を個別表示し非0終了。 |
-| `apply` | check が成功したときのみ実行。boot guard を実際に適用し、適用後の状態を確認する。失敗時は非0で終了し、利用可能な構成と扱わない。変更前の sysctl 値、既存 systemd unit/file hash、製品専用 nft 設定、data directory owner/mode を state に記録後、冪等適用。途中失敗は失敗段階と既適用一覧を表示し、部分適用を成功扱いしない。 |
+| `check` | 読み取り専用の Docker 非依存静的検査（OS、root、Docker を除く必要コマンド、systemd、nft availability と許可時の `nft -c`、sysctl、LAN_IFACE）と Docker 状態検査を分ける。後者は rootful、Compose、配布元、実効Engine版を調べる。Docker未導入・docker-ce 28未満・対応配布元でのCompose欠落は apply 解消候補として合格扱いする。OS標準版28未満、rootless、配布元判定不能等は不合格。boot guard は試験適用しない。 |
+| `apply` | check の成功フラグを必須条件としない。順序は (1) Docker非依存静的検査、(2) Docker判定・同意・導入/更新（`docker-install.sh`）、(3) rootful Engine・Compose plugin・Engine 28+ 再検査、(4) 予約 UID/GID 10001 確認、(5) `hp_state_initialize`、(6) sysctl、(7) boot guard、(8) host reboot、(9) docker-forward（daemon.json）。各段階の失敗は後続へ進まず非0。state 初期化前の失敗では Docker 以外のホスト設定を変更しない。 |
 | `status` | 状態記録と実機設定を比較し、active / missing / drifted / foreign conflict を表示。変更しない。 |
 | `remove` | 所有記録に一致するファイル・unit・rule のみ解除。記録後に外部変更された対象は削除せず競合を報告。sysctl は元値へ戻すが、対象値が製品適用値から変更済みなら復元しない。製品データ volume は触らない。 |
 
-**ホスト準備 check/apply**: `check` は OS、root、必要コマンド、rootful Docker、nftables availability（許可時は `nft -c`）と `LAN_IFACE` の静的妥当性を読み取り専用で確認する。boot guard の実適用・確認は `apply` が行い、BLOCK と unit の有効化に加えて Docker からの `RequiredBy` 依存を検証する。guard の起動・適用に失敗すると RequiredBy により Docker 起動も失敗し、gateway/proxy を起動させない。依存を適用・確認できない場合も非0で非対応環境とする。rootless Docker は check で拒否する。
+CLI の終了コードは成功 `0`、前提不合格・同意拒否・未対応配布元・処理失敗 `1`、引数/usage 不正 `2` とする。通常案内、同意に必要な対象・副作用・取得元・ハッシュ・段階表示は stderr に出し、機械利用可能な status/check 結果は stdout に出す。適用後の版は stderr に表示する。Docker 導入判断関数は判定結果を stdout の固定値 (`ready|install|upgrade|compose|unsupported`) で返し、診断を stderr に出す。導入関数は成功 `0`、失敗 `1` とし、部分実行段階を stderr に列挙する。
+
+```mermaid
+flowchart TD
+  Preconditions[静的検査: OS root 必要コマンド LAN_IFACE nft] --> DockerDecision[Docker状態判定: 配布元 rootful 版 Compose]
+  DockerDecision --> Consent[必要な処理への同意]
+  Consent --> InstallUpgrade[導入または更新]
+  InstallUpgrade --> Recheck[Engine Compose 版を再検査]
+  Recheck --> UIDGID[予約 UID/GID 確認]
+  UIDGID --> State[hp_state_initialize]
+  State --> Sysctl[sysctl]
+  Sysctl --> Guard[boot guard]
+  Guard --> Reboot[host reboot]
+  Reboot --> Forward[docker-forward: daemon.json]
+```
+
+**ホスト準備 check/apply**: `common.sh` は Docker を必要としない静的検査（対応 OS、root、Docker を除く必要コマンド、`LAN_IFACE`、nftables availability と許可時の `nft -c`）を行う。Docker 状態検査は `docker-install.sh` に分け、rootful、Compose plugin、配布元、実効版を調べる。`check` は Docker 未導入・docker-ce 28未満・対応配布元での Compose 欠落を apply 解消候補として合格扱いする。`apply` は check の合格フラグを前提にせず、静的検査、Docker判定・同意・導入/更新、rootful Engine・Compose plugin・Engine 28+ の再検査、予約 UID/GID 10001 確認、`hp_state_initialize`、sysctl、boot guard、host reboot、docker-forward（daemon.json）の順で実行する。再検査未達なら state 初期化を含む後続ホスト設定へ進まず非0で終了する。boot guard の実適用・確認は apply が行い、BLOCK と unit の有効化に加えて Docker からの `RequiredBy` 依存を検証する。guard の起動・適用に失敗すると RequiredBy により Docker 起動も失敗し、gateway/proxy を起動させない。依存を適用・確認できない場合も非0で非対応環境とする。rootless Docker は不合格とする。
 
 **LAN interface の取得元**: guard が使う `<LAN_IFACE>` の唯一の取得元は、Compose と同じ repository root の `.env` の `LAN_IFACE` とする（proxy も Compose 経由で同じ値を受け取る）。このため運用者は `apply` の前に `.env` を用意する。`check` は `LAN_IFACE` が未設定・名前の形式が不正（`[A-Za-z0-9._-]` 以外を含む）・ホストに存在しない場合を不足として報告する。未設定の場合は、既定ルートの interface を候補として表示するが、`.env` へは書き込まない（自動検出した値を黙って使わない）。`apply` は検証済みの値を `state.json` に記録し、boot unit の `BLOCK` batch に埋め込む。`status` は `.env` の値と記録値が異なれば drifted として報告し、運用者が `apply` を再実行して揃える。値が食い違っていても、proxy が健康になった後の guard の batch は proxy の値で chain を作り直すため、影響するのはホスト起動から proxy が健康になるまでの `BLOCK` の対象だけである。
 
 初回の元値・変更対象は `/var/lib/vpngwgui-host-preparation/state.json` に root のみ読み書き可能で記録する。各対象に path、適用前後の値、hash、所有者、mode、導入版を保持する。`remove` は記録のない既存物を推測して削除しない。部分失敗時も state は保持し、再実行で残りを収束できる。
 
-**Docker 判断**: Docker Engine/Compose plugin は自動導入・更新しない。対象 OS の package manager や既存 Docker 配布元を変更するのはホスト準備の最小境界を越え、第三者設定・更新方針を侵害しうるため。`check` は読み取り専用とする。`apply` は Docker 28 以降、既存の `/etc/docker/daemon.json` がない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成して所有状態を記録し、Docker を再起動した後に FORWARD policy が `ACCEPT` であることを確認する。既存ファイルは編集せず、必要な forwarding 条件が確認できない場合は失敗する。`remove` は製品所有ファイルだけを削除し、Docker は再起動しない。
+**Docker 配布元と版**: `dpkg-query -W -f '${Status} ${Version}' docker-ce` および docker.io で導入有無を判定し、Engine 実効版は daemon 稼働時の `docker version --format '{{.Server.Version}}'`、停止時の `dockerd --version` から取得する。両パッケージ併存、どちらでもない配布元（snap/手動バイナリ等）、判定不能は OS 標準版扱いとして案内して中止し、自動更新・Compose 自動導入をしない。docker-ce 以外の28未満も更新せず中止する。Docker 28以上は更新しない。CLI は `check|apply|status|remove` のみで、`--yes` は `apply` のみ許可する。
+
+`apply` は Docker 非依存の静的検査後、Docker 判定・同意・導入/更新を行い、rootful Engine、Compose plugin、Engine 28+ を再検査する。再検査に失敗した場合、予約 UID/GID 確認・state 初期化を含む他のホスト設定へ進まない。未導入時は HTTPS で `https://get.docker.com` を一時ファイルへ取得し、URL・SHA-256・Engine と関連パッケージ（Compose plugin 含む）を OS package manager で導入する旨を示す。取得は curl、なければ wget。両方なければ同じ同意範囲に curl と ca-certificates の apt 導入も含める。表示後に同意を得て `sh` で無改変のスクリプトを実行する。製品はハッシュを固定照合しない。docker-ce 28 未満の更新同意では現行版、必要最低版、Docker と稼働中コンテナの再起動、公式スクリプトが既存 Docker 検出時に約20秒待機して続行することを表示し、更新後の実版を表示する。
+
+Compose plugin がない場合の自動導入は3分岐のみとする。Docker 公式版は公式配布元の `docker-compose-plugin`、Ubuntu 標準 `docker.io` は Ubuntu 標準の `docker-compose-v2`、Debian 12 標準 `docker.io` は Docker 公式 apt repository を追加して `docker-compose-plugin` のみ導入する。Debian 12 では対象を1パッケージに限定し、実行前に `apt-get -s install --no-install-recommends docker-compose-plugin` で模擬実行する。`docker.io`/`containerd` 等 Engine 関連パッケージの削除・置換、または `docker-ce` 導入が含まれれば中止する。後日の apt upgrade/unattended-upgrades は未導入の `docker-ce` を新規導入せず `docker.io` を外さない。unattended-upgrades の既定対象はセキュリティ配布元のみ。apt preferences の pin は製品所有設定を増やすため採用しない。運用者による後日の手動 docker-ce 導入等のリスクは README に記し、運用者責任とする。導入パッケージ名と配布元追加有無を表示して同意を得る。取得は curl→wget、両方なければ同意内で curl と CA 証明書を導入する。失敗時は自動 rollback せず実行段階と手動確認事項を示し、Docker 以外のホスト設定が未変更であることを報告する。
+
+Docker 関連導入/更新と再検査、予約 UID/GID 確認、`hp_state_initialize`、sysctl、boot guard、host reboot の後に `docker-forward.sh` が `daemon.json` (`ip-forward-no-drop`) 処理を実行する。`remove` は Docker、Compose plugin、追加した apt repository を撤去せず、製品固有設定だけを解除し「Docker は残る。必要なら手動で撤去」と常に表示する。Docker 導入記録を state に保存しないのは、製品が導入物を所有・撤去せず、remove の対象判定に必要ないためである。
 
 `host-reboot` は API の既存管理者認証済み要求を proxy が受け、ホスト依頼ファイルを作る。専用 ID は proxy image の `vpngwgui` と Compose の `user: "10001:10001"` に合わせて UID/GID 10001 とし、他のホストアカウントと共有しない。host-preparation はこの数値を予約し、`check` と `apply` の双方で passwd の UID 10001 または group の GID 10001 が既存アカウントに使われていれば失敗する。ホスト上のディレクトリは `/var/lib/vpngwgui-host-ctl`（10001:10001、mode 0700）、依頼ファイルは UID/GID 10001 所有・mode 0600・内容 `vpngwgui-host-reboot-v1\n` とする。root Compose はこのパスを proxy コンテナの `/var/run/vpngw-host-ctl` へ read-write bind mount し、他サービスには mount しない。`api/src/proxy-client/proxy-client.ts` の再起動要求は API→proxy の新 gateway UDS を使う。systemd path unit はホストの `/var/lib/vpngwgui-host-ctl/reboot-request` を監視する。service は symlink 追跡をせず、通常ファイル・UID 10001・mode 0600・固定内容の全条件を実行直前に検証し、条件を満たさない依頼は拒否して記録する。受理した依頼は削除後に限り固定の `systemctl reboot` を実行する。runner の許可コマンド境界を拡張しない。
 
@@ -390,7 +419,7 @@ sudo compose/host-preparation.sh remove
 | 1.3 | installer 生成不要 | Root Compose / Docs | static compose | lifecycle |
 | 1.4 | remote placement 非提供 | Boundary / Docs | no remote CLI | — |
 | 1.5 | vendor profile に従う | vendor fragments / runners、root 所有 `ctl-socket` | `-f` merge、runner volume 解決 | Compose flow |
-| 2.1 | 対応環境・権限・boot guard 確認 | Host Preparation CLI | `check`（Debian 12+/Ubuntu 22.04+、rootful Docker、静的前提と `.env` `LAN_IFACE`。boot guard 実適用は `apply`） | host flow |
+| 2.1 | 対応環境・権限・Docker状態確認 | common / Docker Install | 静的検査と Docker 状態検査を分離 | host flow |
 | 2.2 | LAN 転送・host 操作準備 | sysctl / boot guard | `apply` | host flow |
 | 2.3 | 冪等適用 | state / host modules | `apply` | host flow |
 | 2.4 | 失敗箇所・変更報告 | Host Preparation CLI | stderr/state。部分失敗は失敗段階と適用済み一覧を表示 | host flow |
@@ -398,6 +427,14 @@ sudo compose/host-preparation.sh remove
 | 2.6 | 管理者 reboot 要求 | API route / host-reboot | request file/systemd | reboot flow |
 | 2.7 | 所有対象を識別・非所有設定を維持 | state / remove | ownership hash | remove flow |
 | 2.8 | 透過ゲートウェイ有効時の停止遮断 | Gateway Guard / Stop Guard / nft guard / effective guard PUT 契約 | proxy が適用中の `killSwitch && transparentGatewayEnabled` で `LEASE`/`OFF` を切替。true は最大6秒、false は drop なし。effective 値変更は適用成功前に保存せず 503 | Guard 状態遷移 |
+| 2.9 | daemon forwarding 設定 | Docker Forward | daemon.json ownership | host flow |
+| 2.10 | 未導入 Docker の同意付き導入 | Docker Install / README | HTTPS script consent | apply flow |
+| 2.11 | docker-ce 28 未満更新、標準版は案内して中止 | Docker Install | distribution/version result | apply flow |
+| 2.12 | 配布元別 Compose plugin 導入 | Docker Install | apt package/repository consent | apply flow |
+| 2.13 | 同意・tty 前に他設定を変更しない | CLI / Docker Install | `--yes` only on apply | apply flow |
+| 2.14 | Docker 後の Engine 28+ 再検査、未達時に他設定を変更しない | Docker Install / CLI | rootful、Compose、Engine 28+ の再検査後に UID/state/設定へ進む | apply flow |
+| 2.15 | remove は製品設定のみ、Docker残置表示 | Host Preparation CLI | remove output | remove flow |
+| 2.16 | boot guard 適用と確認 | Boot Guard | apply validation | host flow |
 | 3.1 | Web HTTPS 既定無効 | Web Transport | `WEB_HTTPS_ENABLED=false` | startup |
 | 3.2 | HTTP 時証明書不要 | Web Transport | conditional TLS inputs | startup |
 | 3.3 | HTTPS 有効化 | Web Transport | cert/key | startup |
@@ -430,6 +467,7 @@ sudo compose/host-preparation.sh remove
 | 7.3 | 2区間の TLS 設定説明 | README | env/cert contract | startup |
 | 7.4 | 新配布物を提供 | Release workflow | compose + host prep | release |
 | 7.5 | 新規導入・移行非対応明記 | README | support boundary | — |
+| 7.6 | Docker/Compose 配布元別導入と運用制約の説明 | README / Docker Install | Debian 12 repository、標準版28未満の非更新、自動 rollback なし | apply flow |
 | 8.1 | VPN 既存機能維持 | API/proxy/runners | current APIs | hosted/live |
 | 8.2 | LAN gateway 機能維持 | proxy / host config / Gateway Guard / nft guard | nft/routing/DNS。`LEASE` 中は既存 Gateway chain に判定を委ね、`OFF` は独立 drop なし | Guard 状態遷移 / hosted/live |
 | 8.3 | default no cert end-to-end | Hosted E2E | Compose + HTTP defaults | hosted |
@@ -438,10 +476,13 @@ sudo compose/host-preparation.sh remove
 | 8.6 | hosted と vendor-live 対応 | E2E clients | HTTP/HTTPS client | hosted/live |
 | 8.7 | hosted CI に実資格情報なし | E2E separation | mock providers only | hosted |
 | 8.8 | 許可コマンド制限維持 | runner command runner | exact allowlist | hosted/live |
+| 8.9 | Docker 未導入新容器で導入から受入 | Docker Install / LXD lab | clean container apply | lab acceptance |
 
 ## Testing Strategy
 
 ### Unit Tests
+- Docker導入 (2.1, 2.10–2.14, 7.6): `compose/host-preparation/tests/docker-install.test.sh` を各実行ファイル・入出力のスタブで確認し、`sh compose/host-preparation/tests/run.sh` で実行する。curl/wget fallback、dpkg-query 配布元判定、daemon稼働/停止時の版、曖昧な配布元中止、Debian apt simulation の拒否条件、Compose 3分岐、同意拒否・ttyなし・再検査失敗時に state/他設定が未変更、失敗時 rollback なし、README の7.6事項を検証する。
+- Docker Forward (2.9): `docker-forward.sh` のテストで daemon.json が未作成のときだけ原子的に作成・所有記録し、既存 JSON を編集しないこと、Docker 再起動後の FORWARD policy 判定、競合時の案内、remove の所有ファイル判定を検証する。
 - Web TLS config: flag の true/false、strict boolean、cert/key 欠落・不正・鍵不一致。
 - API session cookie: Web flag true で Secure、false で非 Secure。`X-Forwarded-Proto` だけでは結果が変化しない。
 - Gateway transport: UDS HTTP/HTTPS 切替、CA/SAN/client cert 検証、期限切れ・不正証明書・設定不一致の失敗と降格なし。
@@ -473,6 +514,7 @@ sudo compose/host-preparation.sh remove
 
 各行を hosted browser E2E で起動し、TLS ON 行では正しい server/client cert を使う。追加ケースで TLS ON の wrong CA、期限切れ、SAN 不一致、client cert 不足を個別に注入し、API control が失敗し平文へ切替わらないことを確認する。hosted stack は mock provider と synthetic cert のみ使用し、実 VPN credentials を environment/secret/artifact/hosted CI に渡さない。
 
+- Hosted E2E は Docker 導入済み runner 上で実行するため Docker 導入/更新経路を扱わない。LXD 受入対象は Debian 12 の新規 container（Docker未導入、Compose plugin欠落）と既存 Docker 導入済み container。新規 container では Docker導入、Engine/Compose/28+再検査、ホスト準備、失敗段階を確認し、成功条件はCompose pluginとEngine 28+が利用可能でboot guardを含むホスト準備が成功すること (8.9)。
 - Hosted E2E: 初期導入相当の Compose 起動、管理者登録/login/logout、Web 経由の mock VPN 操作、API 到達不能・復旧、4設定組み合わせ、lifecycle の update/recreate/down、volume data retention、明示的 `down -v` の削除、runner allowlist 拒否。
 - Manual vendor-live: 開発者端末のみで、HTTP/HTTPS Web origin から同一 `/api` 経由で操作する。HTTPS の場合だけ任意 Web CA を指定でき、指定時に検証、未指定時は標準 trust store を使う。実 Gateway UDS 経由の操作と LAN egress を確認。既存 CI 起動拒否を残す。
 - Hosted lifecycle: vendor fragment を残して `down` 後に除外し、orphan が残らないこと、`down`/条件付き `--remove-orphans` が volume を保持すること、再選択時の再利用を検証。
@@ -481,6 +523,7 @@ sudo compose/host-preparation.sh remove
 - 実測必須（適用不能な設定変更）: proxy 停止中に `killSwitch` または `transparentGatewayEnabled` を変える PUT が保存されず 503 となること。Kill Switch を含む場合の code と、Gateway 再開後の再試行を確認する。
 
 ## Security Considerations
+- 公式導入スクリプトは HTTPS で Docker 公式 URL から取得し、運用者に URL と SHA-256 を表示して確認を促す。SHA-256 は表示のみで固定値照合しない。信頼の根拠は HTTPS と運用者自身の確認である。取得スクリプトは改変せず実行する。
 
 - Gateway control に TCP socket/port を設けない。API と proxy のみが `gateway-socket` volume を mount し、UID/GID 10001、directory 0700、socket 0600 とする。LAN 制御口の露出を構造的に防ぐ。
 - 初回 named volume の root 所有は root entrypoint が chown/mode 設定後に `su-exec` で UID/GID 10001 へ降格して解消する。
@@ -495,7 +538,7 @@ sudo compose/host-preparation.sh remove
 
 ## Error Handling
 
-`host-preparation check` は読み取り専用の静的 prerequisite 検査のみを行い、静的に判定できる前提（OS、root、必要コマンド、nft 構文、LAN_IFACE、rootless Docker）の失敗だけを非0で報告する。boot guard の実適用または適用後の nft table/chain/rule の確認に失敗した場合は `apply` が非0で終了し、その環境を非対応として報告する。status 表示だけで保証外運用を許す扱いにはしない。
+`host-preparation check` は読み取り専用の静的 prerequisite 検査と Docker 状態検査を行う。静的前提（OS、root、Docker を除く必要コマンド、nft 構文、LAN_IFACE）と rootless・配布元等の解消不能な Docker 条件の失敗は非0で報告し、対応可能な Docker 導入・更新・Compose 欠落は apply の解消項目として合格扱いする。boot guard の実適用または適用後の nft table/chain/rule の確認に失敗した場合は `apply` が非0で終了し、その環境を非対応として報告する。status 表示だけで保証外運用を許す扱いにはしない。
 
 | Failure | 挙動 |
 |---|---|
@@ -515,6 +558,8 @@ sudo compose/host-preparation.sh remove
 | UDS volume 初期化失敗 | root entrypoint が非0終了し Gateway は起動しない。`BLOCK` は維持、`LEASE` は自然失効、`OFF` は停止を理由に遮断しない |
 
 ## Open Questions
+
+Docker 導入・更新と Compose plugin の配布元別パッケージ選択は利用者決定済み。ラボ受入では新規 LXD container の apt repository/network 条件と、失敗段階の記録を確認する。
 
 ### 未解決の設計判断
 
