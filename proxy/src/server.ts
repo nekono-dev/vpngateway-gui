@@ -11,7 +11,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { logAuditEvent } from "./lib/audit-event.js";
 import { readRequestBody, sendJson } from "./lib/http-json.js";
-import { requestHostReboot } from "./host-control/host-reboot.js";
+import { handleHostRebootRequest } from "./host-control/host-reboot-handler.js";
 import { createGatewayChannelServer } from "./gateway-channel/control-server.js";
 import { listenOnGatewaySocket, type GatewaySocketListener } from "./gateway-channel/server.js";
 import { matchRunnerPath, forwardToRunner } from "./gateway-channel/runner-forward.js";
@@ -202,11 +202,7 @@ const handleGatewayRequest = createGatewayRequestHandler({
   }
   if (req.method === "POST" && req.url === "/net/host-reboot") {
     // ホストの再起動依頼。依頼ファイルを置くだけで、実行はホスト側のsystemdが行う（host-control/host-reboot.ts）。
-    const result = requestHostReboot();
-    logAuditEvent({ event: "host_reboot_requested", result });
-    if (result === "requested") sendJson(res, 202, { requested: true });
-    else if (result === "already_requested") sendJson(res, 409, { error: "reboot_already_requested" });
-    else sendJson(res, 503, { error: "host_control_unavailable" });
+    handleHostRebootRequest(req, res, (result) => logAuditEvent({ event: "host_reboot_requested", result }));
     return;
   }
   if (req.method === "POST" && req.url === "/net/checks") {

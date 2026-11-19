@@ -38,7 +38,13 @@ EOF
 hp_host_reboot_preflight() {
   hp_host_reboot_precheck || { printf '%s\n' 'CONFLICT: host reboot object differs from recorded ownership'; return 0; }
   hp_remove_host_reboot_status=$(hp_host_reboot_recorded_status)
-  if [ "$hp_remove_host_reboot_status" = applied ]; then printf '%s\n' OWNED
+  hp_remove_host_reboot_temp=0
+  for hp_remove_host_reboot_entry in "$hp_host_ctl_dir"/.reboot-request.tmp.*; do
+    [ -e "$hp_remove_host_reboot_entry" ] || [ -L "$hp_remove_host_reboot_entry" ] || continue
+    hp_remove_host_reboot_temp=1
+  done
+  if [ "$hp_remove_host_reboot_temp" -eq 1 ]; then printf '%s\n' PENDING-CLEANABLE
+  elif [ "$hp_remove_host_reboot_status" = applied ]; then printf '%s\n' OWNED
   elif [ -e "$hp_host_ctl_dir" ] || [ -L "$hp_host_ctl_dir" ] || [ -e "$hp_host_reboot_exec_path" ] || [ -e "$hp_host_reboot_path_unit_path" ] || [ -e "$hp_host_reboot_service_unit_path" ] || [ -e "$hp_host_reboot_enable_link_path" ] || [ -e "$hp_host_reboot_spool_dir" ]; then printf '%s\n' PENDING-CLEANABLE
   else printf '%s\n' ABSENT; fi
 }

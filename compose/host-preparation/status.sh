@@ -148,7 +148,13 @@ hp_status_host_reboot() {
   fi
   for hp_status_entry in "$hp_host_ctl_dir"/* "$hp_host_ctl_dir"/.[!.]*; do
     [ -e "$hp_status_entry" ] || [ -L "$hp_status_entry" ] || continue
-    [ "$hp_status_entry" = "$hp_host_ctl_dir/reboot-request" ] || hp_host_reboot_failed=1
+    if [ "$hp_status_entry" != "$hp_host_ctl_dir/reboot-request" ]; then
+      if hp_host_reboot_is_cleanable_temp "$hp_status_entry"; then
+        printf 'pending-cleanable: host reboot temporary file (%s)\n' "${hp_status_entry##*/}"
+      else
+        hp_host_reboot_failed=1
+      fi
+    fi
   done
   if [ "$hp_host_reboot_failed" -eq 0 ]; then
     printf 'active: host reboot request path (%s)\n' "$hp_host_reboot_status"

@@ -50,6 +50,7 @@ services:
     volumes:
       - ctl-socket:/var/run/vpngw-ctl
       - gateway-socket:/run/vpngw-gateway
+      - /var/lib/vpngwgui-host-ctl:/var/run/vpngw-host-ctl:rw
     environment:
       CTL_SOCKET_DIR: /var/run/vpngw-ctl
       GATEWAY_SOCKET_PATH: /run/vpngw-gateway/gateway.sock

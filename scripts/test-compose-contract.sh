@@ -45,6 +45,15 @@ for fragment in '' vendors/protonvpn/compose.yml vendors/adguardvpn/compose.yml 
     if (!apiMounts.has("api-data:/var/lib/vpngwgui")) throw new Error("api persistent data mount missing");
     if (services.api.volumes.some((mount) => mount.source === "ctl-socket")) throw new Error("api must not mount runner socket");
     if (!services.api.volumes.some((mount) => mount.source === "gateway-socket")) throw new Error("api gateway socket mount missing");
+    const hostCtlMount = services.proxy.volumes.find((mount) => mount.target === "/var/run/vpngw-host-ctl");
+    if (!hostCtlMount || hostCtlMount.type !== "bind" || hostCtlMount.source !== "/var/lib/vpngwgui-host-ctl" || hostCtlMount.read_only) {
+      throw new Error("proxy must read-write bind mount /var/lib/vpngwgui-host-ctl to /var/run/vpngw-host-ctl");
+    }
+    for (const serviceName of ["api", "web"]) {
+      if ((services[serviceName].volumes ?? []).some((mount) => mount.target === "/var/run/vpngw-host-ctl" || mount.source === "/var/lib/vpngwgui-host-ctl")) {
+        throw new Error(`${serviceName} must not mount host reboot control directory`);
+      }
+    }
     if (!config.networks?.["app-net"]) throw new Error("app-net missing");
     for (const volume of ["api-data", "gateway-socket", "ctl-socket"]) {
       if (!config.volumes?.[volume]) throw new Error(`named volume ${volume} missing`);

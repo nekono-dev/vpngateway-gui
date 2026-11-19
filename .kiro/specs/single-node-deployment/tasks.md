@@ -5,7 +5,7 @@
 全タスクは、対象ファイルを選ぶ際に `.kiro/specs/single-node-deployment/inventory.md`（タスク 1.1 の成果物）の境界別一覧を参照元とする。
 
 ## 1. 実装前提と対象範囲の確定
-- [ ] 1. 実装前提と対象範囲を確定する
+- [x] 1. 実装前提と対象範囲を確定する
   - 1.1 の棚卸し成果物 `.kiro/specs/single-node-deployment/inventory.md` を、後続の実装・検証・撤去タスクが対象ファイルを選ぶ際の参照元とする。
 - [x] 1.1 旧方式参照と変更対象ファイルを棚卸しする
   - `rg` で旧 URL、API/Web PKI、TLS 前提、installer の役割選択・SSH/SCP・常設コマンド参照を洗い出す。
@@ -23,7 +23,7 @@
   - _Requirements: 2.8, 5.7, 8.2_
 
 ## 2. root Compose とホスト準備
-- [ ] 2. 単一ノード Compose とホスト準備を実装する
+- [x] 2. 単一ノード Compose とホスト準備を実装する
 - [x] 2.1 root Compose と vendor fragment の merge 契約を作る
   - root Compose に `name: vpngwgui` を宣言し、Web/API/proxy、app-net、gateway-socket、ctl-socket、永続 named volume を集約する。全 lifecycle command で `-p vpngwgui` を明示する。`COMPOSE_PROJECT_NAME` と `-p` は `name:` より優先されるため、他名は非対応（volume 名が変わる）とする。
   - API を LAN 公開せず、Gateway に TCP 制御 listener を置かず、runner の ctl-socket と Gateway UDS volume を分離する。
@@ -64,7 +64,7 @@
   - 観測できる完了条件: `check`/`apply` が UID または GID 10001 の既存アカウント衝突で非0となり、適用後の directory owner/mode・path watch 先が規定どおりである。検証テストで有効依頼だけが削除後に固定再起動へ進み、symlink・非通常ファイル・誤 owner・誤 mode・誤内容はいずれも再起動せず拒否ログが出て安全に除去され、任意コマンド文字列が実行されないことを確認する。
   - _Boundary: host-preparation_
   - _Requirements: 2.6, 2.7_
-- [ ] 2.7 root Compose で API の reboot 要求を host-preparation の依頼先へ接続する
+- [x] 2.7 root Compose で API の reboot 要求を host-preparation の依頼先へ接続する
   - Compose は rootful Docker で動作させる。entrypoint の root 起動、`USER`/Compose `user` の削除、`su-exec` による UID/GID `10001:10001` への権限降格は 4.4 の成果に依存し、本タスクでは実装・テストしない。依頼先をホスト `/var/lib/vpngwgui-host-ctl`、proxy 内 `/var/run/vpngw-host-ctl` に統一する。ホスト dir は `10001:10001` / 0700、request file は UID/GID `10001:10001` / 0600 / 固定内容形式。root Compose は proxy だけに read-write bind mount し、API は依頼 dir を mount しない。API は `requestGatewayReboot()` から新 gateway UDS 経由で proxy `/net/host-reboot` を呼ぶ。あわせて `proxy/src/host-control/host-reboot.ts` が依頼ファイルを固定内容・mode 0600 で排他的に作成するよう改め（現行は空ファイルを作る）、そのユニットテストを置く。systemd path unit はホスト側の同一ディレクトリを監視する。
   - 認証済み API 要求から依頼ファイル作成までの経路を接続し、systemd の固定実行基盤と依頼先を一致させる。
   - 観測できる完了条件: 管理者の API 要求が proxy UDS 経由で規定の内容・owner/mode の依頼ファイルを作り、受付結果（202/既存依頼/利用不可）が API 応答で返る。ホストとコンテナのパス、mount の proxy 限定、owner/mode/content、systemd watch path が 2.6 と一致する。
@@ -81,7 +81,7 @@
   - _Requirements: 2.1, 2.3, 2.4, 2.7, 6.5, 6.6_
 
 ## 3. Gateway Guard と Kill Switch 反映契約
-- [ ] 3. Gateway Guard と Kill Switch 反映契約を実装する
+- [x] 3. Gateway Guard と Kill Switch 反映契約を実装する
 - [x] 3.1 Guard nft batch 生成を実装する
   - boot unit bootstrap は table/set/chain を一度作成して BLOCK にする。状態遷移 batch は既存 chain/set の flush と rules/elements のみを行い、table/set/chain を再宣言せず、LEASE の要素と drop 規則は同一 batch、OFF に drop 規則を含めない。
   - 観測できる完了条件: 単体テストで各 batch の順序・規則・OFF に drop がないことを確認できる。
@@ -115,7 +115,7 @@
   - _Requirements: 2.8_
 
 ## 4. 通信 transport と認証
-- [ ] 4. Web/API/Gateway の通信 transport を切り替える
+- [x] 4. Web/API/Gateway の通信 transport を切り替える
 - [x] 4.1 Web HTTP/HTTPS listener と証明書検証を切り替える
   - `WEB_HTTPS_ENABLED` の strict boolean により HTTP を既定とし、HTTPS ON 時のみ cert/key を必須化する。不足・不正・鍵不一致は HTTP へ降格せず起動失敗。
   - 観測できる完了条件: 単体テストで OFF の証明書不要、ON の listener、異常証明書の fail closed を確認できる。
@@ -367,3 +367,4 @@
 - 4.4（Gateway UDS）: `proxy/src/gateway-channel/server.ts` の `listenOnGatewaySocket(server, socketPath, expectedUid)` が UDS を umask 0177 で bind し（mode 0600）、stale 判定は connect の `ECONNREFUSED` のみ・削除前に dev/ino を再確認、`close()` は自分が作った inode だけを消す。`compose/gateway-entrypoint.sh` は root で `/run/vpngw-gateway` を検証（symlink・非ディレクトリ・root/10001 以外の owner は拒否）してから `chown 10001:10001`・`chmod 0700` し、`su-exec 10001:10001` へ `exec` する。実コンテナの検証は opt-in の `proxy/tests/gateway-entrypoint.docker.test.sh`（Docker が使える環境で実行。7.5 でも実施）。TCP 8443 listener と `GATEWAY_PORT` はまだ残しており、4.6 が除去する。API 側の再接続（指数 backoff）は 4.5 の担当（tasks.md を更新済み）。`ctl-socket` の書き込み権限は `proxy/Dockerfile` の `/var/run/vpngw-ctl`（vpngwgui 所有）を空の名前付き volume が引き継ぐことに依存する。
 - 4.5（API の Gateway UDS client）: `loadGatewayTransportOptions` が `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS（CA・SAN・クライアント証明書・期限。降格しない）を選ぶ。`requestGateway` は socket 消失・`ECONNREFUSED` を通信不可として扱い、上限つきの指数 backoff で再接続する。`notifySettings` は backoff・接続・headers・body を合わせた1つの 5 秒の総期限を持ち、期限切れは `ProxyTimeoutError`（504）。保護方式の不一致は、要求後に接続が切れたとき同じ UDS へ TLS の probe を送り、TLS と確認できたときだけ `GatewayProtectionMismatchError`（`gateway_protection_mismatch`、`protectionModeMismatch: true`）にして、ログ・API status・Web 表示で区別する。`api/openapi.json` と `web/src/generated` は git 管理外の生成物で、4.5 で `npm run generate:api-client` を実行して最新にした（7.2 でも再生成して確認する）。環境変数名は設計の名前（`GATEWAY_TLS_CLIENT_CERT_FILE` など）に統一済み。
 - 4.6（Gateway listener の切替）: Gateway の TCP 8443 listener と `GATEWAY_PORT` は除去済みで、制御は UDS の listener（HTTP、または `GATEWAY_TLS_ENABLED=true` の strict mTLS）だけ。proxy の設定・status の本番ハンドラは `proxy/src/gateway-channel/gateway-routes.ts` の `createGatewayRequestHandler`（依存を注入）に切り出してあり、`proxy/src/server.ts` が本物のコントローラを渡す。guard の健康は「UDS listener が稼働」かつ「直近の ruleset 適用と検証が成功」の両方（`GatewayGuard.setListenerAvailable`）。listener が予期せず閉じたら guard を unhealthy にして非 0 で終了し、Compose の再起動に任せる。統合テストは `e2e/gateway-control.integration.test.ts`（実 UDS・実 API client で HTTP/mTLS、保護方式不一致の status とログと復旧）。`npx tsc -p web/tsconfig.json --noEmit` の `city`/`pingMs` に関する8件のエラーは、このスペック以前からあるもので触っていない。
+- 2.7（再起動要求の配線）: proxy の `requestHostReboot()` は、同じディレクトリに隠し一時ファイル（`.reboot-request.tmp.<数字>.<32 桁の hex>`、`O_EXCL|O_NOFOLLOW`・mode 0600）へ固定内容を書いて fsync し、排他的なハードリンクで `reboot-request` として公開する（先に存在すれば already-requested）。proxy は自分の古い一時ファイル（60 秒超）を次の要求で片付ける。ホスト準備の precheck/remove/status は、この名前の形に完全一致する通常ファイル（所有者 10001・mode 0600）だけを製品所有の残骸として片付け可能と扱い、それ以外は競合のまま。root Compose の proxy だけが `/var/lib/vpngwgui-host-ctl` を `/var/run/vpngw-host-ctl` に mount する。`package.json` の `test:e2e-unit` は `.claude` と `node_modules` を除外する（古い作業ツリーの複製テストとのポート競合を避けるため）。実機の systemd・Docker 動作は 7.5。

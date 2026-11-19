@@ -73,6 +73,7 @@ case "$1:$2" in
       */state.json|*/.state.json.*|*/.state-host-reboot*|*/.host-reboot-check*) printf '0:0 600\n'; exit 0;;
       */libexec|*/systemd) printf '0:0 755\n'; exit 0;;
       */reboot-request) printf '%s %s\n' "${FIX_REQUEST_OWNER:-10001:10001}" "$(/usr/bin/stat -c '%a' "$3")"; exit 0;;
+      */.reboot-request.tmp.*) printf '%s %s\n' "${FIX_TEMP_OWNER:-10001:10001}" "$(/usr/bin/stat -c '%a' "$3")"; exit 0;;
       */vpngwgui-host-reboot.path|*/vpngwgui-host-reboot.service|*/vpngwgui-host-reboot|*/.vpngwgui-host-reboot*) printf '0:0 %s\n' "$(/usr/bin/stat -c '%a' "$3")"; exit 0;;
     esac
     ;;
@@ -295,5 +296,38 @@ hp_remove_host_reboot
 [ ! -L "$enable_link" ]
 [ ! -e "$temporary/rebooted" ]
 if grep -Fq '"host_reboot"' "$state_dir/state.json"; then exit 1; fi
+# hard kill で残った製品一時ファイルは status/preflight で識別し、remove でだけ掃除する。
+printf '%s\n' '{"version":1}' > "$state_dir/state.json"
+chmod 0600 "$state_dir/state.json"
+hp_apply_host_reboot
+temp_file="$host_ctl_dir/.reboot-request.tmp.12345.abcdef0123456789abcdef0123456789"
+printf '%s' partial > "$temp_file"
+chmod 0600 "$temp_file"
+. "$tree/compose/host-preparation/remove.sh"
+[ "$(hp_host_reboot_preflight)" = PENDING-CLEANABLE ]
+. "$tree/compose/host-preparation/status.sh"
+hp_status_host_reboot > "$temporary/temp-status.out"
+grep -Fq 'pending-cleanable: host reboot temporary file' "$temporary/temp-status.out"
+rm -f "$temp_file"
+
+# 一時名でも symlink・別 owner・directory は競合として保持する。
+for invalid in symlink wrong-owner wrong-mode directory foreign-name; do
+  invalid_path="$host_ctl_dir/.reboot-request.tmp.12345.abcdef0123456789abcdef0123456789"
+  case "$invalid" in
+    symlink) printf 'target\n' > "$temporary/temp-target"; ln -s "$temporary/temp-target" "$invalid_path" ;;
+    wrong-owner) printf '%s' partial > "$invalid_path"; chmod 0600 "$invalid_path"; FIX_TEMP_OWNER=10000:10001; export FIX_TEMP_OWNER ;;
+    wrong-mode) printf '%s' partial > "$invalid_path"; chmod 0644 "$invalid_path" ;;
+    directory) mkdir "$invalid_path" ;;
+    foreign-name) invalid_path="$host_ctl_dir/.reboot-request.tmp.12345.not-hex"; printf '%s' partial > "$invalid_path"; chmod 0600 "$invalid_path" ;;
+  esac
+  if hp_host_reboot_precheck; then printf 'unsafe temp accepted: %s\n' "$invalid" >&2; exit 1; fi
+  [ -e "$invalid_path" ] || [ -L "$invalid_path" ]
+  rm -rf "$invalid_path"
+  unset FIX_TEMP_OWNER
+done
+printf '%s' partial > "$temp_file"
+chmod 0600 "$temp_file"
+hp_remove_host_reboot
+[ ! -e "$temp_file" ]
 printf '%s\n' 'host-preparation host reboot cases passed'
 

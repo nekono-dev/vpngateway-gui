@@ -14,6 +14,23 @@ hp_host_reboot_recorded_directory_identity() {
   sed -n 's/.*"directory_identity":"\([0-9:]*\|missing\)".*/\1/p' "$hp_state_path"
 }
 
+# proxy と共有する一時名は .reboot-request.tmp.<digits>.<hex> のみを製品所有候補とする。
+hp_host_reboot_is_cleanable_temp() {
+  temp_path=$1
+  temp_name=${temp_path##*/}
+  case "$temp_name" in .reboot-request.tmp.*.*) ;; *) return 1 ;; esac
+  temp_parts=${temp_name#.reboot-request.tmp.}
+  temp_pid=${temp_parts%%.*}
+  temp_hex=${temp_parts#*.}
+  case "$temp_pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$temp_hex" in ''|*[!0123456789abcdef]*) return 1 ;; esac
+  [ "$temp_parts" != "$temp_hex" ] || return 1
+  [ "${#temp_hex}" -eq 32 ] || return 1
+  [ ! -L "$temp_path" ] && [ "$(LC_ALL=C stat -c '%F' "$temp_path" 2>/dev/null || :)" = 'regular file' ] || return 1
+  [ "$(stat -c '%u:%g %a' "$temp_path" 2>/dev/null || :)" = '10001:10001 600' ] || return 1
+  [ "$(stat -c '%s' "$temp_path" 2>/dev/null || echo 999999)" -le 256 ]
+}
+
 hp_host_reboot_enable_link_owned() {
   [ -L "$hp_host_reboot_enable_link_path" ] || return 1
   link_target=$(readlink "$hp_host_reboot_enable_link_path" 2>/dev/null || :)
@@ -292,7 +309,7 @@ hp_host_reboot_precheck() {
     if [ -n "$recorded_identity" ] && [ "$recorded_identity" != missing ] && [ "$recorded_identity" != "$current_identity" ]; then return 1; fi
     for entry in "$hp_host_ctl_dir"/* "$hp_host_ctl_dir"/.[!.]*; do
       [ -e "$entry" ] || [ -L "$entry" ] || continue
-      [ "$entry" = "$hp_host_ctl_dir/reboot-request" ] || return 1
+      if [ "$entry" != "$hp_host_ctl_dir/reboot-request" ]; then hp_host_reboot_is_cleanable_temp "$entry" || return 1; fi
     done
   fi
   if [ -e "$hp_host_reboot_spool_dir" ] || [ -L "$hp_host_reboot_spool_dir" ]; then
@@ -337,7 +354,9 @@ hp_remove_host_reboot() {
       [ "$(stat -c '%u:%g %a' "$hp_host_ctl_dir" 2>/dev/null || :)" = '10001:10001 700' ] || return 1
     for entry in "$hp_host_ctl_dir"/* "$hp_host_ctl_dir"/.[!.]*; do
       [ -e "$entry" ] || [ -L "$entry" ] || continue
-      [ "$entry" = "$hp_host_ctl_dir/reboot-request" ] || { printf '%s\n' 'host-preparation: host reboot directory に未知の項目があります' >&2; return 1; }
+      if [ "$entry" != "$hp_host_ctl_dir/reboot-request" ]; then
+        hp_host_reboot_is_cleanable_temp "$entry" || { printf '%s\n' 'host-preparation: host reboot directory に未知の項目があります' >&2; return 1; }
+      fi
     done
   fi
   if [ -e "$hp_host_reboot_spool_dir" ] || [ -L "$hp_host_reboot_spool_dir" ]; then
@@ -358,6 +377,11 @@ hp_remove_host_reboot() {
   fi
   [ ! -L "$hp_host_reboot_enable_link_path" ] || rm -f "$hp_host_reboot_enable_link_path" || return 1
   [ ! -e "$hp_host_ctl_dir/reboot-request" ] && [ ! -L "$hp_host_ctl_dir/reboot-request" ] || rm -f "$hp_host_ctl_dir/reboot-request" || return 1
+  for entry in "$hp_host_ctl_dir"/.reboot-request.tmp.*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    hp_host_reboot_is_cleanable_temp "$entry" || return 1
+    rm -f -- "$entry" || return 1
+  done
   for entry in "$hp_host_reboot_spool_dir"/* "$hp_host_reboot_spool_dir"/.[!.]* "$hp_host_reboot_spool_dir"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
     case "$entry" in "$hp_host_reboot_spool_dir"/*) ;; *) return 1 ;; esac
