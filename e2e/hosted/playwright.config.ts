@@ -24,5 +24,7 @@ export default defineConfig({
     { name: "stack-api", testMatch: /specs\/api\/.*\.spec\.ts$/, dependencies: ["stack-ui"] },
     // gateway 群: 透過ゲートウェイ・DNS 中継・明示的プロキシ・動作検証（経路と ISP の模擬を使う）
     { name: "gateway", testMatch: /specs\/gateway\/.*\.spec\.ts$/ },
+    // TLS 群: 4構成・証明書失敗・保護方式不一致を Compose で個別に起動する。
+    { name: "tls", testMatch: /specs\/tls\/.*\.spec\.ts$/ },
   ],
 });

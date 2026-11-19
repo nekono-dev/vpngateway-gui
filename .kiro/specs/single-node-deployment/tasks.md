@@ -173,7 +173,7 @@
   - _Boundary: E2E_
   - _Depends: 5.1, 5.2, 4.2, 4.6_
   - _Requirements: 8.1, 8.3, 8.7, 8.8_
-- [ ] 5.4 Web HTTPS × Gateway TLS の4構成と不正証明書を E2E 化する
+- [x] 5.4 Web HTTPS × Gateway TLS の4構成と不正証明書を E2E 化する
   - OFF/OFF、ON/OFF、OFF/ON、ON/ON それぞれの起動と browser/API 操作を確認し、wrong CA、期限切れ、SAN 不一致、client cert 不足に加え、TLS ON/OFF mismatch を独立ケースとして fail closed とし、不一致専用ログ/status/UI 表示を確認する。
   - 観測できる完了条件: hosted browser matrix が全4行と個別の不正証明書ケースを通過し、HTTP 降格がない。
   - _Boundary: E2E_
@@ -372,3 +372,4 @@
 - 5.2（hosted の Compose fixture）: `e2e/hosted/fixtures/compose.ts` が全操作に `-p vpngwgui` を付け（`COMPOSE_PROJECT_NAME`/`-p` が `name:` より優先されること、別名では volume 名が変わることを `docker compose config` で契約テスト）、root-first の `-f` merge（vendor fragment、`compose/web-tls.yml`、`compose/api-tls.yml`）、既定 HTTP、up/down/`down -v` を提供する。起動は `e2e/hosted/fixtures/compose-cli.ts` を通る共通の経路（`provision.sh` もここを使う）で、注入した runner の引数をテストする。`e2e/hosted/lib/cleanup.sh` が EXIT/INT/TERM/HUP で固定 project の down（`-v` なし）と topology の後始末をする。volume 保持は実 Docker の統合テスト `e2e/hosted/fixtures/volume-retention.integration.test.ts`（既存の `vpngwgui*` 資源があれば skip。作った volume だけ後始末）で確認済み。実スタックの Playwright は hosted CI（と 7.x の実機）で実行する。hosted workflow のブランチ trigger は変えていない。
 - 5.3（hosted VPN 操作）: `e2e/hosted/specs/api/{vpn,locations}.spec.ts` は Web origin `/api` の共通 client で、ベンダー切替・接続・切断・都市/サーバー選択・お気に入り・距離順を項目別のケースにした。接続のケースは `finally` で必ず切断する。runner の許可リストの拒否は、runner の制御 UDS へ許可コマンドと許可外コマンドを送り、200 と 403 `binary_not_allowed` を確認する独立ケース。hosted Playwright は開発ホストでは実行しておらず（型検査・`--list`・独立レビューのみ）、実行は hosted の CI で行う。
 - 5.7（hosted Gateway 通信）: 透過ゲートウェイ・明示的プロキシ・DNS 中継・迂回は `e2e/hosted/specs/gateway/*.spec.ts` の独立したケースで、Web origin `/api` の共通 client を使う。Kill Switch の対象範囲の表示（透過ゲートウェイのみ。明示的プロキシのみでは停止時の遮断を保証しない）は `web/src/components/dashboard/SettingsDialog.tsx` にあり、`e2e/hosted/specs/ui/setup-settings.spec.ts` のケースで確認する（接続設定を保存し、`finally` で復元して API セッションを破棄する）。hosted の実行は CI。
+- 5.4（hosted TLS matrix）: `e2e/hosted/specs/tls/tls-matrix.spec.ts`（Playwright の `tls` project）が Web HTTPS × Gateway TLS の4構成を、各行でログイン・Gateway 状態（`gatewayGuard` を含む正常応答＝TLS ON 行では実際の mTLS）・元に戻せる制御 PUT・Cookie の `Secure`（HTTPS 行のみ）で確認する。不正証明書のケースは、壊すのを1か所だけにする（別 CA ＝ proxy の server 証明書だけを無関係な CA 署名のものに差し替え、期限切れ、SAN 不一致、クライアント証明書なし＝API の client cert/key 設定だけを空）。各ケースは Compose の起動結果（終了コード・コンテナ状態・ログ）を `docker-compose-result.ts` で構造化して期限つきで確認し、API ログの原因コード（`gateway_tls_validation_failed`）と保護方式の不一致（専用 status・ログ・UI）も確認する。証明書は実行ごとに `e2e/hosted/lib/tls-matrix-certs.sh` で生成し、単体テスト `tls-certs.test.ts` で実 OpenSSL により検証済み。4.5 の追補として、API の TLS loader が不足した環境変数名（名前のみ）を示す変更と、`proxy-client` が TLS 検証失敗の原因コードを構造化して警告ログに出す変更を、別 commit で入れた。hosted の実行は CI。

@@ -60,9 +60,9 @@ prepare_group() {
 }
 
 overall=0
-# 群の順序: lifecycle（volume retention）→ stack（Web/API）→ gateway（経路を使う）
+# 群の順序: lifecycle（volume retention）→ stack（Web/API）→ gateway（経路を使う）→ tls（保護設定）
 run_group lifecycle "lifecycle" || overall=$?
-for group in stack gateway; do
+for group in stack gateway tls; do
   # stack 群は specs/ui と specs/api からなる（ui が先に実行される）
   case "$group" in
     stack) dirs="e2e/hosted/specs/ui e2e/hosted/specs/api" ;;
@@ -79,7 +79,7 @@ done
 # 後始末は EXIT trap が行う（volume は保持する）。
 
 jsons=""
-for group in lifecycle stack gateway; do
+for group in lifecycle stack gateway tls; do
   [ -s "$ARTIFACTS/$group.json" ] && jsons="$jsons $ARTIFACTS/$group.json"
 done
 if [ -n "$jsons" ]; then
