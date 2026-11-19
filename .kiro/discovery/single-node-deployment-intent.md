@@ -62,4 +62,12 @@
   4. 進め方は「仕様（要件・設計・タスク）を更新・再承認 → 実装 → hosted E2E と LXD ラボでの実機受入（7.3〜7.6）を導入処理込みで実施」。
 - 行わないこと: 更新・アンインストールの常設コマンド、導入済み Docker の更新、旧 installer 層の復活。
 - 影響する決定の更新: 旧「Docker 自動導入は行わない」（research.md 論点10、design.md Docker 判断、README、roadmap Phase 5）。
-- 未決（要件更新時に確定）: 公式スクリプトの取得元固定方法（URL・ハッシュ検証の要否）、`remove` で Docker 自体を撤去しない旨、対応 OS 外での扱い、Compose plugin 欠落時の導入方法、ラボ（LXD）での導入検証手順。
+- 決定事項（2026-11-19）:
+  - Docker 未導入時は公式スクリプトを HTTPS で `https://get.docker.com` から取得し、取得元・内容の要約・取得内容の SHA-256 を表示して同意後に実行する。`--yes` では問い合わせを省くが表示し、製品側でハッシュを固定照合しない。
+  - Docker 28 未満の場合は更新内容を表示し、同意（`--yes` 可）後に公式スクリプトで更新する。28 以上なら導入・更新に触れない。
+  - Docker があり Compose plugin がない場合は、Debian 12+/Ubuntu 22.04+ に限り導入内容を表示し、同意（`--yes` 可）後に OS のパッケージ管理で導入する。
+  - Docker 関連の確認・同意は `apply` の最初に行う。同意しない場合、または対話端末がなく `--yes` もない場合は Docker 以外のホスト設定も変更せず非0で中止し、`--yes` を案内する。
+  - Docker が導入済みでも Compose plugin が欠落していれば導入する。対応 OS 外および rootless Docker は従来どおり非対応とし、導入・更新を行わない。
+  - `check` は Docker 未導入・28 未満・Compose plugin 欠落を不合格にせず、`apply` が同意を得て導入または更新する旨を表示する。`apply` でも解消できない条件は不合格とする。
+  - `remove` は Docker Engine と Compose plugin を撤去せず、製品固有の設定だけを解除し、Docker が残ることと必要な場合の手動撤去を案内する。
+  - LXD ラボに Docker 未導入の新しい対応 OS コンテナを追加して導入を含む検証を行い、既存コンテナ `acc-vpngwgui` は導入済み環境の確認用に残す。

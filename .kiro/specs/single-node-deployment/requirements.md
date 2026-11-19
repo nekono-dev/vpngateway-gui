@@ -8,8 +8,8 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 
 ## Boundary Context
 
-- **対象**: 単一ノードの導入・更新・停止・削除、必要最小限のホスト準備、通信保護の設定、関連する文書・配布・検証手順の変更。
-- **対象外**: 複数ホストの配置・遠隔操作、未リリースの旧方式からの移行・互換対応・データ引き継ぎ、Web/API のプロセス統合、多段接続本体の実装、外部公開向け運用や証明書の自動取得・更新。
+- **対象**: 単一ノードの導入・更新・停止・削除、必要最小限のホスト準備、`apply` による Docker と Compose plugin の導入・必要時の更新、通信保護の設定、関連する文書・配布・検証手順の変更。
+- **対象外**: 複数ホストの配置・遠隔操作、未リリースの旧方式からの移行・互換対応・データ引き継ぎ、Web/API のプロセス統合、多段接続本体の実装、外部公開向け運用や証明書の自動取得・更新、Docker の撤去、Docker の常設の更新・アンインストールコマンド、28 以上の導入済み Docker の更新、旧 installer 層の復活。
 - **隣接仕様への期待**: 都市選択・距離順・ベンダー操作の意味を変えず、新しい導入・通信方式でも利用できること。既存 E2E と配布手順は新方式へ追従し、多段接続の今後の作業は新しい導入契約を前提に再確認する。
 - **用語**: 「利用者」は LAN の Web ダッシュボードを操作する人、「運用者」はホスト準備・設定・Compose 操作を行う人。「内部制御通信」は同じノードの製品サービス間の通信で、LAN 端末からの管理操作とは区別する。
 - **未リリースの扱い**: 旧方式で作成した環境・設定・保存データからの移行や互換性は保証しない。要件6の保持は、新方式で運用を始めた後の通常の更新・停止・再作成に対するものである。
@@ -31,15 +31,22 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 **Objective:** As a 運用者, I want Compose の前提となるホスト設定を明示的に準備・確認したい, so that VPN ゲートウェイを再起動後も運用できる。
 
 #### Acceptance Criteria
-1. When 運用者がホスト準備を実行する, the Host Preparation Tool shall Debian 12 以降または Ubuntu 22.04 以降であること、root 実行、必要コマンド、rootful Docker Engine、LAN_IFACE の妥当性、および nftables の構文検査が可能であることを静的に検証する。check は読み取り専用で boot guard を適用せず、boot guard の実適用・確認は apply が担う。apply が失敗した場合は非0で終了し非対応環境とする。rootless Docker は非対応とする。その環境はサポート対象外であり、製品を利用可能と扱わない。
+1. When 運用者が `check` を実行する, the Host Preparation Tool shall Debian 12 以降または Ubuntu 22.04 以降であること、root 実行、必要コマンド、LAN_IFACE の妥当性、および nftables の構文検査が可能であることを読み取り専用で検証する。Docker が導入済みの場合は rootful Docker Engine であり rootless でないことも読み取り専用で検証する。Docker 未導入・Docker 28 未満・Compose plugin 欠落は `apply` が同意を得て導入または更新する項目として表示する。対応 OS 外、rootless Docker、または `apply` でも解消できない条件は不合格とし、boot guard を適用しない。
 2. When ホスト準備が成功する, the Host Preparation Tool shall LAN 通信の転送と必要なホスト操作を製品が利用できる状態にする。
 3. When 同じ設定でホスト準備を再実行する, the Host Preparation Tool shall 製品が管理する設定や常駐処理を重複させない。
 4. If ホスト準備の処理が失敗する, the Host Preparation Tool shall 成功として終了せず、失敗した処理と既に適用した変更を運用者が確認できるようにする。
-5. When ホストが再起動する, the VPN Gateway System shall proxy が API から設定を初回受信して適用し、通信の転送可否を制御できるようになるまで製品の LAN 転送経路を遮断する。proxy の内部既定値を設定通知前に適用済みと扱わない。boot guard を nftables/systemd で実際に適用または確認できない環境では apply を非0で失敗させ、サポート対象外とする。
+5. When ホストが再起動する, the VPN Gateway System shall proxy が API から設定を初回受信して適用し、通信の転送可否を制御できるようになるまで製品の LAN 転送経路を遮断する。proxy の内部既定値を設定通知前に適用済みと扱わない。
 6. When 管理者が既存のホスト再起動操作を要求する, the VPN Gateway System shall 製品専用 UID/GID 10001 の proxy だけが書き込めるホスト依頼先へ再起動要求を送り、ホスト側は通常ファイル・専用 UID 所有・mode 0600・固定内容形式を検証した場合だけ依頼を消費して固定の再起動操作を行い、受付結果を管理者へ返す。検証に失敗した依頼は実行せず記録する。
 7. When 運用者がホスト準備の確認または解除を行う, the Host Preparation Tool shall 製品が管理する設定・常駐処理と解除対象を識別できるようにし、製品と無関係な設定を変更しない。
 8. When Gateway が停止中または unhealthy であり、透過ゲートウェイと Kill Switch が両方有効である, the VPN Gateway System shall 製品が管理する LAN 転送経路を遮断する。Gateway が healthy の間は通常 ruleset が転送可否を決め、VPN egress forwarding を許可できる。proxy 再起動時は API settings の初回受信・適用まで既存 guard state を変更せず、LEASE は lease の自然失効で遮断し、OFF は OFF のままとする。明示的プロキシのみのモードでは Kill Switch と停止時遮断保証を提供しない。
-9. When apply が Docker daemon の forwarding 設定を必要とする, the Host Preparation Tool shall Docker 28 以降を確認し、既存の `/etc/docker/daemon.json` がない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成して所有状態を記録し、Docker を再起動して FORWARD policy を再確認する。既存ファイルに設定がなければ変更せず手動設定を案内し、設定後の再起動が必要な場合は運用者へ知らせる。
+9. When `apply` が Docker daemon の forwarding 設定を必要とする, the Host Preparation Tool shall Docker 28 以降を確認し、既存の `/etc/docker/daemon.json` がない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成して所有状態を記録し、Docker を再起動する。再起動後に FORWARD の既定ポリシーが ACCEPT と確認できた場合だけ成功とし、確認できない場合または拒否のままの場合は失敗とする。既存ファイルに設定がなければ変更せず手動設定を案内し、設定後の再起動が必要な場合は運用者へ知らせる。
+10. When 対応 OS 上で Docker が未導入の状態で運用者が `apply` を実行する, the Host Preparation Tool shall HTTPS で `https://get.docker.com` から取得した公式導入スクリプトについて、取得元 URL、取得内容の SHA-256、および当該スクリプトが Docker Engine と関連パッケージ（Compose plugin を含む）を OS のパッケージ管理で導入することを表示し、運用者の同意後に実行する。`--yes` が指定された場合は同意の問い合わせを省略するが表示は行い、製品側でハッシュを固定して照合しない。
+11. When 対応 OS 上で Docker が導入済みかつバージョンが 28 未満である, the Host Preparation Tool shall Docker の現在の版と、更新後に必要な最低版が 28 以上であることを表示し、運用者の同意（`--yes` による省略を含む）を得た後に公式導入スクリプトで更新する。更新後は実際に導入された版を表示する。Docker が導入済みかつ 28 以上であれば、Docker の導入・更新に触れない。
+12. When 対応 OS 上で Docker があり Compose plugin がない状態で運用者が `apply` を実行する, the Host Preparation Tool shall 導入するパッケージ名を表示して運用者の同意（`--yes` による省略を含む）を得た後に、当該 OS で利用可能なパッケージ管理を用いて Compose plugin を導入する。
+13. When 運用者が `apply` を実行し、Docker の導入・更新または Compose plugin の導入が必要な場合, the Host Preparation Tool shall Docker 関連の処理を最初に行い、運用者が同意しない場合または対話端末がなく `--yes` も指定されていない場合は Docker 以外のホスト設定を変更せず非0で終了し、`--yes` の指定方法を案内する。
+14. When 運用者が `apply` を実行する, the Host Preparation Tool shall Docker 関連処理の完了後に rootful Docker Engine と Compose が利用可能であることを確認し、利用できない場合は失敗として報告する。対応 OS 外または rootless Docker の環境では導入・更新を行わず、サポート対象外と報告する。
+15. When 運用者が `remove` を実行する, the Host Preparation Tool shall Docker Engine と Compose plugin を撤去せず、製品が作成した daemon.json など製品固有の設定だけを解除し、Docker がホストに残ることと必要時の手動撤去を運用者に示す。
+16. When 対応 OS 上で rootful Docker Engine と Compose が利用可能であり、ホスト準備の前提条件を満たして運用者が `apply` を実行する, the Host Preparation Tool shall boot guard を実際に適用して確認し、適用または確認に失敗した場合は非0で終了して当該環境をサポート対象外と報告する。
 
 ### Requirement 3: Web の HTTP 既定と任意の HTTPS
 **Objective:** As a 利用者, I want 証明書を用意せず LAN の管理画面へアクセスしたい, so that 証明書の問題で初期利用を妨げられない。
@@ -97,6 +104,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 3. The Product Documentation shall Web HTTPS と API→Gateway TLS の既定値、任意有効化の設定と証明書の準備方法を区間ごとに説明する。
 4. When 現行版の配布・導入案内を提供する, the Product Distribution shall Compose を使う導入方法と必要なホスト準備を利用可能にし、旧インストーラで分離配置を新規導入させない。
 5. The Product Documentation shall 新方式への新規導入を案内し、未リリースの旧方式からの移行・互換対応・保存データの引き継ぎをサポート対象として案内しない。
+6. The Product Documentation shall `apply` による Docker の導入・更新と Compose plugin の導入、公式導入スクリプトおよびパッケージ導入に対する同意と `--yes` の動作、ならびに `remove` が Docker を撤去しないことを README で説明する。
 
 ### Requirement 8: 既存機能と隣接検証の維持
 **Objective:** As a 利用者と運用者, I want 導入方式を変えても既存の VPN 操作が使えることを確認したい, so that 構成の簡略化を機能の後退なしで受け入れられる。
@@ -110,3 +118,4 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 6. The Product Verification shall hosted E2E と手動の実 VPN 試験で、新しい API 到達経路と通信保護設定を利用できるようにする。
 7. The Product Verification shall 新しい導入方式の検証に実 VPN の資格情報を hosted CI へ渡すことを要求しない。
 8. If 許可されていないベンダー操作のコマンド実行が要求される, the VPN Gateway System shall 通信保護の有効・無効にかかわらずそのコマンドを実行しない。
+9. The Product Verification shall Docker 未導入の対応 OS 環境から、Docker と Compose plugin の導入を含む `apply`、導入後の rootful Docker Engine と Compose の利用可否、およびホスト準備の受入を確認できるようにする。
