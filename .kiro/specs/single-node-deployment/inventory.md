@@ -85,7 +85,7 @@ wc -l /tmp/task63-grep-hits.txt
 - **6.1 が所有する配布 workflow（1 hit）**: `.github/workflows/release-installer.yml` 15 行目は `installer-check.yml` の呼び出し。workflow は Compose bundle 配布・検査へ置換済みで、旧 installer の実行経路ではない。
 - **維持する npm test 契約（2 hits）**: `package.json` 12 行目の `test:install` 呼び出しと 16 行目の `compose/host-preparation/tests/run.sh` への割当て。6.3 の要件どおりテスト名を保ち、runner は置換済み。
 - **6.4 所有の fragment 整理（compose/api.yml 2、compose/gateway.yml 3、compose/web.yml 4 hits）**: 旧 installer/setup.sh や install.sh が fragment、証明書、環境値を設定していた旨のコメント・案内。専用 fragment の廃止・更新は 6.4 の境界なので 6.3 では変更しない。
-- **7.2 所有（1 hit）**: `scripts/deploy-verify.sh` 9 行目は旧 install.sh 再実行へのコメントで、統合検証スクリプトの更新は 7.2 の対象。
+- **8.2 所有（1 hit）**: `scripts/deploy-verify.sh` 9 行目は旧 install.sh 再実行へのコメントで、統合検証スクリプトの更新は 8.2 の対象。
 - **現行の負例検査（1 hit）**: `scripts/test-readme-contract.sh` 72 行目は README に旧コマンド語が現れたら拒否するテスト式であり、旧経路ではない。
 - **過去の実行記録（8 hits）**: `e2e/artifacts/hosted/2026-11-11/full-run.log`（487、1006、1460 行）、`e2e/artifacts/hosted/2026-11-11/gateway-final.log`（7、479 行）、`e2e/artifacts/hosted/2026-11-11-city-acceptance/final/full-run.log`（495、1020、1478 行）。過去の E2E 出力であり、現在の実行資材ではないため保持。
 - **履歴・別タスク資料（115 hits）**: `.kiro/discovery/single-node-deployment-intent.md`（1）、`.kiro/handoff/2026-11-11-city-selection-complete.md`（1）、`.kiro/specs/cicd/brief.md`（10）、`.kiro/specs/e2e-tests/{brief.md (3),design.md (14),requirements.md (1),research.md (6),tasks.md (4)}`、`.kiro/specs/location-city-selection/acceptance-2026-11-11.md`（1）、`.kiro/specs/multihop-backend/{design.md (2),research.md (2)}`、`.kiro/specs/single-node-deployment/{brief.md (1),design.md (11),inventory.md (15),research.md (20),tasks.md (19)}`、`.kiro/specs/vendor-live-e2e/{design.md (1),research.md (1)}`、`.kiro/steering/{roadmap.md (1),tech.md (1)}`。これらは調査経緯、要件・設計・タスク境界、過去の検証結果を記録する文書で、現行コード経路ではない。別仕様資料と inventory 以外の文書は変更しない。
@@ -121,7 +121,7 @@ wc -l /tmp/task65-final-all-files.txt
 
 - **現行 Compose / TLS の契約（維持）**: `README.md`, `.env.example`, `compose/api-tls.yml`, `scripts/test-compose-tls-contract.sh` の `COMPOSE_FILE`、operator が用意する CA/client/server 証明書の mount・パス、Web の例示 port `8443` は新契約の override と TLS 検査である。証明書を生成・配布する製品経路ではない。
 - **hosted / server テスト用証明書（維持）**: `e2e/hosted/lib/{certs.sh,tls-matrix-certs.sh}`, `e2e/hosted/lib/tls-certs.test.ts`, `e2e/hosted/services/isp*`, `web/server/testdata/` と近接テストは明示的に許可された throwaway/fixture 資材であり、製品用 PKI ではない。`proxy/src/gateway-channel/tls-options.test.ts`, `api/src/proxy-client/gateway-tls-options.test.ts` も一時テスト証明書だけを生成する。
-- **検証サーバ上の統合検証（7.2 所有・未完了の旧方式の残りとして明記）**: `scripts/deploy-verify.sh` は現状、作業ツリーを SSH で検証サーバへ転送し `VERIFY_INSTALL_DIR` へ展開して素の `docker compose build/up` を実行する旧い遠隔配置の流れで、コメントにも installer 生成の `.env` と `install.sh` の再実行が残る。これは 6.5 が撤去する対象ではなく（6.5 は製品のコード・設定・テスト・生成スクリプトの旧経路を扱う）、タスク 7.2 の作業そのものとして所有される: 7.2 は、配布物（Compose bundle）の展開と `-p vpngwgui` の固定名、host-preparation の check/apply、Compose の merge/config、公開 port、TLS の mount、UDS volume の検査へ置き換え、旧い転送・素の lifecycle コマンド・installer への言及を除去する。7.2 の完了条件に含まれるため、7.2 の完了後にこの残存を再調査して記録する。`.env.example` の `VERIFY_*` はその統合検証の設定として維持する。
+- **検証サーバ上の統合検証（8.2 所有・未完了の旧方式の残りとして明記）**: `scripts/deploy-verify.sh` は現状、作業ツリーを SSH で検証サーバへ転送し `VERIFY_INSTALL_DIR` へ展開して素の `docker compose build/up` を実行する旧い遠隔配置の流れで、コメントにも installer 生成の `.env` と `install.sh` の再実行が残る。これは 6.5 が撤去する対象ではなく（6.5 は製品のコード・設定・テスト・生成スクリプトの旧経路を扱う）、タスク 8.2 の作業そのものとして所有される: 8.2 は、配布物（Compose bundle）の展開と `-p vpngwgui` の固定名、host-preparation の check/apply、Compose の merge/config、公開 port、TLS の mount、UDS volume の検査へ置き換え、旧い転送・素の lifecycle コマンド・installer への言及を除去する。8.2 の完了条件に含まれるため、8.2 の完了後にこの残存を再調査して記録する。`.env.example` の `VERIFY_*` はその統合検証の設定として維持する。
 - **現行 host-preparation の局所語（維持）**: `compose/host-preparation/common.sh` と `tests/check.test.sh` の `remote` は Docker daemon がローカル Unix socket かを検査・拒否する機能、`boot-guard.sh` とその tests の `bootstrap` は起動時に初期 BLOCK を作る新方式機能である。
 - **テスト語・一般用語（維持）**: `scripts/test-readme-contract.sh` は README に旧 command が再導入されないことを検査し、hosted topology/runner/DNS listener の `ssh`, `remote`, `role` はホスト通信・socket peer・アクセシビリティ属性である。ベンダー entrypoint の `REMOTE=0` は session metadata である。
 - **履歴・仕様・過去成果物（維持）**: `.kiro/specs/`（本 inventory 以外は指示により未変更）、`.kiro/discovery/`, `.kiro/handoff/`, E2E artifacts/logs は旧方式の設計経緯や過去の出力を記録しており、実行設定ではない。`.agents/skills/` と `.claude/skills/` の汎用テンプレートにある `role`/`bootstrap` もアプリの installer 役割ではない。
@@ -133,7 +133,7 @@ wc -l /tmp/task65-final-all-files.txt
 別 worktree の検索内訳も確認した。`.claude/worktrees/dev-add-branch-release-workflow/` には旧 `installer/`、API HTTPS listener、分離配置 Compose fragment、旧 E2E fixture などの snapshot が残るが、現 branch の実行経路・Git index に属さないため本 task では変更しない。
 
 
-## 7.2 deploy-verify 更新後の旧方式参照調査
+## 8.2 deploy-verify 更新後の旧方式参照調査
 
 2026-11-19 に deploy-verify の実行ファイルと配布 env 雛形を再調査した。実行経路に紛れる旧遠隔配置、installer、素の lifecycle、`.env` コピー、rsync、旧 install path の語を検索し、配布 `.env.example` 内の `VERIFY_*` も個別に確認した。
 

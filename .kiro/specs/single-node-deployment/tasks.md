@@ -248,54 +248,110 @@
   - _Depends: 1.1, 4.2, 4.5, 5.1, 5.2, 5.6, 6.1, 6.2_
   - _Requirements: 1.3, 1.4, 7.2_
 
-## 7. 統合・受入
-- [ ] 7. 統合検証と実機受入を完了する
-- [x] 7.1 実機受入環境を確認し手順書を作る
+## 7. Docker 導入対応とホスト準備の統合
+- [ ] 7. Docker/Compose 導入を含む host-preparation を実装し検証する
+- [ ] 7.1 CLI 引数と Docker 非依存の前提検査を分離する
+  - `apply [--yes]` だけを受け付け、`--yes` は `apply` の後ろに限る。他の操作・位置・重複・余分な引数は usage error 2 とする。
+  - `/dev/tty` から同意を取得し、stdin のリダイレクトを対話同意と誤認しない。tty がなく `--yes` もない場合は変更前に非0終了し `--yes` を案内する。
+  - `common.sh` に OS/root/Docker 非依存コマンド/LAN_IFACE/nft 検査を集約し、Docker/Compose/version/rootful 検査を分離する。
+  - 観測できる完了条件: CLI の引数表と tty の有無ごとの終了コード・出力がテストされ、Docker 未導入時も静的検査が Docker 検査と独立して実行される。
+  - _Boundary: Host Preparation CLI, common preconditions_
+  - _Requirements: 2.1, 2.13_
+- [ ] 7.2 Docker 配布元・版・Compose 状態を読み取り専用で判定する
+  - Docker CE、OS 標準 docker.io、併存・その他・判定不能を区別し、daemon 稼働時と停止時の Engine 実効版、rootless/remote endpoint、Compose plugin を診断する。
+  - Docker 未導入、対応する docker-ce 28 未満、対応配布元の Compose 欠落は apply 解消候補として check を合格扱いする。rootless、remote、曖昧な配布元、標準版28未満は不合格とする。
+  - 観測できる完了条件: 判定 fixture の各組合せで check の終了コード、機械判定値、説明が要件どおりで、check はホスト状態を変更しない。
+  - _Boundary: Docker Install read-only assessment_
+  - _Depends: 7.1_
+  - _Requirements: 2.1, 2.11, 2.12_
+- [ ] 7.3 同意後の Docker/Compose 導入・限定更新と再検査を実装する
+  - 未導入時は HTTPS で公式 install script を取得し、URL/hash/副作用を表示して同意を得た後に実行する。curl、wget、どちらも無い場合の同意対象を設計どおりに扱う。
+  - docker-ce 28 未満だけを更新対象とし、OS 標準版28未満や非対応配布元を自動更新しない。Compose 導入は Docker 公式、Ubuntu 標準 docker.io、Debian 12 標準 docker.io の3分岐とする。Debian repository 追加は apt simulation で Engine 削除・置換や docker-ce 導入を拒否する。
+  - 導入後に rootful Engine、Compose plugin、Engine 28+ を再検査し、失敗時は Docker 以外のホスト変更へ進まず、rollback せず段階と手動確認を報告する。
+  - 各導入分岐は curl/wget/sh/apt-get/dpkg-query/docker/tty をスタブ化して呼び出せるテスト可能な入口を持たせ、主要分岐の単体テストを本タスクで同時に追加する。
+  - 観測できる完了条件: 成功時は再検査済みの版と導入経路が表示され、拒否・取得失敗・apt simulation 拒否・再検査失敗時は state/sysctl/guard/reboot/daemon.json が未変更である。各導入分岐を前記スタブで呼べる入口と主要分岐の単体テストが存在し、テスト runner から実行できる。
+  - _Boundary: Docker Install_
+  - _Depends: 7.2_
+  - _Requirements: 2.10, 2.11, 2.12, 2.13, 2.14_
+- [ ] 7.4 apply の処理順と check/status/remove 表示を統合する
+  - apply を静的検査 → Docker 判定/同意/導入 → Docker 再検査 → UID/GID 予約確認 → state 初期化 → sysctl → boot guard → reboot 基盤 → daemon forwarding の順にする。前段失敗時は後続変更へ進めない。
+  - check/status は 7.2 の読み取り専用判定結果を統合して表示する。daemon.json の所有状態と実効 FORWARD policy は既存 `docker-forward.sh` の機能から取得して表示し、新たな判定ロジックを作らない。
+  - remove は Docker、Compose plugin、追加 apt repository を撤去せず、Docker が残ることと必要なら手動撤去する案内を常に表示する。
+  - 観測できる完了条件: PATH fixture で失敗段階ごとの後続未実行と check/status 表示が確認され、remove の出力に Docker 残置案内が含まれる。
+  - _Boundary: Host Preparation CLI, Docker Install, Docker Forward, state orchestration_
+  - _Depends: 7.3, 2.9_
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.9, 2.14, 2.15, 2.16, 6.5_
+- [ ] 7.5 README に Docker 前提・導入分岐・運用制約を反映する
+  - README の記述だけを担当し、対応する Docker 配布元、Docker CE 28 未満だけの更新、標準版28未満は apply でも更新しないこと、Debian 12 の Compose 導入制約、Docker/Compose/追加 repository は remove で撤去しないこと、自動 rollback をしないことを導入手順と合わせて説明する。
+  - 観測できる完了条件: README の新規導入手順と各制約が実装契約に整合し、文面レビューで運用者が手順と制約を正しく理解できる。README 契約検査の追加・更新・最終実行は 7.7 が担当する。
+  - _Boundary: README documentation_
+  - _Depends: 7.1, 7.2_
+  - _Requirements: 7.1, 7.6_
+- [ ] 7.6 Docker 導入処理の網羅確認を行う
+  - 7.3 で追加した分岐別単体テストを前提に、部分失敗時の停止位置と、未導入・同意拒否・tty 不在・取得/導入/再検査失敗で state や sysctl/guard/reboot/daemon.json などが未変更である保証を網羅的に確認する。
+  - 全 host-preparation suite と ShellCheck を実行し、テスト runner への収録を確認する。7.3 のテスト可能入口や主要分岐の単体テストをこのタスクで新設しない。
+  - 観測できる完了条件: 部分失敗・無変更保証の確認結果が揃い、`sh compose/host-preparation/tests/run.sh` と ShellCheck が成功する。
+  - _Boundary: Docker Install verification_
+  - _Depends: 7.3, 7.4_
+  - _Requirements: 2.1, 2.10, 2.11, 2.12, 2.13, 2.14, 7.6_
+- [ ] 7.7 Compose bundle と README の配布検査を更新する
+  - `scripts/bundle-manifest.txt` に Docker install/common 関連スクリプトと必要テスト実行資材を追加し、bundle 展開後にも apply が成立する構成を検査する。
+  - `scripts/test-compose-bundle.sh` と `scripts/test-readme-contract.sh` を更新し、新規スクリプトの manifest 収録、実行権限/呼出関係、Docker 導入文書の契約を検査する。README 契約検査の最終実行も本タスクで行う。
+  - 観測できる完了条件: `sh scripts/test-compose-bundle.sh` と `sh scripts/test-readme-contract.sh` が成功し、bundle 内で manifest 対象が欠落しない。
+  - _Boundary: Compose bundle and static contract tests_
+  - _Depends: 7.1, 7.5_
+  - _Requirements: 7.4, 7.6_
+
+## 8. 統合・受入
+- [ ] 8. 統合検証と実機受入を完了する
+- [x] 8.1 実機受入環境を確認し手順書を作る
   - 検証サーバ `192.168.3.240` へ sshpass で接続できることと、sudo NOPASSWD を確認する。OS 種別・版が Debian 12+ または Ubuntu 22.04+ か、`nft --version` と root での `nft -c` 可否、Docker Engine と Compose v2 の有無・版、空きディスクを記録する。
   - LAN 側に使う interface と、LAN 端末役（network namespace 等）の準備・起動方法を確認する。受入資材を scp で配置する具体的な手順と配置先を記録する。
   - 受入前の初期状態を調べ、旧方式の残骸と既存の `vpngwgui` nft table・Compose volume がないことを確認する。存在する場合は影響を特定し、安全な片付け手順を記録する。
   - 検証のため新たに導入したアプリケーションは検証サーバの `~/claude-installed.md` に記録する。
   - 確認結果、実行コマンド、資材配置・初期化手順を `.kiro/specs/single-node-deployment/acceptance-env.md` にまとめる。
-  - 観測できる完了条件: `acceptance-env.md` に接続、Debian 12+/Ubuntu 22.04+ の対応 OS、nftables と systemd boot guard 適用・確認可否、Docker/Compose、空き容量、LAN interface/端末役、scp、初期状態と必要時の片付け手順が具体的に記録され、7.x の実機受入タスクがこの文書の手順だけで開始できる。
+  - 観測できる完了条件: `acceptance-env.md` に接続、Debian 12+/Ubuntu 22.04+ の対応 OS、nftables と systemd boot guard 適用・確認可否、Docker/Compose、空き容量、LAN interface/端末役、scp、初期状態と必要時の片付け手順が具体的に記録され、8.x の実機受入タスクがこの文書の手順だけで開始できる。
   - _Boundary: 実機受入環境_
   - _Requirements: 8.3, 8.4, 8.5_
-- [ ] 7.2 Compose・host-preparation・通信を統合検証する
+- [ ] 8.2 Compose・host-preparation・通信を統合検証する
   - `scripts/deploy-verify.sh` を新構成に合わせ、Compose merge/config、固定名、公開ポート、TLS mount、UDS volume、host-preparation 実行前提を検査する。検証サーバ接続先・認証等は `acceptance-env.md` に記録された `VERIFY_HOST` 等の環境変数を使う。
   - unit/integration coverage を通し、GitHub-hosted runner 上の disposable/privileged 環境で hosted E2E を実資格情報なしで実行する。開発ホスト上では hosted E2E を実行しない。
   - _Boundary: 統合（Compose・host-preparation・通信・E2E）_
-  - _Depends: 2.7, 2.8, 3.5, 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 6.3, 6.4, 6.5, 7.1_
+  - _Depends: 2.7, 2.8, 3.5, 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 6.3, 6.4, 6.5, 8.1, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7_
   - 統合対象は次の3種類に固定し、実行したコマンドと件数を `acceptance-env.md` 隣の記録（`integration-report.md`）に列挙する: (a) `scripts/deploy-verify.sh`、(b) root `npm test`（置換後の `test:install` を含む）、api/web/proxy の各パッケージの `package.json` にある unit/integration テストスクリプト全部、(c) 5.3〜5.5 および 5.7 の GitHub-hosted runner 上の hosted E2E spec 全部（5.6 の vendor-live-e2e は実資格情報が要る手動試験のため対象外とし、その設定・prepare の関連 test は (b) に含める）。
   - 観測できる完了条件: `scripts/deploy-verify.sh`、root `npm test`（置換後 `test:install` を含む）、unit/integration テスト一式、GitHub-hosted runner 上の5.3〜5.5・5.7 の hosted E2E spec が通り、生成 API client は公式生成手順で更新されている。
   - _Requirements: 2.5, 2.6, 2.8, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
-- [ ] 7.3 検証サーバで nft guard の構文・評価順・遮断経路を受け入れる
+- [ ] 8.3 検証サーバで nft guard の構文・評価順・遮断経路を受け入れる
   - acceptance-env.md の手順で資材を配置し、Debian 12+ または Ubuntu 22.04+ の nft/kernel で batch を `nft -c` 検証後に適用する。
   - 同一の状態遷移 batch を対象 OS 上で繰り返し適用して成功することを確認する。timeout set の追加・更新・4秒自然失効、priority -1 return と priority 0 評価、DNAT 済み・DNS redirect 後・迂回・VPN 転送を含む遮断、Gateway table 再作成後の guard 維持を個別に確認し、コマンド・結果・時刻を記録する。
   - 観測できる完了条件: 構文検証成功、timeout/評価順の結果、各遮断経路の pass/fail と guard 維持が受入記録に残り、設計条件を満たす。
   - _Boundary: 統合受入（検証サーバ nft guard）_
-  - _Depends: 7.1, 7.2_
+  - _Depends: 8.1, 8.2, 7.7_
   - _Requirements: 2.5, 2.8, 8.2_
-- [ ] 7.4 検証サーバで Kill Switch 停止時の遮断と変更拒否を受け入れる
+- [ ] 8.4 検証サーバで Kill Switch 停止時の遮断と変更拒否を受け入れる
   - acceptance-env.md の手順で資材を配置し、Kill Switch true/false の各条件で SIGKILL・Gateway hang・通常停止を実施する。
   - 遮断時刻を測定し、透過ゲートウェイ有効かつ Kill Switch true は全停止経路で6秒以内、通常停止は Gateway 終了前に遮断されることを確認する。透過有効かつ Kill Switch false は停止後も guard が遮断しないことを確認する。
   - proxy 停止中の `killSwitch` / `transparentGatewayEnabled` PUT が effective 値を変える場合に503となり永続値不変であること、Kill Switch を含む場合の `kill_switch_not_applied`、proxy 再開後の再試行を記録する。
   - 観測できる完了条件: 透過ゲートウェイ有効時の各停止方式・Kill Switch 値の実測時刻、6秒上限と通常停止順序、proxy 停止中の有効値変更に対する503/永続値/再開後反映の結果が受入記録にあり、全条件を満たす。
   - _Boundary: 統合受入（検証サーバ Kill Switch）_
-  - _Depends: 7.1, 7.2, 7.3_
+  - _Depends: 8.1, 8.2, 8.3, 7.7_
   - _Requirements: 2.8, 8.2_
-- [ ] 7.5 検証サーバで Compose lifecycle とホスト準備を受け入れる
+- [ ] 8.5 検証サーバで Compose lifecycle とホスト準備を受け入れる
   - acceptance-env.md の手順で資材を配置し、初回起動・更新・停止・再作成・`down -v` と vendor fragment の除外・再追加を実施する。
   - 管理者・設定・お気に入り・監査ログ・vendor state の保持、通常 down での volume 保持、`down -v` での明示削除を確認する。
-  - host preparation の apply/status/remove の状態・所有差分と、boot guard が nftables 後かつ network-pre/Docker 前に BLOCK を適用する起動順を確認して記録する。host-preparation `remove` は必ず `docker compose -p vpngwgui down` 後に実施する。
-  - 観測できる完了条件: lifecycle ごとのデータ保持/削除、vendor fragment の再追加、apply/status/remove の結果、boot guard 起動順が受入記録にあり、製品外設定を変更しない。
+  - Docker 導入済みの既存 `acc-vpngwgui` は導入済み環境の確認専用とし、Docker 導入処理の受入には使わない。検証サーバ上に Docker 未導入の Ubuntu LXD 新容器を作成し、初期状態を確認してクリーンスナップショットを取得する。導入試験の各独立 run はそのスナップショットへ戻して行い、準備方法・container 名・snapshot 名・Docker 未導入の確認結果を `acceptance-results.md` に記録する。
+  - Docker 未導入環境で `apply` による Docker 導入から Engine/Compose/28+ 再検査、以降の host-preparation、boot guard まで受け入れる。結果には公式取得元 URL、取得したスクリプトの SHA-256 表示、対話同意または `--yes` の選択、導入後の Engine 版・Compose 状態・rootful 再検査結果、以降の各 host-preparation 段階の結果を記録する。既存 `acc-vpngwgui` の導入済み環境での比較確認結果も区別して記録する。
+  - host-preparation の apply/status/remove の状態・所有差分と、boot guard が nftables 後かつ network-pre/Docker 前に BLOCK を適用する起動順を確認する。host-preparation `remove` は必ず `docker compose -p vpngwgui down` 後に実施する。
+  - 観測できる完了条件: lifecycle ごとのデータ保持/削除、vendor fragment の再追加、Docker 未導入 snapshot からの導入結果と上記記録項目、導入後の apply/status/remove の結果、boot guard 起動順が受入記録にあり、製品外設定を変更しない。
   - _Boundary: 統合受入（検証サーバ Compose・host-preparation）_
-  - _Depends: 7.1, 7.2, 5.5_
-  - _Requirements: 2.5, 2.7, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 8.3, 8.5_
-- [ ] 7.6 検証サーバで Web HTTPS × Gateway TLS の4構成を受け入れる
+  - _Depends: 8.1, 8.2, 5.5, 7.7_
+  - _Requirements: 2.5, 2.7, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 8.3, 8.5, 8.9_
+- [ ] 8.6 検証サーバで Web HTTPS × Gateway TLS の4構成を受け入れる
   - acceptance-env.md の手順で資材を配置し、OFF/OFF、ON/OFF、OFF/ON、ON/ON の起動と管理画面/API 操作を行う。
   - wrong CA、期限切れ、SAN 不一致、client cert 不足を個別に与え、TLS 有効区間で接続が失敗し HTTP/平文へ降格しないことを確認する。
   - 観測できる完了条件: 4構成の起動・操作結果と各不正証明書ケースの失敗理由が受入記録にあり、無断降格がない。
   - _Boundary: 統合受入（検証サーバ TLS）_
-  - _Depends: 7.1, 7.2, 5.4_
+  - _Depends: 8.1, 8.2, 5.4, 7.7_
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 4.1, 5.1, 5.2, 5.3, 5.4, 5.6, 5.7, 8.4_
 
 ## 設計へ戻す事項
@@ -311,7 +367,7 @@
 | 1.3 | 1.1, 6.2, 6.3, 6.4, 6.5 |
 | 1.4 | 1.1, 6.2, 6.3, 6.4, 6.5 |
 | 1.5 | 2.1 |
-| 2.1 | 2.3, 2.8 |
+| 2.1 | 2.3, 2.8, 7.1, 7.2, 7.3, 7.4, 7.6 |
 | 2.2 | 2.4 |
 | 2.3 | 2.3, 2.4, 2.8 |
 | 2.4 | 2.3, 2.4, 2.8 |
@@ -319,6 +375,14 @@
 | 2.6 | 2.6, 2.7, 7.2 |
 | 2.7 | 2.3, 2.4, 2.5, 2.6, 2.8, 7.5 |
 | 2.8 | 1.2, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 5.7, 7.2, 7.3, 7.4 |
+| 2.9 | 2.9, 7.4 |
+| 2.10 | 7.3, 7.6 |
+| 2.11 | 7.2, 7.3, 7.6 |
+| 2.12 | 7.2, 7.3, 7.6 |
+| 2.13 | 7.1, 7.3, 7.6 |
+| 2.14 | 7.3, 7.4, 7.6 |
+| 2.15 | 7.4 |
+| 2.16 | 7.4 |
 | 3.1 | 2.2, 4.1, 7.2, 7.6 |
 | 3.2 | 2.2, 4.1, 7.2, 7.6 |
 | 3.3 | 2.2, 4.1, 5.4, 7.2, 7.6 |
@@ -343,7 +407,7 @@
 | 6.2 | 2.1, 4.4, 5.2, 5.5, 7.2, 7.5 |
 | 6.3 | 2.1, 5.2, 5.5, 7.2, 7.5 |
 | 6.4 | 2.1, 5.2, 5.5, 6.2, 7.2, 7.5 |
-| 6.5 | 2.3, 2.4, 2.8, 6.2, 7.2, 7.5 |
+| 6.5 | 2.3, 2.4, 2.8, 6.2, 7.2, 7.5, 7.4 |
 | 6.6 | 2.4, 2.8, 5.5, 6.2, 7.2, 7.5 |
 | 6.7 | 2.1, 4.4, 5.2, 7.2, 7.5 |
 | 7.1 | 6.2 |
@@ -351,32 +415,34 @@
 | 7.3 | 6.2 |
 | 7.4 | 6.1 |
 | 7.5 | 6.2 |
-| 8.1 | 4.6, 5.3, 7.2 |
-| 8.2 | 1.2, 2.5, 3.1, 3.2, 3.3, 4.6, 5.7, 7.2, 7.3, 7.4 |
-| 8.3 | 5.2, 5.3, 7.1, 7.2, 7.5 |
-| 8.4 | 5.4, 7.1, 7.2, 7.6 |
-| 8.5 | 5.2, 5.5, 7.1, 7.2, 7.5 |
-| 8.6 | 1.1, 5.1, 5.6, 7.2 |
-| 8.7 | 5.3, 5.6, 7.2 |
+| 7.6 | 7.5, 7.6, 7.7 |
+| 7.1 | 4.6, 5.3, 7.2 |
+| 7.2 | 1.2, 2.5, 3.1, 3.2, 3.3, 4.6, 5.7, 7.2, 7.3, 7.4 |
+| 7.3 | 5.2, 5.3, 7.1, 7.2, 7.5 |
+| 7.4 | 5.4, 7.1, 7.2, 7.6 |
+| 7.5 | 5.2, 5.5, 7.1, 7.2, 7.5 |
+| 7.6 | 1.1, 5.1, 5.6, 7.2 |
+| 7.7 | 5.3, 5.6, 7.2 |
 | 8.8 | 4.6, 5.3, 7.2 |
+| 8.9 | 7.5 |
 
 ## Implementation Notes
 - 2.9: Docker forwarding handler は `/etc/docker/daemon.json` が存在しない場合のみ作成し、再起動後も policy が DROP なら pending state を残して失敗する。remove は再起動を行わない。実ホストへの systemctl/Docker 操作は実行せず、PATH fixture で検証する。
 - 2.2: 設計表の API クライアント証明書の環境変数名（`GATEWAY_TLS_CLIENT_CERT_FILE`/`GATEWAY_TLS_CLIENT_KEY_FILE`）と、現行 API loader（`api/src/proxy-client/gateway-tls-options.ts`）の名前（`GATEWAY_TLS_CERT_FILE`/`GATEWAY_TLS_KEY_FILE`）が異なる。`compose/api-tls.yml` は両方を設定済み。4.5/4.6 で loader 側の名前を設計に統一し、統一後は片方の設定を外す。
 - 実装補助: 開発ホストの対話シェルの `rg` は関数で、`sh` スクリプトからは使えない。リポジトリのスクリプトは `grep -F` などの POSIX 道具だけを使う。仕様文書（`.kiro/specs`）をテストが読まない。
 - 2.3（host-preparation 共通方針）: 本番スクリプトに環境変数での検査回避・パス差し替えを作らない。パスは `compose/host-preparation/paths.sh`（本番値）に集約し、テストは CLI 一式を一時ディレクトリへコピーして `paths.sh` を書き換えて実行する。コマンドの差し替えは PATH の fixture だけで行う。状態ファイル・ディレクトリは symlink／通常ファイル以外を変更前に拒否し、新規作成は検証済みディレクトリ内の一時ファイルから `ln`（上書きしない）で配置する。`apply` が使うコマンドは `check` の必須コマンド一覧に含める。`apply` は boot guard（2.5）が入るまで状態初期化の後に非0で終わり、`status`/`remove` の実体は 2.8 が担当する。
-- 2.5（boot guard）: state の `boot_guard` 記録は `interface` と、保留中だけ `previous_interface` を持ち、状態は `pending`→`applied`。`status`/`remove` の統合（2.8）はこの記録を読む。guard unit は `RequiredBy=docker.service` で Docker の必須依存にし、失敗時は Docker が起動しない。実機の nft の出力（`expires` の残り時間付き要素を含む）と systemd の挙動は 7.3/7.5 で確認する。`npm run test:e2e-unit` は古い作業ツリー（`.claude/worktrees/dev-add-branch-release-workflow`）の複製テストを拾いポート競合するため、`--maxWorkers=1` で実行するか作業ツリーを整理する。
-- 3.2（Gateway guard）: `GatewayGuard.applySettings(next, applyGatewayRuleset)` は Gateway ruleset を先に適用し、その後に guard batch を適用する（両方向）。`ReconcileOutcome.succeeded`（適用と検証の成否。正常な撤去を含む）と `applied`（有効な ruleset の有無）を区別する。ruleset 適用結果は `GatewayControllerOptions.onReconcileResult` で guard の健康に反映される。`GET /net/status` に guard 状態が入り、API の `GatewayStatusSchema` を更新済み。Web の生成クライアントは 7.2 で公式手順により再生成する。3.3 は停止時の lease 削除、3.5 は `POST /settings` の 503 `guard_apply_failed` と Web 表示、4.6 は UDS listener の健康との接続を担当する。
-- 3.3（停止時の遮断）: 停止処理は 新規 guard 作業の停止 → lease 失効（最後の guard 変更）→ 監視・明示プロキシ・DNS 中継の停止 → server close → exit の順で、全体 2 秒の期限を持つ。成功時の終了コードは 143/130/131（従来の既定のシグナル終了と同じ）、失敗・期限超過は 1。Gateway の nft ruleset は停止時に撤去しない（lease 失効後は Kill Switch 有効なら BLOCK、無効なら drop を足さない）。SIGKILL・hang は 7.4 の受入で確認する。
+- 2.5（boot guard）: state の `boot_guard` 記録は `interface` と、保留中だけ `previous_interface` を持ち、状態は `pending`→`applied`。`status`/`remove` の統合（2.8）はこの記録を読む。guard unit は `RequiredBy=docker.service` で Docker の必須依存にし、失敗時は Docker が起動しない。実機の nft の出力（`expires` の残り時間付き要素を含む）と systemd の挙動は 8.3/8.5 で確認する。`npm run test:e2e-unit` は古い作業ツリー（`.claude/worktrees/dev-add-branch-release-workflow`）の複製テストを拾いポート競合するため、`--maxWorkers=1` で実行するか作業ツリーを整理する。
+- 3.2（Gateway guard）: `GatewayGuard.applySettings(next, applyGatewayRuleset)` は Gateway ruleset を先に適用し、その後に guard batch を適用する（両方向）。`ReconcileOutcome.succeeded`（適用と検証の成否。正常な撤去を含む）と `applied`（有効な ruleset の有無）を区別する。ruleset 適用結果は `GatewayControllerOptions.onReconcileResult` で guard の健康に反映される。`GET /net/status` に guard 状態が入り、API の `GatewayStatusSchema` を更新済み。Web の生成クライアントは 8.2 で公式手順により再生成する。3.3 は停止時の lease 削除、3.5 は `POST /settings` の 503 `guard_apply_failed` と Web 表示、4.6 は UDS listener の健康との接続を担当する。
+- 3.3（停止時の遮断）: 停止処理は 新規 guard 作業の停止 → lease 失効（最後の guard 変更）→ 監視・明示プロキシ・DNS 中継の停止 → server close → exit の順で、全体 2 秒の期限を持つ。成功時の終了コードは 143/130/131（従来の既定のシグナル終了と同じ）、失敗・期限超過は 1。Gateway の nft ruleset は停止時に撤去しない（lease 失効後は Kill Switch 有効なら BLOCK、無効なら drop を足さない）。SIGKILL・hang は 8.4 の受入で確認する。
 - 3.4（API 通知キュー）: 起動時・10 秒周期・PUT は `SettingsNotificationQueue`（api/src/settings/settings-notification-queue.ts）の1本の FIFO を通る。5 秒の待機上限は、`killSwitch`/`transparentGatewayEnabled` に触れる PUT のうち、見込み設定で有効ガード値が変わる、または先行の未完了のガード PUT がある場合にだけ付く（それ以外は上限なしで順番に保存）。通知するか先に保存するかの判断は、常にキュー先頭で実際の永続設定から取り直す。proxy 側の `POST /settings` の 503 `guard_apply_failed` と Web の表示は 3.5 が担当する。
-- 3.5（settings endpoint と Web 表示）: proxy `POST /net/settings` の 200 応答は `succeeded`（適用と検証の成否。無効化の撤去を含む）と実効状態 `applied` を返し、API は HTTP status と `succeeded === false` で判断する（`applied` では判断しない。`succeeded` が無い旧 proxy の 200 は成功）。本文の読み取りは abort/close/error と 4 秒の期限で終わり、設定要求の待ち行列は失敗・切断のあとも進む。Web の SettingsDialog は `kill_switch_not_applied` と `gateway_setting_not_applied` でトグルを戻して表示する。Web の生成クライアントの再生成は 7.2。
+- 3.5（settings endpoint と Web 表示）: proxy `POST /net/settings` の 200 応答は `succeeded`（適用と検証の成否。無効化の撤去を含む）と実効状態 `applied` を返し、API は HTTP status と `succeeded === false` で判断する（`applied` では判断しない。`succeeded` が無い旧 proxy の 200 は成功）。本文の読み取りは abort/close/error と 4 秒の期限で終わり、設定要求の待ち行列は失敗・切断のあとも進む。Web の SettingsDialog は `kill_switch_not_applied` と `gateway_setting_not_applied` でトグルを戻して表示する。Web の生成クライアントの再生成は 8.2。
 - 4.1（Web listener）: `web/server/index.ts` の `startWebServer(env, listenOptions)` が listener を選ぶ。`WEB_HTTPS_ENABLED` 未設定/`false` は証明書なしの HTTP、`true` だけが証明書・鍵を必須にした HTTPS で、不正値・証明書の不備・鍵の不一致は HTTP に降格せず起動失敗にする。試験用の使い捨て証明書は `web/server/testdata/`（README に明記、本番経路は読まない）。Web→API の既定 upstream は HTTP（`/api` の proxy の挙動と 502 は 4.2）。
 - 4.2（同一オリジン API 中継）: API の起動は `api/src/main.ts`（副作用あり）と `startApiServer`（`api/src/server.ts`、副作用なし）に分け、コンテナの `CMD` は `dist/main.js`。API は証明書なしの内部 HTTP（0.0.0.0:`PORT`）で、ホストには公開しない。API サーバ用の TLS loader（`api/src/tls-options.ts`）は削除済み。`compose/api.yml` は旧分離配置の部品で 6.4 が撤去する。
 - 4.3（Cookie Secure）: API の session Cookie の `Secure` は `WEB_HTTPS_ENABLED` だけで決める（`api/src/web-https-options.ts` の `parseWebHttpsEnabled`。未設定/`false`/`true` のみ。それ以外は listen 前に起動失敗。Web サーバと同じ規則）。`trustProxy` や `X-Forwarded-Proto` では判断しない。
 - 4.4（Gateway UDS）: `proxy/src/gateway-channel/server.ts` の `listenOnGatewaySocket(server, socketPath, expectedUid)` が UDS を umask 0177 で bind し（mode 0600）、stale 判定は connect の `ECONNREFUSED` のみ・削除前に dev/ino を再確認、`close()` は自分が作った inode だけを消す。`compose/gateway-entrypoint.sh` は root で `/run/vpngw-gateway` を検証（symlink・非ディレクトリ・root/10001 以外の owner は拒否）してから `chown 10001:10001`・`chmod 0700` し、`su-exec 10001:10001` へ `exec` する。実コンテナの検証は opt-in の `proxy/tests/gateway-entrypoint.docker.test.sh`（Docker が使える環境で実行。7.5 でも実施）。TCP 8443 listener と `GATEWAY_PORT` はまだ残しており、4.6 が除去する。API 側の再接続（指数 backoff）は 4.5 の担当（tasks.md を更新済み）。`ctl-socket` の書き込み権限は `proxy/Dockerfile` の `/var/run/vpngw-ctl`（vpngwgui 所有）を空の名前付き volume が引き継ぐことに依存する。
-- 4.5（API の Gateway UDS client）: `loadGatewayTransportOptions` が `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS（CA・SAN・クライアント証明書・期限。降格しない）を選ぶ。`requestGateway` は socket 消失・`ECONNREFUSED` を通信不可として扱い、上限つきの指数 backoff で再接続する。`notifySettings` は backoff・接続・headers・body を合わせた1つの 5 秒の総期限を持ち、期限切れは `ProxyTimeoutError`（504）。保護方式の不一致は、要求後に接続が切れたとき同じ UDS へ TLS の probe を送り、TLS と確認できたときだけ `GatewayProtectionMismatchError`（`gateway_protection_mismatch`、`protectionModeMismatch: true`）にして、ログ・API status・Web 表示で区別する。`api/openapi.json` と `web/src/generated` は git 管理外の生成物で、4.5 で `npm run generate:api-client` を実行して最新にした（7.2 でも再生成して確認する）。環境変数名は設計の名前（`GATEWAY_TLS_CLIENT_CERT_FILE` など）に統一済み。
+- 4.5（API の Gateway UDS client）: `loadGatewayTransportOptions` が `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS（CA・SAN・クライアント証明書・期限。降格しない）を選ぶ。`requestGateway` は socket 消失・`ECONNREFUSED` を通信不可として扱い、上限つきの指数 backoff で再接続する。`notifySettings` は backoff・接続・headers・body を合わせた1つの 5 秒の総期限を持ち、期限切れは `ProxyTimeoutError`（504）。保護方式の不一致は、要求後に接続が切れたとき同じ UDS へ TLS の probe を送り、TLS と確認できたときだけ `GatewayProtectionMismatchError`（`gateway_protection_mismatch`、`protectionModeMismatch: true`）にして、ログ・API status・Web 表示で区別する。`api/openapi.json` と `web/src/generated` は git 管理外の生成物で、4.5 で `npm run generate:api-client` を実行して最新にした（8.2 でも再生成して確認する）。環境変数名は設計の名前（`GATEWAY_TLS_CLIENT_CERT_FILE` など）に統一済み。
 - 4.6（Gateway listener の切替）: Gateway の TCP 8443 listener と `GATEWAY_PORT` は除去済みで、制御は UDS の listener（HTTP、または `GATEWAY_TLS_ENABLED=true` の strict mTLS）だけ。proxy の設定・status の本番ハンドラは `proxy/src/gateway-channel/gateway-routes.ts` の `createGatewayRequestHandler`（依存を注入）に切り出してあり、`proxy/src/server.ts` が本物のコントローラを渡す。guard の健康は「UDS listener が稼働」かつ「直近の ruleset 適用と検証が成功」の両方（`GatewayGuard.setListenerAvailable`）。listener が予期せず閉じたら guard を unhealthy にして非 0 で終了し、Compose の再起動に任せる。統合テストは `e2e/gateway-control.integration.test.ts`（実 UDS・実 API client で HTTP/mTLS、保護方式不一致の status とログと復旧）。`npx tsc -p web/tsconfig.json --noEmit` の `city`/`pingMs` に関する8件のエラーは、このスペック以前からあるもので触っていない。
-- 2.7（再起動要求の配線）: proxy の `requestHostReboot()` は、同じディレクトリに隠し一時ファイル（`.reboot-request.tmp.<数字>.<32 桁の hex>`、`O_EXCL|O_NOFOLLOW`・mode 0600）へ固定内容を書いて fsync し、排他的なハードリンクで `reboot-request` として公開する（先に存在すれば already-requested）。proxy は自分の古い一時ファイル（60 秒超）を次の要求で片付ける。ホスト準備の precheck/remove/status は、この名前の形に完全一致する通常ファイル（所有者 10001・mode 0600）だけを製品所有の残骸として片付け可能と扱い、それ以外は競合のまま。root Compose の proxy だけが `/var/lib/vpngwgui-host-ctl` を `/var/run/vpngw-host-ctl` に mount する。`package.json` の `test:e2e-unit` は `.claude` と `node_modules` を除外する（古い作業ツリーの複製テストとのポート競合を避けるため）。実機の systemd・Docker 動作は 7.5。
+- 2.7（再起動要求の配線）: proxy の `requestHostReboot()` は、同じディレクトリに隠し一時ファイル（`.reboot-request.tmp.<数字>.<32 桁の hex>`、`O_EXCL|O_NOFOLLOW`・mode 0600）へ固定内容を書いて fsync し、排他的なハードリンクで `reboot-request` として公開する（先に存在すれば already-requested）。proxy は自分の古い一時ファイル（60 秒超）を次の要求で片付ける。ホスト準備の precheck/remove/status は、この名前の形に完全一致する通常ファイル（所有者 10001・mode 0600）だけを製品所有の残骸として片付け可能と扱い、それ以外は競合のまま。root Compose の proxy だけが `/var/lib/vpngwgui-host-ctl` を `/var/run/vpngw-host-ctl` に mount する。`package.json` の `test:e2e-unit` は `.claude` と `node_modules` を除外する（古い作業ツリーの複製テストとのポート競合を避けるため）。実機の systemd・Docker 動作は 8.5。
 - 5.1（E2E 共通 API client）: `e2e/common/api-client.ts` の `createApiClient` は Web origin（HTTP/HTTPS はスキームで選ぶ）の `/api/v1` に要求し、HTTPS の CA は任意の Web CA（未指定は標準 trust store。自己署名は拒否）。API CA への依存はない。既存の呼び出し側は、API の origin と API CA のパスを渡す旧い形のままで、5.2〜5.6 が移行する: `e2e/hosted/fixtures/stack.ts`・`e2e/hosted/specs/api/auth.spec.ts`・hosted の他の spec は 5.2/5.3/5.7（Web 公開 origin の `/api` 経由へ）、`e2e/vendor-live/lib/prepare.ts`・`config.ts` は 5.6。それまで hosted E2E は新旧の混在で動かない（5.2 が fixture を Compose 方式にするまでの途中状態）。
 - 5.2（hosted の Compose fixture）: `e2e/hosted/fixtures/compose.ts` が全操作に `-p vpngwgui` を付け（`COMPOSE_PROJECT_NAME`/`-p` が `name:` より優先されること、別名では volume 名が変わることを `docker compose config` で契約テスト）、root-first の `-f` merge（vendor fragment、`compose/web-tls.yml`、`compose/api-tls.yml`）、既定 HTTP、up/down/`down -v` を提供する。起動は `e2e/hosted/fixtures/compose-cli.ts` を通る共通の経路（`provision.sh` もここを使う）で、注入した runner の引数をテストする。`e2e/hosted/lib/cleanup.sh` が EXIT/INT/TERM/HUP で固定 project の down（`-v` なし）と topology の後始末をする。volume 保持は実 Docker の統合テスト `e2e/hosted/fixtures/volume-retention.integration.test.ts`（既存の `vpngwgui*` 資源があれば skip。作った volume だけ後始末）で確認済み。実スタックの Playwright は hosted CI（と 7.x の実機）で実行する。hosted workflow のブランチ trigger は変えていない。
 - 5.3（hosted VPN 操作）: `e2e/hosted/specs/api/{vpn,locations}.spec.ts` は Web origin `/api` の共通 client で、ベンダー切替・接続・切断・都市/サーバー選択・お気に入り・距離順を項目別のケースにした。接続のケースは `finally` で必ず切断する。runner の許可リストの拒否は、runner の制御 UDS へ許可コマンドと許可外コマンドを送り、200 と 403 `binary_not_allowed` を確認する独立ケース。hosted Playwright は開発ホストでは実行しておらず（型検査・`--list`・独立レビューのみ）、実行は hosted の CI で行う。
@@ -387,5 +453,23 @@
 - 6.2（README と steering）: README は 導入（`.env` と `LAN_IFACE` → `host-preparation.sh check` → `apply` → `docker compose -p vpngwgui config --quiet` → `up -d --build`）・更新（新しい配布物の全体を展開し、`.env` と作業者が置いた証明書を残す → `apply` → `config --quiet` → `up -d --build`。`pull` は使わない）・停止削除（`docker compose -p vpngwgui down` の後に host-preparation `remove`。`down -v` は保存データを消す）を、全 Compose コマンドに `-p vpngwgui` を付けて書く。対応環境（Debian 12+/Ubuntu 22.04+、rootful のローカル Docker）、TLS の既定（Web HTTPS・API→Gateway TLS とも OFF）と有効化の手順、Kill Switch の対象（透過ゲートウェイのみ）、旧方式の移行は非対応、を記す。`scripts/test-readme-contract.sh` が節ごとに順序と事実を確認し、壊した README を拒否する自己検査を持つ。steering の roadmap は、完成後の姿（installer 撤去後）で書き、6.3 の撤去前は旧資材がチェックアウトに残ることを区別している。
 - 6.3（installer 撤去）: `installer/` の8ファイル（setup/main/app/bootstrap の生成/config schema/専用テスト）を撤去済み。root `package.json` の `test:install` は `sh compose/host-preparation/tests/run.sh`（ホスト準備の6つのシェルテストを実行し、1つでも失敗すれば失敗）を呼び、`npm test` から実行される。`scripts/check-vendor-neutrality.mjs` の検査対象から `installer` を外した（`compose/` は引き続き対象）。撤去後の残存参照調査は `inventory.md` に実行した検索コマンドと範囲を含めて記録した。旧い再起動の部品は撤去のみで、新しい経路は 2.6/2.7 が担う。
 - 6.4（分離配置用 Compose の撤去）: `compose/web.yml`・`compose/api.yml`・`compose/gateway.yml` を撤去済み。各定義は root `docker-compose.yml`（proxy の host network・`NET_ADMIN`・`init`・restart・socket volume・ホストの依頼用 bind mount・環境変数の既定）に引き継ぎ済みで、旧い installer 前提の設定（PKI の mount、TCP の制御ポート、役割ごとの分離）は引き継いでいない。`scripts/test-compose-contract.sh`・`scripts/test-compose-tls-contract.sh` は root と vendor/TLS 構成の組み合わせごとに `docker compose -p vpngwgui config --quiet` と、service・volume・network・公開 port の契約を確認する。
-- 6.5（遠隔配置・ペアリング・旧 PKI の撤去）: 製品のコード・設定・スキーマ・生成スクリプト・テストに、遠隔配置・役割選択・ペアリング・旧 PKI の経路は残っていない（`api/src/server.test.ts` から旧 API TLS/PKI の環境名を除去。調査の検索コマンドと範囲は `inventory.md`）。`scripts/deploy-verify.sh` は旧い遠隔配置（SSH で作業ツリーを転送、素の `docker compose`）の流れが残っており、タスク 7.2 が配布物（Compose bundle）と host-preparation に基づく検証へ置き換え、7.2 の完了後に再調査して記録する。
-- 7.1（実機受入環境）: 受入は検証サーバ（192.168.3.240）上の LXD システムコンテナ `acc-vpngwgui`（利用者の決定。共有サーバの既定経路を変えずに、VPN 転送を含む全経路を確かめるため）で行う。作成済み（Ubuntu 24.04、入れ子の Docker・nftables・netns が動作）。手順・競合経路表（ホスト準備が使う固定経路と一時ファイルの名前）・読み取り専用の初期状態確認・7.3〜7.6 の試験手順は `acceptance-env.md`。サーバ本体の旧方式の導入（`vpngwgui` の Compose project など）は触らない。結果は `acceptance-results.md`（7.3〜7.6 で作る）に記録する。作業の終わりにはコンテナを削除する（`dir` の storage pool は容量を共有しないため）。
+- 6.5（遠隔配置・ペアリング・旧 PKI の撤去）: 製品のコード・設定・スキーマ・生成スクリプト・テストに、遠隔配置・役割選択・ペアリング・旧 PKI の経路は残っていない（`api/src/server.test.ts` から旧 API TLS/PKI の環境名を除去。調査の検索コマンドと範囲は `inventory.md`）。`scripts/deploy-verify.sh` は旧い遠隔配置（SSH で作業ツリーを転送、素の `docker compose`）の流れが残っており、タスク 8.2 が配布物（Compose bundle）と host-preparation に基づく検証へ置き換え、8.2 の完了後に再調査して記録する。
+- 8.1（実機受入環境） 受入は検証サーバ（192.168.3.240）上の LXD システムコンテナ `acc-vpngwgui`（利用者の決定。共有サーバの既定経路を変えずに、VPN 転送を含む全経路を確かめるため）で行う。作成済み（Ubuntu 24.04、入れ子の Docker・nftables・netns が動作）。手順・競合経路表（ホスト準備が使う固定経路と一時ファイルの名前）・読み取り専用の初期状態確認・8.3〜8.6 の試験手順は `acceptance-env.md`。サーバ本体の旧方式の導入（`vpngwgui` の Compose project など）は触らない。結果は `acceptance-results.md`（8.3〜8.6 で作る）に記録する。作業の終わりにはコンテナを削除する（`dir` の storage pool は容量を共有しないため）。
+
+## 番号の振り直し（2026-11-19）
+
+| 旧番号 | 新番号 |
+|---|---|
+| 7.1 | 8.1 |
+| 7.2 | 8.2 |
+| 7.3 | 8.3 |
+| 7.4 | 8.4 |
+| 7.5 | 8.5 |
+| 7.6 | 8.6 |
+| 8.1 | 7.1 |
+| 8.2 | 7.2 |
+| 8.3 | 7.3 |
+| 8.4 | 7.4 |
+| 8.5 | 7.5 |
+| 8.6 | 7.6 |
+| 8.7 | 7.7 |

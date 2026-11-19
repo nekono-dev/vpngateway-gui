@@ -1,10 +1,10 @@
 # 実機受入環境（LXD コンテナ）
 
-タスク 7.1 の受入手順。7.3〜7.6 は検証サーバ `192.168.3.240` 上に既設の LXD system container `acc-vpngwgui` の中で行う。判断日・ラボ確認日は 2026-11-19。受入記録は [.kiro/specs/single-node-deployment/acceptance-results.md](./acceptance-results.md) にタスクごとに追記する。
+タスク 8.1 の受入手順。8.3〜8.6 は検証サーバ `192.168.3.240` 上に既設の LXD system container `acc-vpngwgui` の中で行う。判断日・ラボ確認日は 2026-11-19。受入記録は [.kiro/specs/single-node-deployment/acceptance-results.md](./acceptance-results.md) にタスクごとに追記する。
 
 ## 1. 接続と権限
 
-開発ホストからの task 7.2 `scripts/deploy-verify.sh lab` は `VERIFY_HOST`（この環境では `192.168.3.240`）、`VERIFY_USER`（既定 `ubuntu`）、`VERIFY_LAB`（既定 `acc-vpngwgui`）を環境変数から受け取る。開発用設定例は `scripts/deploy-verify.env.example` にあり、配布 `.env.example` には含めない。`VERIFY_SSH_PASSWORD` は必要時のみ環境変数で指定し、プロセス引数・ファイル・記録へ出さない。
+開発ホストからの task 8.2 `scripts/deploy-verify.sh lab` は `VERIFY_HOST`（この環境では `192.168.3.240`）、`VERIFY_USER`（既定 `ubuntu`）、`VERIFY_LAB`（既定 `acc-vpngwgui`）を環境変数から受け取る。開発用設定例は `scripts/deploy-verify.env.example` にあり、配布 `.env.example` には含めない。`VERIFY_SSH_PASSWORD` は必要時のみ環境変数で指定し、プロセス引数・ファイル・記録へ出さない。
 
 lab phase は bundle 展開後に `host-preparation.sh check` と Compose config の前提検査だけを行い、apply / up は実行しない。container 内 bundle に `.env` がない場合、静的 check 用に `LAN_IFACE=lo` だけの一時 `.env` を作る（実際の LAN_IFACE は LAN topology 準備後の受入時に選ぶ）; 終了時に削除する。既存 `.env` は変更せず、その `LAN_IFACE` を使う。終了表示で前提検査全体の成否を明示する。
 
@@ -19,7 +19,7 @@ SCP='scp -o ConnectTimeout=10'
 
 ## 2. ラボの理由・環境・適用範囲
 
-実機受入 7.3〜7.6 は、共有サーバ本体ではなく既設コンテナ内で実施する。サーバには単一の物理 NIC があり、VPN forward の hosted mock は既定経路を VPN veth に変更する。ホスト上で行うと SSH が切れる一方、LXD system container では変更がコンテナの network namespace 内に限られる。`e2e/hosted/lib/topology.sh` の `e2eseg` bridge、`lan` / `isp` / `vpnexit` namespace、VPN tunnel veth と mock stack で、VPN forward を含むすべての経路を試験できる。サーバへの SSH は影響を受けない。
+実機受入 8.3〜8.6 は、共有サーバ本体ではなく既設コンテナ内で実施する。サーバには単一の物理 NIC があり、VPN forward の hosted mock は既定経路を VPN veth に変更する。ホスト上で行うと SSH が切れる一方、LXD system container では変更がコンテナの network namespace 内に限られる。`e2e/hosted/lib/topology.sh` の `e2eseg` bridge、`lan` / `isp` / `vpnexit` namespace、VPN tunnel veth と mock stack で、VPN forward を含むすべての経路を試験できる。サーバへの SSH は影響を受けない。
 
 LXD コンテナはサーバと kernel を共有する。nftables、network namespace、sysctl の操作はコンテナ側の network namespace に作用し、独立 kernel の検証ではない。kernel-level の結果はサーバ kernel `6.8.0-149` に依存する。systemd の boot guard 起動順序はコンテナ内 systemd で検証する。「host reboot」要求の結果はコンテナ再起動 `lxc restart acc-vpngwgui` として扱い、物理サーバは再起動しない。
 
@@ -264,7 +264,7 @@ unlink /tmp/vpngwgui-nft-check.nft
 
 一時 batch は製品と同じ timeout set、priority `-1 return` / drop、priority `0` chain 構文を検査する。`-c` は構文だけを検査し、rule は適用しない。実際の Gateway table は起動後に `nft list table inet vpngwgui` で確認する。期限付き set に4秒の要素を追加し、期限前に更新して timer が再開することを確認する。その後、明示削除せず自然に期限切れするまで観測する。Gateway 所有の table は製品操作経由で扱い、再作成試験のために独立した guard table を削除しない。
 
-7.3 の期限付き set 操作例:
+8.3 の期限付き set 操作例:
 
 ```sh
 nft add element inet vpngwgui_guard healthy_lease4 { "e2eseg" timeout 4s }
@@ -460,7 +460,7 @@ run_tls_case "$BASE_COMPOSE:compose/api-tls.yml:/root/vpngwgui/.work/tls-matrix/
 
 ## 11. 結果記録のテンプレート
 
-`.kiro/specs/single-node-deployment/acceptance-results.md` に 7.3、7.4、7.5、7.6 の節を作る。各確認について command / setup、UTC timestamp、期待結果、実測結果、pass/fail、制限事項または follow-up を記録する。
+`.kiro/specs/single-node-deployment/acceptance-results.md` に 8.3、8.4、8.5、8.6 の節を作る。各確認について command / setup、UTC timestamp、期待結果、実測結果、pass/fail、制限事項または follow-up を記録する。
 
 ```markdown
 # 実機受入結果
@@ -470,19 +470,19 @@ run_tls_case "$BASE_COMPOSE:compose/api-tls.yml:/root/vpngwgui/.work/tls-matrix/
 - mock 資材 tarball checksum:
 - 開始 / 終了 (UTC):
 
-## 7.3 nftables / 通信経路
+## 8.3 nftables / 通信経路
 | 確認項目 | command / setup | UTC timestamp | 期待結果 | 実測結果 | pass/fail |
 |---|---|---|---|---|---|
 
-## 7.4 Kill Switch
+## 8.4 Kill Switch
 | Kill Switch | 停止方法 | command / probe | UTC timestamp | 遮断時間 / 期待値 | 実測結果 | pass/fail |
 |---|---|---|---|---|---|---|
 
-## 7.5 ライフサイクル / host-preparation / 再起動
+## 8.5 ライフサイクル / host-preparation / 再起動
 | 確認項目 | command / setup | UTC timestamp | 期待結果 | 実測結果 | pass/fail |
 |---|---|---|---|---|---|
 
-## 7.6 TLS
+## 8.6 TLS
 | 組み合わせ / 試験 | command / setup | UTC timestamp | 期待結果 | 実測結果 | pass/fail |
 |---|---|---|---|---|---|
 ```

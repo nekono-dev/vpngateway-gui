@@ -281,7 +281,7 @@ flowchart TD
 | 有効ガード値変更の反映契約 | Gateway に反映できない有効ガード値変更を保存しない | 2.8 | `killSwitch && transparentGatewayEnabled` が変わる PUT は proxy 200 の後に保存、失敗は 503 |
 | Web Transport | Browser→Web と Web→API | 3.1–3.6, 4.1–4.6 | HTTPS flag、内部 HTTP、Cookie flag |
 | Gateway UDS | API→Gateway 制御 | 5.1–5.8 | HTTP または mTLS over filesystem UDS |
-| Verification & Docs | hosted/vendor-live 検証と利用手順 | 7.1–7.5, 8.1–8.8 | hosted は mock、vendor-live は手動 |
+| Verification & Docs | hosted/vendor-live 検証と利用手順 | 8.1–8.6, 7.1–7.7 | hosted は mock、vendor-live は手動 |
 
 ### Compose / 永続化境界
 
