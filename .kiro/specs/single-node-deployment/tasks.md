@@ -192,7 +192,7 @@
   - _Boundary: E2E_
   - _Depends: 5.1_
   - _Requirements: 8.6, 8.7_
-- [ ] 5.7 hosted Gateway 通信シナリオを検証する
+- [x] 5.7 hosted Gateway 通信シナリオを検証する
   - 5.3 から分けた Gateway シナリオとして、透過ゲートウェイ、明示的プロキシ、DNS 中継、迂回の通常動作を列挙して hosted E2E で検証する。Kill Switch の UI は透過ゲートウェイのみを対象とし、明示的プロキシのみでは停止時保証がない旨を表示することも確認する。
   - 観測できる完了条件: 各 Gateway 通常動作と Kill Switch の対象モード表示が個別に検証され、項目ごとの結果が記録される。
   - _Boundary: E2E_
@@ -371,3 +371,4 @@
 - 5.1（E2E 共通 API client）: `e2e/common/api-client.ts` の `createApiClient` は Web origin（HTTP/HTTPS はスキームで選ぶ）の `/api/v1` に要求し、HTTPS の CA は任意の Web CA（未指定は標準 trust store。自己署名は拒否）。API CA への依存はない。既存の呼び出し側は、API の origin と API CA のパスを渡す旧い形のままで、5.2〜5.6 が移行する: `e2e/hosted/fixtures/stack.ts`・`e2e/hosted/specs/api/auth.spec.ts`・hosted の他の spec は 5.2/5.3/5.7（Web 公開 origin の `/api` 経由へ）、`e2e/vendor-live/lib/prepare.ts`・`config.ts` は 5.6。それまで hosted E2E は新旧の混在で動かない（5.2 が fixture を Compose 方式にするまでの途中状態）。
 - 5.2（hosted の Compose fixture）: `e2e/hosted/fixtures/compose.ts` が全操作に `-p vpngwgui` を付け（`COMPOSE_PROJECT_NAME`/`-p` が `name:` より優先されること、別名では volume 名が変わることを `docker compose config` で契約テスト）、root-first の `-f` merge（vendor fragment、`compose/web-tls.yml`、`compose/api-tls.yml`）、既定 HTTP、up/down/`down -v` を提供する。起動は `e2e/hosted/fixtures/compose-cli.ts` を通る共通の経路（`provision.sh` もここを使う）で、注入した runner の引数をテストする。`e2e/hosted/lib/cleanup.sh` が EXIT/INT/TERM/HUP で固定 project の down（`-v` なし）と topology の後始末をする。volume 保持は実 Docker の統合テスト `e2e/hosted/fixtures/volume-retention.integration.test.ts`（既存の `vpngwgui*` 資源があれば skip。作った volume だけ後始末）で確認済み。実スタックの Playwright は hosted CI（と 7.x の実機）で実行する。hosted workflow のブランチ trigger は変えていない。
 - 5.3（hosted VPN 操作）: `e2e/hosted/specs/api/{vpn,locations}.spec.ts` は Web origin `/api` の共通 client で、ベンダー切替・接続・切断・都市/サーバー選択・お気に入り・距離順を項目別のケースにした。接続のケースは `finally` で必ず切断する。runner の許可リストの拒否は、runner の制御 UDS へ許可コマンドと許可外コマンドを送り、200 と 403 `binary_not_allowed` を確認する独立ケース。hosted Playwright は開発ホストでは実行しておらず（型検査・`--list`・独立レビューのみ）、実行は hosted の CI で行う。
+- 5.7（hosted Gateway 通信）: 透過ゲートウェイ・明示的プロキシ・DNS 中継・迂回は `e2e/hosted/specs/gateway/*.spec.ts` の独立したケースで、Web origin `/api` の共通 client を使う。Kill Switch の対象範囲の表示（透過ゲートウェイのみ。明示的プロキシのみでは停止時の遮断を保証しない）は `web/src/components/dashboard/SettingsDialog.tsx` にあり、`e2e/hosted/specs/ui/setup-settings.spec.ts` のケースで確認する（接続設定を保存し、`finally` で復元して API セッションを破棄する）。hosted の実行は CI。

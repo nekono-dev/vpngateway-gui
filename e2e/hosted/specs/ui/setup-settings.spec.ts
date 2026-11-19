@@ -66,4 +66,35 @@ test.describe.serial("設定の保存と再表示（ui）", () => {
     await dialog.getByRole("button", { name: "キャンセル" }).click();
     // Kill Switch は次の試験（13.2）が確かめるため、元の値（無効）のまま残す
   });
+
+  test("2.8・8.2: 明示的プロキシのみの設定で Kill Switch の保証範囲を表示する", async ({ watchedPage: page }) => {
+    const admin = await loadAdmin();
+    const current = await client.get<Record<string, unknown>>("/v1/connection/config");
+    expect(current.ok, "現在の接続設定を取得できない").toBe(true);
+    if (!current.ok) return;
+
+    const session = await client.post("/v1/operator/session", admin);
+    expect(session.ok, "管理者のログインに失敗").toBe(true);
+    if (!session.ok) return;
+
+    try {
+      const configured = await client.put("/v1/connection/config", {
+        ...current.body,
+        transparentGatewayEnabled: false,
+        explicitProxyEnabled: true,
+        explicitProxyAllowedCidrs: ["192.168.50.0/24"],
+      });
+      expect(configured.ok, "明示的プロキシのみの設定にできない").toBe(true);
+
+      await login(page);
+      const dialog = await openSettings(page);
+      await dialog.getByRole("tab", { name: "通信制御" }).click();
+      await expect(dialog.getByText("Kill Switch は透過ゲートウェイモードにのみ適用されます。明示的プロキシのみでは Gateway 停止時の遮断を保証しません。")).toBeVisible();
+    } finally {
+      const restored = await client.put("/v1/connection/config", current.body);
+      expect(restored.ok, `接続設定の復元に失敗: ${restored.ok ? "成功" : restored.kind === "http" ? `${restored.status} ${restored.error} ${restored.message}` : restored.message}`).toBe(true);
+      const logout = await client.delete("/v1/operator/session");
+      expect(logout.ok, `管理者セッションの破棄に失敗: ${logout.ok ? "成功" : logout.kind === "http" ? `${logout.status} ${logout.error} ${logout.message}` : logout.message}`).toBe(true);
+    }
+  });
 });
