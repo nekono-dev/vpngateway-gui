@@ -1,17 +1,14 @@
 // 責務: 「公開インターネット宛の通信が現在どのインターフェースから出るか」を`ip route get`で検出する。
-// VPNベンダーCLIが確立するトンネルインターフェース（tun0等）はベンダー・バージョン依存で名称が
-// 固定できず、かつ経路の切替方式もベンダー依存である。CLIによっては、メインテーブルのデフォルトルートを
-// 書き換えず、ポリシールーティング（`ip rule`で専用テーブルを優先参照）で全通信をトンネルへ向けるため、
-// `ip route show default`（メインテーブルのみ参照）では接続を検知できない。`ip route get <公開IP>`は
-// ポリシールーティングを含めたカーネルの実際の経路選択結果を返すため、どちらの方式のベンダーにも対応できる
+// VPN CLIが確立するトンネルインターフェースは名称・経路切替方式とも固定できない。メインテーブルの
+// default route を変更しないポリシールーティングにも対応するため、ip ruleを含むカーネルの経路選択を使う。
+// 問い合わせ先はDNSサーバ宛て等の個別経路に一致しないよう、予約済みTEST-NET-1から選ぶ。
 
 import { spawn } from "node:child_process";
 
 const IP_BIN = process.env.IP_BIN ?? "ip";
 
-// 経路問い合わせに使う公開IPアドレス（実際にはパケットを送らない。カーネルの経路選択結果のみを得る）。
-// VPNが常に経路を奪う対象（インターネット上の一般的なアドレス）であればよい。
-const PROBE_ADDRESS = "1.1.1.1";
+// 経路問い合わせ先。TEST-NET-1は文書用に予約され、実際の通信は行わず経路選択だけを確認する。
+const PROBE_ADDRESS = "192.0.2.1";
 
 /**
  * 目的: `ip route get <宛先>`の標準出力から、経路が出力されるインターフェース名を抽出する。
@@ -64,7 +61,7 @@ export function getRouteInterface(address: string, fwmark?: number): Promise<str
  */
 export function getEgressInterface(): Promise<string | undefined> {
   return new Promise((resolve) => {
-    const child = spawn(IP_BIN, ["route", "get", PROBE_ADDRESS], { stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(IP_BIN, ["-4", "route", "get", PROBE_ADDRESS], { stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");

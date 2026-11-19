@@ -38,7 +38,25 @@ describe("getEgressInterface", () => {
 
   it("ip route getの標準出力からインターフェース名を取得する", async () => {
     const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
-    process.env.IP_BIN = stubIpScript(dir, "echo '1.1.1.1 dev tun0 table 880 src 172.16.219.2 uid 0'\nexit 0");
+    process.env.IP_BIN = stubIpScript(dir, "[ \"$1 $2 $3 $4\" = \"-4 route get 192.0.2.1\" ] || exit 2\necho '192.0.2.1 via 10.0.0.1 dev eth0 src 10.0.0.2 uid 0'\nexit 0");
+
+    vi.resetModules();
+    const { getEgressInterface } = await import("./tunnel-interface.js");
+    expect(await getEgressInterface()).toBe("eth0");
+  });
+
+  it("DNSサーバ宛ての個別経路に影響されず予約アドレスの経路を使う", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+    process.env.IP_BIN = stubIpScript(dir, "[ \"$4\" = \"192.0.2.1\" ] || exit 2\ncase \"$4\" in 1.1.1.1) echo '1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.2 uid 0' ;; *) echo '192.0.2.1 dev tun0 table 880 src 172.16.0.2 uid 0' ;; esac\nexit 0");
+
+    vi.resetModules();
+    const { getEgressInterface } = await import("./tunnel-interface.js");
+    expect(await getEgressInterface()).toBe("tun0");
+  });
+
+  it("default routeがVPNに切り替わる従来構成を検出する", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
+    process.env.IP_BIN = stubIpScript(dir, "echo '192.0.2.1 via 10.8.0.1 dev tun0 src 10.8.0.2 uid 0'\nexit 0");
 
     vi.resetModules();
     const { getEgressInterface } = await import("./tunnel-interface.js");
