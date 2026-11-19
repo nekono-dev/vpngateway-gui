@@ -242,7 +242,7 @@
 
 ## 7. 統合・受入
 - [ ] 7. 統合検証と実機受入を完了する
-- [ ] 7.1 実機受入環境を確認し手順書を作る
+- [x] 7.1 実機受入環境を確認し手順書を作る
   - 検証サーバ `192.168.3.240` へ sshpass で接続できることと、sudo NOPASSWD を確認する。OS 種別・版が Debian 12+ または Ubuntu 22.04+ か、`nft --version` と root での `nft -c` 可否、Docker Engine と Compose v2 の有無・版、空きディスクを記録する。
   - LAN 側に使う interface と、LAN 端末役（network namespace 等）の準備・起動方法を確認する。受入資材を scp で配置する具体的な手順と配置先を記録する。
   - 受入前の初期状態を調べ、旧方式の残骸と既存の `vpngwgui` nft table・Compose volume がないことを確認する。存在する場合は影響を特定し、安全な片付け手順を記録する。
@@ -379,3 +379,4 @@
 - 6.3（installer 撤去）: `installer/` の8ファイル（setup/main/app/bootstrap の生成/config schema/専用テスト）を撤去済み。root `package.json` の `test:install` は `sh compose/host-preparation/tests/run.sh`（ホスト準備の6つのシェルテストを実行し、1つでも失敗すれば失敗）を呼び、`npm test` から実行される。`scripts/check-vendor-neutrality.mjs` の検査対象から `installer` を外した（`compose/` は引き続き対象）。撤去後の残存参照調査は `inventory.md` に実行した検索コマンドと範囲を含めて記録した。旧い再起動の部品は撤去のみで、新しい経路は 2.6/2.7 が担う。
 - 6.4（分離配置用 Compose の撤去）: `compose/web.yml`・`compose/api.yml`・`compose/gateway.yml` を撤去済み。各定義は root `docker-compose.yml`（proxy の host network・`NET_ADMIN`・`init`・restart・socket volume・ホストの依頼用 bind mount・環境変数の既定）に引き継ぎ済みで、旧い installer 前提の設定（PKI の mount、TCP の制御ポート、役割ごとの分離）は引き継いでいない。`scripts/test-compose-contract.sh`・`scripts/test-compose-tls-contract.sh` は root と vendor/TLS 構成の組み合わせごとに `docker compose -p vpngwgui config --quiet` と、service・volume・network・公開 port の契約を確認する。
 - 6.5（遠隔配置・ペアリング・旧 PKI の撤去）: 製品のコード・設定・スキーマ・生成スクリプト・テストに、遠隔配置・役割選択・ペアリング・旧 PKI の経路は残っていない（`api/src/server.test.ts` から旧 API TLS/PKI の環境名を除去。調査の検索コマンドと範囲は `inventory.md`）。`scripts/deploy-verify.sh` は旧い遠隔配置（SSH で作業ツリーを転送、素の `docker compose`）の流れが残っており、タスク 7.2 が配布物（Compose bundle）と host-preparation に基づく検証へ置き換え、7.2 の完了後に再調査して記録する。
+- 7.1（実機受入環境）: 受入は検証サーバ（192.168.3.240）上の LXD システムコンテナ `acc-vpngwgui`（利用者の決定。共有サーバの既定経路を変えずに、VPN 転送を含む全経路を確かめるため）で行う。作成済み（Ubuntu 24.04、入れ子の Docker・nftables・netns が動作）。手順・競合経路表（ホスト準備が使う固定経路と一時ファイルの名前）・読み取り専用の初期状態確認・7.3〜7.6 の試験手順は `acceptance-env.md`。サーバ本体の旧方式の導入（`vpngwgui` の Compose project など）は触らない。結果は `acceptance-results.md`（7.3〜7.6 で作る）に記録する。作業の終わりにはコンテナを削除する（`dir` の storage pool は容量を共有しないため）。
