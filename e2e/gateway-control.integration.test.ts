@@ -10,6 +10,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GatewayController } from "../proxy/src/network/gateway-controller.js";
 import { GatewayGuard } from "../proxy/src/network/gateway-guard.js";
+import type { DnsRelayState } from "../proxy/src/dns-relay/dns-relay-controller.js";
+import type { ExplicitProxyState } from "../proxy/src/explicit-proxy/explicit-proxy-controller.js";
 import { createGatewayChannelServer } from "../proxy/src/gateway-channel/control-server.js";
 import { listenOnGatewaySocket } from "../proxy/src/gateway-channel/server.js";
 import { createGatewayRequestHandler } from "../proxy/src/gateway-channel/gateway-routes.js";
@@ -28,6 +30,21 @@ afterEach(async () => {
 
 function callApiClient<T>(operation: () => Promise<T>): Promise<T> {
   return operation();
+}
+
+function createDnsRelayControllerFake(): Pick<import("../proxy/src/dns-relay/dns-relay-controller.js").DnsRelayController, "applySettings" | "getStatus"> & { stop: () => Promise<void> } {
+  return {
+    applySettings: async () => undefined,
+    getStatus: () => ({ state: "active" as DnsRelayState, upstream: "unknown" as const, bypassEntries: 0 }),
+    stop: async () => undefined,
+  };
+}
+
+function createExplicitProxyControllerFake(): Pick<import("../proxy/src/explicit-proxy/explicit-proxy-controller.js").ExplicitProxyController, "applySettings" | "getStatus"> {
+  return {
+    applySettings: () => undefined,
+    getStatus: () => ({ state: "stopped" as ExplicitProxyState, restartCount: 0 }),
+  };
 }
 
 interface TestCertificates {
@@ -114,15 +131,8 @@ describe.each([false, true])("本番Gateway制御handler over UDS (TLS=%s)", (tl
     const guard = new GatewayGuard("eth0", runNft, { listenerAvailable: false, intervalMs: 60_000 });
     guards.push(guard);
     const gateway = new GatewayController("eth0", "eth0", runNft);
-    const dnsRelay = {
-      applySettings: async () => undefined,
-      getStatus: () => ({ state: "active", upstream: "unknown", bypassEntries: 0 }),
-      stop: async () => undefined,
-    };
-    const explicitProxy = {
-      applySettings: () => undefined,
-      getStatus: () => ({ state: "stopped", restartCount: 0 }),
-    };
+    const dnsRelay = createDnsRelayControllerFake();
+    const explicitProxy = createExplicitProxyControllerFake();
     const handler = createGatewayRequestHandler({
       gatewayController: gateway,
       gatewayGuard: guard,
@@ -193,8 +203,8 @@ describe("管理者のGateway再起動要求 over UDS", () => {
     const handler = createGatewayRequestHandler({
       gatewayController: new GatewayController("eth0", "eth0", async () => ({ exitCode: 0, stdout: "", stderr: "" })),
       gatewayGuard: rebootGuard,
-      dnsRelayController: { applySettings: async () => undefined, getStatus: () => ({ state: "active", upstream: "unknown", bypassEntries: 0 }), stop: async () => undefined },
-      explicitProxyController: { applySettings: () => undefined, getStatus: () => ({ state: "stopped", restartCount: 0 }) },
+      dnsRelayController: createDnsRelayControllerFake(),
+      explicitProxyController: createExplicitProxyControllerFake(),
       settingsRequestQueue: { run: (operation) => operation() },
       lanAddress: "192.0.2.1",
       dnsRelayPort: 53,
@@ -258,8 +268,8 @@ describe("API Gateway status route protection mismatch recovery", () => {
     const handler = createGatewayRequestHandler({
       gatewayController: new GatewayController("eth0", "eth0", runNft),
       gatewayGuard: guard,
-      dnsRelayController: { applySettings: async () => undefined, getStatus: () => ({ state: "active", upstream: "unknown", bypassEntries: 0 }), stop: async () => undefined },
-      explicitProxyController: { applySettings: () => undefined, getStatus: () => ({ state: "stopped", restartCount: 0 }) },
+      dnsRelayController: createDnsRelayControllerFake(),
+      explicitProxyController: createExplicitProxyControllerFake(),
       settingsRequestQueue: { run: (operation) => operation() },
       lanAddress: "192.0.2.1",
       dnsRelayPort: 53,
