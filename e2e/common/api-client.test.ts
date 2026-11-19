@@ -2,7 +2,8 @@
 
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:https";
+import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
+import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -12,8 +13,10 @@ import { applySetCookie, createApiClient, cookieHeader } from "./api-client";
 let dir: string;
 let serverCaPath: string;
 let otherCaPath: string;
-let server: Server;
-let baseUrl: string;
+let httpsServer: HttpsServer;
+let httpServer: HttpServer;
+let httpsBaseUrl: string;
+let httpBaseUrl: string;
 
 /** 目的: openssl で CA と、SAN に 127.0.0.1 を含むサーバ証明書を作る（テストごとに一時ディレクトリへ）。 */
 function makeCa(name: string): { caCert: string; caKey: string } {
@@ -40,18 +43,18 @@ beforeAll(async () => {
   execFileSync("openssl", ["req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes", "-keyout", serverKey, "-out", serverCsr, "-subj", "/CN=127.0.0.1"], { stdio: "ignore" });
   execFileSync("openssl", ["x509", "-req", "-in", serverCsr, "-CA", ca.caCert, "-CAkey", ca.caKey, "-CAcreateserial", "-out", serverCert, "-days", "1", "-extfile", ext], { stdio: "ignore" });
 
-  server = createServer({ key: readFileSync(serverKey), cert: readFileSync(serverCert) }, (req, res) => {
-    if (req.url === "/login" && req.method === "POST") {
+  const handler = (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): void => {
+    if (req.url === "/api/v1/login" && req.method === "POST") {
       res.writeHead(200, { "content-type": "application/json", "set-cookie": "vpngwgui_session=abc; Path=/; HttpOnly" });
       res.end(JSON.stringify({ loggedIn: true }));
       return;
     }
-    if (req.url === "/check") {
+    if (req.url === "/api/v1/check") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ cookie: req.headers.cookie ?? "" }));
       return;
     }
-    if (req.url === "/slow") {
+    if (req.url === "/api/v1/slow") {
       setTimeout(() => {
         res.writeHead(200);
         res.end("{}");
@@ -60,13 +63,20 @@ beforeAll(async () => {
     }
     res.writeHead(404, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "not_found", message: "見つかりません" }));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  baseUrl = `https://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  };
+  httpsServer = createHttpsServer({ key: readFileSync(serverKey), cert: readFileSync(serverCert) }, handler);
+  httpServer = createHttpServer(handler);
+  await Promise.all([
+    new Promise<void>((resolve) => httpsServer.listen(0, "127.0.0.1", resolve)),
+    new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve)),
+  ]);
+  httpsBaseUrl = `https://127.0.0.1:${(httpsServer.address() as AddressInfo).port}`;
+  httpBaseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
 });
 
 afterAll(() => {
-  server.close();
+  httpsServer.close();
+  httpServer.close();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -86,31 +96,45 @@ describe("applySetCookie と cookieHeader", () => {
 
 describe("createApiClient", () => {
   it("CA で検証できない証明書を拒否し、transport の失敗として返す", async () => {
-    const client = createApiClient({ baseUrl, caPath: otherCaPath });
-    const result = await client.get("/check");
+    const client = createApiClient({ baseUrl: httpsBaseUrl, caPath: otherCaPath });
+    const result = await client.get("/v1/check");
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.kind).toBe("transport");
   });
 
   it("CA で検証できる証明書に接続し、Set-Cookie の値を次の要求で送る", async () => {
-    const client = createApiClient({ baseUrl, caPath: serverCaPath });
-    const login = await client.post<{ loggedIn: boolean }>("/login", {});
+    const client = createApiClient({ baseUrl: httpsBaseUrl, caPath: serverCaPath });
+    const login = await client.post<{ loggedIn: boolean }>("/v1/login", {});
     expect(login).toEqual({ ok: true, status: 200, body: { loggedIn: true } });
 
-    const check = await client.get<{ cookie: string }>("/check");
+    const check = await client.get<{ cookie: string }>("/v1/check");
     expect(check).toEqual({ ok: true, status: 200, body: { cookie: "vpngwgui_session=abc" } });
   });
 
   it("HTTP の失敗は、error と message を持つ http の失敗として返す", async () => {
-    const client = createApiClient({ baseUrl, caPath: serverCaPath });
-    const result = await client.get("/missing");
+    const client = createApiClient({ baseUrl: httpsBaseUrl, caPath: serverCaPath });
+    const result = await client.get("/v1/missing");
     expect(result).toEqual({ ok: false, kind: "http", status: 404, error: "not_found", message: "見つかりません" });
   });
 
   it("タイムアウトを過ぎた要求は transport の失敗として返す", async () => {
-    const client = createApiClient({ baseUrl, caPath: serverCaPath });
-    const result = await client.get("/slow", 50);
+    const client = createApiClient({ baseUrl: httpsBaseUrl, caPath: serverCaPath });
+    const result = await client.get("/v1/slow", 50);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.kind).toBe("transport");
+  });
+
+  it("HTTP Web origin を使い、API CA なしで /api/v1 へ要求する", async () => {
+    const client = createApiClient({ baseUrl: httpBaseUrl });
+    const result = await client.get<{ cookie: string }>("/v1/check");
+    expect(result).toEqual({ ok: true, status: 200, body: { cookie: "" } });
+  });
+
+  it("HTTPS で CA 未指定なら標準 trust store の検証に失敗する自己署名証明書を拒否する", async () => {
+    const client = createApiClient({ baseUrl: httpsBaseUrl });
+    const result = await client.get("/v1/check");
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.kind).toBe("transport");
