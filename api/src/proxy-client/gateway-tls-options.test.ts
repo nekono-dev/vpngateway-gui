@@ -26,7 +26,24 @@ describe("loadGatewayTransportOptions", () => {
 
   it("boolean の表記揺れや TLS material 不足を拒否し、平文へ降格しない", () => {
     expect(() => loadGatewayTransportOptions({ GATEWAY_TLS_ENABLED: "yes" } as NodeJS.ProcessEnv)).toThrow(GatewayTlsConfigurationError);
-    expect(() => loadGatewayTransportOptions({ GATEWAY_TLS_ENABLED: "true" } as NodeJS.ProcessEnv)).toThrow(/requires CA/);
+  });
+
+  it.each([
+    ["GATEWAY_TLS_CA_FILE", { GATEWAY_TLS_CLIENT_CERT_FILE: "client.crt", GATEWAY_TLS_CLIENT_KEY_FILE: "client.key" }],
+    ["GATEWAY_TLS_CLIENT_CERT_FILE", { GATEWAY_TLS_CA_FILE: "ca.crt", GATEWAY_TLS_CLIENT_KEY_FILE: "client.key" }],
+    ["GATEWAY_TLS_CLIENT_KEY_FILE", { GATEWAY_TLS_CA_FILE: "ca.crt", GATEWAY_TLS_CLIENT_CERT_FILE: "client.crt" }],
+  ])("%s がない場合は不足した環境変数名を示す", (missing, supplied) => {
+    expect(() => loadGatewayTransportOptions({ GATEWAY_TLS_ENABLED: "true", ...supplied } as NodeJS.ProcessEnv))
+      .toThrow(`Gateway TLS configuration missing required environment variables: ${missing}`);
+  });
+
+  it("複数の TLS material がない場合は不足した環境変数名をすべて示す", () => {
+    expect(() => loadGatewayTransportOptions({
+      GATEWAY_TLS_ENABLED: "true",
+      GATEWAY_TLS_CLIENT_KEY_FILE: "client.key",
+    } as NodeJS.ProcessEnv)).toThrow(
+      "Gateway TLS configuration missing required environment variables: GATEWAY_TLS_CA_FILE, GATEWAY_TLS_CLIENT_CERT_FILE",
+    );
   });
 
   it("TLS ON では設計名の client cert/key と CA を設定し、SAN 名で検証する", () => {

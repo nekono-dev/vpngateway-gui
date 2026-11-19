@@ -33,12 +33,19 @@ export function loadGatewayTransportOptions(env: NodeJS.ProcessEnv = process.env
   const socketPath = env.GATEWAY_SOCKET_PATH ?? "/run/vpngw-gateway/gateway.sock";
   if (enabledValue === "false") return { origin: "http://gateway", socketPath, connect: { socketPath } };
 
-  const caFile = env.GATEWAY_TLS_CA_FILE;
-  const certFile = env.GATEWAY_TLS_CLIENT_CERT_FILE;
-  const keyFile = env.GATEWAY_TLS_CLIENT_KEY_FILE;
-  if (!caFile || !certFile || !keyFile) {
-    throw new GatewayTlsConfigurationError("Gateway TLS requires CA, client certificate, and client key files");
+  const requiredFiles = [
+    { name: "GATEWAY_TLS_CA_FILE", value: env.GATEWAY_TLS_CA_FILE },
+    { name: "GATEWAY_TLS_CLIENT_CERT_FILE", value: env.GATEWAY_TLS_CLIENT_CERT_FILE },
+    { name: "GATEWAY_TLS_CLIENT_KEY_FILE", value: env.GATEWAY_TLS_CLIENT_KEY_FILE },
+  ];
+  const missingVariables = requiredFiles.filter(({ value }) => !value).map(({ name }) => name);
+  if (missingVariables.length > 0) {
+    // 不足時は値やファイル内容を含めず、この固定形式で環境変数名のみを記録する。
+    throw new GatewayTlsConfigurationError(`Gateway TLS configuration missing required environment variables: ${missingVariables.join(", ")}`);
   }
+  const caFile = env.GATEWAY_TLS_CA_FILE!;
+  const certFile = env.GATEWAY_TLS_CLIENT_CERT_FILE!;
+  const keyFile = env.GATEWAY_TLS_CLIENT_KEY_FILE!;
   try {
     const ca = readFileSync(caFile);
     const cert = readFileSync(certFile);
