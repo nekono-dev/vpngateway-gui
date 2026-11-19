@@ -165,13 +165,16 @@ hp_status_host_reboot() {
 }
 
 hp_status() {
+  hp_status_docker_failed=0
+  hp_status_docker_forward || hp_status_docker_failed=1
   if [ ! -e "$hp_state_path" ] && [ ! -L "$hp_state_path" ]; then
     printf '%s\n' 'host-preparation: 未適用（state がありません）'
-    return 0
+    [ "$hp_status_docker_failed" -eq 0 ]
+    return
   fi
   hp_status_state_valid || return 1
   hp_status_any=0
-  hp_status_failed=0
+  hp_status_failed=$hp_status_docker_failed
   if grep -Fq '"sysctl":[' "$hp_state_path"; then
     hp_status_any=1
     hp_status_sysctl || hp_status_failed=1
@@ -184,6 +187,7 @@ hp_status() {
     hp_status_any=1
     hp_status_host_reboot || hp_status_failed=1
   fi
+  if grep -Fq '"docker_forward"' "$hp_state_path"; then hp_status_any=1; fi
   if [ "$hp_status_any" -eq 0 ]; then printf '%s\n' 'host-preparation: state に所有対象がありません'; fi
   [ "$hp_status_failed" -eq 0 ]
 }

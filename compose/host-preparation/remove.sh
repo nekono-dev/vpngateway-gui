@@ -111,6 +111,10 @@ hp_remove() {
     hp_remove_boot_guard_class=$(hp_boot_guard_preflight)
     case "$hp_remove_boot_guard_class" in CONFLICT*) printf 'host-preparation: ownership conflict: boot_guard (%s)\n' "$hp_remove_boot_guard_class" >&2; hp_remove_preflight_failed=1 ;; OWNED|ABSENT|PENDING-CLEANABLE) ;; *) printf 'host-preparation: boot_guard の解除前確認結果が不正です: %s\n' "$hp_remove_boot_guard_class" >&2; hp_remove_preflight_failed=1 ;; esac
   fi
+  if grep -Fq '"docker_forward":{' "$hp_state_path"; then
+    hp_remove_docker_forward_class=$(hp_docker_forward_preflight)
+    case "$hp_remove_docker_forward_class" in CONFLICT*) printf 'host-preparation: ownership conflict: docker_forward (%s)\n' "$hp_remove_docker_forward_class" >&2; hp_remove_preflight_failed=1 ;; OWNED|ABSENT|PENDING-CLEANABLE) ;; *) printf 'host-preparation: docker_forward の解除前確認結果が不正です: %s\n' "$hp_remove_docker_forward_class" >&2; hp_remove_preflight_failed=1 ;; esac
+  fi
   if [ "$hp_remove_preflight_failed" -ne 0 ]; then
     printf '%s\n' 'host-preparation: 所有差分があるため変更を開始しませんでした' >&2
     return 1
@@ -139,6 +143,7 @@ hp_remove() {
     hp_remove_stage sysctl hp_remove_sysctl "$hp_remove_sysctl_class"
   fi
   if grep -Fq '"boot_guard"' "$hp_state_path"; then hp_remove_stage boot_guard hp_remove_boot_guard "$hp_remove_boot_guard_class"; fi
+  if grep -Fq '"docker_forward"' "$hp_state_path"; then hp_remove_stage docker_forward hp_remove_docker_forward "$hp_remove_docker_forward_class"; fi
   if [ "$hp_remove_failed" -ne 0 ]; then
     printf 'host-preparation: 解除済み変更: %s\n' "${hp_remove_completed:-なし}" >&2
     printf '%s\n' 'host-preparation: 未解除の所有 state を保持しました。remove を再実行してください。' >&2

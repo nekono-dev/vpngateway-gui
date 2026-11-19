@@ -15,6 +15,8 @@ script_dir=$(CDPATH='' cd -- "$script_path" && pwd)
 # shellcheck disable=SC1091
 . "$script_dir/host-preparation/state.sh"
 # shellcheck disable=SC1091
+. "$script_dir/host-preparation/docker-forward.sh"
+# shellcheck disable=SC1091
 . "$script_dir/host-preparation/sysctl.sh"
 # shellcheck disable=SC1091
 . "$script_dir/host-preparation/host-reboot.sh"
@@ -33,6 +35,7 @@ case "$1" in
   check)
     hp_check_prerequisites || exit 1
     hp_check_host_reboot_accounts || exit 1
+    hp_check_docker_forward || exit 1
     ;;
   apply)
     hp_check_prerequisites || hp_error '前提条件を満たさないため apply を中止しました。'
@@ -48,6 +51,7 @@ case "$1" in
       hp_error 'boot guard の適用処理が利用できません。環境はサポート対象外です。'
     fi
     hp_apply_host_reboot || hp_error 'host reboot の固定実行基盤を適用できませんでした。'
+    hp_apply_docker_forward || hp_error 'Docker forwarding の適用に失敗しました。'
     ;;
   status|remove)
     # shellcheck disable=SC1091

@@ -26,9 +26,10 @@ run_case() (
 hp_os_release_path='$case_dir/os-release'
 hp_repo_root='$repo'
 hp_state_dir='$case_dir/state'
+hp_docker_daemon_config_path='$case_dir/daemon.json'
 EOF
 
-  for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sort stat sysctl systemctl tr docker; do
+  for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sleep sort stat sysctl systemctl tr docker; do
     if [ "$scenario" != "missing:$command" ]; then
       command_path=$(command -v "$command" || :)
       [ -n "$command_path" ] || command_path=/usr/bin/true
@@ -57,6 +58,7 @@ case "$*" in
   'info --format {{json .SecurityOptions}}') printf '%s\n' "${FIX_DOCKER_SECURITY:-[]}" ;;
   "context inspect --format {{.Endpoints.docker.Host}}") printf '%s\n' "${FIX_DOCKER_CONTEXT_HOST:-unix:///var/run/docker.sock}" ;;
   'info') [ "${FIX_DOCKER_REACHABLE:-yes}" = yes ] ;;
+  'version --format {{.Server.Version}}') printf '%s\n' 28.0.0 ;;
   'compose version') [ "${FIX_COMPOSE:-yes}" = yes ] ;;
   *) exit 1 ;;
 esac
@@ -164,7 +166,7 @@ EOF
 
 run_case unsupported-os unsupported-os 'NG: Debian 12+ または Ubuntu 22.04+ が必要です'
 run_case non-root non-root 'NG: root で実行してください'
-for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sort stat sysctl systemctl tr docker; do
+for command in awk cat chmod chown cmp dirname getent grep head id ip ln mkdir mv nft readlink rm rmdir sed sleep sort stat sysctl systemctl tr docker; do
   run_case "missing-$command" "missing:$command"
 done
 run_case rootless rootless 'NG: rootless Docker はサポート対象外です'

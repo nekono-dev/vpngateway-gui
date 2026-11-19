@@ -150,7 +150,7 @@
 7. **Compose の mount 分離**: API の PKI mount を Gateway TLS 用だけに限定する方法（TLS 無効時に不要）。
 8. **配布物の形（7.4）**: `installer/main.sh` の常設コマンド層を廃止するか、ホスト準備と独立した配布手段として残すか。
 9. **E2E**: 4通りの組み合わせの起動方式。`certs.sh` は ISP/DoH 模擬サーバの証明書にも使われており、API/Web 用 CA の廃止時に巻き込まない。
-10. ~~ホスト準備の対象 OS・Docker 自動導入の継続可否~~: Debian 12+/Ubuntu 22.04+ を対象とし、Docker 自動導入は行わず `daemon.json` は変更しない。
+10. ~~ホスト準備の対象 OS・Docker 自動導入の継続可否~~: Debian 12+/Ubuntu 22.04+ を対象とし、Docker 自動導入は行わない。当時は `daemon.json` を変更しない案だったが、後続の要件・設計で、未作成時に限り設定を作成して Docker を再起動する契約へ更新した。
 11. **`@fastify/http-proxy`**: 10.0.2 は公式 advisory の影響範囲。Fastify 5 対応の 11.6.6 以上へ限定更新し、確認時点の latest 11.6.9 を使用する（上の記録のとおり）。
 12. **参照の洗い出し**: `:3000` への直接接続（E2E・診断・手動ツール）と、steering（tech.md の HTTPS 必須・PKI 自動配置の記述）の更新。
 13. **隣接仕様**: multihop-backend の API→Gateway の HTTPS 前提と slot worker の配布元・依頼ディレクトリの再確認（既存承認は自動変更しない）。
@@ -179,7 +179,7 @@
 設計前調査と当日付のギャップ分析・利用者決定を統合し、以下の責務・契約に一般化した。既存コードのファイル単位の差分は設計書の File Structure Plan として具体化し、ここでは判断の根拠を保持する。
 
 - **一般化**: 通信保護を Web HTTPS と API→Gateway TLS の独立した2設定へまとめた。API→Gateway は dedicated filesystem UDS を唯一の経路とし、HTTP/HTTPS は UDS 上の protocol 選択として扱う。LAN 制御口の公開、任意転送ヘッダーの信頼、複数ホスト用 endpoint abstraction を作らない。
-- **Build vs. Adopt**: Compose の標準 `-f`/`COMPOSE_FILE` merge、Node/Undici の socketPath/TLS、Fastify proxy adapter を採用し、専用 Compose generator・新 transport library は作らない。ホスト固有の所有状態記録、boot guard、reboot unit、nft guard を製品コードとして実装する。当時案に含まれた設定・起動回復 watcher は2026-11-18に廃止を決定した。Docker/Compose 自動導入は行わず、既存 `/etc/docker/daemon.json` を変更しない。ホスト準備対象を Debian 12+/Ubuntu 22.04+ としたのは、systemd・nftables・sysctl の既知契約に絞り、配布元の Docker 設定を破壊しないため。
+- **Build vs. Adopt**: Compose の標準 `-f`/`COMPOSE_FILE` merge、Node/Undici の socketPath/TLS、Fastify proxy adapter を採用し、専用 Compose generator・新 transport library は作らない。ホスト固有の所有状態記録、boot guard、reboot unit、nft guard を製品コードとして実装する。当時案に含まれた設定・起動回復 watcher は2026-11-18に廃止を決定した。Docker/Compose 自動導入は行わない。既存 `/etc/docker/daemon.json` は編集せず、未作成の場合だけ `ip-forward-no-drop` を含む製品所有設定を作成して Docker を再起動する。ホスト準備対象を Debian 12+/Ubuntu 22.04+ としたのは、systemd・nftables・sysctl の既知契約に絞り、配布元の Docker 設定を破壊しないため。
 - **簡素化**: installer の role selection、SSH/SCP、pairing、PKI 配布、常設 update/uninstall/status を撤去し、Compose の標準操作へ寄せる。ホスト準備 CLI は `check/apply/status/remove` の4操作に限定。vendor fragment は残し、固定 project 名で runner volume を再利用する。旧方式互換・データ移行、Web/API 統合、多段接続実装を追加しない。
 - **停止遮断の合成（2026-11-17 旧案、2026-11-18 superseded）**: 当時は watcher を含む方針を記録した。現在有効な条件は後段の「Guard の切替主体を proxy に一本化し watcher を廃止（2026-11-18 決定）」だけを参照する。
 - **参照した設計ルール**: `.claude/skills/kiro-spec-design/rules/design-principles.md`、`design-synthesis.md`、`design-review-gate.md`。原則に沿って責務境界と所有者を明示し、build/adopt と簡素化の判断を記録した。review gate の要件ID網羅、boundary/file alignment、placeholder と未解決事項を自己点検した。

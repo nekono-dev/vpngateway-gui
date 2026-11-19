@@ -23,6 +23,7 @@ cat > "$tree/compose/host-preparation/paths.sh" <<EOF
 hp_os_release_path='$temporary/os-release'
 hp_repo_root='$repo'
 hp_state_dir='$state_dir'
+hp_docker_daemon_config_path='$temporary/daemon.json'
 hp_sysctl_config_path='$temporary/sysctl.d/99-vpngwgui-host-preparation.conf'
 EOF
 mkdir -p "$temporary/sysctl.d"

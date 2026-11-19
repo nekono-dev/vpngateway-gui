@@ -14,7 +14,7 @@ for required in \
   docker-compose.yml .env.example .dockerignore README.md LICENSE package.json package-lock.json \
   tsconfig.base.json compose/web-tls.yml compose/api-tls.yml \
   compose/host-preparation.sh compose/gateway-entrypoint.sh \
-  compose/host-preparation/common.sh vendors/adguardvpn/compose.yml \
+  compose/host-preparation/common.sh compose/host-preparation/docker-forward.sh vendors/adguardvpn/compose.yml \
   vendors/protonvpn/compose.yml api/Dockerfile web/Dockerfile proxy/Dockerfile
 do
   if ! grep -F "/$required" "$TMP_ROOT/contents.txt" >/dev/null; then

@@ -51,3 +51,15 @@
 要件2.8を満たすため、異常終了/強制終了時に最大6秒以内の検知・遮断を許容するか、停止直後からの遮断を要求するかを利用者へ質問中。通常停止は終了前に遮断する案。許容窓は利用者向けの停止時挙動であるため、設計側で推測しない。
 
 調査結果と統合方針は `.kiro/specs/single-node-deployment/research.md` に保存。design.md は確認とレビューゲート通過まで作成しない。新構成の実機試験は未実施。
+
+## 追補（2026-11-19）: ホスト準備に Docker 導入を含める
+
+- 経緯: hosted E2E（実 GitHub ランナー）で、Docker が転送の既定を DROP にするため LAN 転送が落ちることを検出した。旧 installer が担っていた Docker 側の初期設定（daemon.json）が、installer 撤去後は誰にも引き継がれていなかった。実機の導入手順の再考が必要と判断した。
+- 決定（利用者）:
+  1. ホスト準備 `apply` が `/etc/docker/daemon.json` の作成（`ip-forward-no-drop`）と Docker 再起動を行う（実装済み・未レビュー）。
+  2. ホスト準備 `apply` に Docker 導入も含める。新しい常設の installer は作らず、CLI は `check|apply|status|remove` のままとする。
+  3. Docker の導入は公式の導入スクリプトを使い、取得元と内容の要約を表示して同意（`--yes` で省略可）を得てから実行する。Docker が既に導入済みなら導入には触れない。
+  4. 進め方は「仕様（要件・設計・タスク）を更新・再承認 → 実装 → hosted E2E と LXD ラボでの実機受入（7.3〜7.6）を導入処理込みで実施」。
+- 行わないこと: 更新・アンインストールの常設コマンド、導入済み Docker の更新、旧 installer 層の復活。
+- 影響する決定の更新: 旧「Docker 自動導入は行わない」（research.md 論点10、design.md Docker 判断、README、roadmap Phase 5）。
+- 未決（要件更新時に確定）: 公式スクリプトの取得元固定方法（URL・ハッシュ検証の要否）、`remove` で Docker 自体を撤去しない旨、対応 OS 外での扱い、Compose plugin 欠落時の導入方法、ラボ（LXD）での導入検証手順。

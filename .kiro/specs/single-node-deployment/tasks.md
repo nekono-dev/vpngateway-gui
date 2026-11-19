@@ -80,6 +80,14 @@
   - _Depends: 2.3, 2.4, 2.5, 2.6_
   - _Requirements: 2.1, 2.3, 2.4, 2.7, 6.5, 6.6_
 
+- [x] 2.9 Docker の FORWARD drop 防止設定を host-preparation で管理する
+  - check/status で Docker version、daemon.json の所有状態、実効 FORWARD policy を表示する。Docker 28 未満と既存ファイルの競合を拒否する。
+  - apply は daemon.json がない場合だけ設定を原子的に作成し、pending/applied state、Docker 再起動、起動待ち、policy 再確認を行う。remove は完全一致する製品所有ファイルだけ削除し、Docker を再起動しない。
+  - PATH fixture による Docker/iptables/nft/systemctl の隔離テストを追加する。
+  - _Boundary: host-preparation, README, specification_
+  - _Depends: 2.3, 2.4, 2.5, 2.8_
+  - _Requirements: 2.9_
+
 ## 3. Gateway Guard と Kill Switch 反映契約
 - [x] 3. Gateway Guard と Kill Switch 反映契約を実装する
 - [x] 3.1 Guard nft batch 生成を実装する
@@ -353,6 +361,7 @@
 | 8.8 | 4.6, 5.3, 7.2 |
 
 ## Implementation Notes
+- 2.9: Docker forwarding handler は `/etc/docker/daemon.json` が存在しない場合のみ作成し、再起動後も policy が DROP なら pending state を残して失敗する。remove は再起動を行わない。実ホストへの systemctl/Docker 操作は実行せず、PATH fixture で検証する。
 - 2.2: 設計表の API クライアント証明書の環境変数名（`GATEWAY_TLS_CLIENT_CERT_FILE`/`GATEWAY_TLS_CLIENT_KEY_FILE`）と、現行 API loader（`api/src/proxy-client/gateway-tls-options.ts`）の名前（`GATEWAY_TLS_CERT_FILE`/`GATEWAY_TLS_KEY_FILE`）が異なる。`compose/api-tls.yml` は両方を設定済み。4.5/4.6 で loader 側の名前を設計に統一し、統一後は片方の設定を外す。
 - 実装補助: 開発ホストの対話シェルの `rg` は関数で、`sh` スクリプトからは使えない。リポジトリのスクリプトは `grep -F` などの POSIX 道具だけを使う。仕様文書（`.kiro/specs`）をテストが読まない。
 - 2.3（host-preparation 共通方針）: 本番スクリプトに環境変数での検査回避・パス差し替えを作らない。パスは `compose/host-preparation/paths.sh`（本番値）に集約し、テストは CLI 一式を一時ディレクトリへコピーして `paths.sh` を書き換えて実行する。コマンドの差し替えは PATH の fixture だけで行う。状態ファイル・ディレクトリは symlink／通常ファイル以外を変更前に拒否し、新規作成は検証済みディレクトリ内の一時ファイルから `ln`（上書きしない）で配置する。`apply` が使うコマンドは `check` の必須コマンド一覧に含める。`apply` は boot guard（2.5）が入るまで状態初期化の後に非0で終わり、`status`/`remove` の実体は 2.8 が担当する。

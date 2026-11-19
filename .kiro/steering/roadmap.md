@@ -86,7 +86,7 @@
 ### Phase 5 の通信と責務
 - Web HTTPS は `WEB_HTTPS_ENABLED` で任意に有効化し、既定 OFF。Web→API は同一ノード内の HTTP とし、API の host port 公開と必須 CA 依存はない。
 - API→Gateway は UDS 上の HTTP を既定とし、`GATEWAY_TLS_ENABLED` と API mTLS override fragment で任意に TLS を有効化する。これは複数ホスト配置をサポートするものではない。
-- ホスト準備は `check|apply|status|remove` の補助 CLI とし、Docker 導入・更新や daemon 設定変更をしない。`LAN_IFACE` は `.env` が唯一の設定元。boot guard の適用・確認に失敗する環境は非対応。
+- ホスト準備は `check|apply|status|remove` の補助 CLI とする。Docker の導入・更新は行わないが、Docker 28 以降で `/etc/docker/daemon.json` がない場合は `ip-forward-no-drop` を作成して Docker を再起動する。既存ファイルは書き換えず、必要なキーがなければ手動設定を案内する。`LAN_IFACE` は `.env` が唯一の設定元。boot guard の適用・確認に失敗する環境は非対応。
 - Kill Switch は透過ゲートウェイの LAN 転送を対象とし、明示的プロキシのみの利用では停止時遮断を保証しない。
 - Compose project 名は `vpngwgui` に固定。通常の `down` は named volume を保持し、`down -v` のみデータを削除する。host-preparation `remove` は Compose `down` の後に実行する。
 - 未リリースの旧方式に対する移行・互換対応・保存データ引き継ぎは行わない。README は新方式の新規導入を案内する。

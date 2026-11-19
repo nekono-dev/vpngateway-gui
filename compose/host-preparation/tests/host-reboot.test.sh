@@ -29,6 +29,7 @@ hp_host_reboot_exec_path='$temporary/libexec/vpngwgui-host-reboot'
 hp_host_reboot_enable_link_path='$enable_link'
 hp_host_reboot_spool_dir='$spool_dir'
 hp_state_dir='$state_dir'
+hp_docker_daemon_config_path='$temporary/daemon.json'
 EOF
 
 fixtures="$temporary/bin"

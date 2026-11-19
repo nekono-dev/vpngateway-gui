@@ -22,6 +22,7 @@ configure_paths() {
 hp_os_release_path='$temporary/os-release'
 hp_repo_root='$temporary/repo'
 hp_state_dir='$state_dir'
+hp_docker_daemon_config_path='$temporary/daemon.json'
 hp_sysctl_config_path='$temporary/sysctl.d/$(basename "$state_dir").conf'
 hp_boot_guard_unit_path='$temporary/systemd/$(basename "$state_dir").service'
 hp_boot_guard_docker_requires_path='$temporary/systemd/$(basename "$state_dir").requires/vpngwgui-boot-guard.service'

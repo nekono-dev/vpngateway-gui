@@ -15,7 +15,7 @@ Web HTTPS は既定 OFF、API→Gateway TLS も既定 OFF とし、2区間を独
 ### Non-Goals
 - 複数ノード、役割選択・遠隔配置・ペアリング、旧方式からの移行。
 - Web/API のプロセス統合、外部向け証明書自動取得、VPN 機能やベンダー固有動作の変更。
-- ホスト準備による Docker の導入・更新、Docker daemon 設定の管理。
+- ホスト準備による Docker の導入・更新。Docker daemon の `ip-forward-no-drop` 設定だけは、透過ゲートウェイの LAN forwarding に必要なため、所有状態を記録して管理する。
 
 ## Boundary Commitments
 
@@ -78,7 +78,7 @@ flowchart LR
 | API→Gateway | Node/Undici UDS | gateway 制御 | TLS OFF は UDS 上 HTTP、ON は UDS 上 HTTPS+mTLS |
 | Gateway | host network / UID 10001 | LAN 転送・制御 API | TCP 制御 listen を持たない |
 | 配置 | Docker Compose v2 | 同一ホスト起動・更新 | project 名 `vpngwgui` 固定（上書き非対応） |
-| ホスト | Debian 12+ / Ubuntu 22.04+、systemd/nftables/sysctl | forwarding、必須 boot guard（初期 `BLOCK`）、reboot | check は静的 prerequisite のみを検査し、boot guard 適用/確認不能は apply が失敗する。Docker daemon 設定を変更しない。常駐監視 service を持たない |
+| ホスト | Debian 12+ / Ubuntu 22.04+、Docker 28+、systemd/nftables/sysctl | forwarding、必須 boot guard（初期 `BLOCK`）、reboot | check は前提・Docker version・daemon.json・FORWARD policy を読み取り専用で検査し、boot guard 適用/確認不能は apply が失敗する。daemon.json がない場合だけ設定を作成して Docker を再起動する。常駐監視 service を持たない |
 
 **境界維持**: Web/API/proxy/runner の別プロセスを維持する。Gateway→runner の既存 UDS と API→Gateway の専用 UDS は別 volume・別 protocol owner とする。TLS は listener/client の選択で既存 Node transport を使い、新しい通信ライブラリや複数ホスト用接続先管理を導入しない。
 
@@ -121,6 +121,7 @@ installer/                            # 旧 installer command 群を撤去
 - `compose/host-preparation/common.sh` — 対応 OS (Debian 12+ / Ubuntu 22.04+)、root、依存コマンドの確認、標準エラー報告。
 - `compose/host-preparation/state.sh` — `/var/lib/vpngwgui-host-preparation/state.json` を root:root 0600 で管理。初回値、現在値、製品所有パス、版を記録し、既存ファイルを無断上書きしない。
 - `compose/host-preparation/sysctl.sh` — `net.ipv4.ip_forward` 等の必要値を確認・適用し、remove で記録済み元値へ戻す。外部変更が検出された値は上書きせず競合として報告。
+- `compose/host-preparation/docker-forward.sh` — Docker 28+ と daemon.json、実効 FORWARD policy を確認する。設定ファイルがない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成し、pending/applied を state に記録して Docker を再起動する。既存 JSON は編集せず、同じキーがない場合は競合として手動設定を案内する。remove は byte-identical な製品所有ファイルだけを削除し、Docker は再起動しない。
   - 所有する sysctl は、現行 installer（`installer/setup.sh` の `setup_sysctl`）が設定してきた値をそのまま引き継ぐ次の4つに限る: `net.ipv4.ip_forward=1`（LAN 転送に必要）、`net.ipv4.conf.all.send_redirects=0`、`net.ipv4.conf.default.send_redirects=0`、`net.ipv4.conf.<LAN_IFACE>.send_redirects=0`（透過ゲートウェイが LAN 端末へ ICMP redirect を送って経路が迂回されるのを避ける。現行の動作の維持であり、新しい挙動の追加ではない）。これ以外の sysctl を所有・永続化しない。単体テストで所有キーの完全な一覧を固定する。
 - `compose/host-preparation/boot-guard.sh` — oneshot の systemd unit を設置し、ホスト起動ごとに独立 `inet vpngwgui_guard` table を `BLOCK` 状態で作り直す（nftables.service の後、network-pre.target と docker.service の前）。unit は `[Install] RequiredBy=docker.service` を持ち、enable が作る `docker.service.requires/` の製品所有 symlink と systemd の `RequiredBy` を apply 後に検証する。guard の起動・適用が失敗すれば Docker の起動も失敗し、gateway/proxy は停止したままになる。`remove` はリンク先がこの製品 unit と一致する依存 symlink、所有記録に一致する unit と guard table だけを削除し、外部リンクは保持する。起動後の状態切替は行わない。
 - `compose/host-preparation/host-reboot.sh` — ホスト `/var/lib/vpngwgui-host-ctl` を専用 UID/GID `10001:10001` / mode 0700 で作り、systemd path unit が同ディレクトリの `reboot-request` を監視する。10001 は proxy image の `vpngwgui` UID/GID および Compose の `user: "10001:10001"` と一致する製品専用予約 ID であり、ホスト側に passwd/group の利用があれば `check` と `apply` は失敗する。root Compose は proxy だけにこの host dir を `/var/run/vpngw-host-ctl` へ read-write bind mount し、API/他 service には mount しない。proxy が作る request file は UID/GID `10001:10001` / mode 0600 / 内容 `vpngwgui-host-reboot-v1\n` とする。systemd service は実行前に symlink でない通常ファイル、owner UID 10001、mode 0600、固定内容の完全一致を検証する。検証失敗時は固定の再起動を行わず、要求を拒否・記録する。受理した要求はファイルを消費・削除した後、固定された `systemctl reboot` 以外を実行しない。
@@ -304,7 +305,7 @@ flowchart TD
 
 初回の元値・変更対象は `/var/lib/vpngwgui-host-preparation/state.json` に root のみ読み書き可能で記録する。各対象に path、適用前後の値、hash、所有者、mode、導入版を保持する。`remove` は記録のない既存物を推測して削除しない。部分失敗時も state は保持し、再実行で残りを収束できる。
 
-**Docker 判断**: Docker Engine/Compose plugin は自動導入・更新しない。対象 OS の package manager や既存 Docker 配布元を変更するのはホスト準備の最小境界を越え、第三者設定・更新方針を侵害しうるため。`check` は不足時に公式手順を示す。`/etc/docker/daemon.json` は読み取りのみで、作成・編集・Docker 再起動をしない。必要な forwarding 条件を満たさない場合は不足として報告する。
+**Docker 判断**: Docker Engine/Compose plugin は自動導入・更新しない。対象 OS の package manager や既存 Docker 配布元を変更するのはホスト準備の最小境界を越え、第三者設定・更新方針を侵害しうるため。`check` は読み取り専用とする。`apply` は Docker 28 以降、既存の `/etc/docker/daemon.json` がない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成して所有状態を記録し、Docker を再起動した後に FORWARD policy が `ACCEPT` であることを確認する。既存ファイルは編集せず、必要な forwarding 条件が確認できない場合は失敗する。`remove` は製品所有ファイルだけを削除し、Docker は再起動しない。
 
 `host-reboot` は API の既存管理者認証済み要求を proxy が受け、ホスト依頼ファイルを作る。専用 ID は proxy image の `vpngwgui` と Compose の `user: "10001:10001"` に合わせて UID/GID 10001 とし、他のホストアカウントと共有しない。host-preparation はこの数値を予約し、`check` と `apply` の双方で passwd の UID 10001 または group の GID 10001 が既存アカウントに使われていれば失敗する。ホスト上のディレクトリは `/var/lib/vpngwgui-host-ctl`（10001:10001、mode 0700）、依頼ファイルは UID/GID 10001 所有・mode 0600・内容 `vpngwgui-host-reboot-v1\n` とする。root Compose はこのパスを proxy コンテナの `/var/run/vpngw-host-ctl` へ read-write bind mount し、他サービスには mount しない。`api/src/proxy-client/proxy-client.ts` の再起動要求は API→proxy の新 gateway UDS を使う。systemd path unit はホストの `/var/lib/vpngwgui-host-ctl/reboot-request` を監視する。service は symlink 追跡をせず、通常ファイル・UID 10001・mode 0600・固定内容の全条件を実行直前に検証し、条件を満たさない依頼は拒否して記録する。受理した依頼は削除後に限り固定の `systemctl reboot` を実行する。runner の許可コマンド境界を拡張しない。
 
@@ -489,7 +490,7 @@ sudo compose/host-preparation.sh remove
 - TLS 有効時に証明書検証を必須とし、不正・不一致で失敗する。HTTP/TLS 間の暗黙降格を禁止する。Web HTTPS と Gateway TLS は互いの flag を推論しない。
 - 管理画面の operator setup/login/logout/session authorization を維持する。Web の same-origin proxy は API 認証の代替境界にしない。Cookie の Secure は `WEB_HTTPS_ENABLED` から決め、転送ヘッダーを信頼しない。
 - runner の許可コマンドは既存の完全一致制約を維持し、通信方式の変更を理由に shell/任意コマンドを許可しない。
-- Host preparation は既存 Docker daemon 設定や製品外の nft/sysctl/unit を上書き・削除しない。所有状態に差分があれば remove を止め、その差を報告する。
+- Host preparation は既存の Docker daemon 設定や製品外の nft/sysctl/unit を上書き・削除しない。存在しない daemon.json を作った場合は製品所有として記録し、所有状態に差分があれば remove を止めて報告する。remove による daemon.json の削除を反映する Docker 再起動は運用者が行う。
 - Compose TLS private key は read-only mount、root/運用者が管理し、ログへ出力しない。`.env` に秘密鍵や VPN 資格情報を入れない。
 
 ## Error Handling

@@ -39,6 +39,7 @@ Web の HTTPS は既定で無効、Web→API は信頼された同一ノード�
 6. When 管理者が既存のホスト再起動操作を要求する, the VPN Gateway System shall 製品専用 UID/GID 10001 の proxy だけが書き込めるホスト依頼先へ再起動要求を送り、ホスト側は通常ファイル・専用 UID 所有・mode 0600・固定内容形式を検証した場合だけ依頼を消費して固定の再起動操作を行い、受付結果を管理者へ返す。検証に失敗した依頼は実行せず記録する。
 7. When 運用者がホスト準備の確認または解除を行う, the Host Preparation Tool shall 製品が管理する設定・常駐処理と解除対象を識別できるようにし、製品と無関係な設定を変更しない。
 8. When Gateway が停止中または unhealthy であり、透過ゲートウェイと Kill Switch が両方有効である, the VPN Gateway System shall 製品が管理する LAN 転送経路を遮断する。Gateway が healthy の間は通常 ruleset が転送可否を決め、VPN egress forwarding を許可できる。proxy 再起動時は API settings の初回受信・適用まで既存 guard state を変更せず、LEASE は lease の自然失効で遮断し、OFF は OFF のままとする。明示的プロキシのみのモードでは Kill Switch と停止時遮断保証を提供しない。
+9. When apply が Docker daemon の forwarding 設定を必要とする, the Host Preparation Tool shall Docker 28 以降を確認し、既存の `/etc/docker/daemon.json` がない場合だけ `{"ip-forward-no-drop": true}` を原子的に作成して所有状態を記録し、Docker を再起動して FORWARD policy を再確認する。既存ファイルに設定がなければ変更せず手動設定を案内し、設定後の再起動が必要な場合は運用者へ知らせる。
 
 ### Requirement 3: Web の HTTP 既定と任意の HTTPS
 **Objective:** As a 利用者, I want 証明書を用意せず LAN の管理画面へアクセスしたい, so that 証明書の問題で初期利用を妨げられない。

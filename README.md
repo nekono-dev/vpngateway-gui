@@ -12,7 +12,7 @@ VPN 接続を複数の LAN 機器で共有するための Web 管理画面付き
 | ホスト機能 | nftables と systemd が必要。起動時の Kill Switch guard を適用・確認できない環境は非対応 |
 | 非対応 | rootless Docker、リモート Docker Engine、複数ホストへの分離配置 |
 
-Docker Engine と Compose plugin は事前に導入してください。ホスト準備処理は Docker を導入・更新せず、Docker の daemon 設定も変更しません。
+Docker 28 以降と Compose plugin は事前に導入してください。ホスト準備処理は Docker を導入・更新しません。`apply` は Docker が管理する FORWARD chain の DROP policy が LAN forwarding を遮断しないように、`/etc/docker/daemon.json` が存在しない場合だけ `{"ip-forward-no-drop": true}` を作成して Docker を再起動します。既存ファイルは変更しません。既存ファイルにこのキーがない場合は、運用者が設定を追加して Docker を再起動してください。
 
 ## 配布物の取得
 
@@ -54,7 +54,15 @@ VPN_PROVIDERS=adguardvpn
 
 複数の fragment を使う場合は、root の `docker-compose.yml` を先頭にし、選択する `vendors/<ID>/compose.yml` を後ろへ追加します。`COMPOSE_FILE` の代わりに、すべての Compose command で `-f docker-compose.yml -f vendors/<ID>/compose.yml` のように指定することもできます。Compose の file 指定は root を先に、vendor fragment を後に並べてください。
 
-`check` は前提条件を読むだけの検査です。LAN interface が未設定なら既定ルートの interface を候補として表示しますが、`.env` は作成・変更しません。候補を確認して `.env` に `LAN_IFACE` を明記してから再実行してください。`apply` は sysctl と起動時の boot guard など、製品が所有するホスト設定を適用し、適用後の guard を確認します。
+`check` は前提条件、Docker version、daemon 設定、実効 FORWARD policy を読むだけの検査です。Docker 28 未満では必要な daemon option が使えないため失敗します。LAN interface が未設定なら既定ルートの interface を候補として表示しますが、`.env` は作成・変更しません。候補を確認して `.env` に `LAN_IFACE` を明記してから再実行してください。`apply` は sysctl、boot guard、Docker forwarding 設定を適用し、Docker 再起動後に FORWARD policy を再確認します。Docker の再起動では稼働中の他のコンテナも再起動されます。
+
+| daemon.json の状態 | `apply` の動作 |
+|---|---|
+| ファイルなし | 製品設定を作成し、Docker を再起動して policy を確認 |
+| `ip-forward-no-drop: true` 設定済み | policy が DROP の場合だけ Docker を再起動 |
+| 設定キーなしの既存ファイル | 変更せず失敗。運用者がキーを追加して Docker を再起動 |
+
+`remove` は製品が作成した内容と完全一致する daemon.json だけを削除します。削除後の設定を反映する Docker 再起動は運用者が行ってください。
 
 ```sh
 sudo compose/host-preparation.sh check

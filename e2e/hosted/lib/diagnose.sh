@@ -10,6 +10,7 @@ OUT="e2e/artifacts/hosted/$GROUP/diag"
 mkdir -p "$OUT"
 { ip -4 route show; echo '--- rule'; ip rule show; echo '--- table 100'; ip route show table 100; } > "$OUT/route.txt" 2>&1
 sudo nft list ruleset > "$OUT/nft.txt" 2>&1 || true
+sudo sh -c 'cat /etc/docker/daemon.json 2>/dev/null; echo "--- iptables FORWARD"; iptables -S FORWARD 2>&1' > "$OUT/docker-forward.txt" 2>&1 || true
 if [ "$GROUP" != tls ] || [ ! -s "$OUT/compose-ps.txt" ]; then
   sudo docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml ps > "$OUT/compose-ps.txt" 2>&1 || true
 fi
