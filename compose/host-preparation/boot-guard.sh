@@ -84,6 +84,29 @@ hp_boot_guard_unit_content() {
   cat <<EOF
 [Unit]
 Description=LAN 転送の初期遮断
+DefaultDependencies=no
+Wants=nftables.service
+Wants=network-pre.target
+After=nftables.service
+After=local-fs.target
+Before=network-pre.target docker.socket docker.service shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f $hp_boot_guard_rules_path
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=docker.service
+EOF
+}
+
+hp_boot_guard_unit_legacy_content() {
+  cat <<EOF
+[Unit]
+Description=LAN 転送の初期遮断
 Wants=nftables.service
 After=nftables.service
 Before=network-pre.target docker.service docker.socket
@@ -198,6 +221,25 @@ hp_boot_guard_install_file() {
     expected_tmp=$directory/.vpngwgui-boot-guard-expected.$$.tmp
     if ! (umask 077; set -C; "$content_function" "$content_argument" > "$expected_tmp") 2>/dev/null; then return 1; fi
     if [ "$existing_kind" = 'regular file' ] && [ "$(stat -c '%u:%g %a' "$destination" 2>/dev/null || :)" = "0:0 $mode" ] && cmp -s "$destination" "$expected_tmp"; then
+      rm -f "$expected_tmp"
+      return 0
+    fi
+    if [ "$destination" = "$hp_boot_guard_unit_path" ] &&
+      [ "$existing_kind" = 'regular file' ] &&
+      [ "$(stat -c '%u:%g %a' "$destination" 2>/dev/null || :)" = "0:0 $mode" ] &&
+      [ -n "$(hp_boot_guard_recorded_iface)" ] &&
+      cmp -s "$destination" <<EOF
+$(hp_boot_guard_unit_legacy_content)
+EOF
+    then
+      replacement=$directory/.vpngwgui-boot-guard-replacement.$$.tmp
+      if ! (umask 077; set -C; "$content_function" "$content_argument" > "$replacement") 2>/dev/null ||
+        ! chmod "$mode" "$replacement" || ! chown root:root "$replacement" ||
+        ! mv -f "$replacement" "$destination"; then
+        rm -f "$replacement" "$expected_tmp"
+        printf 'host-preparation: 所有済み boot guard unit を更新できません: %s\n' "$destination" >&2
+        return 1
+      fi
       rm -f "$expected_tmp"
       return 0
     fi

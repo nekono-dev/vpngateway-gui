@@ -297,3 +297,7 @@ nft batch の失敗は transaction の原子性を前提に直前状態を維持
 ## VPN出口判定の問い合わせ先（2026-11-19）
 
 実機受入では Ubuntu 24.04 の systemd-networkd が DHCP DNS（例: 1.1.1.1、8.8.8.8）宛ての `/32` 経路を物理 NIC に追加し、VPN 接続後も `ip route get 1.1.1.1` が物理 NIC を返すことを確認した。出口判定は公開 DNS ではなく、文書用予約アドレス TEST-NET-1（192.0.2.1）への `ip -4 route get` に変更する。DNS 個別経路と衝突しにくく、`ip rule` を含むカーネルの通常の経路選択を問い合わせるため、default route 切替と専用テーブルのポリシールーティングの双方を維持できる。経路照会のみでパケットは送らない。
+
+## boot guard の systemd 起動順序（2026-11-19）
+
+Ubuntu 24.04 / systemd 255 で旧 unit の `Before=docker.socket` と既定依存の `After=basic.target` が、`docker.socket → sockets.target → basic.target → boot guard → docker.socket` の循環を作り、Docker が停止状態のまま残る事象を確認した。`DefaultDependencies=no` を指定し、`local-fs.target` と nftables.service の後、network-pre.target・docker.socket・docker.service の前に置く。shutdown.target との競合・順序は明示する。socket activation 経由の Docker 起動も防ぐため docker.socket 以前の順序は維持する。既知の旧 unit 本文は所有 state がある場合だけ apply で更新し、daemon-reload する。Debian 12 / systemd 252 と Ubuntu 22.04+ でも依存グラフの実機確認が必要。

@@ -181,13 +181,78 @@ hp_apply_boot_guard
 [ -f "$unit_path" ]
 [ -f "$rules_path" ]
 grep -Fq 'After=nftables.service' "$unit_path"
-grep -Fq 'Before=network-pre.target docker.service docker.socket' "$unit_path"
+grep -Fq 'DefaultDependencies=no' "$unit_path"
+grep -Fq 'After=local-fs.target' "$unit_path"
+grep -Fq 'Wants=network-pre.target' "$unit_path"
+grep -Fq 'Before=network-pre.target docker.socket docker.service shutdown.target' "$unit_path"
+grep -Fq 'Conflicts=shutdown.target' "$unit_path"
+# docker.socket より前に置くが、implicit After=basic.target を作らず循環を避ける。
+if grep -Eq '^(After|Before)=.*basic\.target' "$unit_path"; then
+  printf '%s\n' 'boot guard must not create an ordering edge with basic.target' >&2
+  exit 1
+fi
+verify_boot_guard_ordering_graph() {
+  if ! command -v systemd-analyze >/dev/null 2>&1; then
+    printf '%s\n' 'SKIP: systemd-analyze がないため boot guard の依存グラフ検証を省略します'
+    return 0
+  fi
+
+  fixture="$temporary/systemd-ordering-fixture"
+  old_fixture="$fixture/old"
+  new_fixture="$fixture/new"
+  mkdir -p "$old_fixture" "$new_fixture"
+  for fixture_dir in "$old_fixture" "$new_fixture"; do
+    cat > "$fixture_dir/docker.socket" <<'EOF'
+[Unit]
+Description=Fixture Docker Socket
+
+[Socket]
+ListenStream=/run/docker.sock
+EOF
+    cat > "$fixture_dir/docker.service" <<'EOF'
+[Unit]
+Description=Fixture Docker Service
+Requires=docker.socket vpngwgui-boot-guard.service
+After=docker.socket vpngwgui-boot-guard.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/true
+EOF
+  done
+
+  # 旧本文は boot-guard.sh の既知旧本文定義をそのまま使う。
+  hp_boot_guard_unit_legacy_content > "$old_fixture/vpngwgui-boot-guard.service"
+  hp_boot_guard_unit_content > "$new_fixture/vpngwgui-boot-guard.service"
+
+  if SYSTEMD_UNIT_PATH="$old_fixture:" systemd-analyze verify docker.service sockets.target basic.target > "$fixture/old.out" 2>&1; then
+    printf '%s\n' 'SKIP: 旧本文でも ordering cycle が再現されず、依存グラフ検証を実施できません'
+    return 0
+  fi
+  if ! grep -Fq 'ordering cycle' "$fixture/old.out"; then
+    printf '%s\n' 'SKIP: systemd-analyze が旧本文を別の環境要因で検証できません' \
+      "$(cat "$fixture/old.out")"
+    return 0
+  fi
+
+  if ! SYSTEMD_UNIT_PATH="$new_fixture:" systemd-analyze verify docker.service sockets.target basic.target > "$fixture/new.out" 2>&1; then
+    if grep -Fq 'ordering cycle' "$fixture/new.out"; then
+      printf '%s\n' '新本文でも依存グラフに ordering cycle があります' >&2
+      cat "$fixture/new.out" >&2
+      return 1
+    fi
+    printf '%s\n' 'SKIP: systemd-analyze が新本文を環境要因で検証できません' \
+      "$(cat "$fixture/new.out")"
+    return 0
+  fi
+}
+verify_boot_guard_ordering_graph
 grep -Fq 'add table inet vpngwgui_guard' "$rules_path"
 grep -Fq 'iifname "eth0" drop' "$rules_path"
 grep -Fq '"boot_guard":{"interface":"eth0","status":"applied"}' "$state_dir/state.json"
 grep -Fq 'is-enabled vpngwgui-boot-guard.service' "$temporary/systemctl.log"
   grep -Fq 'RequiredBy=docker.service' "$unit_path"
-  grep -Fq 'Before=network-pre.target docker.service docker.socket' "$unit_path"
+  grep -Fq 'Before=network-pre.target docker.socket docker.service shutdown.target' "$unit_path"
   [ -L "$requires_link" ]
   [ "$(readlink "$requires_link")" = "$unit_path" ]
 : > "$temporary/fail-boot-guard-activation"
@@ -234,6 +299,20 @@ grep -Fq 'disable --now vpngwgui-boot-guard.service' "$temporary/systemctl.log"
 grep -Fq 'delete table inet vpngwgui_guard' "$temporary/nft.log"
 [ ! -e "$temporary/attacker-unit" ]
 [ ! -e "$temporary/attacker-rules" ]
+
+# 旧版の所有済み unit は apply で更新し、systemd を再読込する。
+hp_apply_boot_guard
+hp_boot_guard_unit_legacy_content > "$temporary/legacy-unit"
+cp "$temporary/legacy-unit" "$unit_path"
+reload_count_before=$(grep -c '^daemon-reload$' "$temporary/systemctl.log")
+hp_apply_boot_guard
+grep -Fq 'DefaultDependencies=no' "$unit_path"
+reload_count_after=$(grep -c '^daemon-reload$' "$temporary/systemctl.log")
+[ "$reload_count_after" -gt "$reload_count_before" ]
+hp_remove_boot_guard
+[ ! -e "$unit_path" ]
+[ ! -e "$requires_link" ]
+[ ! -e "$rules_path" ]
 
 # apply は未所有または変更済みの object を nft 書き込み前に拒否する。
 write_state_iface() {

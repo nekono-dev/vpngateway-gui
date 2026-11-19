@@ -179,7 +179,7 @@ sudo docker compose -p vpngwgui down -v
 
 ## 通信保護と Kill Switch
 
-Kill Switch は透過ゲートウェイのみを対象とし、VPN が利用できない間の LAN 転送を boot guard で遮断します。明示的プロキシだけを使う場合、停止時の通信遮断は保証されません。
+Kill Switch は透過ゲートウェイのみを対象とし、VPN が利用できない間の LAN 転送を boot guard で遮断します。起動時は nftables.service の後、network-pre.target と Docker socket/service の前に BLOCK を適用します。boot guard が失敗した場合は Docker も起動しません。明示的プロキシだけを使う場合、停止時の通信遮断は保証されません。
 
 Web UI の設定にあるゲートウェイ再起動操作は、認証済み要求をホストの固定 systemd 処理へ渡して OS を再起動します。再起動中は Gateway と Web UI が利用できません。
 
