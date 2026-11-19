@@ -9,12 +9,12 @@ import type { AddressInfo } from "node:net";
 
 const dataDir = mkdtempSync(join(tmpdir(), "vpngwgui-api-http-"));
 process.env.SETTINGS_FILE = join(dataDir, "settings.json");
-const tlsEnvironmentNames = [
-  "API_TLS_CERT_FILE", "API_TLS_KEY_FILE", "API_TLS_CA_FILE", "GATEWAY_PKI_DIR", "GATEWAY_TLS_ENABLED",
-  "GATEWAY_TLS_CA_FILE", "GATEWAY_TLS_CERT_FILE", "GATEWAY_TLS_KEY_FILE", "GATEWAY_TLS_CLIENT_CERT_FILE",
-  "GATEWAY_TLS_CLIENT_KEY_FILE", "WEB_HTTPS_ENABLED", "WEB_TLS_CERT_FILE", "WEB_TLS_KEY_FILE",
+const transportEnvironmentNames = [
+  "GATEWAY_TLS_ENABLED", "GATEWAY_TLS_CA_FILE", "GATEWAY_TLS_CLIENT_CERT_FILE",
+  "GATEWAY_TLS_CLIENT_KEY_FILE", "GATEWAY_TLS_SERVER_NAME", "WEB_HTTPS_ENABLED",
+  "WEB_TLS_CERT_FILE", "WEB_TLS_KEY_FILE",
 ];
-for (const name of tlsEnvironmentNames) delete process.env[name];
+for (const name of transportEnvironmentNames) delete process.env[name];
 
 const { startApiServer } = await import("./server.js");
 
@@ -23,8 +23,8 @@ afterAll(() => {
 });
 
 describe("API HTTP listener", () => {
-  it("TLS 環境変数と PKI がなくても実 HTTP 要求を処理する", async () => {
-    expect(tlsEnvironmentNames.every((name) => process.env[name] === undefined)).toBe(true);
+  it("TLS が無効の構成で実 HTTP 要求を処理する", async () => {
+    expect(transportEnvironmentNames.every((name) => process.env[name] === undefined)).toBe(true);
     const app = await startApiServer({}, { port: 0, host: "127.0.0.1" });
 
     try {

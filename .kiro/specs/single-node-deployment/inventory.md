@@ -107,3 +107,27 @@ grep -rInIiE 'compose/(web|api|gateway)\.yml|docker compose.*-f.*compose/(web|ap
 - **別 worktree（11 hits）**: `.claude/worktrees/dev-add-branch-release-workflow/` 内の旧 Compose、installer、テスト、仕様記録。現在の worktree の実行経路ではなく、別 worktree の所有物なので変更しない。
 
 Compose 設定検査は `scripts/test-compose-contract.sh` と `scripts/test-compose-tls-contract.sh` に集約し、root 単体、各 vendor、両 vendor、Web HTTPS/Gateway TLS の4組合せを含む各構成で `docker compose -p vpngwgui ... config --quiet` を実行する。root 側の service・volume・network・公開 port と proxy の host networking/capability/mount 契約も検査する。README、steering、workflow、bundle manifest、E2E 実行 fixture、`.dockerignore` に旧 fragment の実行参照はなかった。
+
+## 6.5 撤去後の残存参照調査
+
+2026-11-19、6.5 の変更後にリポジトリルートから大文字小文字を無視して再調査した。`rg --hidden -uuu` で隠しファイル、ignore 対象、未追跡ファイルも検索した。`.env` と ignored な `e2e/vendor-live/config.local.json` も検索対象に含めたが、認証値は出力・記録していない。依存物、lockfile、圧縮/画像/巨大な地理データ、ビルド出力・source map は検索対象から除いた。`.claude/worktrees/` は別 worktree のスナップショットとして含めて別扱いにした。
+
+```sh
+rg --hidden -uuu -l -i 'remote|ssh|scp|pairing|ペアリング|installer.{0,50}(role|roles)|role.{0,40}(install|deployment|installer)|役割.{0,30}(選択|配置|インストール)|pki|api-ca|ca\.crt|vpngwgui-ctl|bootstrap|setup\.sh|GATEWAY_HOST|GATEWAY_BASE_URL|8443|COMPOSE_FILE|certificate.{0,40}(generat|issue)|openssl' . --glob '!.git/**' --glob '!**/node_modules/**' --glob '!**/*.map' --glob '!**/*.gz' --glob '!**/*.png' --glob '!api/src/geo/places.json' --glob '!package-lock.json' --glob '!**/dist/**' --glob '!**/build/**' --glob '!**/coverage/**' > /tmp/task65-final-all-files.txt
+wc -l /tmp/task65-final-all-files.txt
+```
+
+結果は123ファイル。`rg -l` のみで内容や設定値は記録していない。`.claude/worktrees/dev-add-branch-release-workflow/` 配下の58ファイルは別 worktree の古い snapshot に属し、現 worktree のコード・配布物ではないため変更しない。現 worktree の一致は、広い語の誤検出を含め次のように分類した。
+
+- **現行 Compose / TLS の契約（維持）**: `README.md`, `.env.example`, `compose/api-tls.yml`, `scripts/test-compose-tls-contract.sh` の `COMPOSE_FILE`、operator が用意する CA/client/server 証明書の mount・パス、Web の例示 port `8443` は新契約の override と TLS 検査である。証明書を生成・配布する製品経路ではない。
+- **hosted / server テスト用証明書（維持）**: `e2e/hosted/lib/{certs.sh,tls-matrix-certs.sh}`, `e2e/hosted/lib/tls-certs.test.ts`, `e2e/hosted/services/isp*`, `web/server/testdata/` と近接テストは明示的に許可された throwaway/fixture 資材であり、製品用 PKI ではない。`proxy/src/gateway-channel/tls-options.test.ts`, `api/src/proxy-client/gateway-tls-options.test.ts` も一時テスト証明書だけを生成する。
+- **検証サーバ上の統合検証（7.2 所有・未完了の旧方式の残りとして明記）**: `scripts/deploy-verify.sh` は現状、作業ツリーを SSH で検証サーバへ転送し `VERIFY_INSTALL_DIR` へ展開して素の `docker compose build/up` を実行する旧い遠隔配置の流れで、コメントにも installer 生成の `.env` と `install.sh` の再実行が残る。これは 6.5 が撤去する対象ではなく（6.5 は製品のコード・設定・テスト・生成スクリプトの旧経路を扱う）、タスク 7.2 の作業そのものとして所有される: 7.2 は、配布物（Compose bundle）の展開と `-p vpngwgui` の固定名、host-preparation の check/apply、Compose の merge/config、公開 port、TLS の mount、UDS volume の検査へ置き換え、旧い転送・素の lifecycle コマンド・installer への言及を除去する。7.2 の完了条件に含まれるため、7.2 の完了後にこの残存を再調査して記録する。`.env.example` の `VERIFY_*` はその統合検証の設定として維持する。
+- **現行 host-preparation の局所語（維持）**: `compose/host-preparation/common.sh` と `tests/check.test.sh` の `remote` は Docker daemon がローカル Unix socket かを検査・拒否する機能、`boot-guard.sh` とその tests の `bootstrap` は起動時に初期 BLOCK を作る新方式機能である。
+- **テスト語・一般用語（維持）**: `scripts/test-readme-contract.sh` は README に旧 command が再導入されないことを検査し、hosted topology/runner/DNS listener の `ssh`, `remote`, `role` はホスト通信・socket peer・アクセシビリティ属性である。ベンダー entrypoint の `REMOTE=0` は session metadata である。
+- **履歴・仕様・過去成果物（維持）**: `.kiro/specs/`（本 inventory 以外は指示により未変更）、`.kiro/discovery/`, `.kiro/handoff/`, E2E artifacts/logs は旧方式の設計経緯や過去の出力を記録しており、実行設定ではない。`.agents/skills/` と `.claude/skills/` の汎用テンプレートにある `role`/`bootstrap` もアプリの installer 役割ではない。
+- **削除した現行 test 参照**: `api/src/server.test.ts` に残っていた `API_TLS_*`, `GATEWAY_PKI_DIR` と旧 `GATEWAY_TLS_CERT_FILE` / `GATEWAY_TLS_KEY_FILE` 名、および PKI という旧説明を取り除き、現行の `GATEWAY_TLS_*_FILE` / `WEB_TLS_*_FILE` が未設定の既定 HTTP listener test とした。
+- **削除した ignored な残骸**: 古い `web/dist-server/` に source から既に撤去済みの API TLS loader（`GATEWAY_PKI_DIR`, `/etc/vpngwgui/pki`, `api-ca.crt`）が残っていたため、古い生成物を除去した後に現在の source から再生成し、同じ旧 path が含まれないことを確認した。ignored な `e2e/vendor-live/config.local.json` の旧 API CA 設定 `caPath` だけも削除し、他のローカル設定値は維持した。これらは現行 source の機能ではないが、無視対象ファイルの調査で見つかった旧設定残骸だった。
+
+旧方式の具体的な command/path (`vpngwgui-ctl`, `GATEWAY_HOST`, `GATEWAY_BASE_URL`, `/etc/vpngwgui/pki`, `api-ca.crt`, pairing/role-selection の実装、installer の certificate generation/distribution) は現 worktree の実行コード、Compose/config、schema/OpenAPI、API/Web UI、generation script に0件。release workflow と workflow-call の `.github/workflows/{release-installer.yml,installer-check.yml}` は task 6.1 で Compose bundle の build/check に置換済みであり、`scripts/test-compose-bundle.sh` が `scripts/bundle-manifest.txt` の資材と展開後 Compose config を検査する。残る workflow 名は既存の呼び出し path であり、旧 installer の処理・資材参照ではない。
+
+別 worktree の検索内訳も確認した。`.claude/worktrees/dev-add-branch-release-workflow/` には旧 `installer/`、API HTTPS listener、分離配置 Compose fragment、旧 E2E fixture などの snapshot が残るが、現 branch の実行経路・Git index に属さないため本 task では変更しない。
