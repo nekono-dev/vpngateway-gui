@@ -34,6 +34,7 @@
 - 実施: `gh workflow run e2e-hosted.yml --ref dev/single-node-deployment`（手動実行）。run 44533301738（https://github.com/nekono-dev/vpngateway-gui/actions/runs/44533301738）、commit `8f6e8c9`、2026-11-19 13:25–13:42 UTC。
 - 結果: **88 件中 88 件合格**。群ごとに lifecycle・stack・gateway・tls のすべてが pass。ホスト準備は Docker 導入を含む新しい `apply`（タスク 7.1〜7.7）で適用・撤去した。
 - 実 VPN 資格情報を使う 5.6 vendor-live はこの対象外。
+- 実機受入（8.3〜8.6）で見つけた不具合の修正後の再実行: run 44570752535（https://github.com/nekono-dev/vpngateway-gui/actions/runs/44570752535）、commit `a79788d`、2026-11-19 16:50–17:06 UTC、**88 件中 88 件合格**（lifecycle 1・stack 61・gateway 17・tls 9）。間の run 44565849000（commit `c4bd560`）は tls の 1 件だけ不合格（下表）。
 
 ### 全件合格までに直した不具合
 
@@ -47,3 +48,6 @@
 | 44515779429 | 80/88 | ログイン直後の API 確認が一時的なネットワーク変化で失敗（試験側） | 02ecc3c |
 | 44520427462 | 86/88 | missing-client で Web の静的応答だけで起動成功と判定（試験側） | e540ded |
 | 44529101430 | 86/88 | 再起動中の API の終了コードを compose ps から取得していた（試験側） | 8f6e8c9 |
+| 実機受入 | lab で gateway 10 件不合格 | VPN 出口を `ip route get 1.1.1.1` で判定し、DHCP の DNS サーバ宛て個別経路で物理 NIC を誤認（製品側。GitHub runner では起きない） | 問い合わせ先を 192.0.2.1 に変更（c4bd560） |
+| 実機受入 | 再起動後に Docker が起動しない | boot guard unit の既定依存と `Before=docker.socket` が順序循環を作る（製品側。hosted E2E は実際に再起動しない） | `DefaultDependencies=no` と旧本文の置換（bae69a6） |
+| 44565849000 | 87/88 | TLS 不一致の文言が状態欄と接続操作のエラー欄の 2 か所に出て厳密一致に失敗（試験側） | 状態欄に限定（a79788d） |

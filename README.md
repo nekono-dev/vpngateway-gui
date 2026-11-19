@@ -105,6 +105,15 @@ Web HTTPS と API→Gateway mTLS は独立した設定です。既定ではど�
 
 証明書と秘密鍵は運用者が準備し、Compose に読み取り専用 mount します。秘密鍵をリポジトリや `.env` に置かず、ホスト上の保護された場所へ保存してください。`.env` にはファイルのホストパスを設定します。
 
+Web と API のコンテナは UID・GID 10001 で動きます。Web 用の証明書・秘密鍵と、API が読む API client 証明書・秘密鍵・信頼 CA は、この UID から読める権限にしてください。読めない場合、Web または API は起動に失敗します。Gateway（proxy）は root で動くため、Gateway の server 証明書・秘密鍵に追加の設定は要りません。
+
+```sh
+# 例: 鍵を root 所有・グループ 10001 で読み取りだけ許可する
+sudo chown root:10001 /etc/vpngwgui/tls /etc/vpngwgui/tls/web.crt /etc/vpngwgui/tls/web.key
+sudo chmod 0750 /etc/vpngwgui/tls
+sudo chmod 0640 /etc/vpngwgui/tls/web.crt /etc/vpngwgui/tls/web.key
+```
+
 Web HTTPS の設定例です。証明書は PEM 形式とし、`WEB_PORT` は HTTPS 用に利用可能なポート（例: `8443`）を指定します。
 
 ```dotenv

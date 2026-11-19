@@ -303,7 +303,7 @@
   - _Requirements: 7.4, 7.6_
 
 ## 8. 統合・受入
-- [ ] 8. 統合検証と実機受入を完了する
+- [x] 8. 統合検証と実機受入を完了する
 - [x] 8.1 実機受入環境を確認し手順書を作る
   - 検証サーバ `192.168.3.240` へ sshpass で接続できることと、sudo NOPASSWD を確認する。OS 種別・版が Debian 12+ または Ubuntu 22.04+ か、`nft --version` と root での `nft -c` 可否、Docker Engine と Compose v2 の有無・版、空きディスクを記録する。
   - LAN 側に使う interface と、LAN 端末役（network namespace 等）の準備・起動方法を確認する。受入資材を scp で配置する具体的な手順と配置先を記録する。
@@ -321,14 +321,14 @@
   - 統合対象は次の3種類に固定し、実行したコマンドと件数を `acceptance-env.md` 隣の記録（`integration-report.md`）に列挙する: (a) `scripts/deploy-verify.sh`、(b) root `npm test`（置換後の `test:install` を含む）、api/web/proxy の各パッケージの `package.json` にある unit/integration テストスクリプト全部、(c) 5.3〜5.5 および 5.7 の GitHub-hosted runner 上の hosted E2E spec 全部（5.6 の vendor-live-e2e は実資格情報が要る手動試験のため対象外とし、その設定・prepare の関連 test は (b) に含める）。
   - 観測できる完了条件: `scripts/deploy-verify.sh`、root `npm test`（置換後 `test:install` を含む）、unit/integration テスト一式、GitHub-hosted runner 上の5.3〜5.5・5.7 の hosted E2E spec が通り、生成 API client は公式生成手順で更新されている。
   - _Requirements: 2.5, 2.6, 2.8, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8_
-- [ ] 8.3 検証サーバで nft guard の構文・評価順・遮断経路を受け入れる
+- [x] 8.3 検証サーバで nft guard の構文・評価順・遮断経路を受け入れる
   - acceptance-env.md の手順で資材を配置し、Debian 12+ または Ubuntu 22.04+ の nft/kernel で batch を `nft -c` 検証後に適用する。
   - 同一の状態遷移 batch を対象 OS 上で繰り返し適用して成功することを確認する。timeout set の追加・更新・4秒自然失効、priority -1 return と priority 0 評価、DNAT 済み・DNS redirect 後・迂回・VPN 転送を含む遮断、Gateway table 再作成後の guard 維持を個別に確認し、コマンド・結果・時刻を記録する。
   - 観測できる完了条件: 構文検証成功、timeout/評価順の結果、各遮断経路の pass/fail と guard 維持が受入記録に残り、設計条件を満たす。
   - _Boundary: 統合受入（検証サーバ nft guard）_
   - _Depends: 8.1, 8.2, 7.7_
   - _Requirements: 2.5, 2.8, 8.2_
-- [ ] 8.4 検証サーバで Kill Switch 停止時の遮断と変更拒否を受け入れる
+- [x] 8.4 検証サーバで Kill Switch 停止時の遮断と変更拒否を受け入れる
   - acceptance-env.md の手順で資材を配置し、Kill Switch true/false の各条件で SIGKILL・Gateway hang・通常停止を実施する。
   - 遮断時刻を測定し、透過ゲートウェイ有効かつ Kill Switch true は全停止経路で6秒以内、通常停止は Gateway 終了前に遮断されることを確認する。透過有効かつ Kill Switch false は停止後も guard が遮断しないことを確認する。
   - proxy 停止中の `killSwitch` / `transparentGatewayEnabled` PUT が effective 値を変える場合に503となり永続値不変であること、Kill Switch を含む場合の `kill_switch_not_applied`、proxy 再開後の再試行を記録する。
@@ -336,7 +336,7 @@
   - _Boundary: 統合受入（検証サーバ Kill Switch）_
   - _Depends: 8.1, 8.2, 8.3, 7.7_
   - _Requirements: 2.8, 8.2_
-- [ ] 8.5 検証サーバで Compose lifecycle とホスト準備を受け入れる
+- [x] 8.5 検証サーバで Compose lifecycle とホスト準備を受け入れる
   - acceptance-env.md の手順で資材を配置し、初回起動・更新・停止・再作成・`down -v` と vendor fragment の除外・再追加を実施する。
   - 管理者・設定・お気に入り・監査ログ・vendor state の保持、通常 down での volume 保持、`down -v` での明示削除を確認する。
   - Docker 導入済みの既存 `acc-vpngwgui` は導入済み環境の確認専用とし、Docker 導入処理の受入には使わない。検証サーバ上に Docker 未導入の Ubuntu LXD 新容器を作成し、初期状態を確認してクリーンスナップショットを取得する。導入試験の各独立 run はそのスナップショットへ戻して行い、準備方法・container 名・snapshot 名・Docker 未導入の確認結果を `acceptance-results.md` に記録する。
@@ -346,7 +346,7 @@
   - _Boundary: 統合受入（検証サーバ Compose・host-preparation）_
   - _Depends: 8.1, 8.2, 5.5, 7.7_
   - _Requirements: 2.5, 2.7, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 8.3, 8.5, 8.9_
-- [ ] 8.6 検証サーバで Web HTTPS × Gateway TLS の4構成を受け入れる
+- [x] 8.6 検証サーバで Web HTTPS × Gateway TLS の4構成を受け入れる
   - acceptance-env.md の手順で資材を配置し、OFF/OFF、ON/OFF、OFF/ON、ON/ON の起動と管理画面/API 操作を行う。
   - wrong CA、期限切れ、SAN 不一致、client cert 不足を個別に与え、TLS 有効区間で接続が失敗し HTTP/平文へ降格しないことを確認する。
   - 観測できる完了条件: 4構成の起動・操作結果と各不正証明書ケースの失敗理由が受入記録にあり、無断降格がない。

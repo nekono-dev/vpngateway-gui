@@ -1,6 +1,16 @@
 # 実機受入環境（LXD コンテナ）
 
-タスク 8.1 の受入手順。8.3〜8.6 は検証サーバ `192.168.3.240` 上に既設の LXD system container `acc-vpngwgui` の中で行う。判断日・ラボ確認日は 2026-11-19。受入記録は [.kiro/specs/single-node-deployment/acceptance-results.md](./acceptance-results.md) にタスクごとに追記する。
+タスク 8.1 の受入手順。8.3〜8.6 は検証サーバ `192.168.3.240` 上の LXD system container の中で行う。実際の実行方式は 0 章を優先し、1〜9 章は製品 bundle を手で配置する場合の手順と各測定の観点として使う。判断日・ラボ確認日は 2026-11-19。受入記録は [.kiro/specs/single-node-deployment/acceptance-results.md](./acceptance-results.md) にタスクごとに追記する。
+
+## 0. 実行方式（2026-11-19 の受入で採用）
+
+- Docker の導入受入（8.5 の要件 8.9）は、Docker 未導入の容器 `acc-vpngwgui-fresh`（`lxc launch 12a0de07e168 acc-vpngwgui-fresh -c security.nesting=true -c security.syscalls.intercept.mknod=true -c security.syscalls.intercept.setxattr=true`、スナップショット `clean-nodocker`）で行う。各 run の前にスナップショットへ戻す。
+- 8.3〜8.6 は、Docker を導入した `acc-vpngwgui-fresh` に root 以外の利用者を作り（`useradd -m runner`、`/etc/sudoers.d/runner` に NOPASSWD、`docker` グループ）、リポジトリ一式（開発ホストで `git archive --format=tar.gz HEAD` を作り scp と `lxc file push` で配置）を `/home/runner/repo` に展開して、`.github/workflows/e2e-hosted.yml` と同じ手順（`npm ci`、`npx playwright install --with-deps chromium`、`npm run export-openapi`、`npm run test:e2e-unit`、`npm run test:e2e`）を runner で実行する。Node.js 22 は 3 章の手順で導入する。
+- root で hosted の helper を動かさない。`topology.sh` は実行利用者の UID だけを元の経路へ戻す規則（`uidrange <UID> lookup 200`）を作るため、root で動かすと Docker の転送や docker-proxy まで元の経路へ出て、製品に届かなくなる。
+- 個別の測定（nft・Kill Switch）は、gateway の準備処理（`provision_group_prepare gateway`）で組んだ状態のまま、リポジトリ直下で `sudo -E bash <測定スクリプト>` として行う。使ったスクリプトは [acceptance-scripts/](./acceptance-scripts/) にある（`run-gateway.sh` は gateway 群だけを準備・実行し、`KEEP_UP=1` で状態を残す）。DNS 中継の待ち受けは hosted の既定（53 番、LAN 側アドレス）を使う。`DNS_RELAY_PORT=5353` にすると 53 番を問い合わせる試験と合わない。
+- 製品 bundle を手で配置する場合（1〜9 章）の模擬資材は、4.2 章の列挙では足りない。`git ls-files -z -- e2e/hosted e2e/common e2e/package.json e2e/tsconfig.json e2e/types docker-compose.e2e-mock.yml` の一式を送る（`e2e/package.json` の `type=module` と `e2e/common`・`e2e/hosted/services/zone.ts` が実行時に必要）。
+- 容器の systemd-networkd は DHCP の DNS サーバ（1.1.1.1・8.8.8.8）宛てに個別経路を入れる。製品の出口判定はこの経路に影響されない（c4bd560 以降）ため、経路を消す必要はない。
+- 受入結果は [acceptance-results.md](./acceptance-results.md) に記録する。
 
 ## 1. 接続と権限
 
@@ -245,7 +255,7 @@ for port in 18080 8443; do if ss -ltn "sport = :$port" | tail -n +2 | grep . >/d
 CHECKER
 ```
 
-## 6. 7.3 nftables の構文・時間・評価順序・通信経路
+## 6. 8.3 nftables の構文・時間・評価順序・通信経路
 
 各ケースの準備・設定、`lan` namespace で実行したコマンド、期待する応答または遮断、実測結果、時刻、nft ruleset/status 出力、合否を記録する。サービス起動前に、ルールを適用せず nft 構文を検査する。コンテナの root shell で実行する。
 
@@ -306,7 +316,7 @@ topology_route_isp
 provision_wait
 ```
 
-## 7. 7.4 Kill Switch の停止・障害時動作
+## 7. 8.4 Kill Switch の停止・障害時動作
 
 Kill Switch の true / false と停止方法を組み合わせる。異常終了は `docker kill -s KILL <proxy>`、hang は `docker pause <proxy>`（SIGSTOP を個別に見る場合は `docker exec <proxy> ... kill -STOP 1`）、通常停止は `docker stop <proxy>` を使う。`docker compose -p vpngwgui ps --format json` / `docker compose ps` で実際の container 名を調べ、生成名の suffix を決め打ちしない。測定中に限って自動再起動を無効にし、次のケース前に元の restart policy に戻す。
 
@@ -327,7 +337,7 @@ nft list table inet vpngwgui_guard
 
 認証済み API route `GET /api/v1/connection/gateway` は Gateway の `GET /net/status` を中継する。この応答から `gatewayGuard.state`、`healthy`、`leaseValid`、`lastUpdatedAt` を記録する。nft table の直接表示は kernel 側 guard の証拠となる。TLS 有効時は設定済み UDS mTLS を通る認証 API / UI route から読む。
 
-## 8. 7.5 ライフサイクル・データ保持・host-preparation・コンテナ再起動
+## 8. 8.5 ライフサイクル・データ保持・host-preparation・コンテナ再起動
 
 すべての lifecycle 操作で `docker compose -p vpngwgui` を使い、root / vendor / mock の `COMPOSE_FILE` 順序を維持する。
 
@@ -368,7 +378,7 @@ nft list table inet vpngwgui_guard
 
 各段階の前後で operator / settings data、provider config、bypass / DNS settings、volume 名、生成した証明書の保持状態を記録する。明示した削除試験以外で `down -v` を使わない。最後に container を削除する前に、コンテナ内で Compose down と host-preparation `remove` を実行し、受入結果をコンテナ外に保存する。
 
-## 9. 7.6 TLS 組み合わせと異常系
+## 9. 8.6 TLS 組み合わせと異常系
 
 TLS 証明書は短期間の試験資材である。別途配置した helper を使い、コンテナ内の lab 専用 directory に生成する。製品用の鍵を転送しない。`e2e/hosted/lib/tls-matrix-certs.sh` は Web / Gateway CA、server / client 証明書、wrong-CA、SAN 不一致、期限切れ証明書と `invalid/no-client/` 用 directory を作る。Compose の host path は `/root/vpngwgui/.work/tls-matrix/...` とし、Web HTTPS には `compose/web-tls.yml`、API↔Gateway mTLS には `compose/api-tls.yml` を root / vendor / mock fragment の後ろに追加する。Web は `web/server.crt` と `web/server.key` を使う。API TLS fragment は Gateway CA と `api-client.crt/key` を API に、Gateway server `server.crt/key` を proxy に mount する。
 
