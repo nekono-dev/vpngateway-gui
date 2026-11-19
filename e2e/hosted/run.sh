@@ -26,7 +26,7 @@ run_group() {
   project="$group"
   [ "$group" = stack ] && project="stack-api"
   if [ -n "$prep" ]; then
-    if ! prepare_group "$prep"; then
+    if ! provision_group_prepare "$prep"; then
       echo "$group prepare-failed" >> "$RESULT_FILE"
       sh e2e/hosted/lib/diagnose.sh "$group" || true
       return 2
@@ -42,21 +42,6 @@ run_group() {
     sh e2e/hosted/lib/diagnose.sh "$group" || true
   fi
   return "$rc"
-}
-
-# 準備: 前回の Compose project を停止し、経路を作り、mock Compose を起動して既定経路を切り替える。
-# 引数: 準備の種類（lifecycle・stack・gateway）。gateway は ISP 模擬サービスも起動する。
-# gateway は、ISP の模擬サービス（echo・DoH・平文 DNS）を isp の名前空間で起動してから経路を切り替える。
-prepare_group() {
-  group="$1"
-  hosted_cleanup
-  topology_down
-  topology_links || return 1
-  provision_start || return 1
-  if [ "$group" = gateway ]; then provision_isp_start || return 1; fi
-  topology_route_isp || return 1
-  provision_wait || return 1
-  return 0
 }
 
 overall=0

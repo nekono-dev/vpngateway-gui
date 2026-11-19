@@ -20,7 +20,10 @@ type TlsStartResult = {
   readonly logs: string;
   readonly states: readonly ComposeServiceState[];
   readonly origin: string;
+  readonly failure?: { readonly phase: "compose-up" | "api-state" | "origin" | "timeout"; readonly message: string };
 };
+
+let activeSetup: ReturnType<typeof config> | undefined;
 
 function command(args: readonly string[], env: NodeJS.ProcessEnv): { code: number; output: string } {
   const result = spawnSync("docker", [...args], { cwd: root, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"] });
@@ -72,6 +75,27 @@ function readStates(fragments: readonly string[], env: NodeJS.ProcessEnv): { cod
   return { code: result.code, states: parseComposePs(result.output), output: result.output };
 }
 
+function originProbe(origin: string, webTls: boolean): { ok: boolean; detail: string } {
+  const args = ["--silent", "--show-error", "--noproxy", "*", "--max-time", "2", "--output", "/dev/null", "--write-out", "%{http_code}"];
+  if (webTls) args.push("--cacert", join(certDir, "web/ca.crt"));
+  args.push(origin);
+  const result = spawnSync("curl", args, { cwd: root, encoding: "utf8", env: process.env });
+  const status = (result.stdout ?? "").trim();
+  const detail = `curl exit=${result.status ?? 127} HTTP=${status || "none"}${result.stderr ? ` ${result.stderr.trim()}` : ""}`;
+  return { ok: result.status === 0 && status === "200", detail };
+}
+
+function captureTlsDiagnostics(): void {
+  if (activeSetup === undefined) return;
+  const out = resolve("e2e/artifacts/hosted/tls/diag");
+  mkdirSync(out, { recursive: true });
+  const ps = command(composePsArgs(composeArgs([], activeSetup.fragments)), activeSetup.env);
+  writeFileSync(join(out, "compose-ps.txt"), `exit=${ps.code}\n${ps.output || "(no compose ps output)"}\n`);
+  const logs = command(composeArgs(["logs", "--no-color", "--tail", "300"], activeSetup.fragments), activeSetup.env);
+  writeFileSync(join(out, "compose-logs.txt"), `exit=${logs.code}\n${logs.output || "(no compose logs output)"}\n`);
+  writeFileSync(join(out, "tls-start-context.txt"), `origin=${activeSetup.origin}\ncompose-ps-exit=${ps.code}\ncompose-logs-exit=${logs.code}\n`);
+}
+
 async function start(case_: TlsCase, apiTlsOverride = false): Promise<TlsStartResult> {
   const setup = config(case_);
   let fragments = setup.fragments;
@@ -80,27 +104,41 @@ async function start(case_: TlsCase, apiTlsOverride = false): Promise<TlsStartRe
     writeFileSync(override, "services:\n  api:\n    environment:\n      GATEWAY_TLS_ENABLED: 'false'\n");
     fragments = [...fragments, override];
   }
+  activeSetup = { ...setup, fragments };
   command(composeArgs(["down"], fragments), setup.env);
   const up = command(composeArgs(["up", "-d"], fragments), setup.env);
   const exitCodes: Record<string, number> = { up: up.code };
   let logs = up.output;
   let states: ComposeServiceState[] = [];
+  let lastProbe = "origin not probed";
   const deadline = Date.now() + 90_000;
+  const withLogs = (current: string): string => {
+    const diagnostic = command(composeArgs(["logs", "--no-color", "--tail", "300"], fragments), setup.env);
+    return `${current}\ncompose logs exit=${diagnostic.code}\n${diagnostic.output}`;
+  };
   while (Date.now() < deadline) {
     const current = readStates(fragments, setup.env);
     states = current.states;
     if (current.code !== 0) logs += `\nps failed (${current.code}): ${current.output}`;
     for (const service of states) exitCodes[service.service] = service.exitCode;
-    const logResult = command(composeArgs(["logs", "--no-color", "api"], fragments), setup.env);
-    logs = `${logs}\n${logResult.output}`;
     const api = states.find((state) => state.service === "api");
-    if (up.code !== 0 || api?.state === "exited" || api?.state === "restarting") {
-      return { started: false, exitCodes, logs, states, origin: setup.origin };
+    if (up.code !== 0) {
+      return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "compose-up", message: `docker compose up exited ${up.code}` } };
     }
-    if (api?.state === "running") return { started: true, exitCodes, logs, states, origin: setup.origin };
+    if (api?.state === "exited" || api?.state === "restarting") {
+      if (case_.variant === "missing-client") {
+        return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "api-state", message: `expected fail-closed API state: ${api.state}` } };
+      }
+      return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "api-state", message: `API entered ${api.state}` } };
+    }
+    if (api?.state === "running") {
+      const probe = originProbe(setup.origin, case_.web);
+      lastProbe = probe.detail;
+      if (probe.ok) return { started: true, exitCodes, logs, states, origin: setup.origin };
+    }
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
   }
-  return { started: false, exitCodes, logs: `${logs}\nAPI container did not reach a terminal state before deadline`, states, origin: setup.origin };
+  return { started: false, exitCodes, logs: withLogs(`${logs}\nWeb origin did not answer before deadline: ${lastProbe}`), states, origin: setup.origin, failure: { phase: "timeout", message: `Web origin readiness timed out: ${lastProbe}` } };
 }
 
 async function loginAndCheck(page: import("@playwright/test").Page, origin: string): Promise<void> {
@@ -163,6 +201,8 @@ async function checkGatewayStatusAndControl(page: import("@playwright/test").Pag
 }
 
 test.describe.serial("Web HTTPS × Gateway TLS", () => {
+  test.setTimeout(120_000);
+
   test.beforeAll(() => {
     mkdirSync(certDir, { recursive: true });
     for (const [file, args] of [
@@ -173,6 +213,10 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
       const result = spawnSync(file, [...args], { cwd: root, stdio: "inherit" });
       if (result.status !== 0) throw new Error(`${file} failed while preparing the TLS matrix (exit ${result.status ?? 127})`);
     }
+  });
+
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) captureTlsDiagnostics();
   });
 
   test.afterAll(() => {
@@ -195,7 +239,7 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
   ] satisfies TlsCase[]) {
     test(`${row.name}: browser 認証と API 操作が成功し、平文降格しない`, async ({ page }) => {
       const result = await start(row);
-      expect(result.started, `up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
+      expect(result.started, `failure=${JSON.stringify(result.failure)}; up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
       await loginAndCheck(page, result.origin);
       await checkGatewayStatusAndControl(page);
       if (row.web) {
@@ -213,7 +257,7 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
   ] as const) {
     test(`Gateway ${variant}: TLS client が API 操作を拒否し、HTTP へ降格しない`, async ({ page }) => {
       const result = await start({ name: variant, web: false, gateway: true, variant });
-      expect(result.started, `up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
+      expect(result.started, `failure=${JSON.stringify(result.failure)}; up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
       expect(result.states.find((state) => state.service === "api")?.state).toBe("running");
       await loginAndCheck(page, result.origin);
       const requestStartedAt = new Date().toISOString();
@@ -248,7 +292,7 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
 
   test("API/Gateway TLS mismatch: 専用状態と UI 表示を示し、HTTP へ降格しない", async ({ page }) => {
     const result = await start({ name: "mode-mismatch", web: false, gateway: true }, true);
-    expect(result.started, `up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
+    expect(result.started, `failure=${JSON.stringify(result.failure)}; up=${result.exitCodes.up}; logs=${result.logs}`).toBe(true);
     await loginAndCheck(page, result.origin);
     await expect(page.getByText("API と Gateway の通信保護設定が一致しません")).toBeVisible();
     const status = await page.evaluate(async () => {

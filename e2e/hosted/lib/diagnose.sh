@@ -10,9 +10,24 @@ OUT="e2e/artifacts/hosted/$GROUP/diag"
 mkdir -p "$OUT"
 { ip -4 route show; echo '--- rule'; ip rule show; echo '--- table 100'; ip route show table 100; } > "$OUT/route.txt" 2>&1
 sudo nft list ruleset > "$OUT/nft.txt" 2>&1 || true
-sudo docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml ps > "$OUT/compose-ps.txt" 2>&1 || true
-sudo docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml logs --no-color --tail 300 > "$OUT/compose-logs.txt" 2>&1 || true
-sudo systemctl list-units 'vpngwgui*' --no-pager > "$OUT/units.txt" 2>&1 || true
+if [ "$GROUP" != tls ] || [ ! -s "$OUT/compose-ps.txt" ]; then
+  sudo docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml ps > "$OUT/compose-ps.txt" 2>&1 || true
+fi
+if [ "$GROUP" != tls ] || [ ! -s "$OUT/compose-logs.txt" ]; then
+  sudo docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml logs --no-color --tail 300 > "$OUT/compose-logs.txt" 2>&1 || true
+fi
+{
+  systemctl list-units 'vpngwgui*' --no-pager
+  echo '--- installed unit files'
+  systemctl list-unit-files 'vpngwgui*' --no-pager
+  echo '--- systemd state'
+  systemctl is-system-running
+} > "$OUT/units.txt" 2>&1 || true
+{
+  sysctl net.ipv4.ip_forward
+  sysctl net.ipv6.conf.all.forwarding
+} > "$OUT/sysctl.txt" 2>&1 || true
+sudo systemctl status --no-pager --full vpngwgui-boot-guard.service vpngwgui-host-reboot.path vpngwgui-host-reboot.service > "$OUT/host-preparation-status.txt" 2>&1 || true
 # ランナーへ直接 status を送り、応答の形（ExecResult か）を記録する（API の 500 の切り分け用）
 for v in protonvpn adguardvpn; do
   bin=/usr/bin/protonvpn

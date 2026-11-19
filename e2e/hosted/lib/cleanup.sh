@@ -3,13 +3,15 @@
 
 HOSTED_CLEANUP_RUNNING=0
 
-# 目的: 固定 project を volume 保持で停止し、topology を復元する。複数回呼んでも安全。
+# 目的: Compose、host-preparation、hosted .env、topology を順に片付ける。複数回呼んでも安全。
 hosted_cleanup() {
   [ "$HOSTED_CLEANUP_RUNNING" -eq 1 ] && return 0
   HOSTED_CLEANUP_RUNNING=1
   docker compose -p vpngwgui -f docker-compose.yml \
     -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml \
     -f docker-compose.e2e-mock.yml down --remove-orphans >/dev/null 2>&1 || true
+  sudo sh compose/host-preparation.sh remove >/dev/null 2>&1 || true
+  if command -v provision_restore_host_env >/dev/null 2>&1; then provision_restore_host_env || true; fi
   topology_down || true
   HOSTED_CLEANUP_RUNNING=0
 }

@@ -5,6 +5,9 @@
 
 PROVISION_TIMEOUT_S=180
 PROVISION_E2E_BUNDLE="/etc/vpngwgui/e2e-ca-bundle.crt"
+PROVISION_ENV_BACKUP="${E2E_WORK_DIR:-e2e/hosted/.work}/hosted-env.backup"
+PROVISION_ENV_EXISTED=0
+PROVISION_ENV_ACTIVE=0
 
 # 目的: fixture が定義する固定 project と fragment 構成で Compose 操作を実行する。
 # 出力: docker compose の標準出力。
@@ -25,11 +28,78 @@ provision_certs() {
 # 目的: HTTP 既定の root Compose を検証して起動する。TLS fragment・証明書は使用しない。
 provision_start() {
   provision_certs || return 1
-  export LAN_IFACE="${E2E_INSTALL_LAN_IFACE:-$E2E_BRIDGE}"
+  export LAN_IFACE="$E2E_BRIDGE"
   export WEB_PORT="$E2E_WEB_PORT"
   export VPN_PROVIDERS="protonvpn,adguardvpn"
   provision_compose config || return 1
   provision_compose up
+}
+
+# 目的: host-preparation が読む root .env に hosted topology の LAN を設定する。
+provision_set_host_env() {
+  mkdir -p "$(dirname "$PROVISION_ENV_BACKUP")"
+  if [ -f .env ]; then
+    cp -p .env "$PROVISION_ENV_BACKUP" || return 1
+    PROVISION_ENV_EXISTED=1
+  else
+    rm -f "$PROVISION_ENV_BACKUP"
+    PROVISION_ENV_EXISTED=0
+  fi
+  temporary_env=".env.hosted.$$"
+  if [ -f .env ]; then
+    awk '!/^[[:space:]]*LAN_IFACE[[:space:]]*=/' .env > "$temporary_env" || return 1
+  else
+    : > "$temporary_env"
+  fi
+  printf 'LAN_IFACE=%s\n' "$E2E_BRIDGE" >> "$temporary_env" || return 1
+  chmod 600 "$temporary_env" || return 1
+  mv "$temporary_env" .env || return 1
+  PROVISION_ENV_ACTIVE=1
+}
+
+# 目的: host-preparation の .env 変更を元に戻し、次の群と作業環境へ影響させない。
+provision_restore_host_env() {
+  if [ "$PROVISION_ENV_ACTIVE" -eq 1 ]; then
+    if [ "$PROVISION_ENV_EXISTED" -eq 1 ] && [ -f "$PROVISION_ENV_BACKUP" ]; then
+      cp -p "$PROVISION_ENV_BACKUP" .env || return 1
+    elif [ "$PROVISION_ENV_EXISTED" -eq 0 ]; then
+      rm -f .env
+    fi
+  fi
+  rm -f "$PROVISION_ENV_BACKUP"
+  PROVISION_ENV_EXISTED=0
+  PROVISION_ENV_ACTIVE=0
+}
+
+# 目的: topology 作成後、Compose 起動前にホスト要件を検査して適用する。
+provision_host_preparation() {
+  group="$1"
+  out="e2e/artifacts/hosted/$group/diag"
+  mkdir -p "$out"
+  provision_set_host_env || { echo 'hosted 用 .env を準備できませんでした' >&2; return 1; }
+  if ! sudo sh compose/host-preparation.sh check > "$out/host-preparation-check.txt" 2>&1; then
+    echo 'host-preparation check に失敗しました:' >&2
+    cat "$out/host-preparation-check.txt" >&2
+    return 1
+  fi
+  if ! sudo sh compose/host-preparation.sh apply > "$out/host-preparation-apply.txt" 2>&1; then
+    echo 'host-preparation apply に失敗しました:' >&2
+    cat "$out/host-preparation-apply.txt" >&2
+    return 1
+  fi
+}
+
+# 目的: hosted 群を準備する。host-preparation は topology が存在する間だけ適用する。
+provision_group_prepare() {
+  group="$1"
+  hosted_cleanup
+  topology_down
+  topology_links || return 1
+  provision_host_preparation "$group" || return 1
+  provision_start || return 1
+  if [ "$group" = gateway ]; then provision_isp_start || return 1; fi
+  topology_route_isp || return 1
+  provision_wait || return 1
 }
 
 # 目的: ISP 模擬サービスを名前空間 isp で起動し、起動を待つ（上限30秒）。

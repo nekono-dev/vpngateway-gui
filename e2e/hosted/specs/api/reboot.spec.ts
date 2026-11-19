@@ -39,7 +39,8 @@ test.describe.serial("再起動の依頼（stack・api）", () => {
   let uptimeBefore = 0;
 
   test.beforeAll(async () => {
-    // 監視を止めてから依頼ファイルを消す。これにより、試験の間はホストが再起動しない
+    // host-preparation apply が有効化した実 path unit を停止し、依頼ファイルを消してから試験する。
+    // hosted runner の再起動を避け、afterAll でも依頼を消してから監視を再開する。
     await run("sudo", ["systemctl", "stop", "vpngwgui-reboot.path"]);
     await clearRequest();
     await run("sudo", ["chmod", "0700", HOST_CTL_DIR]);

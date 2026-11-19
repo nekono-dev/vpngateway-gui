@@ -43,6 +43,8 @@ jobs:
           # 実 Docker の volume 保持テストが使うイメージ（ない場合はテストが skip されるため先に取得する）
           docker pull alpine:3.21
           npm run test:e2e-unit
+          sh e2e/hosted/tests/cleanup.test.sh
+          sh e2e/hosted/tests/provision-order.test.sh
 
       - name: E2E（hosted）
         env:
