@@ -179,7 +179,7 @@ async function runVendorTests(config: LiveConfig, session: LiveSession, forbidde
       results,
       forbidden,
       record: {
-        apiBaseUrl: config.apiBaseUrl,
+        webBaseUrl: config.webBaseUrl,
         vendor: session.vendor.vendor,
         baseline: session.baseline,
         settings: {

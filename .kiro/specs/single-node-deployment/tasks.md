@@ -154,7 +154,7 @@
   - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.7, 5.8, 8.1, 8.2, 8.8_
 
 ## 5. E2E と隣接テスト契約
-- [ ] 5. E2E と隣接テストを新しい通信契約へ追従させる
+- [x] 5. E2E と隣接テストを新しい通信契約へ追従させる
 - [x] 5.1 共通 E2E API client を Web origin `/api` 契約へ更新する
   - HTTP/HTTPS scheme に応じて client を選び、HTTPS 時のみ任意 Web CA を使い、未指定時は標準 trust store を検証する。
   - 観測できる完了条件: client test が `/api/v1` を使い、API CA の必須依存を持たない。
@@ -186,7 +186,7 @@
   - _Boundary: E2E_
   - _Depends: 5.2_
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.6, 8.5_
-- [ ] 5.6 vendor-live-e2e の URL/CA 前提を更新する
+- [x] 5.6 vendor-live-e2e の URL/CA 前提を更新する
   - 手動実 VPN 試験は Web 公開 URL の `/api` 経由を使い、HTTPS 時のみ任意 Web CA を受け付ける。API CA 前提を除き、CI 起動拒否を保つ。
   - 観測できる完了条件: 設定・prepare・関連 test が新 URL 契約を検証し、実 VPN 資格情報は hosted CI に渡らない。
   - _Boundary: E2E_
@@ -374,3 +374,4 @@
 - 5.7（hosted Gateway 通信）: 透過ゲートウェイ・明示的プロキシ・DNS 中継・迂回は `e2e/hosted/specs/gateway/*.spec.ts` の独立したケースで、Web origin `/api` の共通 client を使う。Kill Switch の対象範囲の表示（透過ゲートウェイのみ。明示的プロキシのみでは停止時の遮断を保証しない）は `web/src/components/dashboard/SettingsDialog.tsx` にあり、`e2e/hosted/specs/ui/setup-settings.spec.ts` のケースで確認する（接続設定を保存し、`finally` で復元して API セッションを破棄する）。hosted の実行は CI。
 - 5.4（hosted TLS matrix）: `e2e/hosted/specs/tls/tls-matrix.spec.ts`（Playwright の `tls` project）が Web HTTPS × Gateway TLS の4構成を、各行でログイン・Gateway 状態（`gatewayGuard` を含む正常応答＝TLS ON 行では実際の mTLS）・元に戻せる制御 PUT・Cookie の `Secure`（HTTPS 行のみ）で確認する。不正証明書のケースは、壊すのを1か所だけにする（別 CA ＝ proxy の server 証明書だけを無関係な CA 署名のものに差し替え、期限切れ、SAN 不一致、クライアント証明書なし＝API の client cert/key 設定だけを空）。各ケースは Compose の起動結果（終了コード・コンテナ状態・ログ）を `docker-compose-result.ts` で構造化して期限つきで確認し、API ログの原因コード（`gateway_tls_validation_failed`）と保護方式の不一致（専用 status・ログ・UI）も確認する。証明書は実行ごとに `e2e/hosted/lib/tls-matrix-certs.sh` で生成し、単体テスト `tls-certs.test.ts` で実 OpenSSL により検証済み。4.5 の追補として、API の TLS loader が不足した環境変数名（名前のみ）を示す変更と、`proxy-client` が TLS 検証失敗の原因コードを構造化して警告ログに出す変更を、別 commit で入れた。hosted の実行は CI。
 - 5.5（hosted lifecycle）: `e2e/hosted/specs/lifecycle/lifecycle.spec.ts` は、実際の hosted スタックで 資材更新相当（build + up -d）・recreate・通常 down + up・ベンダー別ファイルの取り外し（Proton だけを外し、通常 down のあとで、孤立するのが Proton の runner だけであることを project/service ラベルで確認してから `up -d --remove-orphans`。AdGuard の runner と状態、全 named volume、アプリデータが残る）・再取り付け（状態と volume を再利用）・`down -v`（全 named volume が消え、次の up は初期状態）を `test.step` ごとに確認する。ベンダー別の mock Compose fragment は `e2e/hosted/vendors/{protonvpn,adguardvpn}/compose.yml`。`compose.ts` に `composeBuildAndUp`・`composeRecreate` を追加。hosted の実行は CI。
+- 5.6（vendor-live）: `e2e/vendor-live/lib/config.ts` の `parseConfig` は `webBaseUrl`（Web の公開 URL。`/api` を付けない。HTTP/HTTPS）と任意の `webCaPath`（HTTPS で証明書がシステムに信頼されていないときだけ）を読み、旧キー `apiBaseUrl`/`caPath` は値を出さずに拒否して移行先を案内する。`probeApi` は 5.1 の共通 client（Web origin の `/api`）を使う。CI からの起動拒否は維持し、hosted の workflow には vendor-live の環境・資格情報を渡さない。作業者の手元の `e2e/vendor-live/config.local.json`（git 管理外）は旧キーのままなので、新しいキーへの書き換えが必要（README に手順）。

@@ -1,12 +1,12 @@
-// 責務: 検証サーバの URL・取り込んだ CA の場所・成果物の場所を読む。秘密は受け付けない。
-// 手動起動の検査（CI 環境からの起動の拒否）もここで行う（要件 7.1・7.2）。
+// 責務: Web 公開 URL・任意の Web CA・成果物の場所を読む。秘密は受け付けない。
+// 手動起動の検査（CI 環境からの起動の拒否）もここで行う（要件 8.6・8.7）。
 
 import { readFileSync } from "node:fs";
 
 /** 本ツールの設定。秘密を含まない（要件 1.7）。 */
 export interface LiveConfig {
-  readonly apiBaseUrl: string;   // 例: https://192.168.3.240:3000
-  readonly caPath: string;       // 検証サーバの API の証明書を発行した CA（開発サーバへ取り込んだ PEM）
+  readonly webBaseUrl: string; // 例: https://192.168.3.240:8443 または http://192.168.3.240:8080
+  readonly webCaPath?: string; // HTTPS 時に指定する Web 証明書の CA（開発サーバへ取り込んだ PEM）
   readonly artifactsDir: string; // 成果物の書き出し先
 }
 
@@ -14,7 +14,7 @@ export interface LiveConfig {
 export const DEFAULT_CONFIG_PATH = "e2e/vendor-live/config.local.json";
 
 /** 設定ファイルに書いてよいキー。これ以外は受け付けない。 */
-const ALLOWED_KEYS = ["apiBaseUrl", "caPath", "artifactsDir"] as const;
+const ALLOWED_KEYS = ["webBaseUrl", "webCaPath", "artifactsDir"] as const;
 
 /** CI 環境で設定される環境変数。1 つでも設定されていれば起動を拒否する。 */
 const CI_ENV_NAMES = ["CI", "GITHUB_ACTIONS", "GITLAB_CI", "JENKINS_URL", "BUILDKITE"] as const;
@@ -36,10 +36,10 @@ export function assertNotCi(env: NodeJS.ProcessEnv): void {
 }
 
 /**
- * 目的: 設定ファイルの内容を検査し、LiveConfig にする。秘密を含むキーは拒否する（要件 1.7・5.4）。
+ * 目的: 設定ファイルの内容を検査し、LiveConfig にする。API 直結設定や秘密を含むキーは拒否する。
  * 入力: raw(設定ファイルの JSON の文字列)。
  * 出力: LiveConfig。
- * 失敗時の方針: JSON が不正、キーが余分、URL が https でない、必須の値が無い場合は例外を投げる。
+ * 失敗時の方針: JSON が不正、キーが余分、Web origin が不正、必須の値が無い場合は例外を投げる。
  */
 export function parseConfig(raw: string): LiveConfig {
   const parsed: unknown = JSON.parse(raw);
@@ -51,17 +51,36 @@ export function parseConfig(raw: string): LiveConfig {
   for (const key of Object.keys(record)) {
     if (!(ALLOWED_KEYS as readonly string[]).includes(key)) {
       // 値は表示しない（秘密が含まれている可能性があるため）
+      if (key === "apiBaseUrl") {
+        throw new Error("旧設定キー「apiBaseUrl」は使用できない。Web 公開 URL の「webBaseUrl」に置き換える（例: https://host または http://host:port。末尾に /api を付けない）");
+      }
+      if (key === "caPath") {
+        throw new Error("旧設定キー「caPath」は使用できない。HTTPS の Web URL でシステムが信頼していない証明書を使う場合だけ「webCaPath」に置き換える。それ以外（HTTP または公開 CA の証明書）はキーを削除する");
+      }
       throw new Error(`設定ファイルに許可されていないキー「${key}」がある。資格情報は設定ファイルに書かない`);
     }
   }
 
-  const apiBaseUrl = requireString(record, "apiBaseUrl");
-  if (!apiBaseUrl.startsWith("https://")) {
-    throw new Error("apiBaseUrl は https で始まる必要がある（証明書を検証するため）");
+  const webBaseUrl = requireString(record, "webBaseUrl");
+  let webUrl: URL;
+  try {
+    webUrl = new URL(webBaseUrl);
+  } catch {
+    throw new Error("webBaseUrl は Web 公開 origin の URL である必要がある");
+  }
+  if (webUrl.protocol !== "http:" && webUrl.protocol !== "https:") {
+    throw new Error("webBaseUrl は http または https で始まる必要がある");
+  }
+  if (webUrl.username !== "" || webUrl.password !== "" || webUrl.pathname !== "/" || webUrl.search !== "" || webUrl.hash !== "") {
+    throw new Error("webBaseUrl には origin だけを指定する");
+  }
+  const webCaPath = record.webCaPath === undefined ? undefined : requireString(record, "webCaPath");
+  if (webCaPath !== undefined && webUrl.protocol !== "https:") {
+    throw new Error("webCaPath は HTTPS のときだけ指定できる");
   }
   return {
-    apiBaseUrl,
-    caPath: requireString(record, "caPath"),
+    webBaseUrl: webUrl.origin,
+    ...(webCaPath === undefined ? {} : { webCaPath }),
     artifactsDir: typeof record.artifactsDir === "string" ? record.artifactsDir : "e2e/artifacts/vendor-live",
   };
 }
@@ -78,7 +97,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, path: string = DEFAULT_CONFIG
   try {
     raw = readFileSync(path, "utf8");
   } catch {
-    throw new Error(`設定ファイル（${path}）が無い。apiBaseUrl・caPath を書いて作成する`);
+    throw new Error(`設定ファイル（${path}）が無い。webBaseUrl と、必要なら HTTPS 用の webCaPath を書いて作成する`);
   }
   return parseConfig(raw);
 }
