@@ -11,7 +11,7 @@ import { apiClient, loadAdmin } from "../../fixtures/stack";
 const run = promisify(execFile);
 const LOGIN = "/v1/operator/session";
 const REBOOT = "/v1/gateway/reboot";
-/** 依頼用ディレクトリ（installer/setup.sh の HOST_CTL_DIR と一致させる）。 */
+/** 依頼用ディレクトリ（Compose が proxy へ mount するパス）。 */
 const HOST_CTL_DIR = "/var/lib/vpngwgui-host-ctl";
 const REQUEST_FILE = `${HOST_CTL_DIR}/reboot-request`;
 

@@ -12,12 +12,7 @@ export default defineConfig({
   // 群ごとに別の JSON へ書く（run.sh が E2E_JSON_OUT を群ごとに与える）
   reporter: [["json", { outputFile: process.env.E2E_JSON_OUT ?? "../artifacts/hosted/playwright.json" }], ["list"]],
   use: {
-    baseURL: "https://127.0.0.1:18080",
-    // Web UI の証明書は導入のたびに作る自己署名（製品の仕様）。ブラウザの試験は画面の挙動を確かめる。API の検証は CA で行う
-    ignoreHTTPSErrors: true,
-    // Service Worker（/sw.js）の取得は ignoreHTTPSErrors の対象外のため、ブラウザの起動引数でも証明書の警告を無視する。
-    // 製品の Service Worker の登録失敗は握りつぶされる（web/src/main.tsx）。試験の対象は画面の挙動である
-    launchOptions: { args: ["--ignore-certificate-errors"] },
+    baseURL: `http://127.0.0.1:${process.env.E2E_WEB_PORT ?? "18080"}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },

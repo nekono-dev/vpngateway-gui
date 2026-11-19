@@ -25,11 +25,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: 依存と Playwright の導入（外部の取得は経路を変える前に行う）
+      - name: 依存と Playwright の導入
         run: |
           set -eux
           npm ci --no-audit --no-fund >/dev/null
           npx playwright install --with-deps chromium >/dev/null
+
+      - name: Compose fixture の既定構成を検証
+        run: |
+          docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml config --quiet
+
+      - name: E2E unit と Compose 契約
+        run: npm run test:e2e-unit
 
       - name: E2E（hosted）
         env:

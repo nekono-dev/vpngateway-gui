@@ -6,10 +6,12 @@
 # 使い方: npm run test:e2e   （リポジトリルートで）
 
 set -u
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 2
 . e2e/hosted/lib/env.sh
 . e2e/hosted/lib/topology.sh
 . e2e/hosted/lib/provision.sh
+. e2e/hosted/lib/cleanup.sh
+hosted_install_traps
 
 ARTIFACTS="e2e/artifacts/hosted"
 mkdir -p "$ARTIFACTS"
@@ -42,17 +44,14 @@ run_group() {
   return "$rc"
 }
 
-# 準備: 前回の導入を消し、経路を作り、導入して起動し、既定経路を切り替える。
-# 引数: 準備の種類（stack・gateway）。lifecycle は試験自身が導入するため、この関数を使わない。
+# 準備: 前回の Compose project を停止し、経路を作り、mock Compose を起動して既定経路を切り替える。
+# 引数: 準備の種類（lifecycle・stack・gateway）。gateway は ISP 模擬サービスも起動する。
 # gateway は、ISP の模擬サービス（echo・DoH・平文 DNS）を isp の名前空間で起動してから経路を切り替える。
 prepare_group() {
   group="$1"
+  hosted_cleanup
   topology_down
-  if [ -x "$E2E_WORK_DIR/install.sh" ]; then
-    sudo sh "$E2E_WORK_DIR/install.sh" uninstall --purge >/dev/null 2>&1 || true
-  fi
   topology_links || return 1
-  provision_install "$PWD" "$(git rev-parse HEAD)" || return 1
   provision_start || return 1
   if [ "$group" = gateway ]; then provision_isp_start || return 1; fi
   topology_route_isp || return 1
@@ -61,8 +60,8 @@ prepare_group() {
 }
 
 overall=0
-# 群の順序: lifecycle（導入を試験自身が行う）→ stack（導入・起動）→ gateway（経路を使う）
-run_group lifecycle "" || overall=$?
+# 群の順序: lifecycle（volume retention）→ stack（Web/API）→ gateway（経路を使う）
+run_group lifecycle "lifecycle" || overall=$?
 for group in stack gateway; do
   # stack 群は specs/ui と specs/api からなる（ui が先に実行される）
   case "$group" in
@@ -77,9 +76,7 @@ for group in stack gateway; do
   run_group "$group" "$group" || { rc=$?; [ "$rc" -eq 2 ] && [ "$overall" -eq 0 ] && overall=2; [ "$rc" -eq 1 ] && [ "$overall" -eq 0 ] && overall=1; }
 done
 
-# 後始末: 経路と導入を戻す（成否にかかわらず）
-topology_down
-[ -x "$E2E_WORK_DIR/install.sh" ] && sudo sh "$E2E_WORK_DIR/install.sh" uninstall --purge >/dev/null 2>&1 || true
+# 後始末は EXIT trap が行う（volume は保持する）。
 
 jsons=""
 for group in lifecycle stack gateway; do
