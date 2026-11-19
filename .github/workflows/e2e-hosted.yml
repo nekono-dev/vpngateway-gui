@@ -33,7 +33,7 @@ jobs:
 
       - name: Compose fixture の既定構成を検証
         run: |
-          docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml config --quiet
+          docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml -f e2e/hosted/vendors/protonvpn/compose.yml -f e2e/hosted/vendors/adguardvpn/compose.yml config --quiet
 
       - name: E2E unit と Compose 契約
         run: npm run test:e2e-unit

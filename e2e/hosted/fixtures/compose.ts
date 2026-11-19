@@ -7,6 +7,8 @@ export const HOSTED_COMPOSE_FRAGMENTS = [
   "vendors/protonvpn/compose.yml",
   "vendors/adguardvpn/compose.yml",
   "docker-compose.e2e-mock.yml",
+  "e2e/hosted/vendors/protonvpn/compose.yml",
+  "e2e/hosted/vendors/adguardvpn/compose.yml",
 ] as const;
 
 export interface ComposeConfig {
@@ -59,6 +61,19 @@ export function validateComposeConfig(fragments: readonly string[] = [], runner:
 export function composeUp(fragments: readonly string[] = [], runner: ComposeRunner = defaultRunner): string {
   validateComposeConfig(fragments, runner);
   return runCompose(["up", "-d", "--build"], fragments, COMPOSE_PROJECT, runner);
+}
+
+/** 資材更新を模擬し、同じ project で build 後にサービスを起動する。 */
+export function composeBuildAndUp(fragments: readonly string[] = [], runner: ComposeRunner = defaultRunner): string {
+  validateComposeConfig(fragments, runner);
+  runCompose(["build"], fragments, COMPOSE_PROJECT, runner);
+  return runCompose(["up", "-d"], fragments, COMPOSE_PROJECT, runner);
+}
+
+/** named volume を保持したまま全サービスを再作成する。 */
+export function composeRecreate(fragments: readonly string[] = [], runner: ComposeRunner = defaultRunner): string {
+  validateComposeConfig(fragments, runner);
+  return runCompose(["up", "-d", "--force-recreate"], fragments, COMPOSE_PROJECT, runner);
 }
 
 /** volume を保持して Compose を停止する。 */

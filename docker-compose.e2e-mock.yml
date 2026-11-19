@@ -2,20 +2,13 @@
 # 本番では使わない。hosted fixture が root Compose と一緒に `-f` で選択する（e2e/hosted/lib/provision.sh）。
 # composeの合成では build の dockerfile の値が、この上書きで置き換わる（context・ユーザー・ネットワークは本番と同じ）。
 services:
-  runner-protonvpn:
-    # モックのランナーは非 root（10001）で動かす。ランナーのソケット（0770）の所有者を、プロキシ（10001）と揃えるため。
-    # 本番の runner は、エントリポイントの都合で root で起動する（vendors/protonvpn/compose.yml）。
-    user: "10001:10001"
-    build:
-      context: .
-      dockerfile: e2e/hosted/vendors/protonvpn/Dockerfile
-  runner-adguardvpn:
-    build:
-      context: .
-      dockerfile: e2e/hosted/vendors/adguardvpn/Dockerfile
   proxy:
     # 検証の IP 確認（ISP の echo）は、テスト CA で検証する（要件 8.6）。curl の既定の信頼の束を、テスト CA を含む束へ差し替える
     environment:
       CURL_CA_BUNDLE: /etc/vpngwgui/e2e-ca-bundle.crt
     volumes:
       - /etc/vpngwgui/e2e-ca-bundle.crt:/etc/vpngwgui/e2e-ca-bundle.crt:ro
+
+volumes:
+  proton-config: {}
+  adguard-data: {}

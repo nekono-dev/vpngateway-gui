@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { composeArgs, composeConfig, composeDown, composeDownVolumes, composeUp, type ComposeConfig } from "./compose.js";
+import { composeArgs, composeBuildAndUp, composeConfig, composeDown, composeDownVolumes, composeRecreate, composeUp, type ComposeConfig } from "./compose.js";
 
 describe("hosted Compose fixture", () => {
   it("全 lifecycle 呼び出しで固定 project を明示し、fragment を root の後ろに並べる", () => {
@@ -78,6 +78,27 @@ describe("hosted Compose fixture", () => {
     expect(firstSelection.volumes["proton-config"].name).toBe(reselected.volumes["proton-config"].name);
   });
 
+  it("vendor を1つだけ外した mock 構成では他方の runner だけを定義する", () => {
+    const full = composeConfig([
+      "vendors/protonvpn/compose.yml",
+      "vendors/adguardvpn/compose.yml",
+      "docker-compose.e2e-mock.yml",
+      "e2e/hosted/vendors/protonvpn/compose.yml",
+      "e2e/hosted/vendors/adguardvpn/compose.yml",
+    ]);
+    const detachedProton = composeConfig([
+      "vendors/adguardvpn/compose.yml",
+      "docker-compose.e2e-mock.yml",
+      "e2e/hosted/vendors/adguardvpn/compose.yml",
+    ]);
+
+    expect(full.services["runner-protonvpn"]).toBeDefined();
+    expect(full.services["runner-adguardvpn"]).toBeDefined();
+    expect(detachedProton.services["runner-protonvpn"]).toBeUndefined();
+    expect(detachedProton.services["runner-adguardvpn"]).toBeDefined();
+    expect(detachedProton.volumes["adguard-data"]).toBeDefined();
+  });
+
   it("Compose lifecycle を注入 runner 経由で実行し、失敗時はログ確認の手掛かりを含める", () => {
     const calls: { file: string; args: string[] }[] = [];
     const runner = (file: string, args: readonly string[]): string => {
@@ -105,6 +126,25 @@ describe("hosted Compose fixture", () => {
     };
     expect(() => composeUp(fragments, failingRunner)).toThrow(/docker compose .* logs/);
     expect(failedAtUp).toBe(true);
+  });
+
+  it("更新・再作成の lifecycle command を固定 project で実行する", () => {
+    const calls: { file: string; args: string[] }[] = [];
+    const runner = (file: string, args: readonly string[]): string => {
+      calls.push({ file, args: [...args] });
+      return "ok";
+    };
+    const fragments = ["vendors/protonvpn/compose.yml", "docker-compose.e2e-mock.yml"];
+
+    expect(composeBuildAndUp(fragments, runner)).toBe("ok");
+    expect(composeRecreate(fragments, runner)).toBe("ok");
+    expect(calls).toEqual([
+      { file: "docker", args: ["compose", "-p", "vpngwgui", "-f", "docker-compose.yml", "-f", fragments[0], "-f", fragments[1], "config", "--quiet"] },
+      { file: "docker", args: ["compose", "-p", "vpngwgui", "-f", "docker-compose.yml", "-f", fragments[0], "-f", fragments[1], "build"] },
+      { file: "docker", args: ["compose", "-p", "vpngwgui", "-f", "docker-compose.yml", "-f", fragments[0], "-f", fragments[1], "up", "-d"] },
+      { file: "docker", args: ["compose", "-p", "vpngwgui", "-f", "docker-compose.yml", "-f", fragments[0], "-f", fragments[1], "config", "--quiet"] },
+      { file: "docker", args: ["compose", "-p", "vpngwgui", "-f", "docker-compose.yml", "-f", fragments[0], "-f", fragments[1], "up", "-d", "--force-recreate"] },
+    ]);
   });
 
   it("COMPOSE_PROJECT_NAME と -p は Compose の name を上書きする", () => {

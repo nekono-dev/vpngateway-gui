@@ -179,7 +179,7 @@
   - _Boundary: E2E_
   - _Depends: 5.2, 5.3, 4.1, 4.5_
   - _Requirements: 3.3, 3.4, 3.6, 5.3, 5.4, 5.6, 5.8, 8.4_
-- [ ] 5.5 hosted lifecycle と保存データ削除を E2E 化する
+- [x] 5.5 hosted lifecycle と保存データ削除を E2E 化する
   - 資材更新相当・recreate・down・条件付き remove-orphans・down -v を検証し、通常操作でデータ保持、明示削除でのみ volume 削除を確認する。
   - remove-orphans は vendor fragment を先に外した結果 runner が orphan になった場合に限り、固定 project 配下の orphan であることと named volume が保持されることを確認して実行する。fragment 除外前に通常の down を行い、orphan 回復手順も確認する。
   - 観測できる完了条件: E2E が管理者/設定/favorite/audit/vendor state の保持と down -v による削除を確認する。
@@ -373,3 +373,4 @@
 - 5.3（hosted VPN 操作）: `e2e/hosted/specs/api/{vpn,locations}.spec.ts` は Web origin `/api` の共通 client で、ベンダー切替・接続・切断・都市/サーバー選択・お気に入り・距離順を項目別のケースにした。接続のケースは `finally` で必ず切断する。runner の許可リストの拒否は、runner の制御 UDS へ許可コマンドと許可外コマンドを送り、200 と 403 `binary_not_allowed` を確認する独立ケース。hosted Playwright は開発ホストでは実行しておらず（型検査・`--list`・独立レビューのみ）、実行は hosted の CI で行う。
 - 5.7（hosted Gateway 通信）: 透過ゲートウェイ・明示的プロキシ・DNS 中継・迂回は `e2e/hosted/specs/gateway/*.spec.ts` の独立したケースで、Web origin `/api` の共通 client を使う。Kill Switch の対象範囲の表示（透過ゲートウェイのみ。明示的プロキシのみでは停止時の遮断を保証しない）は `web/src/components/dashboard/SettingsDialog.tsx` にあり、`e2e/hosted/specs/ui/setup-settings.spec.ts` のケースで確認する（接続設定を保存し、`finally` で復元して API セッションを破棄する）。hosted の実行は CI。
 - 5.4（hosted TLS matrix）: `e2e/hosted/specs/tls/tls-matrix.spec.ts`（Playwright の `tls` project）が Web HTTPS × Gateway TLS の4構成を、各行でログイン・Gateway 状態（`gatewayGuard` を含む正常応答＝TLS ON 行では実際の mTLS）・元に戻せる制御 PUT・Cookie の `Secure`（HTTPS 行のみ）で確認する。不正証明書のケースは、壊すのを1か所だけにする（別 CA ＝ proxy の server 証明書だけを無関係な CA 署名のものに差し替え、期限切れ、SAN 不一致、クライアント証明書なし＝API の client cert/key 設定だけを空）。各ケースは Compose の起動結果（終了コード・コンテナ状態・ログ）を `docker-compose-result.ts` で構造化して期限つきで確認し、API ログの原因コード（`gateway_tls_validation_failed`）と保護方式の不一致（専用 status・ログ・UI）も確認する。証明書は実行ごとに `e2e/hosted/lib/tls-matrix-certs.sh` で生成し、単体テスト `tls-certs.test.ts` で実 OpenSSL により検証済み。4.5 の追補として、API の TLS loader が不足した環境変数名（名前のみ）を示す変更と、`proxy-client` が TLS 検証失敗の原因コードを構造化して警告ログに出す変更を、別 commit で入れた。hosted の実行は CI。
+- 5.5（hosted lifecycle）: `e2e/hosted/specs/lifecycle/lifecycle.spec.ts` は、実際の hosted スタックで 資材更新相当（build + up -d）・recreate・通常 down + up・ベンダー別ファイルの取り外し（Proton だけを外し、通常 down のあとで、孤立するのが Proton の runner だけであることを project/service ラベルで確認してから `up -d --remove-orphans`。AdGuard の runner と状態、全 named volume、アプリデータが残る）・再取り付け（状態と volume を再利用）・`down -v`（全 named volume が消え、次の up は初期状態）を `test.step` ごとに確認する。ベンダー別の mock Compose fragment は `e2e/hosted/vendors/{protonvpn,adguardvpn}/compose.yml`。`compose.ts` に `composeBuildAndUp`・`composeRecreate` を追加。hosted の実行は CI。
