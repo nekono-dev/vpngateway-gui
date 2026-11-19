@@ -249,7 +249,7 @@
   - _Requirements: 1.3, 1.4, 7.2_
 
 ## 7. Docker 導入対応とホスト準備の統合
-- [ ] 7. Docker/Compose 導入を含む host-preparation を実装し検証する
+- [x] 7. Docker/Compose 導入を含む host-preparation を実装し検証する
 - [x] 7.1 CLI 引数と Docker 非依存の前提検査を分離する
   - `apply [--yes]` だけを受け付け、`--yes` は `apply` の後ろに限る。他の操作・位置・重複・余分な引数は usage error 2 とする。
   - `/dev/tty` から同意を取得し、stdin のリダイレクトを対話同意と誤認しない。tty がなく `--yes` もない場合は変更前に非0終了し `--yes` を案内する。
@@ -287,7 +287,7 @@
   - _Boundary: README documentation_
   - _Depends: 7.1, 7.2_
   - _Requirements: 7.1, 7.6_
-- [ ] 7.6 Docker 導入処理の網羅確認を行う
+- [x] 7.6 Docker 導入処理の網羅確認を行う
   - 7.3 で追加した分岐別単体テストを前提に、部分失敗時の停止位置と、未導入・同意拒否・tty 不在・取得/導入/再検査失敗で state や sysctl/guard/reboot/daemon.json などが未変更である保証を網羅的に確認する。
   - 全 host-preparation suite と ShellCheck を実行し、テスト runner への収録を確認する。7.3 のテスト可能入口や主要分岐の単体テストをこのタスクで新設しない。
   - 観測できる完了条件: 部分失敗・無変更保証の確認結果が揃い、`sh compose/host-preparation/tests/run.sh` と ShellCheck が成功する。

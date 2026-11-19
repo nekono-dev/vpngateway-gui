@@ -9,7 +9,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT HUP INT TERM
 ARCHIVE="$TMP_ROOT/vpngwgui-test.tar.gz"
 env -i PATH="$PATH" sh "$ROOT/scripts/build-compose-bundle.sh" test "$ARCHIVE"
 
-tar -tzf "$ARCHIVE" > "$TMP_ROOT/contents.txt"
+tar -tzf "$ARCHIVE" | sed 's#^\./##' > "$TMP_ROOT/contents.txt"
 for required in \
   docker-compose.yml .env.example .dockerignore README.md LICENSE package.json package-lock.json \
   tsconfig.base.json compose/web-tls.yml compose/api-tls.yml \
@@ -17,7 +17,7 @@ for required in \
   compose/host-preparation/common.sh compose/host-preparation/docker-forward.sh compose/host-preparation/docker-install.sh vendors/adguardvpn/compose.yml \
   vendors/protonvpn/compose.yml api/Dockerfile web/Dockerfile proxy/Dockerfile
 do
-  if ! grep -F "/$required" "$TMP_ROOT/contents.txt" >/dev/null; then
+  if ! grep -Fqx "vpngwgui-test/$required" "$TMP_ROOT/contents.txt"; then
     printf 'bundle に必須パスがありません: %s\n' "$required" >&2
     exit 1
   fi
@@ -43,7 +43,7 @@ find "$ROOT/compose/host-preparation" -type f ! -path '*/tests/*' -print | while
     printf 'host-preparation 資材が manifest にありません: %s\n' "$relative_path" >&2
     exit 1
   fi
-  if ! grep -F "/$relative_path" "$TMP_ROOT/contents.txt" >/dev/null; then
+  if ! grep -Fqx "vpngwgui-test/$relative_path" "$TMP_ROOT/contents.txt"; then
     printf 'host-preparation 資材が bundle にありません: %s\n' "$relative_path" >&2
     exit 1
   fi
