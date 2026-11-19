@@ -70,4 +70,9 @@ openssl ca -batch -config "$OUT/invalid/ca.cnf" -startdate 20200101000000Z -endd
   -out "$OUT/invalid/expired-server.crt" 2>/dev/null
 rm -f "$OUT/invalid/expired-server.csr" "$OUT/invalid/expired-server.ext" "$OUT/invalid/ca.cnf" "$OUT/invalid/ca-db"/*
 
+# hosted E2E 専用の使い捨て鍵を、sudo/chown に依存せず UID 10001 から読めるようにする。
+# 本番用の秘密鍵にはこの権限を適用しない。
+find "$OUT" -type d -exec chmod 0755 {} \;
+find "$OUT" -type f \( -name '*.crt' -o -name '*.key' \) -exec chmod 0644 {} \;
+
 echo "TLS matrix 証明書を生成した: $OUT"
