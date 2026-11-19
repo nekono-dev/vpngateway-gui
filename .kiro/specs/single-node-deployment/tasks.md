@@ -201,7 +201,7 @@
 
 ## 6. 配布・文書・installer 撤去
 - [ ] 6. Compose 配布・文書へ移行し installer を撤去する
-- [ ] 6.1 配布 workflow を Compose bundle の公開・検査へ変更する
+- [x] 6.1 配布 workflow を Compose bundle の公開・検査へ変更する
   - release/installer-check workflow を installer 配布から Compose 資材・`.env.example`・host-preparation 資材の配布/検査へ置換する。
   - 観測できる完了条件: workflow artifact に必要資材が含まれ、installer bootstrap が配布されない。
   - _Boundary: 配布・文書_

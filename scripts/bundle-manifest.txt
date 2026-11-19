@@ -1,0 +1,26 @@
+# 責務: Compose bundle に含める、Compose 実行・ビルドに必要なリポジトリ相対パスを列挙する。
+.env.example
+.dockerignore
+LICENSE
+LICENSE-jp
+README.md
+docker-compose.yml
+package.json
+package-lock.json
+tsconfig.base.json
+api
+web
+proxy
+vendors
+compose/api-tls.yml
+compose/web-tls.yml
+compose/host-preparation.sh
+compose/gateway-entrypoint.sh
+compose/host-preparation/boot-guard.sh
+compose/host-preparation/common.sh
+compose/host-preparation/host-reboot.sh
+compose/host-preparation/paths.sh
+compose/host-preparation/remove.sh
+compose/host-preparation/state.sh
+compose/host-preparation/status.sh
+compose/host-preparation/sysctl.sh

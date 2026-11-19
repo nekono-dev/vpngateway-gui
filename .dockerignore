@@ -1,0 +1,17 @@
+# 責務: Docker build context から生成物・開発用テスト・秘密情報を除外する。
+.git
+.claude
+installer
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+**/dist-server
+**/coverage
+**/testdata
+**/*.test.*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
