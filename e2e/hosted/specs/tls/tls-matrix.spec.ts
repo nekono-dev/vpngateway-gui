@@ -75,13 +75,21 @@ function readStates(fragments: readonly string[], env: NodeJS.ProcessEnv): { cod
   return { code: result.code, states: parseComposePs(result.output), output: result.output };
 }
 
-function originProbe(origin: string, webTls: boolean): { ok: boolean; detail: string } {
+function readApiLifetime(fragments: readonly string[], env: NodeJS.ProcessEnv): string | undefined {
+  const idResult = command([...composeArgs([], fragments), "ps", "-q", "api"], env);
+  const containerId = idResult.output.trim().split(/\s+/)[0];
+  if (idResult.code !== 0 || !containerId) return undefined;
+  const inspect = command(["inspect", "--format", "{{.RestartCount}} {{.State.StartedAt}}", containerId], env);
+  return inspect.code === 0 ? inspect.output.trim() : undefined;
+}
+
+function apiProbe(origin: string, webTls: boolean): { ok: boolean; detail: string } {
   const args = ["--silent", "--show-error", "--noproxy", "*", "--max-time", "2", "--output", "/dev/null", "--write-out", "%{http_code}"];
   if (webTls) args.push("--cacert", join(certDir, "web/ca.crt"));
-  args.push(origin);
+  args.push(`${origin}/api/v1/operator`);
   const result = spawnSync("curl", args, { cwd: root, encoding: "utf8", env: process.env });
   const status = (result.stdout ?? "").trim();
-  const detail = `curl exit=${result.status ?? 127} HTTP=${status || "none"}${result.stderr ? ` ${result.stderr.trim()}` : ""}`;
+  const detail = `API curl exit=${result.status ?? 127} HTTP=${status || "none"}${result.stderr ? ` ${result.stderr.trim()}` : ""}`;
   return { ok: result.status === 0 && status === "200", detail };
 }
 
@@ -110,8 +118,10 @@ async function start(case_: TlsCase, apiTlsOverride = false): Promise<TlsStartRe
   const exitCodes: Record<string, number> = { up: up.code };
   let logs = up.output;
   let states: ComposeServiceState[] = [];
-  let lastProbe = "origin not probed";
-  const deadline = Date.now() + 90_000;
+  let lastProbe = "API not probed";
+  let stableSince: number | undefined;
+  let stableApiLifetime: string | undefined;
+  const deadline = Date.now() + (case_.variant === "missing-client" ? 30_000 : 90_000);
   const withLogs = (current: string): string => {
     const diagnostic = command(composeArgs(["logs", "--no-color", "--tail", "300"], fragments), setup.env);
     return `${current}\ncompose logs exit=${diagnostic.code}\n${diagnostic.output}`;
@@ -126,19 +136,35 @@ async function start(case_: TlsCase, apiTlsOverride = false): Promise<TlsStartRe
       return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "compose-up", message: `docker compose up exited ${up.code}` } };
     }
     if (api?.state === "exited" || api?.state === "restarting") {
-      if (case_.variant === "missing-client") {
-        return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "api-state", message: `expected fail-closed API state: ${api.state}` } };
+      stableSince = undefined;
+      const diagnosticLogs = withLogs(logs);
+      if (case_.variant === "missing-client" && diagnosticLogs.includes("Gateway TLS configuration missing required environment variables: GATEWAY_TLS_CLIENT_CERT_FILE, GATEWAY_TLS_CLIENT_KEY_FILE")) {
+        logs = diagnosticLogs;
+        return { started: false, exitCodes, logs, states, origin: setup.origin, failure: { phase: "api-state", message: `expected fail-closed API state: ${api.state}` } };
       }
+      logs = diagnosticLogs;
       return { started: false, exitCodes, logs: withLogs(logs), states, origin: setup.origin, failure: { phase: "api-state", message: `API entered ${api.state}` } };
     }
     if (api?.state === "running") {
-      const probe = originProbe(setup.origin, case_.web);
+      const apiLifetime = readApiLifetime(fragments, setup.env);
+      if (apiLifetime === undefined) {
+        stableSince = undefined;
+        stableApiLifetime = undefined;
+      } else if (stableSince === undefined || apiLifetime !== stableApiLifetime) {
+        stableSince = Date.now();
+        stableApiLifetime = apiLifetime;
+      }
+      const probe = apiProbe(setup.origin, case_.web);
       lastProbe = probe.detail;
-      if (probe.ok) return { started: true, exitCodes, logs, states, origin: setup.origin };
+      if (!probe.ok) stableSince = undefined;
+      if (probe.ok && stableSince !== undefined && Date.now() - stableSince >= 3_000) return { started: true, exitCodes, logs, states, origin: setup.origin };
+    } else {
+      stableSince = undefined;
+      stableApiLifetime = undefined;
     }
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
   }
-  return { started: false, exitCodes, logs: withLogs(`${logs}\nWeb origin did not answer before deadline: ${lastProbe}`), states, origin: setup.origin, failure: { phase: "timeout", message: `Web origin readiness timed out: ${lastProbe}` } };
+  return { started: false, exitCodes, logs: withLogs(`${logs}\nAPI readiness did not hold before deadline: ${lastProbe}`), states, origin: setup.origin, failure: { phase: "timeout", message: `API readiness timed out: ${lastProbe}` } };
 }
 
 async function loginAndCheck(page: import("@playwright/test").Page, origin: string): Promise<void> {
