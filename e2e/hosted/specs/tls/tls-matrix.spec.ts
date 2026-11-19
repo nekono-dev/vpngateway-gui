@@ -151,7 +151,8 @@ async function loginAndCheck(page: import("@playwright/test").Page, origin: stri
   );
   await page.getByRole("button", { name: /^ログイン/ }).click();
   const loginResponse = await loginResponsePromise;
-  await expectSessionCookieSecurity(loginResponse.headers()["set-cookie"], origin.startsWith("https://"));
+  // headers() は set-cookie を含まないため、全ヘッダーを取得できる headerValue で読む
+  await expectSessionCookieSecurity((await loginResponse.headerValue("set-cookie")) ?? undefined, origin.startsWith("https://"));
   await expect(page.getByRole("button", { name: "ログアウト" })).toBeVisible();
   const apiStatus = await page.evaluate(async () => (await fetch("/api/v1/operator")).status);
   expect(apiStatus).toBe(200);

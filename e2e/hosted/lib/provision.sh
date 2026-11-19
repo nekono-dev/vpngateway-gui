@@ -98,7 +98,9 @@ provision_group_prepare() {
   provision_host_preparation "$group" || return 1
   provision_start || return 1
   if [ "$group" = gateway ]; then provision_isp_start || return 1; fi
-  topology_route_isp || return 1
+  # lifecycle は資材更新相当の build（レジストリへの接続が要る）を試験の途中で行い、通信の経路には依存しない。
+  # 既定経路を ISP 模擬へ切り替えると build が Docker Hub に届かず失敗するため、lifecycle は実回線の経路のまま実行する。
+  if [ "$group" != lifecycle ]; then topology_route_isp || return 1; fi
   provision_wait || return 1
 }
 
