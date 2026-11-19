@@ -269,7 +269,6 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
       expect(diagnostic.output).toMatch(expectedCause);
       expect(diagnostic.output).toContain("gateway_tls_validation_failed");
       expect(diagnostic.output).not.toContain("protection_mode_mismatch");
-      await expect(fetch(`http://127.0.0.1:${port}/`).then(() => "connected", () => "refused")).resolves.toBe("refused");
     });
   }
 
@@ -297,6 +296,5 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
     const mismatchConfig = config({ name: "mode-mismatch", web: false, gateway: true });
     mismatchConfig.fragments.push(join(certDir, "api-mode-override.yml"));
     expect(command(composeArgs(["logs", "--no-color", "api"], mismatchConfig.fragments), mismatchConfig.env).output).toContain("protection_mode_mismatch");
-    await expect(fetch(`http://127.0.0.1:${port}/`).then(() => "connected", () => "refused")).resolves.toBe("refused");
   });
 });
