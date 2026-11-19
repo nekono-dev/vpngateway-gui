@@ -32,9 +32,20 @@ run_group() {
       return 2
     fi
   fi
+  if [ "$group" = tls ]; then
+    if ! sh e2e/hosted/lib/tls-matrix-certs.sh e2e/hosted/.work/tls-matrix ||
+      ! sh e2e/hosted/lib/tls-browser-trust.sh setup e2e/hosted/.work/tls-matrix; then
+      echo "$group prepare-failed" >> "$RESULT_FILE"
+      sh e2e/hosted/lib/diagnose.sh "$group" || true
+      return 2
+    fi
+  fi
   # 出力先は絶対パスで渡す（Playwright は報告の相対パスを設定ファイルの場所基準で解決するため）
   E2E_JSON_OUT="$PWD/$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project" --output "$PWD/$ARTIFACTS/$group/test-output"
   rc=$?
+  if [ "$group" = tls ]; then
+    sh e2e/hosted/lib/tls-browser-trust.sh cleanup e2e/hosted/.work/tls-matrix || true
+  fi
   if [ "$rc" -eq 0 ]; then
     echo "$group pass" >> "$RESULT_FILE"
   else

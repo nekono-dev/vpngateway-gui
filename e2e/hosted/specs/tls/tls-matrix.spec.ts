@@ -1,7 +1,8 @@
 // 責務: Web HTTPS と Gateway TLS の hosted matrix、および証明書・保護方式の失敗を独立に確認する。
+// ブラウザの CA trust は run.sh 経由で準備する。単独実行では ON 系ケースが証明書信頼エラーになる。
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test, expect } from "../../fixtures/web.js";
 import { loadAdmin } from "../../fixtures/stack.js";
@@ -12,7 +13,6 @@ const root = process.cwd();
 const certDir = resolve("e2e/hosted/.work/tls-matrix");
 const port = process.env.E2E_WEB_PORT ?? "18080";
 const baseFragments = [...HOSTED_COMPOSE_FRAGMENTS];
-const defaultCaTrustPath = "/usr/local/share/ca-certificates/vpngwgui-e2e-web-ca.crt";
 type TlsCase = { readonly name: string; readonly web: boolean; readonly gateway: boolean; readonly variant?: string };
 type TlsStartResult = {
   readonly started: boolean;
@@ -205,14 +205,9 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
   test.setTimeout(120_000);
 
   test.beforeAll(() => {
-    mkdirSync(certDir, { recursive: true });
-    for (const [file, args] of [
-      ["sh", ["e2e/hosted/lib/tls-matrix-certs.sh", certDir]],
-      ["sudo", ["install", "-m", "0644", join(certDir, "web/ca.crt"), defaultCaTrustPath]],
-      ["sudo", ["update-ca-certificates"]],
-    ] as const) {
-      const result = spawnSync(file, [...args], { cwd: root, stdio: "inherit" });
-      if (result.status !== 0) throw new Error(`${file} failed while preparing the TLS matrix (exit ${result.status ?? 127})`);
+    if (!existsSync(join(certDir, "web/ca.crt"))) {
+      const result = spawnSync("sh", ["e2e/hosted/lib/tls-matrix-certs.sh", certDir], { cwd: root, stdio: "inherit" });
+      if (result.status !== 0) throw new Error(`TLS matrix 証明書の生成に失敗しました (exit ${result.status ?? 127})`);
     }
   });
 
@@ -225,8 +220,6 @@ test.describe.serial("Web HTTPS × Gateway TLS", () => {
       const { fragments, env } = config({ name: "cleanup", web: false, gateway: false });
       command(composeArgs(["down"], fragments), env);
     } finally {
-      spawnSync("sudo", ["rm", "-f", defaultCaTrustPath], { stdio: "ignore" });
-      spawnSync("sudo", ["update-ca-certificates"], { stdio: "ignore" });
       rmSync(join(certDir, "api-mode-override.yml"), { force: true });
       rmSync(join(certDir, "missing-client-override.yml"), { force: true });
     }

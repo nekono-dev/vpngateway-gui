@@ -28,6 +28,8 @@ jobs:
       - name: 依存と Playwright の導入
         run: |
           set -eux
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools
           npm ci --no-audit --no-fund >/dev/null
           npx playwright install --with-deps chromium >/dev/null
 

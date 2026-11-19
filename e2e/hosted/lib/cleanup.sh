@@ -7,6 +7,7 @@ HOSTED_CLEANUP_RUNNING=0
 hosted_cleanup() {
   [ "$HOSTED_CLEANUP_RUNNING" -eq 1 ] && return 0
   HOSTED_CLEANUP_RUNNING=1
+  sh e2e/hosted/lib/tls-browser-trust.sh cleanup e2e/hosted/.work/tls-matrix >/dev/null 2>&1 || true
   docker compose -p vpngwgui -f docker-compose.yml \
     -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml \
     -f docker-compose.e2e-mock.yml down --remove-orphans >/dev/null 2>&1 || true
