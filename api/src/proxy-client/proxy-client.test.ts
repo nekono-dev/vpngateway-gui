@@ -189,10 +189,25 @@ describe("fetchProxyStatus", () => {
   });
 
   it("サーバ証明書の検証失敗・クライアント証明書の拒否による切断も、到達不能（ProxyUnavailableError）として扱う", async () => {
-    for (const code of ["SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "CERT_HAS_EXPIRED", "UND_ERR_SOCKET"]) {
-      requestMock.mockRejectedValue(Object.assign(new Error("x"), { code }));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const [code, category] of [
+      ["SELF_SIGNED_CERT_IN_CHAIN", "certificate_authority_invalid"],
+      ["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "certificate_authority_invalid"],
+      ["CERT_HAS_EXPIRED", "certificate_expired"],
+      ["ERR_TLS_CERT_ALTNAME_INVALID", "certificate_name_mismatch"],
+      ["ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED", "client_certificate_rejected"],
+    ]) {
+      requestMock.mockRejectedValue(Object.assign(new Error("sensitive certificate path must not be logged"), { code }));
       await expect(fetchProxyStatus(), code).rejects.toThrow(/failed to connect/);
+      expect(warning).toHaveBeenLastCalledWith(JSON.stringify({
+        level: "warn",
+        event: "gateway_tls_validation_failed",
+        code,
+        category,
+      }));
     }
+    expect(warning.mock.calls.flat().join(" ")).not.toContain("sensitive certificate path");
+    warning.mockRestore();
   });
 
   it("TLS と平文の保護方式不一致を専用エラーへ分類する", async () => {

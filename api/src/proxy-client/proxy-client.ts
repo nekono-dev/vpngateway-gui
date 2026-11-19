@@ -39,6 +39,35 @@ let reconnectAt = 0;
 // 失敗が続く間の再接続待機は100msから倍増し、負荷を抑えるため5秒で頭打ちにする。
 const MAX_RECONNECT_DELAY_MS = 5000;
 
+const GATEWAY_TLS_DIAGNOSTIC_CATEGORIES: Readonly<Record<string, string>> = {
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "certificate_authority_invalid",
+  SELF_SIGNED_CERT_IN_CHAIN: "certificate_authority_invalid",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "certificate_authority_invalid",
+  UNABLE_TO_GET_ISSUER_CERT: "certificate_authority_invalid",
+  UNABLE_TO_GET_ISSUER_CERT_LOCALLY: "certificate_authority_invalid",
+  CERT_HAS_EXPIRED: "certificate_expired",
+  CERT_NOT_YET_VALID: "certificate_not_yet_valid",
+  ERR_TLS_CERT_ALTNAME_INVALID: "certificate_name_mismatch",
+  ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED: "client_certificate_rejected",
+  ERR_SSL_TLSV1_ALERT_CERTIFICATE_REQUIRED: "client_certificate_rejected",
+};
+
+/** TLS の検証失敗だけを、秘密情報を含めず運用ログへ記録する。 */
+function logGatewayTlsFailure(error: unknown): void {
+  const visited = new Set<unknown>();
+  let current = error;
+  while (current instanceof Error && !visited.has(current)) {
+    visited.add(current);
+    const code = (current as NodeJS.ErrnoException).code;
+    const category = code === undefined ? undefined : GATEWAY_TLS_DIAGNOSTIC_CATEGORIES[code];
+    if (code !== undefined && category !== undefined) {
+      console.warn(JSON.stringify({ level: "warn", event: "gateway_tls_validation_failed", code, category }));
+      return;
+    }
+    current = (current as Error & { cause?: unknown }).cause;
+  }
+}
+
 interface GatewayDeadline {
   expiresAt: number;
   signal: AbortSignal;
@@ -73,6 +102,7 @@ async function requestGateway(options: Parameters<Agent["request"]>[0], deadline
     reconnectAt = 0;
     return response;
   } catch (error) {
+    logGatewayTlsFailure(error);
     if (gatewayTransport.origin.startsWith("http://") && hasWrittenRequest(error) && await isTlsListener()) {
       throw new GatewayProtectionMismatchError("API と Gateway の通信保護設定が一致しません");
     }
@@ -445,6 +475,8 @@ const GATEWAY_UNAVAILABLE_CODES = new Set([
   "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
   "CERT_HAS_EXPIRED",
   "CERT_NOT_YET_VALID",
+  "ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED",
+  "ERR_SSL_TLSV1_ALERT_CERTIFICATE_REQUIRED",
 ]);
 
 /**
