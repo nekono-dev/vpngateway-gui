@@ -46,6 +46,10 @@ check_readme() {
   contains '自動更新せず'
   contains 'docker-compose-plugin'
   contains 'Docker 公式配布元'
+  contains 'Gateway の server 証明書・秘密鍵は、すべてこの UID から読める権限'
+  if grep -Fq 'Gateway（proxy）は root で動くため' "$readme"; then
+    fail 'proxy が root で動く旨の誤記を README に含めないでください'
+  fi
 
   if grep -F 'docker compose pull' "$readme" >/dev/null; then
     fail 'docker compose pull を手順に含めないでください'
@@ -120,6 +124,11 @@ fi
 sed '/自動では元に戻さず/d' "$readme" >"$temporary_dir/missing-no-rollback.md"
 if (check_readme "$temporary_dir/missing-no-rollback.md") >/dev/null 2>&1; then
   fail '失敗時の自動 rollback なし説明を除いた README を拒否できません'
+fi
+
+sed 's/Gateway の server 証明書・秘密鍵は、すべてこの UID から読める権限/Gateway の server 証明書・秘密鍵に追加の設定は要りません/' "$readme" >"$temporary_dir/missing-gateway-cert-perm.md"
+if (check_readme "$temporary_dir/missing-gateway-cert-perm.md") >/dev/null 2>&1; then
+  fail 'Gateway 証明書の権限説明を除いた README を拒否できません'
 fi
 
 printf '%s\n' 'README contract and negative self-tests: OK'

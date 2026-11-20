@@ -97,8 +97,8 @@ compose/
     sysctl.sh                         # IP forwarding の適用・復元
     boot-guard.sh                     # 独立 guard table の初期 BLOCK と systemd unit
     host-reboot.sh                    # reboot request の systemd path/service
-    tests/docker-install.test.sh      # Docker配布元判定・同意・導入/更新のスタブ単体テスト
-    tests/run.sh                      # host-preparation の単体テスト実行入口
+    tests/docker-install.test.sh      # Docker配布元判定・同意・導入/更新のスタブ単体テスト（実体は compose/host-preparation/tests/ 配下）
+    tests/run.sh                      # host-preparation の単体テスト実行入口（同上）
   gateway-entrypoint.sh              # root で共有 volume を初期化後 UID/GID 10001 へ降格
 api/src/
   server.ts                           # HTTP listener 起動
@@ -142,7 +142,7 @@ installer/                            # 旧 installer command 群を撤去
 
 - `docker-compose.yml` — root に `name: vpngwgui` を宣言して project 名を固定し、`web`/`api`/`proxy`、`app-net`、`gateway-socket`、永続 volume を集約。project 名の上書きは非対応。TLS OFF 時の証明書 mount を持たない。既存 runner 制御用 named volume `ctl-socket` も root が宣言・所有する。現行 `compose/gateway.yml` と同じく、proxy に `ctl-socket:/var/run/vpngw-ctl` を mount し、`CTL_SOCKET_DIR` を `/var/run/vpngw-ctl` に設定する。vendor fragments の runner も同じ named volume を `/var/run/vpngw-ctl` に mount する。
 - `compose/api-tls.yml`, `compose/web-tls.yml` — TLS ON 時だけ `COMPOSE_FILE` に加える標準 override。Gateway mTLS 用 fragment は API client cert/key/CA と proxy server cert/key/client CA を各 service に read-only mount し、Web 用 fragment は Web server cert/key だけを mount する。
-- `compose/web.yml`, `compose/api.yml`, `compose/gateway.yml` — 撤去。責務を root Compose へ移し、分離配置専用 fragment を残さない。
+- `compose/web.yml`, `compose/api.yml`, `compose/gateway.yml` — 撤去済み（現存する fragment は TLS 用の `compose/api-tls.yml` と `compose/web-tls.yml` のみ）。責務を root Compose へ移し、分離配置専用 fragment を残さない。
 - `vendors/*/compose.yml` — bundle にだけ属する runner/cache mount を維持し、root merge 順・固定 project 名の説明へ更新。API mount 追加は引き続き標準 merge。
 - `web/server/index.ts`, `web/server/tls-options.ts` — HTTP/HTTPS 分岐。HTTPS 有効時のみ TLS files を必須化し、不正なら起動失敗。
 - `api/src/server.ts`, `api/src/app.ts` — 内部 HTTP listener、Web HTTPS flag による Secure Cookie、`trustProxy` 非使用。
@@ -150,7 +150,7 @@ installer/                            # 旧 installer command 群を撤去
 - `api/src/routes/connection-config.ts`, `api/src/schemas/*`（PUT の 503 応答）— 有効ガード値（`killSwitch && transparentGatewayEnabled`）が変わる PUT は、候補設定を proxy へ先に通知し、ruleset と guard 適用の 200 を確認してから保存する。失敗時は保存せず 503 とし、Kill Switch 変更を含む場合のコードは `kill_switch_not_applied`、透過ゲートウェイ設定だけの変更は `gateway_setting_not_applied` とする。
 - Web の設定画面（Kill Switch の切替部品。対象ファイルはタスク化時に `rg` で確定）— 有効ガード値変更の通知が失敗したときは関連トグルを元に戻す。Kill Switch は透過ゲートウェイにのみ適用され、明示的プロキシのみのモードでは停止時遮断保証がない旨を表示する。
 - `api/src/proxy-client/proxy-client.ts`, `api/src/proxy-client/gateway-tls-options.ts` — 専用 UDS transport と任意 mTLS。
-- `proxy/src/server.ts`, `proxy/src/gateway-channel/tls-options.ts` — TCP 8443 listener を除去し、UDS HTTP/HTTPS listener と通常停止 hook を接続。`POST /settings` は `killSwitch && transparentGatewayEnabled` に応じた guard 切替を行い、切替失敗時は 503 `guard_apply_failed` を返す。
+- `proxy/src/server.ts`, `proxy/src/gateway-channel/tls-options.ts` — TCP 8443 listener を除去し、UDS HTTP/HTTPS listener と通常停止 hook を接続。`POST /settings` は `killSwitch && transparentGatewayEnabled` に応じた guard 切替を行い、切替失敗時は 503 `guard_apply_failed` を返す。これは proxy の内部契約で、API は公開応答として `kill_switch_not_applied`（Kill Switch の変更を含む場合）または `gateway_setting_not_applied`（透過ゲートウェイ設定だけの変更）へ変換する（`guard_apply_failed` は API の公開スキーマに含めない）。
 - Gateway 権限契約 — UID 10001 は特権境界ではない。コンテナには既存の `NET_ADMIN` capability を維持し、`sudo` と Dockerfile の `vpngwgui ALL=(ALL) NOPASSWD:ALL` 設定を維持して、既存の `sudo nft`/`sudo ip` 操作を実行可能にする。実効境界は付与 capability、sudoers の許可範囲、UDS volume の所有者・mode（親 directory 0700、socket 0600）である。sudoers の許可範囲を後続実装で狭める場合は全ての既存ネットワーク操作を列挙して整合させる。
 - `scripts/deploy-verify.sh` — root Compose とホスト準備方式に合わせ、merge/config、公開ポート、volume、TLS fragments、実行前提を検証。
 - `web/package.json`, `package-lock.json` — Fastify 5 と互換の `@fastify/http-proxy` 最新 11.x（11.6.6 以上、調査時点 11.6.9）へ限定更新。

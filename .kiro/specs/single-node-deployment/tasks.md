@@ -360,6 +360,8 @@
 
 ## 要件網羅表
 
+番号は 2026-11-19 の振り直し後の現行番号（要件・タスクとも）。各タスクの `_Requirements:` を逆引きした表。要件ID | タスク（本ファイルのタスク番号）。
+
 | 要件ID | タスク |
 |---|---|
 | 1.1 | 2.1, 5.2, 6.2 |
@@ -367,14 +369,14 @@
 | 1.3 | 1.1, 6.2, 6.3, 6.4, 6.5 |
 | 1.4 | 1.1, 6.2, 6.3, 6.4, 6.5 |
 | 1.5 | 2.1 |
-| 2.1 | 2.3, 2.8, 7.1, 7.2, 7.3, 7.4, 7.6 |
-| 2.2 | 2.4 |
-| 2.3 | 2.3, 2.4, 2.8 |
-| 2.4 | 2.3, 2.4, 2.8 |
-| 2.5 | 2.5, 3.1, 3.2, 7.2, 7.3, 7.5 |
-| 2.6 | 2.6, 2.7, 7.2 |
-| 2.7 | 2.3, 2.4, 2.5, 2.6, 2.8, 7.5 |
-| 2.8 | 1.2, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 5.7, 7.2, 7.3, 7.4 |
+| 2.1 | 2.3, 2.8, 7.1, 7.2, 7.4, 7.6 |
+| 2.2 | 2.4, 7.4 |
+| 2.3 | 2.3, 2.4, 2.8, 7.4 |
+| 2.4 | 2.3, 2.4, 2.8, 7.4 |
+| 2.5 | 2.5, 3.1, 3.2, 8.2, 8.3, 8.5 |
+| 2.6 | 2.6, 2.7, 8.2 |
+| 2.7 | 2.3, 2.4, 2.5, 2.6, 2.8, 8.5 |
+| 2.8 | 1.2, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 5.7, 8.2, 8.3, 8.4 |
 | 2.9 | 2.9, 7.4 |
 | 2.10 | 7.3, 7.6 |
 | 2.11 | 7.2, 7.3, 7.6 |
@@ -383,48 +385,48 @@
 | 2.14 | 7.3, 7.4, 7.6 |
 | 2.15 | 7.4 |
 | 2.16 | 7.4 |
-| 3.1 | 2.2, 4.1, 7.2, 7.6 |
-| 3.2 | 2.2, 4.1, 7.2, 7.6 |
-| 3.3 | 2.2, 4.1, 5.4, 7.2, 7.6 |
-| 3.4 | 4.1, 5.4, 7.2, 7.6 |
-| 3.5 | 4.3, 7.2 |
-| 3.6 | 4.3, 5.4, 7.2 |
-| 4.1 | 4.2, 7.2, 7.6 |
-| 4.2 | 1.1, 4.2, 7.2 |
-| 4.3 | 1.1, 2.1, 4.2, 7.2 |
-| 4.4 | 1.1, 4.2, 5.1, 7.2 |
-| 4.5 | 4.2, 7.2 |
-| 4.6 | 4.2, 7.2 |
-| 5.1 | 2.2, 4.5, 4.6, 7.2, 7.6 |
-| 5.2 | 2.2, 4.5, 4.6, 7.2, 7.6 |
-| 5.3 | 4.5, 4.6, 5.4, 7.2, 7.6 |
-| 5.4 | 4.5, 4.6, 5.4, 7.2, 7.6 |
-| 5.5 | 4.5, 4.6, 7.2 |
-| 5.6 | 2.2, 4.5, 5.4, 7.2, 7.6 |
-| 5.7 | 1.2, 2.1, 4.4, 4.6, 7.2, 7.6 |
-| 5.8 | 2.2, 4.5, 4.6, 5.4, 7.2 |
-| 6.1 | 5.2, 5.5, 6.2, 7.2, 7.5 |
-| 6.2 | 2.1, 4.4, 5.2, 5.5, 7.2, 7.5 |
-| 6.3 | 2.1, 5.2, 5.5, 7.2, 7.5 |
-| 6.4 | 2.1, 5.2, 5.5, 6.2, 7.2, 7.5 |
-| 6.5 | 2.3, 2.4, 2.8, 6.2, 7.2, 7.5, 7.4 |
-| 6.6 | 2.4, 2.8, 5.5, 6.2, 7.2, 7.5 |
-| 6.7 | 2.1, 4.4, 5.2, 7.2, 7.5 |
-| 7.1 | 6.2 |
+| 3.1 | 2.2, 4.1, 8.2, 8.6 |
+| 3.2 | 2.2, 4.1, 8.2, 8.6 |
+| 3.3 | 2.2, 4.1, 5.4, 8.2, 8.6 |
+| 3.4 | 4.1, 5.4, 8.2, 8.6 |
+| 3.5 | 4.3, 8.2 |
+| 3.6 | 4.3, 5.4, 8.2 |
+| 4.1 | 4.2, 8.2, 8.6 |
+| 4.2 | 1.1, 4.2, 8.2 |
+| 4.3 | 1.1, 2.1, 4.2, 8.2 |
+| 4.4 | 1.1, 4.2, 5.1, 8.2 |
+| 4.5 | 4.2, 8.2 |
+| 4.6 | 4.2, 8.2 |
+| 5.1 | 2.2, 4.5, 4.6, 8.2, 8.6 |
+| 5.2 | 2.2, 4.5, 4.6, 8.2, 8.6 |
+| 5.3 | 4.5, 4.6, 5.4, 8.2, 8.6 |
+| 5.4 | 4.5, 4.6, 5.4, 8.2, 8.6 |
+| 5.5 | 4.5, 4.6, 8.2 |
+| 5.6 | 2.2, 4.5, 5.4, 8.2, 8.6 |
+| 5.7 | 1.2, 2.1, 4.4, 4.6, 8.2, 8.6 |
+| 5.8 | 2.2, 4.5, 4.6, 5.4, 8.2 |
+| 6.1 | 5.2, 5.5, 6.2, 8.2, 8.5 |
+| 6.2 | 2.1, 4.4, 5.2, 5.5, 8.2, 8.5 |
+| 6.3 | 2.1, 5.2, 5.5, 8.2, 8.5 |
+| 6.4 | 2.1, 5.2, 5.5, 6.2, 8.2, 8.5 |
+| 6.5 | 2.3, 2.4, 2.8, 6.2, 7.4, 8.2, 8.5 |
+| 6.6 | 2.4, 2.8, 5.5, 6.2, 8.2, 8.5 |
+| 6.7 | 2.1, 4.4, 5.2, 8.2, 8.5 |
+| 7.1 | 6.2, 7.5 |
 | 7.2 | 1.1, 6.2, 6.3, 6.4, 6.5 |
 | 7.3 | 6.2 |
-| 7.4 | 6.1 |
+| 7.4 | 6.1, 7.7 |
 | 7.5 | 6.2 |
 | 7.6 | 7.5, 7.6, 7.7 |
-| 7.1 | 4.6, 5.3, 7.2 |
-| 7.2 | 1.2, 2.5, 3.1, 3.2, 3.3, 4.6, 5.7, 7.2, 7.3, 7.4 |
-| 7.3 | 5.2, 5.3, 7.1, 7.2, 7.5 |
-| 7.4 | 5.4, 7.1, 7.2, 7.6 |
-| 7.5 | 5.2, 5.5, 7.1, 7.2, 7.5 |
-| 7.6 | 1.1, 5.1, 5.6, 7.2 |
-| 7.7 | 5.3, 5.6, 7.2 |
-| 8.8 | 4.6, 5.3, 7.2 |
-| 8.9 | 7.5 |
+| 8.1 | 4.6, 5.3, 8.2 |
+| 8.2 | 1.2, 2.5, 3.1, 3.2, 3.3, 4.6, 5.7, 8.2, 8.3, 8.4 |
+| 8.3 | 5.2, 5.3, 8.1, 8.2, 8.5 |
+| 8.4 | 5.4, 8.1, 8.2, 8.6 |
+| 8.5 | 5.2, 5.5, 8.1, 8.2, 8.5 |
+| 8.6 | 1.1, 5.1, 5.6, 8.2 |
+| 8.7 | 5.3, 5.6, 8.2 |
+| 8.8 | 4.6, 5.3, 8.2 |
+| 8.9 | 8.5 |
 
 ## Implementation Notes
 - 2.9: Docker forwarding handler は `/etc/docker/daemon.json` が存在しない場合のみ作成し、再起動後も policy が DROP なら pending state を残して失敗する。remove は再起動を行わない。実ホストへの systemctl/Docker 操作は実行せず、PATH fixture で検証する。
@@ -439,12 +441,12 @@
 - 4.1（Web listener）: `web/server/index.ts` の `startWebServer(env, listenOptions)` が listener を選ぶ。`WEB_HTTPS_ENABLED` 未設定/`false` は証明書なしの HTTP、`true` だけが証明書・鍵を必須にした HTTPS で、不正値・証明書の不備・鍵の不一致は HTTP に降格せず起動失敗にする。試験用の使い捨て証明書は `web/server/testdata/`（README に明記、本番経路は読まない）。Web→API の既定 upstream は HTTP（`/api` の proxy の挙動と 502 は 4.2）。
 - 4.2（同一オリジン API 中継）: API の起動は `api/src/main.ts`（副作用あり）と `startApiServer`（`api/src/server.ts`、副作用なし）に分け、コンテナの `CMD` は `dist/main.js`。API は証明書なしの内部 HTTP（0.0.0.0:`PORT`）で、ホストには公開しない。API サーバ用の TLS loader（`api/src/tls-options.ts`）は削除済み。`compose/api.yml` は旧分離配置の部品で 6.4 が撤去する。
 - 4.3（Cookie Secure）: API の session Cookie の `Secure` は `WEB_HTTPS_ENABLED` だけで決める（`api/src/web-https-options.ts` の `parseWebHttpsEnabled`。未設定/`false`/`true` のみ。それ以外は listen 前に起動失敗。Web サーバと同じ規則）。`trustProxy` や `X-Forwarded-Proto` では判断しない。
-- 4.4（Gateway UDS）: `proxy/src/gateway-channel/server.ts` の `listenOnGatewaySocket(server, socketPath, expectedUid)` が UDS を umask 0177 で bind し（mode 0600）、stale 判定は connect の `ECONNREFUSED` のみ・削除前に dev/ino を再確認、`close()` は自分が作った inode だけを消す。`compose/gateway-entrypoint.sh` は root で `/run/vpngw-gateway` を検証（symlink・非ディレクトリ・root/10001 以外の owner は拒否）してから `chown 10001:10001`・`chmod 0700` し、`su-exec 10001:10001` へ `exec` する。実コンテナの検証は opt-in の `proxy/tests/gateway-entrypoint.docker.test.sh`（Docker が使える環境で実行。7.5 でも実施）。TCP 8443 listener と `GATEWAY_PORT` はまだ残しており、4.6 が除去する。API 側の再接続（指数 backoff）は 4.5 の担当（tasks.md を更新済み）。`ctl-socket` の書き込み権限は `proxy/Dockerfile` の `/var/run/vpngw-ctl`（vpngwgui 所有）を空の名前付き volume が引き継ぐことに依存する。
+- 4.4（Gateway UDS）: `proxy/src/gateway-channel/server.ts` の `listenOnGatewaySocket(server, socketPath, expectedUid)` が UDS を umask 0177 で bind し（mode 0600）、stale 判定は connect の `ECONNREFUSED` のみ・削除前に dev/ino を再確認、`close()` は自分が作った inode だけを消す。`compose/gateway-entrypoint.sh` は root で `/run/vpngw-gateway` を検証（symlink・非ディレクトリ・root/10001 以外の owner は拒否）してから `chown 10001:10001`・`chmod 0700` し、`su-exec 10001:10001` へ `exec` する。実コンテナの検証は opt-in の `proxy/tests/gateway-entrypoint.docker.test.sh`（Docker が使える環境で実行。8.5 でも実施）。TCP 8443 listener と `GATEWAY_PORT` は 4.6 で除去済み。API 側の再接続（指数 backoff）は 4.5 の担当（tasks.md を更新済み）。`ctl-socket` の書き込み権限は `proxy/Dockerfile` の `/var/run/vpngw-ctl`（vpngwgui 所有）を空の名前付き volume が引き継ぐことに依存する。
 - 4.5（API の Gateway UDS client）: `loadGatewayTransportOptions` が `GATEWAY_TLS_ENABLED` 既定 OFF の HTTP over UDS と、ON 時の厳格な mTLS（CA・SAN・クライアント証明書・期限。降格しない）を選ぶ。`requestGateway` は socket 消失・`ECONNREFUSED` を通信不可として扱い、上限つきの指数 backoff で再接続する。`notifySettings` は backoff・接続・headers・body を合わせた1つの 5 秒の総期限を持ち、期限切れは `ProxyTimeoutError`（504）。保護方式の不一致は、要求後に接続が切れたとき同じ UDS へ TLS の probe を送り、TLS と確認できたときだけ `GatewayProtectionMismatchError`（`gateway_protection_mismatch`、`protectionModeMismatch: true`）にして、ログ・API status・Web 表示で区別する。`api/openapi.json` と `web/src/generated` は git 管理外の生成物で、4.5 で `npm run generate:api-client` を実行して最新にした（8.2 でも再生成して確認する）。環境変数名は設計の名前（`GATEWAY_TLS_CLIENT_CERT_FILE` など）に統一済み。
 - 4.6（Gateway listener の切替）: Gateway の TCP 8443 listener と `GATEWAY_PORT` は除去済みで、制御は UDS の listener（HTTP、または `GATEWAY_TLS_ENABLED=true` の strict mTLS）だけ。proxy の設定・status の本番ハンドラは `proxy/src/gateway-channel/gateway-routes.ts` の `createGatewayRequestHandler`（依存を注入）に切り出してあり、`proxy/src/server.ts` が本物のコントローラを渡す。guard の健康は「UDS listener が稼働」かつ「直近の ruleset 適用と検証が成功」の両方（`GatewayGuard.setListenerAvailable`）。listener が予期せず閉じたら guard を unhealthy にして非 0 で終了し、Compose の再起動に任せる。統合テストは `e2e/gateway-control.integration.test.ts`（実 UDS・実 API client で HTTP/mTLS、保護方式不一致の status とログと復旧）。`npx tsc -p web/tsconfig.json --noEmit` の `city`/`pingMs` に関する8件のエラーは、このスペック以前からあるもので触っていない。
 - 2.7（再起動要求の配線）: proxy の `requestHostReboot()` は、同じディレクトリに隠し一時ファイル（`.reboot-request.tmp.<数字>.<32 桁の hex>`、`O_EXCL|O_NOFOLLOW`・mode 0600）へ固定内容を書いて fsync し、排他的なハードリンクで `reboot-request` として公開する（先に存在すれば already-requested）。proxy は自分の古い一時ファイル（60 秒超）を次の要求で片付ける。ホスト準備の precheck/remove/status は、この名前の形に完全一致する通常ファイル（所有者 10001・mode 0600）だけを製品所有の残骸として片付け可能と扱い、それ以外は競合のまま。root Compose の proxy だけが `/var/lib/vpngwgui-host-ctl` を `/var/run/vpngw-host-ctl` に mount する。`package.json` の `test:e2e-unit` は `.claude` と `node_modules` を除外する（古い作業ツリーの複製テストとのポート競合を避けるため）。実機の systemd・Docker 動作は 8.5。
 - 5.1（E2E 共通 API client）: `e2e/common/api-client.ts` の `createApiClient` は Web origin（HTTP/HTTPS はスキームで選ぶ）の `/api/v1` に要求し、HTTPS の CA は任意の Web CA（未指定は標準 trust store。自己署名は拒否）。API CA への依存はない。既存の呼び出し側は、API の origin と API CA のパスを渡す旧い形のままで、5.2〜5.6 が移行する: `e2e/hosted/fixtures/stack.ts`・`e2e/hosted/specs/api/auth.spec.ts`・hosted の他の spec は 5.2/5.3/5.7（Web 公開 origin の `/api` 経由へ）、`e2e/vendor-live/lib/prepare.ts`・`config.ts` は 5.6。それまで hosted E2E は新旧の混在で動かない（5.2 が fixture を Compose 方式にするまでの途中状態）。
-- 5.2（hosted の Compose fixture）: `e2e/hosted/fixtures/compose.ts` が全操作に `-p vpngwgui` を付け（`COMPOSE_PROJECT_NAME`/`-p` が `name:` より優先されること、別名では volume 名が変わることを `docker compose config` で契約テスト）、root-first の `-f` merge（vendor fragment、`compose/web-tls.yml`、`compose/api-tls.yml`）、既定 HTTP、up/down/`down -v` を提供する。起動は `e2e/hosted/fixtures/compose-cli.ts` を通る共通の経路（`provision.sh` もここを使う）で、注入した runner の引数をテストする。`e2e/hosted/lib/cleanup.sh` が EXIT/INT/TERM/HUP で固定 project の down（`-v` なし）と topology の後始末をする。volume 保持は実 Docker の統合テスト `e2e/hosted/fixtures/volume-retention.integration.test.ts`（既存の `vpngwgui*` 資源があれば skip。作った volume だけ後始末）で確認済み。実スタックの Playwright は hosted CI（と 7.x の実機）で実行する。hosted workflow のブランチ trigger は変えていない。
+- 5.2（hosted の Compose fixture）: `e2e/hosted/fixtures/compose.ts` が全操作に `-p vpngwgui` を付け（`COMPOSE_PROJECT_NAME`/`-p` が `name:` より優先されること、別名では volume 名が変わることを `docker compose config` で契約テスト）、root-first の `-f` merge（vendor fragment、`compose/web-tls.yml`、`compose/api-tls.yml`）、既定 HTTP、up/down/`down -v` を提供する。起動は `e2e/hosted/fixtures/compose-cli.ts` を通る共通の経路（`provision.sh` もここを使う）で、注入した runner の引数をテストする。`e2e/hosted/lib/cleanup.sh` が EXIT/INT/TERM/HUP で固定 project の down（`-v` なし）と topology の後始末をする。volume 保持は実 Docker の統合テスト `e2e/hosted/fixtures/volume-retention.integration.test.ts`（既存の `vpngwgui*` 資源があれば skip。作った volume だけ後始末）で確認済み。実スタックの Playwright は hosted CI（と 8.x の実機受入）で実行する。hosted workflow のブランチ trigger は変えていない。
 - 5.3（hosted VPN 操作）: `e2e/hosted/specs/api/{vpn,locations}.spec.ts` は Web origin `/api` の共通 client で、ベンダー切替・接続・切断・都市/サーバー選択・お気に入り・距離順を項目別のケースにした。接続のケースは `finally` で必ず切断する。runner の許可リストの拒否は、runner の制御 UDS へ許可コマンドと許可外コマンドを送り、200 と 403 `binary_not_allowed` を確認する独立ケース。hosted Playwright は開発ホストでは実行しておらず（型検査・`--list`・独立レビューのみ）、実行は hosted の CI で行う。
 - 5.7（hosted Gateway 通信）: 透過ゲートウェイ・明示的プロキシ・DNS 中継・迂回は `e2e/hosted/specs/gateway/*.spec.ts` の独立したケースで、Web origin `/api` の共通 client を使う。Kill Switch の対象範囲の表示（透過ゲートウェイのみ。明示的プロキシのみでは停止時の遮断を保証しない）は `web/src/components/dashboard/SettingsDialog.tsx` にあり、`e2e/hosted/specs/ui/setup-settings.spec.ts` のケースで確認する（接続設定を保存し、`finally` で復元して API セッションを破棄する）。hosted の実行は CI。
 - 5.4（hosted TLS matrix）: `e2e/hosted/specs/tls/tls-matrix.spec.ts`（Playwright の `tls` project）が Web HTTPS × Gateway TLS の4構成を、各行でログイン・Gateway 状態（`gatewayGuard` を含む正常応答＝TLS ON 行では実際の mTLS）・元に戻せる制御 PUT・Cookie の `Secure`（HTTPS 行のみ）で確認する。不正証明書のケースは、壊すのを1か所だけにする（別 CA ＝ proxy の server 証明書だけを無関係な CA 署名のものに差し替え、期限切れ、SAN 不一致、クライアント証明書なし＝API の client cert/key 設定だけを空）。各ケースは Compose の起動結果（終了コード・コンテナ状態・ログ）を `docker-compose-result.ts` で構造化して期限つきで確認し、API ログの原因コード（`gateway_tls_validation_failed`）と保護方式の不一致（専用 status・ログ・UI）も確認する。証明書は実行ごとに `e2e/hosted/lib/tls-matrix-certs.sh` で生成し、単体テスト `tls-certs.test.ts` で実 OpenSSL により検証済み。4.5 の追補として、API の TLS loader が不足した環境変数名（名前のみ）を示す変更と、`proxy-client` が TLS 検証失敗の原因コードを構造化して警告ログに出す変更を、別 commit で入れた。hosted の実行は CI。
