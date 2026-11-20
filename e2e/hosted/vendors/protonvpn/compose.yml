@@ -1,0 +1,10 @@
+# 責務: hosted mock stack で Proton runner のイメージと状態 volume を上書きする。
+services:
+  runner-protonvpn:
+    # モック runner は proxy と同じ UID 10001 で動かす。
+    user: "10001:10001"
+    build:
+      context: .
+      dockerfile: e2e/hosted/vendors/protonvpn/Dockerfile
+    volumes:
+      - proton-config:/var/lib/mockvpn

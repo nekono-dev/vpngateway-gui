@@ -68,9 +68,7 @@ export function LocationList({
   const visible = filterLocations(locations, tab, query);
   const favoriteCount = locations.filter((location) => location.favorite).length;
   const counts: Record<LocationTab, number> = { all: locations.length, favorites: favoriteCount };
-  // どの接続先にもping値が無いプロバイダ（国単位の一覧のみ等）では、ping列を出さない。
-  const showPing = locations.some((location) => location.pingMs !== undefined);
-
+  const showPing = locations.some((location) => "pingMs" in location && typeof location.pingMs === "number");
   if (unavailableReason !== undefined) {
     return (
       // 通常時の一覧（.location-list）と同じflexの縦積みで囲み、内部の.location-scrollへ残り高さを渡す

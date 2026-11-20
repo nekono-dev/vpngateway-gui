@@ -32,9 +32,18 @@ export interface GatewayControllerOptions {
   // 明示的プロキシ（3proxy）の実行ユーザーID。ドメイン迂回でホスト自身の発信も対象にする。
   explicitProxyUid?: number;
   onEvent?: (event: Record<string, unknown>) => void;
+  onReconcileResult?: (result: GatewayReconcileResult) => void;
+}
+
+export interface GatewayReconcileResult {
+  ok: boolean;
+  error?: string;
 }
 
 export interface ReconcileOutcome {
+  // Gateway ruleset の適用または正常な撤去が成功したか。
+  succeeded: boolean;
+  // 有効な Gateway ruleset が存在するか。正常な撤去後は false。
   applied: boolean;
   vpnIface: string | undefined;
   // 今回nftルールの再構成を実際に行ったか（設定・VPN接続状態が前回適用時と同じでスキップした場合はfalse）。
@@ -75,6 +84,7 @@ export class GatewayController {
   // reconcile()の呼び出しはHTTPハンドラ（/settings受信時）・監視ループ（接続状態ポーリング）・
   // コマンド実行後（/exec完了時）の複数経路から非同期に発生しうるため、nft操作の直列化に用いる。
   private queue: Promise<ReconcileOutcome> = Promise.resolve({
+    succeeded: false,
     applied: false,
     vpnIface: undefined,
     reconciled: false,
@@ -226,8 +236,28 @@ export class GatewayController {
 
   private reconcile(): Promise<ReconcileOutcome> {
     this.hasReconciled = true;
-    this.queue = this.queue.then(() => this.applyCurrentState());
-    return this.queue;
+    const reconciliation = this.queue.then(() => this.applyCurrentState());
+    const observed = reconciliation.then((outcome) => {
+      this.options.onReconcileResult?.({ ok: this.lastReconcileSucceeded });
+      return outcome;
+    }, (error: unknown) => {
+      this.lastReconcileSucceeded = false;
+      this.options.onReconcileResult?.({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    });
+    // 失敗した reconcile の後続も実行できるよう、内部キューだけは成功状態へ戻す。
+    this.queue = observed.then((outcome) => outcome, () => ({
+      succeeded: false,
+      applied: false,
+      vpnIface: this.vpnIface,
+      reconciled: true,
+      teardown: undefined,
+      apply: undefined,
+    }));
+    return observed;
   }
 
   private async applyCurrentState(): Promise<ReconcileOutcome> {
@@ -242,7 +272,7 @@ export class GatewayController {
       this.bypassSet.clear();
       await this.syncPolicyRouting(false);
       this.lastReconcileSucceeded = true;
-      return { applied: false, vpnIface: this.vpnIface, reconciled: true, teardown, apply: undefined };
+      return { succeeded: true, applied: false, vpnIface: this.vpnIface, reconciled: true, teardown, apply: undefined };
     }
     if (!bypassEnabled) this.bypassSet.clear();
 
@@ -263,6 +293,7 @@ export class GatewayController {
     this.lastReconcileSucceeded = apply.exitCode === 0;
     await this.syncPolicyRouting(bypassEnabled);
     return {
+      succeeded: apply.exitCode === 0,
       applied: apply.exitCode === 0,
       vpnIface: this.vpnIface,
       reconciled: true,

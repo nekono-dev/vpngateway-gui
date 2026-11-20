@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codex": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CLAUDE_PROJECT_DIR:-.}/scripts/codex-mcp-server.mjs"
+      ],
+      "env": {}
+    }
+  }
+}

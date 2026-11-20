@@ -58,6 +58,8 @@ export class DnsRelayController {
   private listening = false;
   // 反映処理（起動・停止）の直列化。
   private queue: Promise<void> = Promise.resolve();
+  private stopping = false;
+  private stopPromise: Promise<void> | undefined;
   private hasApplied = false;
   private fallbackReported = false;
   private readonly listener: Pick<DnsListener, "start" | "stop">;
@@ -90,6 +92,7 @@ export class DnsRelayController {
    * 出力: 反映処理の完了を表すPromise（呼び出し元は待たなくてよい。状態はgetStatus()で得る）。
    */
   applySettings(settings: DnsRelaySettings): Promise<void> {
+    if (this.stopping) return this.stopPromise ?? this.queue;
     const normalized: DnsRelaySettings = { ...settings, excludedDomains: sanitizeExcludedDomains(settings.excludedDomains) };
     const unchanged = this.hasApplied && this.state !== "error" && JSON.stringify(normalized) === JSON.stringify(this.settings);
     if (unchanged) return this.queue;
@@ -97,6 +100,17 @@ export class DnsRelayController {
     this.settings = normalized;
     this.queue = this.queue.then(() => this.reconcile());
     return this.queue;
+  }
+
+  /** 通常停止時に待受 socket を閉じる。停止処理は冪等で、停止後の通知から再起動しない。 */
+  stop(): Promise<void> {
+    this.stopping = true;
+    this.stopPromise ??= this.queue.then(async () => {
+      await this.stopListening();
+      this.state = "stopped";
+    });
+    this.queue = this.stopPromise;
+    return this.stopPromise;
   }
 
   /** 目的: 反映済みの設定を返す（設定の動作検証が、迂回ドメイン・上流の設定を参照するため）。 */

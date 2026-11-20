@@ -74,6 +74,18 @@ describe("DnsRelayController", () => {
     expect(events.map((event) => event.event)).toEqual(["dns_relay_started", "dns_relay_stopped"]);
   });
 
+  it("stop は待受を閉じて冪等になり、その後の設定で再起動しない", async () => {
+    const { controller, listener } = setup();
+    await controller.applySettings(ENABLED);
+
+    await Promise.all([controller.stop(), controller.stop()]);
+    await controller.applySettings(ENABLED);
+
+    expect(listener.stop).toHaveBeenCalledTimes(1);
+    expect(listener.start).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus().state).toBe("stopped");
+  });
+
   it("待受に失敗したらerrorとし、同じ設定の再通知で再試行して回復する", async () => {
     let fail = true;
     const { controller, listener, events } = setup(async () => {

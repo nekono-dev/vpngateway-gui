@@ -9,14 +9,14 @@
   ],
   "scripts": {
     "build": "npm run build -w proxy && npm run build -w api && npm run build -w web",
-    "test": "npm run test -w proxy && npm run test -w api && npm run test -w web && npm run check:neutrality && npm run test:install",
+    "test": "npm run test -w proxy && npm run test -w api && npm run test -w web && npm run test:server -w web && npm run check:neutrality && npm run test:install",
     "export-openapi": "npm run export-openapi -w api",
     "generate:api-client": "npm run export-openapi && npm run generate:api-client -w web",
     "check:neutrality": "node scripts/check-vendor-neutrality.mjs",
-    "test:install": "sh installer/tests/run.sh",
+    "test:install": "sh compose/host-preparation/tests/run.sh && sh scripts/test-deploy-verify.sh",
     "test:e2e": "sh e2e/hosted/run.sh",
     "test:vendor-live": "tsx e2e/vendor-live/main.ts",
-    "test:e2e-unit": "vitest run e2e --exclude \"**/*.spec.ts\""
+    "test:e2e-unit": "vitest run e2e --exclude \"**/*.spec.ts\" --exclude \"**/.claude/**\" --exclude \"**/node_modules/**\""
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

@@ -58,6 +58,39 @@ export const ListLocationsActionDefSchema = Type.Composite([
 ]);
 export type ListLocationsActionDef = Static<typeof ListLocationsActionDefSchema>;
 
+// 国ごとの都市一覧取得。国コードをLOCATIONプレースホルダーとして渡し、表の都市名・機能列を宣言する。
+export const ListCitiesActionDefSchema = Type.Composite([
+  ActionDefSchema,
+  Type.Object({
+    table: Type.Object({ city: Type.String(), features: Type.String() }),
+  }),
+]);
+export type ListCitiesActionDef = Static<typeof ListCitiesActionDefSchema>;
+
+// CLIが管理するサーバ一覧キャッシュの項目名（読み取り専用）。
+export const ServerCatalogSchema = Type.Object({
+  file: Type.String({ minLength: 1 }),
+  list: Type.String({ minLength: 1 }),
+  name: Type.String({ minLength: 1 }),
+  country: Type.String({ minLength: 1 }),
+  city: Type.String({ minLength: 1 }),
+  tier: Type.String({ minLength: 1 }),
+  features: Type.String({ minLength: 1 }),
+  status: Type.String({ minLength: 1 }),
+  score: Type.String({ minLength: 1 }),
+  load: Type.String({ minLength: 1 }),
+});
+export type ServerCatalog = Static<typeof ServerCatalogSchema>;
+
+// 接続先IDを接続引数へ解決するプロバイダー固有の規則。
+export const LocationTargetSchema = Type.Object({
+  city: Type.Union([Type.Literal("fastestServer"), Type.Literal("cityName")]),
+  unavailableFavorite: Type.Union([Type.Literal("countryFallback"), Type.Literal("error")]),
+  fallbackProvider: Type.Optional(Type.String()),
+  errorProvider: Type.Optional(Type.String()),
+});
+export type LocationTargetDef = Static<typeof LocationTargetSchema>;
+
 // 契約プランの定義。`account`の出力が`pattern`に一致したときそのプランと判定し、`restricts`のオペレーションを制限する。
 export const PlanDefSchema = Type.Object({
   id: Type.String(),
@@ -116,6 +149,35 @@ export const OutputFormatSchema = Type.Union([Type.Literal("json"), Type.Literal
 export const LoginMethodSchema = Type.Union([Type.Literal("deviceUrl"), Type.Literal("credentials")]);
 export type LoginMethod = Static<typeof LoginMethodSchema>;
 
+// 段の選び方の宣言（多段接続）。プロバイダごとに、候補の値（列・キャッシュの項目）と最小化の向きを宣言する。
+// "listLocations"＝接続先一覧の列（例: ping）から値を取る。"cacheFile"＝CLIがキャッシュしたサーバ一覧（JSON）の項目から値を取る。
+// 対象の値は最小のものを選ぶ（direction は "min" のみ）。
+export const HopSelectionSchema = Type.Union([
+  Type.Object(
+    {
+      source: Type.Literal("listLocations"),
+      value: Type.String({ minLength: 1 }),
+      direction: Type.Literal("min"),
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object(
+    {
+      source: Type.Literal("cacheFile"),
+      value: Type.String({ minLength: 1 }),
+      direction: Type.Literal("min"),
+      // `<PROVIDER_CACHE_DIR>/<ベンダーID>/`からの相対パス（availableLocationsと同じ規約）。
+      file: Type.String({ minLength: 1 }),
+      // サーバの配列を持つ最上位のキー、国コード・都市名の項目名（availableLocationsと同じ意味）。
+      list: Type.String({ minLength: 1 }),
+      country: Type.String({ minLength: 1 }),
+      city: Type.Optional(Type.String({ minLength: 1 })),
+    },
+    { additionalProperties: false },
+  ),
+]);
+export type HopSelection = Static<typeof HopSelectionSchema>;
+
 export const VendorProfileSchema = Type.Object({
   vendor: Type.String(),
   // 画面に出すベンダー名（Phase 11）。省略時は`vendor`。
@@ -140,6 +202,14 @@ export const VendorProfileSchema = Type.Object({
       locationPing: Type.Optional(Type.Boolean()),
     }),
   ),
+  // 多段接続で段の接続先を選ぶ規則（省略可。多段接続に使うプロバイダは必須。計画の段階で判定する）。
+  hopSelection: Type.Optional(HopSelectionSchema),
+  // ベンダーの国コードを、同梱データ（ISO 3166-1 alpha-2 や ADM0_A3）の国の識別キーへ読み替える対応（任意）。
+  // 距離の注釈と参考一覧の名称解決が、この共通の対応を使う。
+  countryAliases: Type.Optional(Type.Record(Type.String(), Type.String())),
+  // 都市・サーバ解決に使うCLI管理キャッシュの書式（対応しないプロバイダでは省略）。
+  serverCatalog: Type.Optional(ServerCatalogSchema),
+  locationTarget: Type.Optional(LocationTargetSchema),
   actions: Type.Object({
     // 接続先を指定する接続（`%LOCATION%`を含む）。`listLocations`と組で`connectToLocation`になる。
     // Phase 9で省略可に変更（`connectAuto`のみのプロバイダに対応）。
@@ -155,6 +225,8 @@ export const VendorProfileSchema = Type.Object({
     // 接続先一覧（`list-locations`）の取得アクション。Phase 8で追加（静的な`countries`一覧を廃止した代わり）、
     // Phase 9で省略可に変更。
     listLocations: Type.Optional(ListLocationsActionDefSchema),
+    // 国ごとの都市一覧を取得するアクション。
+    listCities: Type.Optional(ListCitiesActionDefSchema),
     // ログイン状態・プランの判定（Phase 9で追加）。
     account: Type.Optional(AccountActionDefSchema),
   }),

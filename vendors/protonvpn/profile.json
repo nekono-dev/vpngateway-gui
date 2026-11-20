@@ -2,6 +2,7 @@
   "vendor": "protonvpn",
   "displayName": "Proton VPN",
   "binary": "/usr/bin/protonvpn",
+  "locationTarget": { "city": "fastestServer", "unavailableFavorite": "error", "errorProvider": "proton" },
   "outputFormat": "text",
   "loginMethod": "credentials",
   "output": {
@@ -12,16 +13,19 @@
     "changeLocation": true,
     "locationPing": false
   },
+  "countryAliases": {
+    "UK": "GB",
+    "XK": "KOS"
+  },
   "actions": {
     "connect": {
       "argv": [
         "connect",
-        "--country",
         "%LOCATION%"
       ],
       "placeholders": {
         "LOCATION": {
-          "pattern": "^[A-Za-z]{2}$",
+          "pattern": "^[A-Za-z0-9#-]{1,64}$",
           "source": "locations"
         }
       },
@@ -100,6 +104,25 @@
         "from": "iso"
       }
     },
+    "listCities": {
+      "argv": [
+        "cities",
+        "list",
+        "--country",
+        "%LOCATION%"
+      ],
+      "placeholders": {
+        "LOCATION": {
+          "pattern": "^[A-Za-z]{2}$",
+          "source": "locations"
+        }
+      },
+      "timeoutMs": 30000,
+      "table": {
+        "city": "City",
+        "features": "Features"
+      }
+    },
     "account": {
       "argv": [
         "config",
@@ -126,8 +149,7 @@
             "where": [
               { "field": "Tier", "equals": 0 },
               { "field": "Status", "equals": 1 }
-            ],
-            "countryAliases": { "UK": "GB" }
+            ]
           }
         }
       ],
@@ -136,5 +158,26 @@
         "label": "Paid"
       }
     }
+  },
+  "serverCatalog": {
+    "file": "VPN/serverlist.json",
+    "list": "LogicalServers",
+    "name": "Name",
+    "country": "ExitCountry",
+    "city": "City",
+    "tier": "Tier",
+    "features": "Features",
+    "status": "Status",
+    "score": "Score",
+    "load": "Load"
+  },
+  "hopSelection": {
+    "source": "cacheFile",
+    "value": "Score",
+    "direction": "min",
+    "file": "VPN/serverlist.json",
+    "list": "LogicalServers",
+    "country": "ExitCountry",
+    "city": "City"
   }
 }

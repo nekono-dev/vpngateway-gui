@@ -25,7 +25,7 @@ const { withAuthenticatedInject } = await import("../auth/test-support.js");
 function buildApp() {
   return withAuthenticatedInject(buildRawApp());
 }
-const { ProxyUnavailableError, ProxyTimeoutError } = await import("../errors.js");
+const { ProxyUnavailableError, ProxyTimeoutError, GatewayProtectionMismatchError } = await import("../errors.js");
 
 describe("GET /v1/connection/gateway", () => {
   beforeEach(() => {
@@ -36,6 +36,7 @@ describe("GET /v1/connection/gateway", () => {
     const status = {
       transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
       explicitProxy: { state: "crashLoop", restartCount: 4 },
+      gatewayGuard: { state: "LEASE", healthy: true, leaseValid: true, lastUpdatedAt: "2026-11-18T00:00:00.000Z" },
     };
     fetchProxyStatusMock.mockResolvedValue(status);
 
@@ -50,6 +51,7 @@ describe("GET /v1/connection/gateway", () => {
       transparentGateway: { state: "active", killSwitchBlocking: false },
       explicitProxy: { state: "stopped", restartCount: 0 },
       dnsRelay: { state: "active", upstream: "failing", bypassEntries: 12 },
+      gatewayGuard: { state: "UNKNOWN", healthy: false, leaseValid: false, lastUpdatedAt: null },
     };
     fetchProxyStatusMock.mockResolvedValue(status);
 
@@ -71,5 +73,12 @@ describe("GET /v1/connection/gateway", () => {
     const response = await buildApp().inject({ method: "GET", url: "/v1/connection/gateway" });
     expect(response.statusCode).toBe(504);
     expect(response.json().error).toBe("proxy_timeout");
+  });
+
+  it("通信保護方式の不一致は専用コードと状態を返す", async () => {
+    fetchProxyStatusMock.mockRejectedValue(new GatewayProtectionMismatchError("API と Gateway の通信保護設定が一致しません"));
+    const response = await buildApp().inject({ method: "GET", url: "/v1/connection/gateway" });
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({ error: "gateway_protection_mismatch", protectionModeMismatch: true });
   });
 });

@@ -5,6 +5,8 @@ export class ProxyUnavailableError extends Error {}
 
 export class ProxyTimeoutError extends Error {}
 
+export class GatewayProtectionMismatchError extends Error {}
+
 export class CommandExecutionError extends Error {
   constructor(
     message: string,

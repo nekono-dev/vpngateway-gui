@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "start": "node dist/server.js",
-    "dev": "tsx watch src/server.ts",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
     "export-openapi": "tsx scripts/export-openapi.ts",
     "test": "vitest run",
     "lint": "eslint src"

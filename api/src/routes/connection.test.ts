@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-test-"));
@@ -30,6 +30,7 @@ const { withAuthenticatedInject } = await import("../auth/test-support.js");
 function buildApp() {
   return withAuthenticatedInject(buildRawApp());
 }
+const { addFavoriteLocationItem, readFavoriteLocations } = await import("../locations/favorite-locations-store.js");
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: "" });
 const statusOutput = (city: string) => `Connected to \x1B[1m${city}\x1B[0m in \x1B[1mTUN\x1B[0m mode, running on \x1B[1mtun0\x1B[0m`;
@@ -70,6 +71,10 @@ describe("/v1/connection の接続先", () => {
     connectedNames.length = 0;
     currentStatus = "VPN is disconnected";
     rmSync(statePath("last-location.json"), { force: true });
+    mkdirSync(join(dir, "providers", "adguardvpn", "cities"), { recursive: true });
+    for (const [country, cities] of Object.entries({ jp: ["Tokyo"], cn: ["Shanghai (Virtual)"], us: ["Las Vegas"] })) {
+      writeFileSync(join(dir, "providers", "adguardvpn", "cities", `${country}.json`), JSON.stringify({ country, cities }));
+    }
     await app.inject({ method: "GET", url: "/v1/connection" }); // 切断観測で保存内容を初期化
   });
 
@@ -86,6 +91,16 @@ describe("/v1/connection の接続先", () => {
     expect(put.statusCode).toBe(200);
     expect(connectedNames).toEqual(["Shanghai"]);
     expect(put.json()).toMatchObject({ country: "cn", locationId: "cn-shanghai-virtual" });
+  });
+
+  it("一覧外のお気に入りは接続中なら切断し、国名で接続して成功後に削除する", async () => {
+    addFavoriteLocationItem("adguardvpn", { id: "srv-cn-shanghai-999", kind: "server", country: "cn", countryName: "China", city: "Shanghai", serverName: "CN#999" });
+    currentStatus = statusOutput("OLD SERVER");
+    const put = await putConnection(app, { connect: true, locationId: "srv-cn-shanghai-999" });
+    expect(put.statusCode).toBe(200);
+    expect(executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv[0])).toEqual(["status", "status", "disconnect", "connect"]);
+    expect(connectedNames).toEqual(["China"]);
+    expect(readFavoriteLocations("adguardvpn")).toEqual([]);
   });
 
   it("接続中に別の接続先IDで呼ぶと接続先を変更し、GETも新しい接続先を返す", async () => {
@@ -107,7 +122,7 @@ describe("/v1/connection の接続先", () => {
 
     const locations = await app.inject({ method: "GET", url: "/v1/connection/locations" });
     const last = locations.json().filter((l: { lastConnected: boolean }) => l.lastConnected);
-    expect(last.map((l: { id: string }) => l.id)).toEqual(["us-las-vegas"]);
+    expect(last.map((l: { id: string }) => l.id)).toEqual(["us-united-states"]);
   });
 
   it("CLI外で別の接続先へ再接続されていた場合は、古い接続先を返さない", async () => {

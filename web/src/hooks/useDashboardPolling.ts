@@ -45,13 +45,13 @@ export interface DashboardState {
  */
 async function settle<T>(
   request: () => Promise<{ status: number; data: unknown }>,
-  failureMessage: (status: number) => string,
+  failureMessage: (status: number, data?: unknown) => string,
 ): Promise<{ value: T; error: undefined } | { value: undefined; error: string }> {
   try {
     const response = await request();
     return response.status === 200
       ? { value: response.data as T, error: undefined }
-      : { value: undefined, error: failureMessage(response.status) };
+      : { value: undefined, error: failureMessage(response.status, response.data) };
   } catch (caughtError) {
     return { value: undefined, error: caughtError instanceof Error ? caughtError.message : String(caughtError) };
   }
@@ -72,7 +72,12 @@ async function fetchDashboardState(): Promise<DashboardState> {
     ),
     settle<GatewayStatus>(
       () => getV1ConnectionGateway(),
-      (status) => `稼働状況の取得に失敗しました (status: ${status})`,
+      (status, data) => {
+        if (typeof data === "object" && data !== null && "error" in data && data.error === "gateway_protection_mismatch") {
+          return "API と Gateway の通信保護設定が一致しません";
+        }
+        return `稼働状況の取得に失敗しました (status: ${status})`;
+      },
     ),
     settle<SessionState>(
       () => getV1Session(),

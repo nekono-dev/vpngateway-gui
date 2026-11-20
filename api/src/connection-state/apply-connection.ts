@@ -18,6 +18,12 @@ import { saveLastLocationId } from "../locations/last-location-store.js";
 import type { ParsedLocation } from "../locations/location-list-parser.js";
 import type { Provider } from "../providers/provider-registry.js";
 import type { ConnectionPutBody, ConnectionStatus } from "../schemas/connection.js";
+import { resolveConnectTarget, UnknownConnectTargetError } from "../locations/location-target.js";
+import { readCityList, saveCityList } from "../locations/city-cache-store.js";
+import { availableServers } from "../locations/server-catalog.js";
+import { parseCityList } from "../locations/city-list-parser.js";
+import { readFavoriteLocations, removeFavoriteLocation } from "../locations/favorite-locations-store.js";
+import { toLocationId } from "../locations/location-id.js";
 
 /**
  * 目的: 接続先の指定有無に応じてコマンドを解決し、実行し、結果を永続化する。
@@ -33,20 +39,76 @@ export async function applyConnectionChange(provider: Provider, body: Connection
   const { profile } = provider;
   const actionName = body.connect ? "connect" : "disconnect";
   let target: ParsedLocation | undefined;
+  let resolvedConnectName: string | undefined;
   let argv: string[];
   let executed: { action: { timeoutMs: number; restrictedPattern?: string; successPattern?: string }; operation: OperationKey | undefined };
   if (body.connect && body.locationId) {
     const connectAction = requireAction(profile, "connect");
+    const declaration = profile.serverCatalog;
+    const loadAllServers = () => declaration ? availableServers(provider.id, declaration) : [];
+    const favorites = readFavoriteLocations(provider.id);
+    const isServerId = body.locationId.startsWith("srv-");
+    if (isServerId) {
+      try {
+        const targetResult = await resolveConnectTarget(profile, body.locationId, { locations: [], cities: [], servers: loadAllServers(), favorites });
+        if (targetResult.kind === "favoriteUnavailable") throw new PlaceholderValidationError("favorite location is no longer available");
+        if (targetResult.kind === "countryFallback") {
+          target = { id: body.locationId, country: targetResult.country, countryName: targetResult.country, connectName: targetResult.connectName };
+        } else {
+          target = { id: body.locationId, country: targetResult.country, countryName: targetResult.country, connectName: targetResult.connectName };
+        }
+        resolvedConnectName = targetResult.connectName;
+      } catch (error) {
+        if (error instanceof UnknownConnectTargetError) throw new PlaceholderValidationError(error.message);
+        throw error;
+      }
+    } else {
     const locations = await fetchLocations(provider);
-    target = locations.find((location) => location.id === body.locationId);
-    if (!target) {
-      throw new PlaceholderValidationError(`unknown locationId: ${body.locationId}`);
+    const cities: { country: string; cities: string[] }[] = [];
+    const cityLocations = [...locations];
+    for (const location of locations) {
+      if (!location.city) continue;
+      const group = cities.find((item) => item.country === location.country);
+      if (group) { if (!group.cities.includes(location.city)) group.cities.push(location.city); }
+      else cities.push({ country: location.country, cities: [location.city] });
+    }
+    for (const location of locations) {
+      if (location.city) continue;
+      const countryCode = location.country.toLowerCase();
+      if (countryCode !== body.locationId.split("-")[0]?.toLowerCase()) continue;
+      let countryCities = readCityList(provider.id, countryCode);
+      if (!countryCities && profile.actions.listCities) {
+        const action = profile.actions.listCities;
+        const cityArgv = resolveArgv(profile, "listCities", { LOCATION: location.country.toUpperCase() }, { LOCATION: [location.country.toUpperCase()] });
+        const result = await executeVendorCommand(provider.id, { vendor: profile.vendor, binary: profile.binary, resolvedArgv: cityArgv, timeoutMs: action.timeoutMs });
+        if (result.exitCode !== 0) throwCommandFailure(provider.id, "city list command failed", result.exitCode ?? -1, pickFailureOutput(result.stderr, result.stdout), { pattern: connectAction.restrictedPattern, operation: "connectToLocation" });
+        countryCities = parseCityList(result.stdout, action.table);
+        saveCityList(provider.id, countryCode, countryCities);
+      }
+      if (countryCities) {
+        const group = cities.find((item) => item.country === location.country);
+        if (group) group.cities.push(...countryCities.filter((city) => !group.cities.includes(city)));
+        else cities.push({ country: location.country, cities: countryCities });
+        for (const city of countryCities) cityLocations.push({ id: toLocationId(location.country, city), country: location.country, countryName: location.countryName, city, connectName: city });
+      }
+    }
+    let connectTarget;
+    try {
+      connectTarget = await resolveConnectTarget(profile, body.locationId, { locations: cityLocations, cities, servers: loadAllServers(), favorites });
+    } catch (error) {
+      if (error instanceof UnknownConnectTargetError) throw new PlaceholderValidationError(error.message);
+      throw error;
+    }
+    if (connectTarget.kind === "favoriteUnavailable") throw new PlaceholderValidationError("favorite location is no longer available");
+    target = cityLocations.find((location) => location.id === body.locationId);
+    if (!target) target = { id: body.locationId, country: connectTarget.country, countryName: connectTarget.country, connectName: connectTarget.connectName };
+    resolvedConnectName = connectTarget.kind === "cityByName" ? target.connectName : connectTarget.connectName;
     }
     argv = resolveArgv(
       profile,
       "connect",
-      { LOCATION: target.connectName },
-      { LOCATION: locations.map((location) => location.connectName) },
+      { LOCATION: resolvedConnectName },
+      { LOCATION: [resolvedConnectName] },
     );
     executed = { action: connectAction, operation: "connectToLocation" };
   } else if (body.connect) {
@@ -58,6 +120,17 @@ export async function applyConnectionChange(provider: Provider, body: Connection
   } else {
     argv = resolveArgv(profile, "disconnect", {});
     executed = { action: profile.actions.disconnect, operation: undefined };
+  }
+
+  const fallbackFavoriteId = body.connect && body.locationId?.startsWith("srv-") && profile.locationTarget?.unavailableFavorite === "countryFallback" && target && !target.city && readFavoriteLocations(provider.id).some((favorite) => favorite.id === body.locationId) ? body.locationId : undefined;
+  if (fallbackFavoriteId) {
+    const statusAction = requireAction(profile, "status");
+    const statusResult = await executeVendorCommand(provider.id, { vendor: profile.vendor, binary: profile.binary, resolvedArgv: resolveArgv(profile, "status", {}), timeoutMs: statusAction.timeoutMs });
+    if (isCommandSuccess(statusAction, statusResult) && parseConnectionOutput(profile.outputFormat, statusResult.stdout, profile.output).status === "connected") {
+      const disconnectAction = requireAction(profile, "disconnect");
+      const disconnected = await executeVendorCommand(provider.id, { vendor: profile.vendor, binary: profile.binary, resolvedArgv: resolveArgv(profile, "disconnect", {}), timeoutMs: disconnectAction.timeoutMs });
+      if (!isCommandSuccess(disconnectAction, disconnected)) throw new CommandExecutionError("disconnect command failed", disconnected.exitCode ?? -1, pickFailureOutput(disconnected.stderr, disconnected.stdout));
+    }
   }
 
   const result = await executeVendorCommand(provider.id, {
@@ -81,6 +154,7 @@ export async function applyConnectionChange(provider: Provider, body: Connection
       operation: executed.operation,
     });
   }
+  if (fallbackFavoriteId) removeFavoriteLocation(provider.id, fallbackFavoriteId);
   const status = parseConnectionOutput(profile.outputFormat, result.stdout, profile.output);
   if (status.status === "connected") {
     // 接続先を指定した接続に加え、自動接続（target無し。接続先を選べないプラン等）でも空の内容で保存する

@@ -53,9 +53,22 @@ export const DnsRelayStatusSchema = Type.Object({
   bypassEntries: Type.Integer(),
 });
 
+export const GatewayGuardStatusSchema = Type.Object({
+  state: Type.Union([
+    Type.Literal("UNKNOWN"),
+    Type.Literal("BLOCK"),
+    Type.Literal("LEASE"),
+    Type.Literal("OFF"),
+  ]),
+  healthy: Type.Boolean(),
+  leaseValid: Type.Boolean(),
+  lastUpdatedAt: Type.Union([Type.String(), Type.Null()]),
+});
+
 export const GatewayStatusSchema = Type.Object({
   transparentGateway: TransparentGatewayStatusSchema,
   explicitProxy: ExplicitProxyStatusSchema,
+  gatewayGuard: GatewayGuardStatusSchema,
   // Phase 14で追加。古いゲートウェイ（DNS中継なし）との組み合わせでも読めるよう省略可能とする。
   dnsRelay: Type.Optional(DnsRelayStatusSchema),
   // LAN側のネットワークCIDR（例: 192.168.3.0/24）。ゲートウェイ機がLAN_IFACE未設定、またはIPv4アドレスを

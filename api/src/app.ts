@@ -1,9 +1,12 @@
 // 責務: Fastifyアプリケーションの構築。ルート登録、OpenAPI仕様生成、エラーハンドリングの一元化を行う。
 
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyServerOptions } from "fastify";
 import fastifySwagger from "@fastify/swagger";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { registerConnectionLocationsRoute } from "./routes/connection-locations.js";
+import { registerConnectionCityTabRoute } from "./routes/connection-city-tab.js";
+import { registerConnectionServersRoute } from "./routes/connection-servers.js";
+import { registerConnectionCitiesRoute } from "./routes/connection-cities.js";
 import { registerConnectionRoute } from "./routes/connection.js";
 import { registerConnectionCapabilitiesRoute } from "./routes/connection-capabilities.js";
 import { registerConnectionAvailableLocationsRoute } from "./routes/connection-available-locations.js";
@@ -17,6 +20,7 @@ import { registerOperatorSessionRoute } from "./routes/operator-session.js";
 import { registerVerificationsRoute } from "./routes/verifications.js";
 import { registerGatewayRebootRoute } from "./routes/gateway-reboot.js";
 import { registerUiPreferencesRoute } from "./routes/ui-preferences.js";
+import { registerUserLocationRoute } from "./routes/user-location.js";
 import { requireOperatorSession } from "./auth/require-operator-session.js";
 import { PlaceholderValidationError } from "./profile/placeholder-resolver.js";
 import { SettingsValidationError } from "./settings/settings-store.js";
@@ -24,6 +28,7 @@ import { FavoriteLocationsError } from "./locations/favorite-locations-store.js"
 import {
   ProxyUnavailableError,
   ProxyTimeoutError,
+  GatewayProtectionMismatchError,
   CommandExecutionError,
   OperationRestrictedError,
   OperationUnsupportedError,
@@ -46,27 +51,15 @@ function isSchemaValidationError(error: unknown): boolean {
   return typeof error === "object" && error !== null && "validation" in error;
 }
 
-export interface BuildAppOptions {
-  /** 指定時、FastifyをHTTPSで待ち受けるよう構成する（省略時はHTTP。単体テストでの利用を想定）。 */
-  https?: { cert: Buffer; key: Buffer };
-}
-
 /**
  * 目的: Fastifyアプリケーションのインスタンスを構築する（listenはしない）。
- * 入力: options.https（省略可。APIサーバ自身のTLSサーバ証明書・秘密鍵）。
+ * 入力: options.webHttpsEnabled（HTTPS設定。trueの場合のみsession CookieへSecure属性を付ける）。
  * 出力: ルート登録・エラーハンドラ設定済みのFastifyインスタンス。
- * 例: const app = buildApp({ https: loadApiServerTlsOptions() }); await app.listen({ port: 3000 });
+ * 例: const app = buildApp(); await app.listen({ port: 3000 });
  */
-export function buildApp(options: BuildAppOptions = {}) {
-  // Fastifyの型はhttps指定の有無でRawServerの型（http.Server/https.Server）が分岐し、
-  // 以降のルート登録（register/get/post等）で型の分岐が伝播してしまうため、
-  // ここで既定のFastifyInstance型（http.Server）へ統一する（実行時の挙動はhttpsオプションの
-  // 有無だけで決まり、このモジュール内でRawServer固有の型は使わない）。
-  const app = (
-    options.https
-      ? (Fastify({ logger: true, https: options.https }) as unknown as FastifyInstance)
-      : Fastify({ logger: true })
-  ).withTypeProvider<TypeBoxTypeProvider>();
+export function buildApp(options: { webHttpsEnabled?: boolean; logger?: FastifyServerOptions["logger"] } = {}) {
+  const app = Fastify({ logger: options.logger ?? true }).withTypeProvider<TypeBoxTypeProvider>();
+  const secureSessionCookies = options.webHttpsEnabled === true;
 
   app.register(fastifySwagger, {
     openapi: {
@@ -104,6 +97,11 @@ export function buildApp(options: BuildAppOptions = {}) {
     }
     if (error instanceof ProxyUnavailableError) {
       reply.code(502).send({ error: "proxy_unavailable", message: error.message });
+      return;
+    }
+    if (error instanceof GatewayProtectionMismatchError) {
+      request.log.error({ event: "protection_mode_mismatch", err: error });
+      reply.code(502).send({ error: "gateway_protection_mismatch", message: error.message, protectionModeMismatch: true });
       return;
     }
     if (error instanceof ProxyTimeoutError) {
@@ -154,6 +152,9 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.addHook("preHandler", requireOperatorSession);
 
   app.register(registerConnectionLocationsRoute);
+  app.register(registerConnectionCityTabRoute);
+  app.register(registerConnectionServersRoute);
+  app.register(registerConnectionCitiesRoute);
   app.register(registerConnectionRoute);
   app.register(registerConnectionCapabilitiesRoute);
   app.register(registerConnectionAvailableLocationsRoute);
@@ -162,11 +163,12 @@ export function buildApp(options: BuildAppOptions = {}) {
   app.register(registerConnectionGatewayRoute);
   app.register(registerSessionRoute);
   app.register(registerProvidersRoute);
-  app.register(registerOperatorRoute);
-  app.register(registerOperatorSessionRoute);
+  app.register(registerOperatorRoute, { secureSessionCookies });
+  app.register(registerOperatorSessionRoute, { secureSessionCookies });
   app.register(registerVerificationsRoute);
   app.register(registerGatewayRebootRoute);
   app.register(registerUiPreferencesRoute);
+  app.register(registerUserLocationRoute);
 
   return app;
 }

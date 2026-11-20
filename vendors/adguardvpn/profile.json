@@ -2,6 +2,7 @@
   "vendor": "adguardvpn",
   "displayName": "AdGuard VPN",
   "binary": "/usr/local/bin/adguardvpn-cli",
+  "locationTarget": { "city": "cityName", "unavailableFavorite": "countryFallback", "fallbackProvider": "adguard" },
   "outputFormat": "text",
   "loginMethod": "deviceUrl",
   "output": {
@@ -100,5 +101,10 @@
         "label": "不明"
       }
     }
+  },
+  "hopSelection": {
+    "source": "listLocations",
+    "value": "ping",
+    "direction": "min"
   }
 }

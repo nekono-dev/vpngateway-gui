@@ -13,7 +13,7 @@ import { buildSessionCookie, createSession, isValidSession, readSessionIdFromCoo
 import { isRateLimited, recordFailure, clearFailures } from "../auth/login-rate-limiter.js";
 import { UnauthenticatedError, RateLimitedError, OperatorValidationError } from "../errors.js";
 
-export const registerOperatorRoute: FastifyPluginAsyncTypebox = async (fastify) => {
+export const registerOperatorRoute: FastifyPluginAsyncTypebox<{ secureSessionCookies: boolean }> = async (fastify, options) => {
   fastify.get(
     "/v1/operator",
     { schema: { response: { 200: OperatorStateSchema } } },
@@ -43,7 +43,7 @@ export const registerOperatorRoute: FastifyPluginAsyncTypebox = async (fastify) 
     async (request, reply) => {
       createOperatorAccount(request.body.username, request.body.password);
       const sessionId = createSession();
-      reply.header("set-cookie", buildSessionCookie(sessionId, request.protocol === "https"));
+      reply.header("set-cookie", buildSessionCookie(sessionId, options.secureSessionCookies));
       return { configured: true, username: request.body.username };
     },
   );

@@ -1,31 +1,43 @@
-// 責務: ゲートウェイ制御チャネル（APIサーバ⇄proxy、mTLS TCP）のTLSサーバオプションの組み立て。
-//: サーバ証明書はgateway-caが署名したもの、
-// クライアント証明書の検証（requestCert: true・rejectUnauthorized: true）でAPIサーバを認証する。
-// 証明書一式はinstall.shの`setup_gateway_pki`が/etc/vpngwgui/pki/へローカル生成する
-// （単一ホスト構成向け。分離構成でのSCP配布はStage3で対応）。
+// 責務: Gateway UDS listener のTLS有効・無効を厳格に選び、mTLS server options を構築する。
 
 import { readFileSync } from "node:fs";
 import type { TlsOptions } from "node:tls";
 
-const PKI_DIR = process.env.GATEWAY_PKI_DIR ?? "/etc/vpngwgui/pki";
+export class GatewayTlsConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GatewayTlsConfigurationError";
+  }
+}
 
 /**
- * 目的: ゲートウェイ制御チャネルのmTLSサーバオプションを、環境変数で指定された証明書ファイルから組み立てる。
- * 入力: なし（環境変数`GATEWAY_TLS_CA_FILE`・`GATEWAY_TLS_CERT_FILE`・`GATEWAY_TLS_KEY_FILE`。
- *      いずれも省略時は`$GATEWAY_PKI_DIR`配下の既定ファイル名を使う）。
- * 出力: `https.createServer`へ渡すTLSオプション（`requestCert: true`・`rejectUnauthorized: true`で、
- *      `ca`で指定した認証局（gateway-ca）が発行したクライアント証明書を要求・検証する）。
- * 失敗時の方針: 証明書ファイルが読めない場合は例外を投げる（起動時に気づけるよう、無音のフォールバックはしない）。
+ * 目的: strict flag に従いHTTPを選ぶか、証明書を検証するmTLS server optionsを構築する。
+ * 出力: TLS OFF は undefined、TLS ON は明示CA・server cert/keyを使うTLS options。
+ * 失敗時の方針: 不正値・必須path不足・読み込み失敗を起動エラーにし、HTTPへ降格しない。
  */
-export function loadGatewayTlsOptions(): TlsOptions {
-  const caFile = process.env.GATEWAY_TLS_CA_FILE ?? `${PKI_DIR}/gateway-ca.crt`;
-  const certFile = process.env.GATEWAY_TLS_CERT_FILE ?? `${PKI_DIR}/proxy-server.crt`;
-  const keyFile = process.env.GATEWAY_TLS_KEY_FILE ?? `${PKI_DIR}/proxy-server.key`;
-  return {
-    ca: readFileSync(caFile),
-    cert: readFileSync(certFile),
-    key: readFileSync(keyFile),
-    requestCert: true,
-    rejectUnauthorized: true,
-  };
+export function loadGatewayTlsOptions(env: NodeJS.ProcessEnv = process.env): TlsOptions | undefined {
+  const enabled = env.GATEWAY_TLS_ENABLED ?? "false";
+  if (enabled !== "true" && enabled !== "false") {
+    throw new GatewayTlsConfigurationError("GATEWAY_TLS_ENABLED must be exactly true or false");
+  }
+  if (enabled === "false") return undefined;
+
+  const caFile = env.GATEWAY_TLS_CA_FILE;
+  const certFile = env.GATEWAY_TLS_CERT_FILE;
+  const keyFile = env.GATEWAY_TLS_KEY_FILE;
+  if (caFile === undefined || certFile === undefined || keyFile === undefined) {
+    throw new GatewayTlsConfigurationError("GATEWAY_TLS_ENABLED=true requires CA, server certificate, and server key files");
+  }
+  try {
+    return {
+      ca: readFileSync(caFile),
+      cert: readFileSync(certFile),
+      key: readFileSync(keyFile),
+      minVersion: "TLSv1.2",
+      requestCert: true,
+      rejectUnauthorized: true,
+    };
+  } catch (error) {
+    throw new GatewayTlsConfigurationError(`Gateway TLS material could not be loaded: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }

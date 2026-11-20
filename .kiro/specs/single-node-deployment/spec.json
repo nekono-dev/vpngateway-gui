@@ -1,0 +1,22 @@
+{
+  "feature_name": "single-node-deployment",
+  "created_at": "2026-11-11T14:15:05Z",
+  "updated_at": "2026-11-19T04:00:00Z",
+  "language": "ja",
+  "phase": "tasks-generated",
+  "approvals": {
+    "requirements": {
+      "generated": true,
+      "approved": true
+    },
+    "design": {
+      "generated": true,
+      "approved": true
+    },
+    "tasks": {
+      "generated": true,
+      "approved": true
+    }
+  },
+  "ready_for_implementation": true
+}

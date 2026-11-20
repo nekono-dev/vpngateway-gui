@@ -4,17 +4,47 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 /**
- * 目的: リクエストボディを全て読み、UTF-8文字列として返す。
- * 入力: req(受信リクエスト)。
- * 出力: ボディ全体の文字列（ボディなしなら空文字列）。
- * 失敗時の方針: 受信エラーはPromiseのrejectで呼び出し元へ伝える。
+ * 目的: リクエストボディを最大4秒読み、UTF-8文字列として返す。切断・異常終了・期限切れで待ち続けない。
+ * 入力: req(受信リクエスト)、timeoutMs(読み取り期限。APIの設定通知期限5秒を超えない)。
+ * 出力: ボディ全体のUTF-8文字列。
  */
-export function readRequestBody(req: IncomingMessage): Promise<string> {
+export function readRequestBody(req: IncomingMessage, timeoutMs = 4000): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    let settled = false;
+    const cleanup = (): void => {
+      clearTimeout(readTimer);
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("error", onError);
+      req.off("aborted", onAborted);
+      req.off("close", onClose);
+    };
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error !== undefined) reject(error);
+      else resolve(Buffer.concat(chunks).toString("utf8"));
+    };
+    const onData = (chunk: Buffer): void => { chunks.push(chunk); };
+    const onEnd = (): void => finish();
+    const onError = (error: Error): void => finish(error);
+    const onAborted = (): void => finish(new Error("request body was aborted"));
+    const onClose = (): void => {
+      if (!req.complete) finish(new Error("request closed before body completed"));
+    };
+    const readTimer = setTimeout(() => finish(new Error("request body read timed out")), timeoutMs);
+
+    if (req.aborted || (req.destroyed && !req.complete)) {
+      finish(new Error("request body was aborted"));
+      return;
+    }
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onError);
+    req.on("aborted", onAborted);
+    req.on("close", onClose);
   });
 }
 

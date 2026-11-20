@@ -17,6 +17,7 @@ let server: Server;
 let baseUrl = "";
 let otherCaPath: string;
 let serverCaPath: string;
+const requestPaths: string[] = [];
 
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "prepare-test-"));
@@ -28,6 +29,7 @@ beforeAll(() => {
   otherCaPath = `${other}.crt`;
   // 到達の確認（GET /v1/operator）は通し、管理者の認証（POST）は拒否する
   server = createServer({ key: readFileSync(join(dir, "server.key")), cert: readFileSync(join(dir, "server.crt")) }, (req, res) => {
+    requestPaths.push(req.url ?? "");
     res.writeHead(req.method === "GET" ? 200 : 401, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: "invalid_credentials", message: "認証に失敗" }));
   });
@@ -44,8 +46,8 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function config(caPath: string): LiveConfig {
-  return { apiBaseUrl: baseUrl, caPath, artifactsDir: join(dir, "artifacts") };
+function config(webCaPath?: string): LiveConfig {
+  return { webBaseUrl: baseUrl, ...(webCaPath === undefined ? {} : { webCaPath }), artifactsDir: join(dir, "artifacts") };
 }
 
 /** 入力を呼んだ回数を数える端末（資格情報の入力画面が出たかを確かめる）。 */
@@ -71,7 +73,7 @@ describe("classifyTransport", () => {
 });
 
 describe("prepare（段の中止）", () => {
-  it("CA で検証できない API では、資格情報の入力を求めずに api の段で中止する（要件 1.7・1.8）", async () => {
+  it("Web CA で検証できない Web origin では、資格情報の入力を求めずに api の段で中止する", async () => {
     const io = spyIo();
     const outcome = await prepare(config(otherCaPath), "protonvpn", {
       io,
@@ -82,7 +84,7 @@ describe("prepare（段の中止）", () => {
     expect(io.hiddenCalls).toBe(0);
   });
 
-  it("CA が正しければ API の段を通過する（管理者の入力へ進む）", async () => {
+  it("Web CA が正しければ Web origin の API 段を通過する（管理者の入力へ進む）", async () => {
     const io = spyIo();
     // 管理者の入力を 2 回求めた後、API が拒否して operator の段で止まる
     const outcome = await prepare(config(serverCaPath), "protonvpn", {
@@ -91,15 +93,28 @@ describe("prepare（段の中止）", () => {
       now: () => new Date(0),
     });
     expect(io.hiddenCalls).toBe(2);
+    expect(requestPaths).toContain("/api/v1/operator");
+    expect(requestPaths).toContain("/api/v1/operator/session");
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.step).toBe("operator");
   });
 });
 
-describe("取り込んだ CA を読めない場合（要件 1.7）", () => {
-  it("CA のファイルが無ければ、通信せずに ca-untrusted で中止する", async () => {
-    const outcome = await probeApi({ apiBaseUrl: baseUrl, caPath: join(dir, "missing-ca.crt"), artifactsDir: dir });
+describe("任意の Web CA", () => {
+  it("指定した Web CA のファイルが読めなければ、通信せずに ca-untrusted で中止する", async () => {
+    const outcome = await probeApi({ webBaseUrl: baseUrl, webCaPath: join(dir, "missing-ca.crt"), artifactsDir: dir });
     expect(outcome).toEqual({ ok: false, reason: { kind: "ca-untrusted" } });
+  });
+
+  it("Web CA 未指定時は標準 trust store で検証し、自己署名証明書を信頼しない", async () => {
+    const io = spyIo();
+    const outcome = await prepare({ webBaseUrl: baseUrl, artifactsDir: dir }, "protonvpn", {
+      io,
+      fetchPublicIp: async () => "203.0.113.1",
+      now: () => new Date(0),
+    });
+    expect(outcome).toEqual({ ok: false, step: "api", reason: { kind: "ca-untrusted" } });
+    expect(io.hiddenCalls).toBe(0);
   });
 });

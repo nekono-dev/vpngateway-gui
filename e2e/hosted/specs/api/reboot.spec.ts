@@ -1,5 +1,5 @@
 // 責務: 再起動の依頼（POST /v1/gateway/reboot）の試験（stack 群・api）。要件 10.1〜10.4。
-// 依頼ファイルが残ったままホストの監視（vpngwgui-reboot.path）を再開すると、ホストが再起動する。
+// 依頼ファイルが残ったままホストの監視（vpngwgui-host-reboot.path）を再開すると、ホストが再起動する。
 // そのため試験の前に監視を止め、依頼ファイルを消してから再開する。直列に実行する。
 
 import { execFile } from "node:child_process";
@@ -11,7 +11,7 @@ import { apiClient, loadAdmin } from "../../fixtures/stack";
 const run = promisify(execFile);
 const LOGIN = "/v1/operator/session";
 const REBOOT = "/v1/gateway/reboot";
-/** 依頼用ディレクトリ（installer/setup.sh の HOST_CTL_DIR と一致させる）。 */
+/** 依頼用ディレクトリ（Compose が proxy へ mount するパス）。 */
 const HOST_CTL_DIR = "/var/lib/vpngwgui-host-ctl";
 const REQUEST_FILE = `${HOST_CTL_DIR}/reboot-request`;
 
@@ -39,8 +39,9 @@ test.describe.serial("再起動の依頼（stack・api）", () => {
   let uptimeBefore = 0;
 
   test.beforeAll(async () => {
-    // 監視を止めてから依頼ファイルを消す。これにより、試験の間はホストが再起動しない
-    await run("sudo", ["systemctl", "stop", "vpngwgui-reboot.path"]);
+    // host-preparation apply が有効化した実 path unit を停止し、依頼ファイルを消してから試験する。
+    // hosted runner の再起動を避け、afterAll でも依頼を消してから監視を再開する。
+    await run("sudo", ["systemctl", "stop", "vpngwgui-host-reboot.path"]);
     await clearRequest();
     await run("sudo", ["chmod", "0700", HOST_CTL_DIR]);
     uptimeBefore = uptimeSeconds();
@@ -50,7 +51,7 @@ test.describe.serial("再起動の依頼（stack・api）", () => {
     // 後始末: 書き込みの権限を戻し、依頼ファイルを消してから監視を再開する（順序を守る）
     await run("sudo", ["chmod", "0700", HOST_CTL_DIR]).catch(() => undefined);
     await clearRequest();
-    await run("sudo", ["systemctl", "start", "vpngwgui-reboot.path"]);
+    await run("sudo", ["systemctl", "start", "vpngwgui-host-reboot.path"]);
     // 試験の間に再起動が起きていないことを、起動からの経過時間が減っていないことで確かめる
     expect(uptimeSeconds()).toBeGreaterThanOrEqual(uptimeBefore);
   });

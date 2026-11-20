@@ -21,4 +21,4 @@ RUN mkdir -p /var/lib/vpngwgui && chown vpngwgui:vpngwgui /var/lib/vpngwgui
 USER vpngwgui
 ENV PORT=3000
 EXPOSE 3000
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/main.js"]

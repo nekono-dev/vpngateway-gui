@@ -36,4 +36,6 @@ ENV MOCKVPN_SAMPLES_DIR=/opt/mock/vendors
 ENV MOCKVPN_STATE_DIR=/var/lib/mockvpn
 ENV CTL_SOCKET_PATH=/var/run/vpngw-ctl/runner-protonvpn.sock
 RUN mkdir -p /var/run/vpngw-ctl /var/lib/mockvpn && chown 10001:10001 /var/lib/mockvpn /var/run/vpngw-ctl
+# サーバカタログ（VPN/serverlist.json）の書き込み先。本番の CLI のキャッシュと同じ位置（vendors/protonvpn/compose.yml の proton-cache に対応）
+RUN mkdir -p /home/vpngwgui/.cache/Proton && chown -R 10001:10001 /home/vpngwgui
 CMD ["node", "dist/runner.js"]

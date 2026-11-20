@@ -18,7 +18,7 @@ export interface PlanLocation {
 
 const regionNames = new Intl.DisplayNames(["ja"], { type: "region" });
 
-function countryName(code: string, aliases: Record<string, string> | undefined): string {
+function countryName(code: string, aliases: Readonly<Record<string, string>> | undefined): string {
   try {
     return regionNames.of(aliases?.[code] ?? code) ?? code;
   } catch {
@@ -33,7 +33,11 @@ function countryName(code: string, aliases: Record<string, string> | undefined):
  * 例: extractPlanLocations({ L: [{ C: "JP", T: 0, Y: "Tokyo" }] }, { file: "f", list: "L", country: "C", city: "Y", where: [{ field: "T", equals: 0 }] })
  *     // => [{ code: "JP", name: "日本", cities: ["Tokyo"] }]
  */
-export function extractPlanLocations(json: unknown, def: AvailableLocationsDef): PlanLocation[] {
+export function extractPlanLocations(
+  json: unknown,
+  def: AvailableLocationsDef,
+  countryAliases?: Readonly<Record<string, string>>,
+): PlanLocation[] {
   const servers = (json as Record<string, unknown> | null)?.[def.list];
   if (!Array.isArray(servers)) return [];
   const byCountry = new Map<string, Set<string>>();
@@ -48,7 +52,7 @@ export function extractPlanLocations(json: unknown, def: AvailableLocationsDef):
     byCountry.set(code, cities);
   }
   return [...byCountry.entries()]
-    .map(([code, cities]) => ({ code, name: countryName(code, def.countryAliases), cities: [...cities].sort() }))
+    .map(([code, cities]) => ({ code, name: countryName(code, countryAliases), cities: [...cities].sort() }))
     .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 }
 
@@ -58,12 +62,16 @@ export function extractPlanLocations(json: unknown, def: AvailableLocationsDef):
  * 出力: 一覧。ファイルが無い・読めない・壊れている場合、またはproviderDirの外を指す場合は空配列
  *       （参考表示のため、失敗してもAPI全体を失敗させない）。
  */
-export function readPlanLocations(def: AvailableLocationsDef, providerDir: string): PlanLocation[] {
+export function readPlanLocations(
+  def: AvailableLocationsDef,
+  providerDir: string,
+  countryAliases?: Readonly<Record<string, string>>,
+): PlanLocation[] {
   const root = resolve(providerDir);
   const file = resolve(root, def.file);
   if (!file.startsWith(root + sep)) return [];
   try {
-    return extractPlanLocations(JSON.parse(readFileSync(file, "utf8")), def);
+    return extractPlanLocations(JSON.parse(readFileSync(file, "utf8")), def, countryAliases);
   } catch {
     return [];
   }

@@ -3,7 +3,7 @@
 
 import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
-import { apiClient, loadAdmin, saveAdmin, API_BASE_URL, API_CA_PATH } from "../../fixtures/stack";
+import { apiClient, loadAdmin, saveAdmin, API_BASE_URL } from "../../fixtures/stack";
 import { createApiClient, type ApiResult } from "../../../common/api-client";
 import { makeAdminCredentials } from "../../fixtures/admin";
 
@@ -44,7 +44,7 @@ test.describe.serial("認証の制限・API の認証・管理者の変更（sta
   test("2.7: 未ログインで保護された API（再起動依頼）を呼ぶと 401 を返し、操作を行わない", async () => {
     const before = Number(readFileSync("/proc/uptime", "utf8").split(" ")[0]);
     // 新しいクライアント（Cookie を持たない）で呼ぶ
-    const anonymous = createApiClient({ baseUrl: API_BASE_URL, caPath: API_CA_PATH });
+    const anonymous = createApiClient({ baseUrl: API_BASE_URL });
     // 本文（再認証の password）は必要。空の本文は検証の段階で 400 になり、保護の判定に届かないため、本文を付ける
     const res = await anonymous.post("/v1/gateway/reboot", { password: "not-the-password-1" });
     expect(res.ok).toBe(false);
@@ -65,7 +65,7 @@ test.describe.serial("認証の制限・API の認証・管理者の変更（sta
     if (res.ok) return;
     expect(statusOf(res)).toBe(401);
     // 以前の資格情報で、まだログインできる
-    const again = await createApiClient({ baseUrl: API_BASE_URL, caPath: API_CA_PATH }).post(LOGIN, { username: admin.username, password: admin.password });
+    const again = await createApiClient({ baseUrl: API_BASE_URL }).post(LOGIN, { username: admin.username, password: admin.password });
     expect(again.ok).toBe(true);
   });
 
@@ -77,7 +77,7 @@ test.describe.serial("認証の制限・API の認証・管理者の変更（sta
     const res = await client.put("/v1/operator", { currentPassword: admin.password, newPassword: next.password });
     expect(res.ok, "管理者の変更が成功しない").toBe(true);
 
-    const fresh = createApiClient({ baseUrl: API_BASE_URL, caPath: API_CA_PATH });
+    const fresh = createApiClient({ baseUrl: API_BASE_URL });
     expect((await fresh.post(LOGIN, { username: admin.username, password: next.password })).ok).toBe(true);
     await saveAdmin({ username: admin.username, password: next.password });
   });

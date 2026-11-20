@@ -1,32 +1,69 @@
-// 責務: ゲートウェイ制御チャネル（APIサーバ⇄proxy、mTLS TCP）のクライアント証明書読み込み。
-//: undiciのAgent({ connect: { ca, cert, key } })へ渡す。
-// 証明書一式はinstall.shの`setup_gateway_pki`が/etc/vpngwgui/pki/へローカル生成する
-// （単一ホスト構成向け。分離構成でのSCP配布はStage3で対応）。
+// 責務: Gateway UDS transport の環境設定を読み込み、HTTP または検証必須の mTLS 接続設定を組み立てる。
 
 import { readFileSync } from "node:fs";
+import { X509Certificate, createPrivateKey } from "node:crypto";
+import type { Agent } from "undici";
 
-const PKI_DIR = process.env.GATEWAY_PKI_DIR ?? "/etc/vpngwgui/pki";
-
-export interface GatewayClientTlsOptions {
-  ca: Buffer;
-  cert: Buffer;
-  key: Buffer;
+export interface GatewayTransportOptions {
+  origin: string;
+  socketPath: string;
+  connect: Agent.Options["connect"];
 }
 
-/**
- * 目的: ゲートウェイ制御チャネルへのmTLSクライアント証明書一式を、環境変数で指定されたファイルから読み込む。
- * 入力: なし（環境変数`GATEWAY_TLS_CA_FILE`・`GATEWAY_TLS_CERT_FILE`・`GATEWAY_TLS_KEY_FILE`。
- *      いずれも省略時は`$GATEWAY_PKI_DIR`配下の既定ファイル名を使う）。
- * 出力: undiciの`Agent({ connect: {...} })`へそのまま渡せる{ ca, cert, key }。
- * 失敗時の方針: 証明書ファイルが読めない場合は例外を投げる（起動時に気づけるよう、無音のフォールバックはしない）。
- */
-export function loadGatewayClientTlsOptions(): GatewayClientTlsOptions {
-  const caFile = process.env.GATEWAY_TLS_CA_FILE ?? `${PKI_DIR}/gateway-ca.crt`;
-  const certFile = process.env.GATEWAY_TLS_CERT_FILE ?? `${PKI_DIR}/api-client.crt`;
-  const keyFile = process.env.GATEWAY_TLS_KEY_FILE ?? `${PKI_DIR}/api-client.key`;
-  return {
-    ca: readFileSync(caFile),
-    cert: readFileSync(certFile),
-    key: readFileSync(keyFile),
-  };
+export class GatewayTlsConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GatewayTlsConfigurationError";
+  }
+}
+
+/** 現在時刻が証明書の有効期間内であることを確認する。 */
+export function assertCertificateValidity(certificate: X509Certificate, now = Date.now()): void {
+  if (Date.parse(certificate.validFrom) > now || Date.parse(certificate.validTo) <= now) {
+    throw new GatewayTlsConfigurationError("Gateway client certificate is outside its validity period");
+  }
+}
+
+/** 設定値を厳密に読み、TLS 設定不備を平文へ降格させずに拒否する。 */
+export function loadGatewayTransportOptions(env: NodeJS.ProcessEnv = process.env): GatewayTransportOptions {
+  const enabledValue = env.GATEWAY_TLS_ENABLED ?? "false";
+  if (enabledValue !== "true" && enabledValue !== "false") {
+    throw new GatewayTlsConfigurationError("GATEWAY_TLS_ENABLED must be exactly true or false");
+  }
+  const socketPath = env.GATEWAY_SOCKET_PATH ?? "/run/vpngw-gateway/gateway.sock";
+  if (enabledValue === "false") return { origin: "http://gateway", socketPath, connect: { socketPath } };
+
+  const requiredFiles = [
+    { name: "GATEWAY_TLS_CA_FILE", value: env.GATEWAY_TLS_CA_FILE },
+    { name: "GATEWAY_TLS_CLIENT_CERT_FILE", value: env.GATEWAY_TLS_CLIENT_CERT_FILE },
+    { name: "GATEWAY_TLS_CLIENT_KEY_FILE", value: env.GATEWAY_TLS_CLIENT_KEY_FILE },
+  ];
+  const missingVariables = requiredFiles.filter(({ value }) => !value).map(({ name }) => name);
+  if (missingVariables.length > 0) {
+    // 不足時は値やファイル内容を含めず、この固定形式で環境変数名のみを記録する。
+    throw new GatewayTlsConfigurationError(`Gateway TLS configuration missing required environment variables: ${missingVariables.join(", ")}`);
+  }
+  const caFile = env.GATEWAY_TLS_CA_FILE!;
+  const certFile = env.GATEWAY_TLS_CLIENT_CERT_FILE!;
+  const keyFile = env.GATEWAY_TLS_CLIENT_KEY_FILE!;
+  try {
+    const ca = readFileSync(caFile);
+    const cert = readFileSync(certFile);
+    const key = readFileSync(keyFile);
+    const clientCertificate = new X509Certificate(cert);
+    const privateKey = createPrivateKey(key);
+    assertCertificateValidity(clientCertificate);
+    if (!clientCertificate.checkPrivateKey(privateKey)) {
+      throw new GatewayTlsConfigurationError("Gateway client certificate and private key do not match");
+    }
+    const servername = env.GATEWAY_TLS_SERVER_NAME ?? "gateway.local";
+    return {
+      origin: `https://${servername}`,
+      socketPath,
+      connect: { socketPath, ca, cert, key, servername, rejectUnauthorized: true, minVersion: "TLSv1.2" },
+    };
+  } catch (error) {
+    if (error instanceof GatewayTlsConfigurationError) throw error;
+    throw new GatewayTlsConfigurationError(`Gateway TLS material is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }

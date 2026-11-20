@@ -48,7 +48,7 @@ test.describe.serial("初期設定・ログイン・ログアウト（ui）", ()
 
   test("2.4: 誤ったパスワードで「パスワードが正しくありません」を出す。正しい資格情報でダッシュボードへ進む", async ({ watchedPage: page, pageErrors }) => {
     // 誤った資格情報の 401 は、この試験の意図した結果（ブラウザがリソースの失敗として記録する）
-    pageErrors.allow(/status of 401 \(Unauthorized\) \(https:\/\/127\.0\.0\.1:18080\/api\/v1\/operator\/session\)/);
+  pageErrors.allow(/status of 401 \(Unauthorized\) \(http:\/\/127\.0\.0\.1:18080\/api\/v1\/operator\/session\)/);
     await page.goto("/");
     await page.getByLabel("ユーザー名").fill(admin.username);
     await page.getByLabel("パスワード", { exact: true }).fill(`${admin.password}-wrong`);

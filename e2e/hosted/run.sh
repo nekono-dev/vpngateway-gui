@@ -6,10 +6,12 @@
 # 使い方: npm run test:e2e   （リポジトリルートで）
 
 set -u
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/../.." || exit 2
 . e2e/hosted/lib/env.sh
 . e2e/hosted/lib/topology.sh
 . e2e/hosted/lib/provision.sh
+. e2e/hosted/lib/cleanup.sh
+hosted_install_traps
 
 ARTIFACTS="e2e/artifacts/hosted"
 mkdir -p "$ARTIFACTS"
@@ -24,7 +26,15 @@ run_group() {
   project="$group"
   [ "$group" = stack ] && project="stack-api"
   if [ -n "$prep" ]; then
-    if ! prepare_group "$prep"; then
+    if ! provision_group_prepare "$prep"; then
+      echo "$group prepare-failed" >> "$RESULT_FILE"
+      sh e2e/hosted/lib/diagnose.sh "$group" || true
+      return 2
+    fi
+  fi
+  if [ "$group" = tls ]; then
+    if ! sh e2e/hosted/lib/tls-matrix-certs.sh e2e/hosted/.work/tls-matrix ||
+      ! sh e2e/hosted/lib/tls-browser-trust.sh setup e2e/hosted/.work/tls-matrix; then
       echo "$group prepare-failed" >> "$RESULT_FILE"
       sh e2e/hosted/lib/diagnose.sh "$group" || true
       return 2
@@ -33,6 +43,9 @@ run_group() {
   # 出力先は絶対パスで渡す（Playwright は報告の相対パスを設定ファイルの場所基準で解決するため）
   E2E_JSON_OUT="$PWD/$ARTIFACTS/$group.json" npx playwright test -c e2e/hosted/playwright.config.ts --project="$project" --output "$PWD/$ARTIFACTS/$group/test-output"
   rc=$?
+  if [ "$group" = tls ]; then
+    sh e2e/hosted/lib/tls-browser-trust.sh cleanup e2e/hosted/.work/tls-matrix || true
+  fi
   if [ "$rc" -eq 0 ]; then
     echo "$group pass" >> "$RESULT_FILE"
   else
@@ -42,28 +55,10 @@ run_group() {
   return "$rc"
 }
 
-# 準備: 前回の導入を消し、経路を作り、導入して起動し、既定経路を切り替える。
-# 引数: 準備の種類（stack・gateway）。lifecycle は試験自身が導入するため、この関数を使わない。
-# gateway は、ISP の模擬サービス（echo・DoH・平文 DNS）を isp の名前空間で起動してから経路を切り替える。
-prepare_group() {
-  group="$1"
-  topology_down
-  if [ -x "$E2E_WORK_DIR/install.sh" ]; then
-    sudo sh "$E2E_WORK_DIR/install.sh" uninstall --purge >/dev/null 2>&1 || true
-  fi
-  topology_links || return 1
-  provision_install "$PWD" "$(git rev-parse HEAD)" || return 1
-  provision_start || return 1
-  if [ "$group" = gateway ]; then provision_isp_start || return 1; fi
-  topology_route_isp || return 1
-  provision_wait || return 1
-  return 0
-}
-
 overall=0
-# 群の順序: lifecycle（導入を試験自身が行う）→ stack（導入・起動）→ gateway（経路を使う）
-run_group lifecycle "" || overall=$?
-for group in stack gateway; do
+# 群の順序: lifecycle（volume retention）→ stack（Web/API）→ gateway（経路を使う）→ tls（保護設定）
+run_group lifecycle "lifecycle" || overall=$?
+for group in stack gateway tls; do
   # stack 群は specs/ui と specs/api からなる（ui が先に実行される）
   case "$group" in
     stack) dirs="e2e/hosted/specs/ui e2e/hosted/specs/api" ;;
@@ -77,12 +72,10 @@ for group in stack gateway; do
   run_group "$group" "$group" || { rc=$?; [ "$rc" -eq 2 ] && [ "$overall" -eq 0 ] && overall=2; [ "$rc" -eq 1 ] && [ "$overall" -eq 0 ] && overall=1; }
 done
 
-# 後始末: 経路と導入を戻す（成否にかかわらず）
-topology_down
-[ -x "$E2E_WORK_DIR/install.sh" ] && sudo sh "$E2E_WORK_DIR/install.sh" uninstall --purge >/dev/null 2>&1 || true
+# 後始末は EXIT trap が行う（volume は保持する）。
 
 jsons=""
-for group in lifecycle stack gateway; do
+for group in lifecycle stack gateway tls; do
   [ -s "$ARTIFACTS/$group.json" ] && jsons="$jsons $ARTIFACTS/$group.json"
 done
 if [ -n "$jsons" ]; then

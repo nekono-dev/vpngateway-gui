@@ -15,10 +15,10 @@ vi.mock("undici", () => ({
 }));
 
 vi.mock("./gateway-tls-options.js", () => ({
-  loadGatewayClientTlsOptions: () => ({ ca: Buffer.from("ca"), cert: Buffer.from("cert"), key: Buffer.from("key") }),
+  loadGatewayTransportOptions: () => ({ origin: "http://gateway", socketPath: "/tmp/gateway.sock", connect: { socketPath: "/tmp/gateway.sock" } }),
 }));
 
-const { ProxyUnavailableError, ProxyTimeoutError } = await import("../errors.js");
+const { ProxyUnavailableError, ProxyTimeoutError, GatewayProtectionMismatchError } = await import("../errors.js");
 const { executeVendorCommand, notifySettings, fetchProxyStatus, checkRunnerHealth, requestConnectionCheck } =
   await import("./proxy-client.js");
 
@@ -38,6 +38,13 @@ describe("executeVendorCommand", () => {
     });
 
     expect(result).toEqual({ exitCode: 0, stdout: "connected", stderr: "" });
+    expect(requestMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      origin: "http://gateway",
+      headersTimeout: 10000,
+      bodyTimeout: 10000,
+    }));
+    expect(requestMock.mock.lastCall?.[0]).not.toHaveProperty("signal");
+    expect(agentConnectOptions).toContainEqual({ socketPath: "/tmp/gateway.sock" });
   });
 
   it("プロキシが期待と異なる形状で応答した場合は例外を投げる", async () => {
@@ -80,6 +87,42 @@ describe("notifySettings", () => {
     const result = await notifySettings({ killSwitch: true, transparentGatewayEnabled: true });
 
     expect(result).toEqual({ applied: true });
+    expect(requestMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      path: "/net/settings",
+      headersTimeout: 5000,
+      bodyTimeout: 5000,
+      signal: expect.any(AbortSignal),
+    }));
+  });
+
+  it("成功応答の succeeded と effective applied を別々に返す", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ succeeded: true, applied: false }));
+
+    await expect(notifySettings({ killSwitch: true, transparentGatewayEnabled: false }))
+      .resolves.toEqual({ succeeded: true, applied: false });
+  });
+
+  it("総期限でbackoff中の要求が中断された場合はProxyTimeoutErrorに分類する", async () => {
+    requestMock.mockImplementation(({ signal }: { signal: AbortSignal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }));
+
+    await expect(notifySettings({ killSwitch: true, transparentGatewayEnabled: true }))
+      .rejects.toBeInstanceOf(ProxyTimeoutError);
+  }, 6000);
+
+  it("旧proxyの succeeded 欠落応答もHTTP 200なら成功として扱う", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ applied: false }));
+
+    await expect(notifySettings({ killSwitch: true, transparentGatewayEnabled: false }))
+      .resolves.toEqual({ applied: false });
+  });
+
+  it("proxyのHTTP 503は適用失敗として通知をrejectする", async () => {
+    requestMock.mockResolvedValue(jsonResponse({ error: "guard_apply_failed" }, 503));
+
+    await expect(notifySettings({ killSwitch: false, transparentGatewayEnabled: true }))
+      .rejects.toThrow(/unexpected status from proxy: 503/);
   });
 
   it("プロキシが期待と異なる形状で応答した場合は例外を投げる", async () => {
@@ -96,6 +139,7 @@ describe("fetchProxyStatus", () => {
     const status = {
       transparentGateway: { state: "active", vpnInterface: "tun0", killSwitchBlocking: false },
       explicitProxy: { state: "active", socksPort: 1080, httpPort: 3128, restartCount: 0 },
+      gatewayGuard: { state: "LEASE", healthy: true, leaseValid: true, lastUpdatedAt: "2026-11-18T00:00:00.000Z" },
     };
     requestMock.mockResolvedValue(jsonResponse(status));
 
@@ -109,6 +153,7 @@ describe("fetchProxyStatus", () => {
     const status = {
       transparentGateway: { state: "stopped", killSwitchBlocking: false },
       explicitProxy: { state: "stopped", restartCount: 0 },
+      gatewayGuard: { state: "OFF", healthy: true, leaseValid: false, lastUpdatedAt: "2026-11-18T00:00:00.000Z" },
     };
     requestMock.mockResolvedValue(jsonResponse(status));
     await expect(fetchProxyStatus()).resolves.toEqual(status);
@@ -118,6 +163,7 @@ describe("fetchProxyStatus", () => {
     const status = {
       transparentGateway: { state: "stopped", killSwitchBlocking: false },
       explicitProxy: { state: "crashLoop", restartCount: 5 },
+      gatewayGuard: { state: "UNKNOWN", healthy: false, leaseValid: false, lastUpdatedAt: null },
     };
     requestMock.mockResolvedValue(jsonResponse(status));
     await expect(fetchProxyStatus()).resolves.toEqual(status);
@@ -143,9 +189,34 @@ describe("fetchProxyStatus", () => {
   });
 
   it("サーバ証明書の検証失敗・クライアント証明書の拒否による切断も、到達不能（ProxyUnavailableError）として扱う", async () => {
-    for (const code of ["SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "CERT_HAS_EXPIRED", "UND_ERR_SOCKET"]) {
-      requestMock.mockRejectedValue(Object.assign(new Error("x"), { code }));
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const [code, category] of [
+      ["SELF_SIGNED_CERT_IN_CHAIN", "certificate_authority_invalid"],
+      ["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "certificate_authority_invalid"],
+      ["CERT_HAS_EXPIRED", "certificate_expired"],
+      ["ERR_TLS_CERT_ALTNAME_INVALID", "certificate_name_mismatch"],
+      ["ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED", "client_certificate_rejected"],
+    ]) {
+      requestMock.mockRejectedValue(Object.assign(new Error("sensitive certificate path must not be logged"), { code }));
       await expect(fetchProxyStatus(), code).rejects.toThrow(/failed to connect/);
+      expect(warning).toHaveBeenLastCalledWith(JSON.stringify({
+        level: "warn",
+        event: "gateway_tls_validation_failed",
+        code,
+        category,
+      }));
+    }
+    expect(warning.mock.calls.flat().join(" ")).not.toContain("sensitive certificate path");
+    warning.mockRestore();
+  });
+
+  it("TLS と平文の保護方式不一致を専用エラーへ分類する", async () => {
+    for (const [code, message] of [
+      ["ERR_SSL_WRONG_VERSION_NUMBER", "wrong version number"],
+      ["HPE_INVALID_CONSTANT", "Expected HTTP/"],
+    ]) {
+      requestMock.mockRejectedValue(Object.assign(new Error(message), { code }));
+      await expect(fetchProxyStatus(), code).rejects.toBeInstanceOf(GatewayProtectionMismatchError);
     }
   });
 });

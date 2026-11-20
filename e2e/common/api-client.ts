@@ -1,7 +1,8 @@
-// 責務: 検証サーバ（導入済みスタック）の API へ、CA を指定して HTTPS で要求を送る共有クライアント。
-// hosted（e2e-tests）と vendor-live（vendor-live-e2e）の両方が使う。証明書の検証を無効化する経路は持たない。
+// 責務: hosted と vendor-live の検証で Web origin 経由の API 要求を送る共有クライアント。
+// HTTP/HTTPS を選択し、HTTPS の証明書検証を無効化する経路は持たない。
 
 import { readFileSync } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 
 /** 通常の要求のタイムアウト（ミリ秒）。 */
@@ -16,7 +17,7 @@ export type ApiResult<T> =
   | { ok: false; kind: "http"; status: number; error: string; message: string }
   | { ok: false; kind: "transport"; message: string; code?: string };
 
-/** API クライアント。パスは baseUrl からの相対パス（例: `/v1/session`）。 */
+/** API クライアント。パスは API の相対パス（例: `/v1/session`）。 */
 export interface ApiClient {
   get<T>(path: string, timeoutMs?: number): Promise<ApiResult<T>>;
   post<T>(path: string, body?: unknown, timeoutMs?: number): Promise<ApiResult<T>>;
@@ -65,15 +66,18 @@ export function cookieHeader(jar: ReadonlyMap<string, string>): string {
 }
 
 /**
- * 目的: CA を指定して API へ要求するクライアントを作る。CA ファイルは作成時に読む。
- * 入力: config.baseUrl（例 `https://127.0.0.1:3000`）、config.caPath（API の証明書を発行した CA の PEM ファイル）。
- * 出力: ApiClient。証明書の検証は必ず行う（`rejectUnauthorized: false` は使わない）。
- * 失敗時の方針: CA ファイルが読めなければ例外を投げる（呼び出し側が試験を中止する）。
- * 例: createApiClient({ baseUrl: "https://127.0.0.1:3000", caPath: "/tmp/api-ca.crt" }).get("/v1/session")
+ * 目的: Web 公開 origin 経由で API へ要求するクライアントを作る。
+ * 入力: config.baseUrl（HTTP または HTTPS の Web origin）、任意の config.caPath（HTTPS 用 Web CA PEM）。
+ * 出力: ApiClient。HTTPS は指定 CA または標準 trust store で証明書を検証する。
+ * 失敗時の方針: Web CA が指定されて読めなければ例外を投げる。未指定時も TLS 検証を無効化しない。
+ * 例: createApiClient({ baseUrl: "http://127.0.0.1:8080" }).get("/v1/session")
  */
-export function createApiClient(config: { baseUrl: string; caPath: string }): ApiClient {
-  const ca = readFileSync(config.caPath);
+export function createApiClient(config: { baseUrl: string; caPath?: string }): ApiClient {
   const base = new URL(config.baseUrl);
+  if (base.protocol !== "http:" && base.protocol !== "https:") {
+    throw new Error(`未対応の Web URL scheme です: ${base.protocol}`);
+  }
+  const ca = base.protocol === "https:" && config.caPath !== undefined ? readFileSync(config.caPath) : undefined;
   const jar = new Map<string, string>();
 
   const send = <T>(method: string, path: string, body: unknown, timeoutMs: number): Promise<ApiResult<T>> =>
@@ -87,35 +91,35 @@ export function createApiClient(config: { baseUrl: string; caPath: string }): Ap
         headers["content-length"] = String(Buffer.byteLength(payload));
       }
 
-      const req = httpsRequest(
-        {
-          protocol: base.protocol,
-          hostname: base.hostname,
-          port: base.port === "" ? 443 : Number(base.port),
-          path,
-          method,
-          headers,
-          ca,
-          // 証明書の検証は既定の true のまま（rejectUnauthorized を指定しない）
-        },
-        (res) => {
-          const chunks: Buffer[] = [];
-          res.on("data", (chunk: Buffer) => chunks.push(chunk));
-          res.on("end", () => {
-            applySetCookie(jar, res.headers["set-cookie"]);
-            const text = Buffer.concat(chunks).toString("utf8");
-            const status = res.statusCode ?? 0;
-            const parsed: unknown = text === "" ? undefined : safeJson(text);
-            if (status >= 200 && status < 300) {
-              resolve({ ok: true, status, body: parsed as T });
-              return;
-            }
-            const error = typeof (parsed as { error?: unknown })?.error === "string" ? (parsed as { error: string }).error : "unknown";
-            const message = typeof (parsed as { message?: unknown })?.message === "string" ? (parsed as { message: string }).message : text.slice(0, 200);
-            resolve({ ok: false, kind: "http", status, error, message });
-          });
-        },
-      );
+      const requestOptions = {
+        protocol: base.protocol,
+        hostname: base.hostname,
+        ...(base.port === "" ? {} : { port: Number(base.port) }),
+        path: path.startsWith("/api/") ? path : `/api${path.startsWith("/") ? path : `/${path}`}`,
+        method,
+        headers,
+      };
+      const onResponse = (res: import("node:http").IncomingMessage): void => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          applySetCookie(jar, res.headers["set-cookie"]);
+          const text = Buffer.concat(chunks).toString("utf8");
+          const status = res.statusCode ?? 0;
+          const parsed: unknown = text === "" ? undefined : safeJson(text);
+          if (status >= 200 && status < 300) {
+            resolve({ ok: true, status, body: parsed as T });
+            return;
+          }
+          const error = typeof (parsed as { error?: unknown })?.error === "string" ? (parsed as { error: string }).error : "unknown";
+          const message = typeof (parsed as { message?: unknown })?.message === "string" ? (parsed as { message: string }).message : text.slice(0, 200);
+          resolve({ ok: false, kind: "http", status, error, message });
+        });
+      };
+      // 証明書検証は Node の既定値で有効。CA 未指定時は標準 trust store を使う。
+      const req = base.protocol === "https:"
+        ? httpsRequest({ ...requestOptions, ...(ca === undefined ? {} : { ca }) }, onResponse)
+        : httpRequest(requestOptions, onResponse);
       req.setTimeout(timeoutMs, () => {
         req.destroy(new Error(`タイムアウト（${timeoutMs} ms）`));
       });

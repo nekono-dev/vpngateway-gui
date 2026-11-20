@@ -1,4 +1,4 @@
-// 責務: 準備処理（API の到達と CA の検証、管理者の認証、基準の公開 IP、ベンダーの認証）を段の順に実行する（要件 1.1〜1.11）。
+// 責務: 準備処理（Web origin 経由の API 到達と Web CA の検証、管理者の認証、基準の公開 IP、ベンダーの認証）を段の順に実行する。
 // 段が失敗したら、以降の段を実行せずに中止する。資格情報は端末の入力からその場で使い、保持しない。
 
 import { createApiClient, type ApiClient, type ApiResult } from "../../common/api-client";
@@ -18,7 +18,7 @@ const CERT_ERROR_CODES = new Set([
 ]);
 
 /**
- * 目的: 通信の失敗を、証明書の失敗（ca-untrusted）と到達の失敗（api-unreachable）に分類する。
+ * 目的: 通信の失敗を、Web 証明書の失敗（ca-untrusted）と到達の失敗（api-unreachable）に分類する。
  * 入力: result(API の応答。transport の失敗のみ分類する)。
  * 出力: 中止の理由。
  * 例: classifyTransport({ ok: false, kind: "transport", message: "...", code: "DEPTH_ZERO_SELF_SIGNED_CERT" }) // => { kind: "ca-untrusted" }
@@ -29,17 +29,17 @@ export function classifyTransport(result: { ok: false; kind: "transport"; code?:
 }
 
 /**
- * 目的: API の到達と CA の検証を確かめる（資格情報の入力より前に行う。要件 1.1・1.7）。
- * 入力: config(検証サーバの URL と CA)、io(表示のみ使う)。
+ * 目的: Web origin の `/api` 経由で API 到達と Web 証明書の検証を確かめる（資格情報の入力より前に行う）。
+ * 入力: config(Web 公開 URL と任意の Web CA)。
  * 出力: 到達できれば ApiClient。
- * 失敗時の方針: 証明書の検証が失敗したら ca-untrusted、届かなければ api-unreachable で中止する。
+ * 失敗時の方針: Web 証明書の検証が失敗したら ca-untrusted、届かなければ api-unreachable で中止する。
  */
 export async function probeApi(config: LiveConfig): Promise<{ ok: true; api: ApiClient } | { ok: false; reason: AbortReason }> {
   let api: ApiClient;
   try {
-    api = createApiClient({ baseUrl: config.apiBaseUrl, caPath: config.caPath });
+    api = createApiClient({ baseUrl: config.webBaseUrl, ...(config.webCaPath === undefined ? {} : { caPath: config.webCaPath }) });
   } catch {
-    // 取り込んだ CA を読めない（無い・壊れている）なら、証明書を検証できないので中止する（資格情報は求めない）
+    // 指定した Web CA を読めない（無い・壊れている）なら、証明書を検証できないので中止する（資格情報は求めない）
     return { ok: false, reason: { kind: "ca-untrusted" } };
   }
   // 未ログインで許可された経路（GET /v1/operator）で到達を確かめる

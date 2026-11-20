@@ -22,6 +22,8 @@ playwright-report/
 
 .claude/skills/kiro-*/
 .agents/skills/kiro-*/
+# cc-sdd が Codex 向けに生成するレビュー担当エージェント
+.codex/agents/spec-reviewer.toml
 # E2E（hosted・vendor-live）の成果物（スクリーンショット・トレース・診断・結果の JSON）
 e2e/artifacts/
 

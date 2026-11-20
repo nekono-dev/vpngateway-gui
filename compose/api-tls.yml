@@ -1,0 +1,21 @@
+# 責務: API と Gateway の mTLS 有効時だけ証明書を読み取り専用で渡す。
+services:
+  api:
+    volumes:
+      - ${GATEWAY_TLS_CA_HOST_PATH:?GATEWAY_TLS_CA_HOST_PATH must point to the Gateway CA bundle}:/run/vpngwgui/gateway-tls/ca.crt:ro
+      - ${GATEWAY_TLS_CLIENT_CERT_HOST_PATH:?GATEWAY_TLS_CLIENT_CERT_HOST_PATH must point to the API client certificate}:/run/vpngwgui/gateway-tls/client.crt:ro
+      - ${GATEWAY_TLS_CLIENT_KEY_HOST_PATH:?GATEWAY_TLS_CLIENT_KEY_HOST_PATH must point to the API client private key}:/run/vpngwgui/gateway-tls/client.key:ro
+    environment:
+      GATEWAY_TLS_CA_FILE: /run/vpngwgui/gateway-tls/ca.crt
+      GATEWAY_TLS_CLIENT_CERT_FILE: /run/vpngwgui/gateway-tls/client.crt
+      GATEWAY_TLS_CLIENT_KEY_FILE: /run/vpngwgui/gateway-tls/client.key
+      GATEWAY_TLS_SERVER_NAME: ${GATEWAY_TLS_SERVER_NAME:-gateway.local}
+  proxy:
+    volumes:
+      - ${GATEWAY_TLS_CA_HOST_PATH:?GATEWAY_TLS_CA_HOST_PATH must point to the Gateway CA bundle}:/run/vpngwgui/gateway-tls/ca.crt:ro
+      - ${GATEWAY_TLS_SERVER_CERT_HOST_PATH:?GATEWAY_TLS_SERVER_CERT_HOST_PATH must point to the Gateway certificate}:/run/vpngwgui/gateway-tls/server.crt:ro
+      - ${GATEWAY_TLS_SERVER_KEY_HOST_PATH:?GATEWAY_TLS_SERVER_KEY_HOST_PATH must point to the Gateway private key}:/run/vpngwgui/gateway-tls/server.key:ro
+    environment:
+      GATEWAY_TLS_CA_FILE: /run/vpngwgui/gateway-tls/ca.crt
+      GATEWAY_TLS_CERT_FILE: /run/vpngwgui/gateway-tls/server.crt
+      GATEWAY_TLS_KEY_FILE: /run/vpngwgui/gateway-tls/server.key

@@ -98,6 +98,9 @@ export class ExplicitProxyController {
   private consecutiveFailures = 0;
   private restartCount = 0;
   private configFailed = false;
+  private stopping = false;
+  private stopPromise: Promise<void> | undefined;
+  private stopResolve: (() => void) | undefined;
 
   constructor(options: ExplicitProxyControllerOptions) {
     this.options = {
@@ -125,6 +128,7 @@ export class ExplicitProxyController {
    * 例: controller.applySettings({ enabled: true, allowedCidrs: ["192.168.3.0/24"] })
    */
   applySettings(settings: ExplicitProxySettings): void {
+    if (this.stopping) return;
     const unchanged =
       this.hasApplied &&
       !this.configFailed &&
@@ -169,6 +173,37 @@ export class ExplicitProxyController {
     } else {
       this.startChild();
     }
+  }
+
+  /** 停止後の再起動を抑止し、子プロセスを SIGTERM、期限後 SIGKILL で終了させる。 */
+  stop(): Promise<void> {
+    if (this.stopPromise !== undefined) return this.stopPromise;
+    this.stopping = true;
+    this.cancelRestartTimer();
+    if (this.stableTimer !== undefined) clearTimeout(this.stableTimer);
+    this.stableTimer = undefined;
+    const child = this.child;
+    if (child === undefined) {
+      this.stopPromise = Promise.resolve();
+      return this.stopPromise;
+    }
+
+    this.expectedExits.add(child);
+    this.stopPromise = new Promise<void>((resolve) => {
+      this.stopResolve = resolve;
+      child.kill("SIGTERM");
+      this.killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+        this.killTimer = setTimeout(() => {
+          this.killTimer = undefined;
+          this.stopResolve?.();
+          this.stopResolve = undefined;
+        }, 250);
+        this.killTimer.unref();
+      }, Math.min(this.options.killTimeoutMs, 1_000));
+      this.killTimer.unref();
+    });
+    return this.stopPromise;
   }
 
   /**
@@ -263,6 +298,13 @@ export class ExplicitProxyController {
     if (this.killTimer !== undefined) clearTimeout(this.killTimer);
     this.stableTimer = undefined;
     this.killTimer = undefined;
+
+    if (this.stopping) {
+      this.emit({ event: "explicit_proxy_stopped", reason });
+      this.stopResolve?.();
+      this.stopResolve = undefined;
+      return;
+    }
 
     if (this.expectedExits.has(child)) {
       this.emit({ event: "explicit_proxy_stopped", reason });

@@ -1,0 +1,10 @@
+table inet vpngwgui_guard {
+	set healthy_lease4 {
+		type ifname
+		flags timeout
+	}
+
+	chain guard_forward {
+		type filter hook forward priority filter - 1; policy accept;
+	}
+}

@@ -3,12 +3,14 @@
 // （gateway-caで署名）を持つ接続のみ確立されることを、実際にTLSサーバ・クライアントで検証する。
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createServer as createHttpsServer, request as httpsRequest, type Server } from "node:https";
+import { request as httpsRequest } from "node:https";
+import { request as httpRequest, type Server } from "node:http";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import type { AddressInfo } from "node:net";
+import { createGatewayChannelServer } from "./control-server.js";
+import { listenOnGatewaySocket } from "./server.js";
 
 const dir = mkdtempSync(join(tmpdir(), "vpngwgui-gateway-tls-"));
 
@@ -56,40 +58,56 @@ beforeAll(() => {
 });
 
 describe("loadGatewayTlsOptions", () => {
-  it("環境変数で指定したca/cert/keyを読み込み、requestCert・rejectUnauthorizedをtrueにする", async () => {
-    process.env.GATEWAY_TLS_CA_FILE = caCertPath;
-    process.env.GATEWAY_TLS_CERT_FILE = serverCertPath;
-    process.env.GATEWAY_TLS_KEY_FILE = serverKeyPath;
+  it("TLS無効時は証明書を参照せずHTTP設定を選ぶ", async () => {
     const { loadGatewayTlsOptions } = await import("./tls-options.js");
-    const options = loadGatewayTlsOptions();
+    expect(loadGatewayTlsOptions({ GATEWAY_TLS_ENABLED: "false" })).toBeUndefined();
+  });
+
+  it("TLS有効時は明示したCA/cert/keyと必須client認証を設定する", async () => {
+    const { loadGatewayTlsOptions } = await import("./tls-options.js");
+    const options = loadGatewayTlsOptions({
+      GATEWAY_TLS_ENABLED: "true",
+      GATEWAY_TLS_CA_FILE: caCertPath,
+      GATEWAY_TLS_CERT_FILE: serverCertPath,
+      GATEWAY_TLS_KEY_FILE: serverKeyPath,
+    });
+    if (options === undefined) throw new Error("TLS options must exist when TLS is enabled");
     expect(options.requestCert).toBe(true);
     expect(options.rejectUnauthorized).toBe(true);
     expect((options.cert as Buffer).toString()).toBe(readFileSync(serverCertPath, "utf8"));
+  });
+
+  it.each(["yes", "TRUE", "", "0"])("TLS flag %j を拒否する", async (value) => {
+    const { loadGatewayTlsOptions } = await import("./tls-options.js");
+    expect(() => loadGatewayTlsOptions({ GATEWAY_TLS_ENABLED: value })).toThrow(/exactly true or false/);
+  });
+
+  it("TLS有効時に証明書設定が不足すると起動用設定の読込に失敗する", async () => {
+    const { loadGatewayTlsOptions } = await import("./tls-options.js");
+    expect(() => loadGatewayTlsOptions({ GATEWAY_TLS_ENABLED: "true" })).toThrow(/requires CA/);
   });
 });
 
 describe("mTLSサーバ（loadGatewayTlsOptionsで構築）", () => {
   let server: Server;
-  let port: number;
+  let listener: Awaited<ReturnType<typeof listenOnGatewaySocket>>;
+  const socketPath = join(dir, "gateway-tls.sock");
 
   beforeAll(async () => {
-    process.env.GATEWAY_TLS_CA_FILE = caCertPath;
-    process.env.GATEWAY_TLS_CERT_FILE = serverCertPath;
-    process.env.GATEWAY_TLS_KEY_FILE = serverKeyPath;
-    const { loadGatewayTlsOptions } = await import("./tls-options.js");
-    server = createHttpsServer(loadGatewayTlsOptions(), (_req, res) => {
+    server = createGatewayChannelServer((_req, res) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+    }, {
+      GATEWAY_TLS_ENABLED: "true",
+      GATEWAY_TLS_CA_FILE: caCertPath,
+      GATEWAY_TLS_CERT_FILE: serverCertPath,
+      GATEWAY_TLS_KEY_FILE: serverKeyPath,
     });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    port = (server.address() as AddressInfo).port;
+    listener = await listenOnGatewaySocket(server, socketPath, process.getuid?.() ?? 0);
   });
 
-  afterAll(() => {
-    server.close();
-    delete process.env.GATEWAY_TLS_CA_FILE;
-    delete process.env.GATEWAY_TLS_CERT_FILE;
-    delete process.env.GATEWAY_TLS_KEY_FILE;
+  afterAll(async () => {
+    await listener.close();
   });
 
   /** 指定したクライアント証明書（省略可）で接続し、成功すればステータス、失敗すればエラーで解決する。 */
@@ -97,14 +115,14 @@ describe("mTLSサーバ（loadGatewayTlsOptionsで構築）", () => {
     return new Promise((resolve) => {
       const req = httpsRequest(
         {
-          host: "127.0.0.1",
-          port,
+          socketPath,
           path: "/net/status",
           method: "GET",
           ca: readFileSync(caCertPath),
           cert: clientCert ? readFileSync(clientCert.cert) : undefined,
           key: clientCert ? readFileSync(clientCert.key) : undefined,
-          rejectUnauthorized: false, // サーバ証明書のホスト名検証はこのテストの対象外（127.0.0.1直結のため）。
+          rejectUnauthorized: true,
+          servername: "proxy-server",
           timeout: 3000,
         },
         (res) => {
@@ -121,7 +139,7 @@ describe("mTLSサーバ（loadGatewayTlsOptionsで構築）", () => {
     });
   }
 
-  it("クライアント証明書無しの接続は拒否される（完了基準: GATEWAY_PORTへクライアント証明書無しで接続すると拒否）", async () => {
+  it("UDS のTLS listener はクライアント証明書無しの接続を拒否する", async () => {
     const result = await connect();
     expect(result).toEqual({ error: true });
   });
@@ -134,5 +152,25 @@ describe("mTLSサーバ（loadGatewayTlsOptionsで構築）", () => {
   it("gateway-caで署名した正しいクライアント証明書は接続でき、応答を受け取れる", async () => {
     const result = await connect({ cert: validClientCertPath, key: validClientKeyPath });
     expect(result).toEqual({ status: 200 });
+  });
+});
+
+describe("TLS無効時のGateway UDS listener", () => {
+  it("証明書なしのHTTP over UDSで制御応答を返す", async () => {
+    const socketPath = join(dir, "gateway-http.sock");
+    const server = createGatewayChannelServer((_req, res) => res.end("ok"), { GATEWAY_TLS_ENABLED: "false" });
+    const listener = await listenOnGatewaySocket(server, socketPath, process.getuid?.() ?? 0);
+    const response = await new Promise<string>((resolve, reject) => {
+      const request = httpRequest({ socketPath, path: "/", agent: false }, (res) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => { body += chunk; });
+        res.on("end", () => resolve(body));
+      });
+      request.once("error", reject);
+      request.end();
+    });
+    expect(response).toBe("ok");
+    await listener.close();
   });
 });

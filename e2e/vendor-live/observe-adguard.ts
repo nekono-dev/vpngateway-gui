@@ -60,7 +60,7 @@ export function pickTarget(locations: readonly LocationLike[], target?: string):
 interface Observation {
   readonly observedAt: string;
   readonly target: string;
-  readonly apiBaseUrl: string;
+  readonly webBaseUrl: string;
   readonly plan?: string;
   readonly locationList: { readonly ok: boolean; readonly message: string; readonly seoul?: string };
   readonly connect?: { readonly ok: boolean; readonly message: string; readonly locationId: string };
@@ -82,9 +82,9 @@ async function connectionStatus(api: ApiClient): Promise<{ status?: string; mess
  * 出力: 観測の記録。
  * 失敗時の方針: 応答が失敗でも観測を続けて記録する。最後に接続が残っていれば切断を試みる。
  */
-async function observe(api: ApiClient, apiBaseUrl: string, plan: string | undefined, baselineIp: string, target?: string): Promise<Observation> {
+async function observe(api: ApiClient, webBaseUrl: string, plan: string | undefined, baselineIp: string, target?: string): Promise<Observation> {
   const label = target ?? "Seoul";
-  const base = { observedAt: new Date().toISOString(), target: label, apiBaseUrl, plan };
+  const base = { observedAt: new Date().toISOString(), target: label, webBaseUrl, plan };
 
   const list = await api.get<LocationLike[]>("/v1/connection/locations");
   if (!list.ok) {
@@ -185,7 +185,7 @@ async function main(): Promise<number> {
   }
 
   const { api } = outcome.session;
-  const observation = await observe(api, config.apiBaseUrl, outcome.session.vendor.planId, outcome.session.baseline.publicIp, target);
+  const observation = await observe(api, config.webBaseUrl, outcome.session.vendor.planId, outcome.session.baseline.publicIp, target);
   const file = await writeObservation(config, observation, entered.filter((value) => value !== ""));
 
   print("");

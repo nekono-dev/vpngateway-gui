@@ -1,11 +1,12 @@
 // 責務: 接続状態ダッシュボード画面の組み立てのみを行う。業務ロジック（コマンド解決等）は持たない
 // API呼び出しは生成クライアント以外を使わない。
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDashboardPolling, type ConnectionState } from "./hooks/useDashboardPolling";
 import { ConnectionStatusCard, connectionCardClassName } from "./components/dashboard/ConnectionStatusCard";
 import { GatewayStatusCard } from "./components/dashboard/GatewayStatusCard";
 import { LocationList } from "./components/dashboard/LocationList";
+import { LocationBrowser } from "./components/dashboard/LocationBrowser";
 import { ConnectionActions, type SubmittingAction } from "./components/dashboard/ConnectionActions";
 import { SessionCard } from "./components/dashboard/SessionCard";
 import { DisconnectButton } from "./components/dashboard/DisconnectButton";
@@ -18,10 +19,20 @@ import { ThemeToggleButton } from "./components/theme/ThemeToggleButton";
 import { HorizontalScroll } from "./components/HorizontalScroll";
 import { describeApiError, describeThrownError } from "./notifications/describe-api-error";
 import { useToast } from "./notifications/ToastProvider";
-import { putV1Connection } from "./generated/api/default/default";
+import {
+  deleteV1ConnectionLocationsLocationIdFavorite,
+  getV1ConnectionFavorites,
+  putV1Connection,
+  putV1ConnectionLocationsLocationIdFavorite,
+} from "./generated/api/default/default";
+import type { GetV1ConnectionFavorites200Item, PutV1ConnectionLocationsLocationIdFavoriteBody } from "./generated/api/endpoints.schemas";
+import { useCityList } from "./hooks/useCityList";
+import { useServerList } from "./hooks/useServerList";
+import { useCityTab } from "./hooks/useCityTab";
+import { toServerLocationId } from "./locations/server-location-id";
 import { useAvailableLocations } from "./hooks/useAvailableLocations";
 import { useLocations } from "./hooks/useLocations";
-import { findCurrentLocationId, resolveEffectiveId } from "./locations/current-location";
+import { findCurrentLocationId } from "./locations/current-location";
 import { findCurrentAvailableLocation } from "./locations/current-available-location";
 import { isAvailable, reasonOf, supportsLocationPing, usesAutoConnect } from "./capabilities/capability-state";
 
@@ -35,6 +46,10 @@ export function App({ onLogout }: Props) {
   // 利用者が接続先リストで明示的に選んだ接続先ID。未選択の間は、接続中なら現在の接続先、
   // 切断中なら最後に接続した接続先が対象になる（locations/current-location.ts）。
   const [selectedId, setSelectedId] = useState<string>();
+  // 階層の画面で開いている国と都市（未選択は空）。都市とサーバの一覧の取得対象になる。
+  const [selectedCountry, setSelectedCountry] = useState("");
+  const [selectedCityId, setSelectedCityId] = useState("");
+  const [favorites, setFavorites] = useState<GetV1ConnectionFavorites200Item[]>([]);
   const [submitting, setSubmitting] = useState<SubmittingAction>();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(false);
@@ -60,7 +75,25 @@ export function App({ onLogout }: Props) {
   // ベンダーが替わったら、明示的に選んでいた接続先は前のベンダーのものなので消す。
   useEffect(() => {
     setSelectedId(undefined);
+    setSelectedCountry("");
+    setSelectedCityId("");
   }, [activeProviderId]);
+  const cityList = useCityList(selectedCountry);
+  const serverList = useServerList(selectedCityId, data?.connection?.status, data?.connection?.location);
+  const cityTab = useCityTab();
+  // お気に入りの一覧（都市とサーバ）。登録・解除のたびに取り直す。
+  const loadFavorites = useCallback(async () => {
+    try {
+      const response = await getV1ConnectionFavorites();
+      if (response.status === 200) setFavorites(response.data);
+    } catch {
+      // 取得に失敗しても、お気に入りのタブが空になるだけで、他の操作は続けられる。
+    }
+  }, []);
+  useEffect(() => {
+    if (!isAvailable(capabilities, "locationList")) return;
+    void loadFavorites();
+  }, [activeProviderId, capabilities, loadFavorites]);
   // 接続先を指定できず自動接続が使えるプロバイダ・プラン（接続先を選べないプラン等）では、［接続］は接続先を指定しない接続になる。
   const autoConnect = usesAutoConnect(capabilities);
   // 接続状態の取得が一時的に失敗しても操作ボタン（接続/切断）を使えるよう、最後に取得できた値を保持する
@@ -76,10 +109,11 @@ export function App({ onLogout }: Props) {
   // 広げる。取得中・0件・制限理由のみ（参考一覧も空）のときは、内容に必要な高さのみを占める（Phase 22）。
   const hasVisibleList = locations.locations.length > 0 || availableLocations.length > 0;
 
-  const currentId = findCurrentLocationId(connection, locations.locations);
-  const lastConnectedId = locations.locations.find((location) => location.lastConnected)?.id;
-  const targetId = resolveEffectiveId(selectedId, currentId, lastConnectedId, locations.locations);
-  const target = locations.locations.find((location) => location.id === targetId);
+  // 現在の接続先（接続中のみ）。都市名の突き合わせには、開いている国の都市の一覧を使う。
+  const currentId = findCurrentLocationId(connection, cityList.cities);
+  // 接続ボタンの対象は、利用者が選んだ接続先。選んでいなければ現在の接続先。
+  const targetId = selectedId ?? currentId;
+  const target = targetId === undefined ? undefined : { id: targetId };
   // 接続中で、対象が現在の接続先と異なるときだけ［接続先を変更］を出す。
   const canChange = connection?.status === "connected" && target !== undefined && target.id !== currentId;
 
@@ -110,10 +144,23 @@ export function App({ onLogout }: Props) {
         if (response.status === 403) refresh();
         return;
       }
-      notifySuccess(done);
+      // サーバお気に入りが接続時に削除された場合は、無通知のフォールバックとして扱う。
+      let silent = connecting && !autoConnect && favorites.some((item) => item.id === target?.id && item.kind === "server");
+      if (silent) {
+        try {
+          const updated = await getV1ConnectionFavorites();
+          if (updated.status === 200) {
+            setFavorites(updated.data);
+            silent = !updated.data.some((item) => item.id === target?.id);
+          }
+        } catch {
+          // 接続は成功済み。判定用の再取得失敗を接続失敗として通知しない。
+        }
+      }
+      if (!silent) notifySuccess(done);
       if (connecting && target && !autoConnect) {
         // 以降の既定選択（次回の「前回」）を一覧へ即時反映し、明示的な選択は消して現在の接続先へ戻す。
-        locations.markLastConnected(target.id);
+        if (selectedCountry) locations.markLastConnected(selectedCountry);
         setSelectedId(undefined);
       }
       refresh();
@@ -121,6 +168,56 @@ export function App({ onLogout }: Props) {
       notifyError(describeThrownError(caughtError, `${operation}に失敗しました`));
     } finally {
       setSubmitting(undefined);
+    }
+  }
+
+  /**
+   * 目的: 都市のお気に入りを登録（PUT）または解除（DELETE）し、成功したら☆の表示とお気に入りの一覧を直す。
+   * 入力: cityId(対象の都市ID), favorite(真なら登録、偽なら解除)。都市の一覧に無い都市は何もしない。
+   * 出力: なし。失敗時は通知する（例外は投げない）。
+   */
+  async function toggleCityFavorite(cityId: string, favorite: boolean): Promise<void> {
+    const city = cityList.cities.find((item) => item.id === cityId);
+    if (!city) return;
+    await setFavoriteItem(cityId, favorite, { id: city.id, kind: "city", country: city.country, countryName: city.countryName, city: city.city }, () => cityList.patchFavorite(cityId, favorite));
+  }
+
+  /**
+   * 目的: 選んだ都市のサーバのお気に入りを登録または解除する（サーバの接続先IDはサーバ名から作る）。
+   * 入力: serverName(サーバ名), favorite(真なら登録、偽なら解除)。都市が未選択なら何もしない。
+   * 出力: なし。失敗時は通知する（例外は投げない）。
+   */
+  async function toggleServerFavorite(serverName: string, favorite: boolean): Promise<void> {
+    const city = cityList.cities.find((item) => item.id === selectedCityId);
+    if (!city) return;
+    const locationId = toServerLocationId(serverName);
+    await setFavoriteItem(locationId, favorite, { id: locationId, kind: "server", country: city.country, countryName: city.countryName, city: city.city, serverName }, () => serverList.patchFavorite(serverName, favorite));
+  }
+
+  /**
+   * 目的: お気に入りの登録（PUT）・解除（DELETE）の共通処理。成功したら画面の☆とお気に入りの一覧を直す。
+   * 入力: locationId(接続先ID), favorite(真なら登録), body(登録時の本文), patch(成功後に一覧の☆を直す処理)。
+   * 出力: なし。失敗時は要約をトーストに出し、表示は変えない。
+   */
+  async function setFavoriteItem(
+    locationId: string,
+    favorite: boolean,
+    body: PutV1ConnectionLocationsLocationIdFavoriteBody,
+    patch: () => void,
+  ): Promise<void> {
+    const operation = favorite ? "お気に入りへの追加" : "お気に入りの解除";
+    try {
+      const response = favorite
+        ? await putV1ConnectionLocationsLocationIdFavorite(locationId, body)
+        : await deleteV1ConnectionLocationsLocationIdFavorite(locationId);
+      if (response.status !== 200) {
+        notifyError(describeApiError(response.status, response.data, `${operation}に失敗しました`));
+        return;
+      }
+      patch();
+      await loadFavorites();
+    } catch (caughtError) {
+      notifyError(describeThrownError(caughtError, `${operation}に失敗しました`));
     }
   }
 
@@ -181,24 +278,58 @@ export function App({ onLogout }: Props) {
       </section>
       {/* ベンダーが替わったら、接続操作カード内のローカルな状態（絞り込み・タブ）を捨てるため、IDをkeyにして再マウントする。 */}
       <section key={activeProviderId} className={`card controls${hasVisibleList ? " controls-expanded" : ""}`} aria-label="接続操作">
-        <LocationList
-          locations={locations.locations}
-          isLoading={locations.isLoading}
-          isRefreshing={locations.isRefreshing}
-          error={locations.error}
-          selectedId={targetId}
-          currentId={currentId}
-          disabled={submitting !== undefined}
-          onSelect={setSelectedId}
-          onRefresh={locations.refresh}
-          onToggleFavorite={(locationId, favorite) => void locations.setFavorite(locationId, favorite)}
-          unavailableReason={reasonOf(capabilities, "locationList")}
-          availableLocations={availableLocations}
-          currentAvailableLocation={findCurrentAvailableLocation(connection, availableLocations)}
-          availableLocationsShowPing={supportsLocationPing(capabilities)}
-          favoritesDisabledReason={reasonOf(capabilities, "locationFavorites")}
-          refreshDisabledReason={reasonOf(capabilities, "pingMeasurement")}
-          changeAction={
+        {reasonOf(capabilities, "locationList") || locations.error ? (
+          <LocationList
+            locations={[]}
+            isLoading={locations.isLoading}
+            isRefreshing={locations.isRefreshing}
+            error={locations.error}
+            selectedId={undefined}
+            currentId={undefined}
+            disabled={submitting !== undefined}
+            onSelect={() => undefined}
+            onRefresh={locations.refresh}
+            onToggleFavorite={() => undefined}
+            unavailableReason={reasonOf(capabilities, "locationList")}
+            availableLocations={availableLocations}
+            currentAvailableLocation={findCurrentAvailableLocation(connection, availableLocations)}
+            availableLocationsShowPing={supportsLocationPing(capabilities)}
+            favoritesDisabledReason={reasonOf(capabilities, "locationFavorites")}
+            refreshDisabledReason={reasonOf(capabilities, "pingMeasurement")}
+            changeAction={
+              <ConnectionActions
+              connection={connection}
+              submitting={submitting}
+              canChange={canChange}
+              capabilities={capabilities}
+              disabled={isSwitchingProvider}
+              onChange={() => void handleSubmit("change")}
+            />
+            }
+          />
+        ) : (
+          <>
+            <LocationBrowser
+              countries={locations.locations}
+              favorites={favorites}
+              cities={cityList.cities}
+              servers={serverList.servers}
+              isLoading={cityList.isLoading}
+              isRefreshing={cityList.isRefreshing}
+              cityError={cityList.error}
+              cityTab={cityTab.tab}
+              hasServerSelection={locations.locations.find((item) => item.country === selectedCountry)?.hasServerStage ?? false}
+              disabled={submitting !== undefined}
+              selectedId={targetId}
+              currentId={currentId}
+              onSelect={setSelectedId}
+              onToggleCityFavorite={(cityId, favorite) => void toggleCityFavorite(cityId, favorite)}
+              onToggleServerFavorite={(serverName, favorite) => void toggleServerFavorite(serverName, favorite)}
+              onRefresh={() => void (cityList.error ? cityList.refresh() : cityList.remeasure().then((success) => { if (success) locations.refresh(); }))}
+              onCityTabChange={(tab) => void cityTab.save(tab)}
+              onCountryChange={(country) => { setSelectedCountry(country ?? ""); setSelectedCityId(""); setSelectedId(undefined); }}
+              onCityChange={(cityId) => { setSelectedCityId(cityId ?? ""); }}
+            />
             <ConnectionActions
               connection={connection}
               submitting={submitting}
@@ -207,8 +338,8 @@ export function App({ onLogout }: Props) {
               disabled={isSwitchingProvider}
               onChange={() => void handleSubmit("change")}
             />
-          }
-        />
+          </>
+        )}
       </section>
       <SettingsDialog open={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} defaultExplicitProxyAllowedCidr={data?.gateway?.lanCidr} />
       <ConnectionLogDialog open={isLogOpen} onClose={() => setIsLogOpen(false)} />

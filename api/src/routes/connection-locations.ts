@@ -5,25 +5,75 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ErrorResponseSchema } from "../schemas/connection.js";
 import {
   FavoriteResponseSchema,
+  FavoriteItemRequestSchema,
+  FavoritesResponseSchema,
   LocationIdParamsSchema,
-  LocationsResponseSchema,
+  LocationsRefreshResponseSchema,
+  type FavoriteItem,
 } from "../schemas/location.js";
+import { LOCATION_ID_PATTERN, toServerLocationId } from "../locations/location-id.js";
 import { fetchLocations } from "../locations/location-fetcher.js";
 import { getActiveProvider } from "../providers/active-provider-store.js";
 import {
-  addFavoriteLocation,
-  readFavoriteLocationIds,
+  FavoriteLocationsError,
+  addFavoriteLocationItem,
+  readFavoriteLocations,
   removeFavoriteLocation,
 } from "../locations/favorite-locations-store.js";
 import { readLastLocationId } from "../locations/last-location-store.js";
+import { isPingMeasurable } from "../capabilities/capability-evaluator.js";
+import { getGeoIndex } from "../geo/geo-index.js";
+import { annotateDistances } from "../locations/distance-annotator.js";
+import { readSavedUserCountry } from "../locations/user-location-store.js";
+import { resolveUserLocation } from "../locations/user-location-resolver.js";
+import { buildCountryRows } from "../locations/location-tree.js";
+import { clearCityCache } from "../locations/city-cache-store.js";
+
+function validateFavoriteItem(body: {
+  id: string;
+  kind: "city" | "server";
+  country: string;
+  countryName: string;
+  city: string;
+  serverName?: string;
+}): FavoriteItem {
+  const validLocationId = new RegExp(LOCATION_ID_PATTERN).test(body.id);
+  if (body.kind === "city") {
+    if (!validLocationId || body.id.startsWith("srv-") || body.serverName !== undefined) {
+      throw new FavoriteLocationsError("favorite kind and id do not match");
+    }
+    return { id: body.id, kind: "city", country: body.country, countryName: body.countryName, city: body.city };
+  }
+
+  if (typeof body.serverName !== "string" || body.serverName.length === 0) {
+    throw new FavoriteLocationsError("favorite kind and server name do not match");
+  }
+  if (!validLocationId || !body.id.startsWith("srv-") || body.id !== toServerLocationId(body.serverName)) {
+    throw new FavoriteLocationsError("favorite server id does not match server name");
+  }
+  return {
+    id: body.id,
+    kind: "server",
+    country: body.country,
+    countryName: body.countryName,
+    city: body.city,
+    serverName: body.serverName,
+  };
+}
 
 export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async (fastify) => {
+  fastify.get(
+    "/v1/connection/favorites",
+    { schema: { response: { 200: FavoritesResponseSchema } } },
+    async () => readFavoriteLocations(getActiveProvider().id),
+  );
+
   fastify.get(
     "/v1/connection/locations",
     {
       schema: {
         response: {
-          200: LocationsResponseSchema,
+          200: LocationsRefreshResponseSchema,
           403: ErrorResponseSchema,
           422: ErrorResponseSchema,
           501: ErrorResponseSchema,
@@ -32,21 +82,55 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
         },
       },
     },
-    async () => {
+    async (request) => {
       const provider = getActiveProvider();
       const locations = await fetchLocations(provider);
-      const favorites = new Set(readFavoriteLocationIds(provider.id));
       const lastId = readLastLocationId(provider.id);
-      // 接続時の指定名（connectName）は内部値のためレスポンスへ含めない。
-      return locations.map((location) => ({
-        id: location.id,
-        country: location.country,
-        countryName: location.countryName,
-        ...(location.city === undefined ? {} : { city: location.city }),
-        ...(location.pingMs === undefined ? {} : { pingMs: location.pingMs }),
-        favorite: favorites.has(location.id),
-        lastConnected: location.id === lastId,
-      }));
+      const lastCountry = locations.find((location) => location.id === lastId)?.country.toLowerCase();
+      const geo = getGeoIndex();
+      const userLocation = resolveUserLocation({
+        saved: readSavedUserCountry(),
+        acceptLanguage: request.headers["accept-language"],
+        isKnownCountry: (code) => geo.hasCountry(code),
+      });
+      // 距離の注釈（ping を計測できないときだけ距離順。それ以外は CLI の順序のまま）。
+      const pingMeasurable = isPingMeasurable(provider.profile);
+      const countryRows = buildCountryRows({
+        source: locations.some((location) => location.city !== undefined) ? "cityRows" : "countryTable",
+        rows: locations,
+        pingMeasurable,
+      });
+      const annotated = annotateDistances(
+        countryRows.map((row) => ({ ...row, favorite: false, lastConnected: row.country === lastCountry })),
+        {
+          pingMeasurable,
+          countryAliases: provider.profile.countryAliases ?? {},
+          userCountry: userLocation.country,
+        },
+        geo,
+      );
+      return annotated.map(({ pingMs: _pingMs, distanceKm, ...row }) => (distanceKm === undefined ? row : { ...row, distanceKm }));
+    },
+  );
+
+  fastify.post(
+    "/v1/connection/locations/refresh",
+    {
+      schema: {
+        response: {
+          200: LocationsRefreshResponseSchema,
+          403: ErrorResponseSchema,
+          422: ErrorResponseSchema,
+          501: ErrorResponseSchema,
+          502: ErrorResponseSchema,
+          504: ErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      clearCityCache(getActiveProvider().id);
+      const response = await fastify.inject({ method: "GET", url: "/v1/connection/locations", headers: request.headers });
+      return reply.code(response.statusCode as 200 | 403 | 422 | 501 | 502 | 504).send(response.json());
     },
   );
 
@@ -57,11 +141,16 @@ export const registerConnectionLocationsRoute: FastifyPluginAsyncTypebox = async
     {
       schema: {
         params: LocationIdParamsSchema,
+        body: FavoriteItemRequestSchema,
         response: { 200: FavoriteResponseSchema, 400: ErrorResponseSchema },
       },
     },
     async (request) => {
-      addFavoriteLocation(getActiveProvider().id, request.params.locationId);
+      if (request.body.id !== request.params.locationId) {
+        throw new FavoriteLocationsError("favorite id does not match location id");
+      }
+      const item = validateFavoriteItem(request.body);
+      addFavoriteLocationItem(getActiveProvider().id, item);
       return { locationId: request.params.locationId, favorite: true };
     },
   );

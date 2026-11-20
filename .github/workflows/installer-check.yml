@@ -1,18 +1,15 @@
-# 責務: インストーラの頒布（release-installer.yml）の前に通す、このプロジェクト固有の検査。失敗すると install.sh は生成・頒布されない。
-#   - 本体インストーラ（installer/setup.sh）と検査スクリプトの構文・shellcheck
-#   - 単体テスト・ベンダー中立性の検査・インストーラの検査（npm test）
-name: installer-check
+# 責務: dev work branch とリリース前に Compose bundle の内容・実行構成を検査する。
+name: compose-bundle-check
 
 on:
   workflow_call:
+  pull_request:
+    branches: ["dev/**"]
+  push:
+    branches: ["dev/**"]
 
 permissions:
   contents: read
-  packages: read
-
-env:
-  # 実ブラウザのテストが使う Playwright の版（リポジトリの依存には含めず、グローバルに導入する）
-  PLAYWRIGHT_VERSION: 1.63.0
 
 jobs:
   check:
@@ -20,18 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: シェルの検査（構文・shellcheck）
+      - name: Shell 構文と shellcheck
         run: |
-          for f in installer/setup.sh installer/tests/*.sh; do sh -n "$f"; done
-          shellcheck -S warning installer/setup.sh installer/tests/*.sh
+          sh -n scripts/build-compose-bundle.sh
+          sh -n scripts/test-compose-bundle.sh
+          shellcheck -S warning scripts/build-compose-bundle.sh scripts/test-compose-bundle.sh
 
-      - name: 単体テスト・中立性の検査・インストーラの検査
-        run: |
-          npm ci
-          npm run generate:api-client
-          npm test
+      - name: Compose bundle manifest・内容・展開後 config を検査
+        run: sh scripts/test-compose-bundle.sh

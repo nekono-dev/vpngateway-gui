@@ -1,0 +1,8 @@
+# 責務: hosted mock stack で AdGuard runner のイメージと状態 volume を上書きする。
+services:
+  runner-adguardvpn:
+    build:
+      context: .
+      dockerfile: e2e/hosted/vendors/adguardvpn/Dockerfile
+    volumes:
+      - adguard-data:/var/lib/mockvpn

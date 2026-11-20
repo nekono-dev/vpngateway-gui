@@ -31,7 +31,10 @@ function buildApp() {
   return withAuthenticatedInject(buildRawApp());
 }
 const { invalidateSessionInfo } = await import("../session/session-probe.js");
+const { getActiveProvider } = await import("../providers/active-provider-store.js");
 const { clearLearnedRestrictions } = await import("../capabilities/restriction-learner.js");
+const { addFavoriteLocationItem, readFavoriteLocations } = await import("../locations/favorite-locations-store.js");
+const { saveCityList } = await import("../locations/city-cache-store.js");
 
 const ok = (stdout: string) => ({ exitCode: 0, stdout, stderr: "" });
 const fail = (exitCode: number, stderr: string, stdout = "") => ({ exitCode, stdout, stderr });
@@ -81,6 +84,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
     state.connectedTo = undefined;
     invalidateSessionInfo("mockproton");
     clearLearnedRestrictions("mockproton");
+    rmSync(join(dir, "providers", "mockproton"), { recursive: true, force: true });
     rmSync(process.env.AUDIT_LOG_FILE!, { force: true });
     await app.inject({ method: "GET", url: "/v1/connection" }); // 切断観測で保存内容を初期化
   });
@@ -141,19 +145,61 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
 
   describe("プラン制限の学習（403）", () => {
     it("無料版で接続先を指定すると、CLIの失敗が403 operation_restrictedになり、以後capabilityがplanRestrictedになる", async () => {
+      const profile = getActiveProvider().profile as unknown as Record<string, unknown>;
+      profile.locationTarget = { city: "fastestServer", unavailableFavorite: "error", errorProvider: "proton" };
+      profile.serverCatalog = { file: "VPN/serverlist.json", list: "LogicalServers", name: "Name", country: "ExitCountry", city: "City", tier: "Tier", features: "Features", status: "Status", score: "Score", load: "Load" };
+      // 新仕様: ProtonVPN はサーバ名で接続する（モック宣言の接続の引数をサーバ名の形式に合わせる）。
+      (profile.actions as unknown as { connect: { placeholders: { LOCATION: { pattern: string } } } }).connect.placeholders.LOCATION.pattern = "^[A-Za-z0-9#-]{1,64}$";
       state.plan = "paid"; // accountの判定は有料と誤っている（判定できていない）状況を再現する。
       // 一覧は取得できるが、接続時にCLIが無料版の制限で失敗する。
       executeVendorCommandMock.mockImplementation(({ resolvedArgv }: { resolvedArgv: string[] }) => {
         if (resolvedArgv[0] === "connect" && resolvedArgv.length > 1) return Promise.resolve(fail(2, FREE_LIMIT));
         return fakeProton({ resolvedArgv });
       });
-      const put = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-japan" } });
+      const cacheDir = join(process.env.PROVIDER_CACHE_DIR!, "mockproton");
+      mkdirSync(join(cacheDir, "VPN"), { recursive: true });
+      saveCityList("mockproton", "jp", ["Tokyo"]);
+      writeFileSync(join(cacheDir, "VPN", "serverlist.json"), JSON.stringify({ LogicalServers: [{ Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Features: 0, Status: true, Score: 1, Load: 5 }] }));
+      const put = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-tokyo" } });
       expect(put.statusCode).toBe(403);
       expect(put.json()).toMatchObject({ error: "operation_restricted", exitCode: 2 });
       expect(put.json().stderr).toContain("not available on the free plan");
 
       const { capabilities } = (await app.inject({ method: "GET", url: "/v1/connection/capabilities" })).json();
       expect(capabilities.connectToLocation).toMatchObject({ available: false, reason: "planRestricted" });
+    });
+
+    it("有料版の都市IDは最速サーバ名で接続する", async () => {
+      state.plan = "paid";
+      const profile = getActiveProvider().profile as unknown as Record<string, unknown>;
+      profile.locationTarget = { city: "fastestServer", unavailableFavorite: "error", errorProvider: "proton" };
+      profile.serverCatalog = { file: "VPN/serverlist.json", list: "LogicalServers", name: "Name", country: "ExitCountry", city: "City", tier: "Tier", features: "Features", status: "Status", score: "Score", load: "Load" };
+      (profile.actions as unknown as { connect: { placeholders: { LOCATION: { pattern: string } } } }).connect.placeholders.LOCATION.pattern = "^[A-Za-z0-9#-]{1,64}$";
+      const cacheDir = join(process.env.PROVIDER_CACHE_DIR!, "mockproton");
+      mkdirSync(join(cacheDir, "VPN"), { recursive: true });
+      saveCityList("mockproton", "jp", ["Tokyo"]);
+      writeFileSync(join(cacheDir, "VPN", "serverlist.json"), JSON.stringify({ LogicalServers: [{ Name: "JP-SC#1", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 1, Status: true, Score: 0, Load: 1 }, { Name: "JP-OFF#1", ExitCountry: "JP", City: "Tokyo", Tier: 2, Features: 0, Status: false, Score: 0, Load: 1 }, { Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Features: 0, Status: true, Score: 1, Load: 5 }] }));
+      const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-tokyo" } });
+      expect(response.statusCode).toBe(200);
+      const connectArgv = executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv).find((argv) => argv[0] === "connect");
+      expect(connectArgv?.at(-1)).toBe("JP#1");
+    });
+
+    it("都市一覧CLIの失敗は元のエラー出力を保って接続エラー応答にする", async () => {
+      state.plan = "paid";
+      const profile = getActiveProvider().profile as unknown as { actions: Record<string, unknown>; locationTarget: unknown; serverCatalog: unknown };
+      profile.locationTarget = { city: "fastestServer", unavailableFavorite: "error", errorProvider: "proton" };
+      profile.serverCatalog = undefined;
+      profile.actions.listCities = { argv: ["cities", "%LOCATION%"], placeholders: { LOCATION: { pattern: "^[A-Z]{2}$", source: "locations" } }, timeoutMs: 30000, table: { city: "City" } };
+      rmSync(join(dir, "providers", "mockproton", "cities", "jp.json"), { force: true });
+      executeVendorCommandMock.mockImplementation(({ resolvedArgv }: { resolvedArgv: string[] }) =>
+        resolvedArgv[0] === "cities" ? Promise.resolve(fail(7, "city listing failed")) : fakeProton({ resolvedArgv }),
+      );
+      const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-tokyo" } });
+      expect(response.statusCode).toBe(422);
+      expect(response.json().stderr).toContain("city listing failed");
+      expect(executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv[0])).not.toContain("connect");
+      delete profile.actions.listCities;
     });
 
     it("プラン制限に当たらない通常の失敗は422のまま、学習もしない", async () => {
@@ -186,33 +232,40 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
     });
   });
 
+  it("一覧外のお気に入りはCLIを呼ばず既存エラーを返し、お気に入りを残す", async () => {
+    addFavoriteLocationItem("mockproton", { id: "srv-jp-999", kind: "server", country: "jp", countryName: "Japan", city: "Tokyo", serverName: "JP#999" });
+    const response = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "srv-jp-999" } });
+    expect(response.statusCode).toBe(400);
+    expect(executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv[0])).toEqual(["status"]);
+    expect(readFavoriteLocations("mockproton")).toHaveLength(1);
+  });
+
   describe("接続先一覧（国単位）", () => {
-    it("有料版: 国一覧をcityなしで返し、国コードで接続する（--country JP）", async () => {
+    it("有料版: 国一覧をcityなしで返し、国IDは400で接続と切断を呼ばない", async () => {
       state.plan = "paid";
       const list = await app.inject({ method: "GET", url: "/v1/connection/locations" });
       expect(list.json()).toEqual([
-        { id: "jp-japan", country: "jp", countryName: "Japan", favorite: false, lastConnected: false },
-        { id: "us-united-states", country: "us", countryName: "United States", favorite: false, lastConnected: false },
+        { id: "jp-japan", country: "jp", countryName: "Japan", hasServerStage: true, favorite: false, lastConnected: false },
+        { id: "us-united-states", country: "us", countryName: "United States", hasServerStage: true, favorite: false, lastConnected: false },
       ]);
       const put = await app.inject({ method: "PUT", url: "/v1/connection", payload: { connect: true, locationId: "jp-japan" } });
-      expect(put.statusCode).toBe(200);
-      const connectCall = executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv).find((argv) => argv[0] === "connect");
-      expect(connectCall).toEqual(["connect", "--country", "JP"]);
-      expect(put.json()).toMatchObject({ status: "connected", country: "jp", locationId: "jp-japan" });
+      expect(put.statusCode).toBe(400);
+      expect(executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv[0])).not.toContain("connect");
+      expect(executeVendorCommandMock.mock.calls.map(([input]) => input.resolvedArgv[0])).not.toContain("disconnect");
     });
   });
 
   describe("GET /v1/connection/available-locations（プランで接続できる接続先の参考一覧）", () => {
     const cacheDir = join(process.env.PROVIDER_CACHE_DIR!, "mockproton");
     const writeServerList = () => {
-      mkdirSync(cacheDir, { recursive: true });
+      mkdirSync(join(cacheDir, "VPN"), { recursive: true });
       writeFileSync(
-        join(cacheDir, "serverlist.json"),
+        join(cacheDir, "VPN", "serverlist.json"),
         JSON.stringify({
-          Servers: [
-            { Country: "JP", City: "Tokyo", Tier: 0, Domain: "secret.example" },
-            { Country: "US", City: "Ashburn", Tier: 0 },
-            { Country: "DE", City: "Berlin", Tier: 2 },
+          LogicalServers: [
+            { Name: "JP#1", ExitCountry: "JP", City: "Tokyo", Tier: 0, Status: 1, Score: 0, Features: [], Domain: "secret.example" },
+            { Name: "US#1", ExitCountry: "US", City: "Ashburn", Tier: 0, Status: 1, Score: 0, Features: [] },
+            { Name: "DE#1", ExitCountry: "DE", City: "Berlin", Tier: 2, Status: 1, Score: 0, Features: [] },
           ],
         }),
       );
@@ -243,7 +296,7 @@ describe("プロバイダ抽象化（Proton VPN相当・無料/有料）", () =>
     });
 
     it("サーバ一覧のファイルが無くても200で空（エラーにしない）", async () => {
-      rmSync(join(cacheDir, "serverlist.json"), { force: true });
+      rmSync(join(cacheDir, "VPN", "serverlist.json"), { force: true });
       const response = await app.inject({ method: "GET", url: "/v1/connection/available-locations" });
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ locations: [] });

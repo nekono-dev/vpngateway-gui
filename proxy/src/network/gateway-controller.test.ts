@@ -22,6 +22,7 @@ describe("GatewayController", () => {
 
     const outcome = await controller.applySettings({ transparentGatewayEnabled: false, killSwitch: true });
 
+    expect(outcome.succeeded).toBe(true);
     expect(outcome.applied).toBe(false);
     expect(outcome.apply).toBeUndefined();
     expect(scripts).toHaveLength(1);
@@ -44,6 +45,7 @@ describe("GatewayController", () => {
 
     const outcome = await controller.applySettings({ transparentGatewayEnabled: true, killSwitch: true });
 
+    expect(outcome.succeeded).toBe(true);
     expect(outcome.applied).toBe(true);
     expect(scripts).toHaveLength(1);
     // 同一スクリプト内で「add→delete→add」の順に並び、フィルタ不在の瞬間ができない。

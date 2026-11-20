@@ -10,6 +10,14 @@ const api = vi.hoisted(() => ({
   getV1Connection: vi.fn(),
   putV1Connection: vi.fn(),
   getV1ConnectionLocations: vi.fn(),
+  getV1ConnectionLocationsCountries: vi.fn(),
+  getV1ConnectionLocationsCountryCities: vi.fn(),
+  postV1ConnectionLocationsCountryCitiesRefresh: vi.fn(),
+  postV1ConnectionLocationsRefresh: vi.fn(),
+  getV1ConnectionLocationsCityIdServers: vi.fn(),
+  getV1ConnectionFavorites: vi.fn(),
+  getV1ConnectionCityTab: vi.fn(),
+  putV1ConnectionCityTab: vi.fn(),
   putV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   deleteV1ConnectionLocationsLocationIdFavorite: vi.fn(),
   getV1ConnectionGateway: vi.fn(),
@@ -39,6 +47,14 @@ const LOCATIONS = [
   location("kr-seoul", "kr", "South Korea", "Seoul", 28),
   location("us-las-vegas", "us", "United States", "Las Vegas", 111),
 ];
+// 国の行（GET /v1/connection/locations）。国を選ぶと、その国の都市の一覧（LOCATIONSの同じ国の行）に切り替わる。
+const COUNTRY_ROWS = [
+  { id: "jp", country: "jp", countryName: "Japan", hasServerStage: false, favorite: false, lastConnected: false },
+  { id: "kr", country: "kr", countryName: "South Korea", hasServerStage: false, favorite: false, lastConnected: false },
+  { id: "us", country: "us", countryName: "United States", hasServerStage: false, favorite: false, lastConnected: false },
+];
+// 都市名 → 国名（国の行の表示名）。都市を開くまでの手順をヘルパーが辿る。
+const COUNTRY_OF_CITY: [string, RegExp][] = [["Tokyo", /Japan/], ["Seoul", /South Korea/], ["Las Vegas", /United States/]];
 const gatewayActive = {
   status: 200,
   data: {
@@ -55,12 +71,40 @@ function renderApp() {
   );
 }
 
-/** 接続先リストで、都市名を含む行を選択する。 */
-async function selectLocation(city: RegExp | string) {
+/**
+ * 目的: 階層の画面で、都市名の行を選ぶ（国の一覧から国を開き、都市を選ぶ）。
+ * 入力: city(都市名の正規表現)。別の国の都市の一覧が開いていれば、先に国の一覧へ戻る。
+ * 出力: なし（選択の結果は画面に反映される。接続は行わない）。
+ */
+async function selectLocation(city: RegExp) {
+  const [, countryName] = COUNTRY_OF_CITY.find(([name]) => city.test(name)) ?? [];
+  if (!countryName) throw new Error(`都市の国が未定義: ${city}`);
+  const back = screen.queryByRole("button", { name: "‹ 国一覧" });
+  if (back) await userEvent.click(back);
+  await userEvent.click(await screen.findByRole("radio", { name: countryName }));
   await userEvent.click(await screen.findByRole("radio", { name: city }));
 }
 
 describe("App", () => {
+  it.each(["removed", "retained", "unavailable"] as const)("サーバお気に入り接続後の再取得が %s のとき通知を正しく扱う", async (result) => {
+    const favorite = { id: "srv-jp-zz-9", kind: "server", country: "jp", countryName: "Japan", city: "Tokyo", serverName: "JP-ZZ#9" };
+    api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [favorite] });
+    api.putV1Connection.mockImplementation(async () => {
+      if (result === "unavailable") api.getV1ConnectionFavorites.mockRejectedValue(new Error("offline"));
+      else api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: result === "retained" ? [favorite] : [] });
+      return { status: 200, data: { status: "connected", location: "JAPAN" } };
+    });
+    renderApp();
+    await userEvent.click(await screen.findByRole("tab", { name: /^お気に入り$/ }));
+    await userEvent.click(await screen.findByRole("radio", { name: /JP-ZZ#9/ }));
+    await userEvent.click(screen.getByRole("button", { name: /^接続$/ }));
+    await waitFor(() => expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: favorite.id }));
+    await waitFor(() => expect(api.getV1ConnectionFavorites).toHaveBeenCalledTimes(2));
+    if (result === "removed") await waitFor(() => expect(screen.queryByRole("radio", { name: /JP-ZZ#9/ })).not.toBeInTheDocument());
+    if (result === "retained") expect(await screen.findByRole("status")).toHaveTextContent("接続しました");
+    else expect(document.querySelector(".toast-region")?.textContent).toBe("");
+  });
+
   it("ヘッダーにテーマの切り替えボタンを置く（ログイン後のダッシュボード。1.5）", async () => {
     renderApp();
     const header = document.querySelector("header.app-header") as HTMLElement;
@@ -70,7 +114,14 @@ describe("App", () => {
   beforeEach(() => {
     Object.values(api).forEach((mock) => mock.mockReset());
     api.getV1Connection.mockResolvedValue(disconnected);
-    api.getV1ConnectionLocations.mockResolvedValue({ status: 200, data: LOCATIONS });
+    api.getV1ConnectionLocations.mockResolvedValue({ status: 200, data: COUNTRY_ROWS });
+    // 階層ブラウザ用 API は、個別テストで応答を指定しない限り空の有効な一覧を返す。
+    api.getV1ConnectionLocationsCountryCities.mockResolvedValue({ status: 200, data: [] });
+    api.postV1ConnectionLocationsCountryCitiesRefresh.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionLocationsCityIdServers.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionCityTab.mockResolvedValue({ status: 200, data: { tab: "fastest" } });
+    api.getV1ConnectionLocationsCountryCities.mockImplementation(async (country: string) => ({ status: 200, data: LOCATIONS.filter((item) => item.country === country).map((item) => ({ id: item.id, country: item.country, countryName: item.countryName, city: item.city, favorite: item.favorite, lastConnected: item.lastConnected })) }));
     api.getV1ConnectionGateway.mockResolvedValue({
       status: 200,
       data: {
@@ -88,6 +139,26 @@ describe("App", () => {
     expect(screen.queryByText(/未対応（Phase 4で対応予定）/)).not.toBeInTheDocument();
   });
 
+  it("階層ブラウザを表示し、都市の再計測で保存を破棄するAPIを呼び、ping非対応案内は出さない", async () => {
+    api.getV1ConnectionLocationsCountries.mockResolvedValue({ status: 200, data: [{ id: "jp", country: "jp", countryName: "Japan", hasServerStage: true, favorite: false, lastConnected: false }] });
+    api.getV1ConnectionLocationsCountryCities.mockResolvedValue({ status: 200, data: [{ id: "tokyo", country: "jp", countryName: "Japan", city: "Tokyo", favorite: false, lastConnected: false }] });
+    api.postV1ConnectionLocationsRefresh.mockResolvedValue({ status: 200, data: [] });
+    api.getV1ConnectionCityTab.mockResolvedValue({ status: 200, data: { tab: "fastest" } });
+    api.getV1ConnectionFavorites.mockResolvedValue({ status: 200, data: [] });
+    renderApp();
+    expect(await screen.findByRole("radio", { name: /Japan/ })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /Tokyo/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("このVPNプロバイダでは ping 計測を利用できません")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: /Japan/ }));
+    await screen.findByRole("radio", { name: /Tokyo/ });
+    await userEvent.click(screen.getByRole("button", { name: "再計測" }));
+    await waitFor(() => expect(api.postV1ConnectionLocationsRefresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenCalledTimes(2));
+    expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenLastCalledWith("jp");
+    expect(api.postV1ConnectionLocationsRefresh.mock.invocationCallOrder[0]).toBeLessThan(api.getV1ConnectionLocationsCountryCities.mock.invocationCallOrder[1]);
+    expect(api.postV1ConnectionLocationsCountryCitiesRefresh).not.toHaveBeenCalled();
+  });
+
   it("リストで選択した接続先へlocationIdで接続し、APIが返す接続国（と接続先）を表示、切断で消える", async () => {
     api.putV1Connection.mockResolvedValueOnce({ status: 200, data: { status: "connected", country: "us", location: "LAS VEGAS", locationId: "us-las-vegas" } });
     renderApp();
@@ -100,38 +171,33 @@ describe("App", () => {
     expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: "us-las-vegas" });
     expect(await screen.findByText(/接続国: US \/ LAS VEGAS/)).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("接続しました");
-    // 接続後はリストの該当行に「接続中」「前回」バッジが付く
-    const row = screen.getByRole("radio", { name: /Las Vegas/ }).closest("li")!;
-    expect(row).toHaveTextContent("接続中");
-    expect(row).toHaveTextContent("前回");
+    // 接続後は都市の行に「接続中」が付く
+    expect(screen.getByRole("radio", { name: /Las Vegas/ }).closest("li")).toHaveTextContent("接続中");
 
     api.putV1Connection.mockResolvedValueOnce({ status: 200, data: { status: "disconnected" } });
     api.getV1Connection.mockResolvedValue(disconnected);
     await userEvent.click(screen.getByRole("button", { name: "切断" }));
     await waitFor(() => expect(screen.queryByText(/接続国:/)).not.toBeInTheDocument());
-    // 切断後も「前回」は残る
-    expect(screen.getByRole("radio", { name: /Las Vegas/ }).closest("li")).toHaveTextContent("前回");
   });
 
-  it("接続先を選ばなくても、最後に接続した接続先が選択済みで、接続ボタンでその接続先へ接続する", async () => {
+  it("最後に接続した国は「前回」で示し、接続先を自動で選ばないため［接続］は押せない（階層の画面の方針）", async () => {
     api.getV1ConnectionLocations.mockResolvedValue({
       status: 200,
-      data: [LOCATIONS[0], location("kr-seoul", "kr", "South Korea", "Seoul", 28, { lastConnected: true }), LOCATIONS[2]],
+      data: COUNTRY_ROWS.map((row) => (row.id === "kr" ? { ...row, lastConnected: true } : row)),
     });
-    api.putV1Connection.mockResolvedValueOnce({ status: 200, data: { status: "connected", country: "kr", location: "SEOUL", locationId: "kr-seoul" } });
     renderApp();
     await screen.findByText("切断");
-    expect(await screen.findByRole("radio", { name: /Seoul/ })).toBeChecked();
-
-    await userEvent.click(screen.getByRole("button", { name: "接続" }));
-    expect(api.putV1Connection).toHaveBeenCalledWith({ connect: true, locationId: "kr-seoul" });
+    expect((await screen.findByRole("radio", { name: /South Korea/ })).closest("li")).toHaveTextContent("前回");
+    expect(screen.getByRole("button", { name: "接続" })).toBeDisabled();
+    expect(api.putV1Connection).not.toHaveBeenCalled();
   });
 
-  it("再読み込み（初回ロード）時点で接続中なら、APIが返す接続国を表示し、現在の接続先に「接続中」を付ける", async () => {
+  it("再読み込み（初回ロード）時点で接続中なら、APIが返す接続国を表示し、現在の接続先の行に「接続中」を付ける", async () => {
     // クライアントは接続操作の履歴を持たない。表示は完全にGET /v1/connectionの応答に依存する。
     api.getV1Connection.mockResolvedValue(connectedJp);
     renderApp();
     expect(await screen.findByText(/接続国: JP \/ TOKYO/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("radio", { name: /Japan/ }));
     expect((await screen.findByRole("radio", { name: /Tokyo/ })).closest("li")).toHaveTextContent("接続中");
   });
 
@@ -140,6 +206,7 @@ describe("App", () => {
     renderApp();
     expect(await screen.findByText("接続中", { selector: "strong" })).toBeInTheDocument();
     expect(screen.queryByText(/接続国:/)).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("radio", { name: /South Korea/ }));
     expect((await screen.findByRole("radio", { name: /Seoul/ })).closest("li")).toHaveTextContent("接続中");
   });
 
@@ -167,47 +234,53 @@ describe("App", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "接続先を変更" })).not.toBeInTheDocument());
   });
 
-  it("★でお気に入りへ追加でき、「お気に入り」タブにping昇順で出る。API失敗時は元に戻してトースト通知する", async () => {
-    api.putV1ConnectionLocationsLocationIdFavorite.mockResolvedValue({ status: 200, data: { locationId: "us-las-vegas", favorite: true } });
+  it("☆でお気に入りへ追加でき、「お気に入り」タブに出る。API失敗時は元に戻してトースト通知する", async () => {
+    api.putV1ConnectionLocationsLocationIdFavorite.mockResolvedValue({ status: 200, data: {} });
+    api.getV1ConnectionFavorites.mockResolvedValue({
+      status: 200,
+      data: [{ id: "us-las-vegas", kind: "city", country: "us", countryName: "United States", city: "Las Vegas" }],
+    });
     renderApp();
-    await screen.findByRole("radio", { name: /Tokyo/ });
+    await userEvent.click(await screen.findByRole("radio", { name: /United States/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Las Vegasをお気に入りに追加" }));
+    expect(api.putV1ConnectionLocationsLocationIdFavorite).toHaveBeenCalledWith("us-las-vegas", {
+      id: "us-las-vegas", kind: "city", country: "us", countryName: "United States", city: "Las Vegas",
+    });
 
-    await userEvent.click(screen.getByRole("button", { name: "Las Vegasをお気に入りに追加" }));
-    await userEvent.click(screen.getByRole("button", { name: "Seoulをお気に入りに追加" }));
-    expect(api.putV1ConnectionLocationsLocationIdFavorite).toHaveBeenCalledWith("us-las-vegas");
-    expect(api.putV1ConnectionLocationsLocationIdFavorite).toHaveBeenCalledWith("kr-seoul");
-
+    await userEvent.click(screen.getByRole("button", { name: "‹ 国一覧" }));
     await userEvent.click(screen.getByRole("tab", { name: /お気に入り/ }));
-    const names = screen.getAllByRole("radio").map((radio) => radio.closest("li")!.textContent);
-    expect(names).toHaveLength(2);
-    expect(names[0]).toContain("Seoul"); // 28ms
-    expect(names[1]).toContain("Las Vegas"); // 111ms
+    expect(await screen.findByRole("radio", { name: /Las Vegas/ })).toBeInTheDocument();
 
+    // 失敗時は☆の表示を変えず、通知する（Seoulは登録済みの状態から解除を試す）
+    api.getV1ConnectionLocationsCountryCities.mockImplementation(async (country: string) => ({
+      status: 200,
+      data: LOCATIONS.filter((item) => item.country === country).map((item) => ({ id: item.id, country: item.country, countryName: item.countryName, city: item.city, favorite: item.id === "kr-seoul", lastConnected: false })),
+    }));
     api.deleteV1ConnectionLocationsLocationIdFavorite.mockResolvedValue({ status: 500, data: {} });
-    await userEvent.click(screen.getByRole("button", { name: "Seoulのお気に入りを解除" }));
+    await userEvent.click(screen.getByRole("tab", { name: "すべて" }));
+    await userEvent.click(await screen.findByRole("radio", { name: /South Korea/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Seoulのお気に入りを解除" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("お気に入りの解除に失敗しました");
-    expect(screen.getByRole("button", { name: "Seoulのお気に入りを解除" })).toBeInTheDocument(); // 元に戻っている
+    expect(screen.getByRole("button", { name: "Seoulのお気に入りを解除" })).toBeInTheDocument();
   });
 
-  it("再計測で一覧を再取得し、ping値が更新される", async () => {
+  it("再計測は、都市の保存を破棄する再取得のAPIを呼ぶ", async () => {
+    api.postV1ConnectionLocationsRefresh.mockResolvedValue({ status: 200, data: [] });
     renderApp();
+    await userEvent.click(await screen.findByRole("radio", { name: /South Korea/ }));
     await screen.findByRole("radio", { name: /Seoul/ });
-    expect(api.getV1ConnectionLocations).toHaveBeenCalledTimes(1);
-
-    api.getV1ConnectionLocations.mockResolvedValue({
-      status: 200,
-      data: [location("kr-seoul", "kr", "South Korea", "Seoul", 3), LOCATIONS[0], LOCATIONS[2]],
-    });
     await userEvent.click(screen.getByRole("button", { name: "再計測" }));
-    await waitFor(() => expect(screen.getAllByRole("radio")[0].closest("li")).toHaveTextContent("Seoul"));
-    expect(screen.getAllByRole("radio")[0].closest("li")).toHaveTextContent("3 ms");
-    expect(api.getV1ConnectionLocations).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(api.postV1ConnectionLocationsRefresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenCalledTimes(2));
+    expect(api.getV1ConnectionLocationsCountryCities).toHaveBeenLastCalledWith("kr");
+    expect(api.postV1ConnectionLocationsRefresh.mock.invocationCallOrder[0]).toBeLessThan(api.getV1ConnectionLocationsCountryCities.mock.invocationCallOrder[1]);
+    expect(api.postV1ConnectionLocationsCountryCitiesRefresh).not.toHaveBeenCalled();
   });
 
   it("接続先が無い（一覧が空・最後の接続先も無い）間は［接続］を押せない", async () => {
     renderApp();
     await screen.findByText("切断");
-    await screen.findByRole("radio", { name: /Tokyo/ });
+    await screen.findByRole("radio", { name: /Japan/ });
     expect(screen.getByRole("button", { name: "接続" })).toBeDisabled();
     expect(api.putV1Connection).not.toHaveBeenCalled();
   });
@@ -225,7 +298,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "切断" })).toBeEnabled();
 
     await userEvent.click(screen.getByRole("button", { name: "再取得" }));
-    expect(await screen.findByRole("radio", { name: /Tokyo/ })).toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: /Japan/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "再取得" })).not.toBeInTheDocument();
   });
 
@@ -270,6 +343,13 @@ describe("App", () => {
     renderApp();
     expect(await screen.findByText("切断")).toBeInTheDocument();
     expect(await screen.findByText(/稼働状況の取得に失敗しました \(status: 502\)/)).toBeInTheDocument();
+  });
+
+  it("Gateway の通信保護方式不一致を通常の到達不能と区別して表示する", async () => {
+    api.getV1ConnectionGateway.mockResolvedValue({ status: 502, data: { error: "gateway_protection_mismatch", protectionModeMismatch: true } });
+    renderApp();
+    expect(await screen.findByText("切断")).toBeInTheDocument();
+    expect(await screen.findByText("API と Gateway の通信保護設定が一致しません")).toBeInTheDocument();
   });
 
   it("接続状態の取得失敗でも稼働状況は表示し、接続操作ボタンは最後の既知状態で使える", async () => {

@@ -11,7 +11,16 @@ function gatewayOf(
   transparentGateway: GatewayStatus["transparentGateway"],
   explicitProxy: GatewayStatus["explicitProxy"] = STOPPED_EXPLICIT_PROXY,
 ): GatewayStatus {
-  return { transparentGateway, explicitProxy };
+  return {
+    transparentGateway,
+    explicitProxy,
+    gatewayGuard: {
+      state: "OFF",
+      healthy: false,
+      leaseValid: false,
+      lastUpdatedAt: null,
+    },
+  };
 }
 
 // 両行に「稼働中」「停止」等が現れうるため、機能ごとの行（dd）に絞って検証する。

@@ -1,10 +1,8 @@
 # hosted runner の E2E（e2e-tests）。npm run test:e2e（sh e2e/hosted/run.sh）を、GitHub-hosted runner で実行する。
-# 検証のための実行（feat/e2e-tests への push と手動実行）。cicd の spec で、main への組み込みを決める。
+# hosted E2E は実行時間が長いため、GitHub Actions から手動実行する。
 name: e2e-hosted
 
 on:
-  push:
-    branches: [feat/e2e-tests]
   workflow_dispatch:
     inputs:
       intentional_failure:
@@ -25,11 +23,28 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: 依存と Playwright の導入（外部の取得は経路を変える前に行う）
+      - name: 依存と Playwright の導入
         run: |
           set -eux
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools
           npm ci --no-audit --no-fund >/dev/null
           npx playwright install --with-deps chromium >/dev/null
+
+      - name: Compose fixture の既定構成を検証
+        run: |
+          docker compose -p vpngwgui -f docker-compose.yml -f vendors/protonvpn/compose.yml -f vendors/adguardvpn/compose.yml -f docker-compose.e2e-mock.yml -f e2e/hosted/vendors/protonvpn/compose.yml -f e2e/hosted/vendors/adguardvpn/compose.yml config --quiet
+
+      - name: E2E unit と Compose 契約
+        run: |
+          set -eux
+          # api-types の契約テストが読む OpenAPI 定義（git の対象外の生成物）を先に作る
+          npm run export-openapi
+          # 実 Docker の volume 保持テストが使うイメージ（ない場合はテストが skip されるため先に取得する）
+          docker pull alpine:3.21
+          npm run test:e2e-unit
+          sh e2e/hosted/tests/cleanup.test.sh
+          sh e2e/hosted/tests/provision-order.test.sh
 
       - name: E2E（hosted）
         env:

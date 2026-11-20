@@ -43,9 +43,9 @@ export interface PrepareIo {
 export function describeAbort(reason: AbortReason): string {
   switch (reason.kind) {
     case "api-unreachable":
-      return "検証サーバの API に届かない。ネットワークと API の状態を確認する";
+      return "検証サーバの Web URL 経由で API に届かない。ネットワークと Web/API の状態を確認する";
     case "ca-untrusted":
-      return "API の証明書を取り込んだ CA で検証できない。資格情報は入力していない";
+      return "Web 証明書を Web CA で検証できない。資格情報は入力していない";
     case "operator-auth-failed":
       return `管理者の認証に失敗した（API: ${reason.message}）`;
     case "public-ip-unavailable":

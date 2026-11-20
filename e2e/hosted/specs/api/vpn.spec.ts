@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { test, expect } from "@playwright/test";
 import { apiClient, loadAdmin, runnerContainer, setMockControl } from "../../fixtures/stack";
 import type { ApiClient, ApiResult } from "../../../common/api-client";
+import { firstLocationId } from "../../fixtures/gateway";
 
 const run = promisify(execFile);
 const MOCK_USER = "mock-user@example.test";
@@ -29,14 +30,24 @@ async function readConnectionWhenRunnerReady(client: ApiClient, timeoutMs = 90_0
   return res;
 }
 
-/** 目的: 接続先の一覧（GET /v1/connection/locations）の先頭の ID を得る。 */
-async function firstLocationId(client: ApiClient): Promise<string> {
-  const res = await client.get<{ id: string }[]>("/v1/connection/locations");
-  expect(res.ok, "接続先の一覧が得られない").toBe(true);
-  const id = res.ok ? res.body[0]?.id : undefined;
-  expect(id, "接続先が 1 件も無い").toBeTruthy();
-  return id as string;
+/** 目的: runner の制御 socket に内部 exec 要求を送り、HTTP status と JSON 応答を得る。 */
+async function requestRunnerExec(binary: string): Promise<{ status: number; body: { error?: string; exitCode?: number } }> {
+  const script = `
+    const http = require('node:http');
+    const body = JSON.stringify({ vendor: 'protonvpn', binary: ${JSON.stringify(binary)}, resolvedArgv: ['status'], timeoutMs: 10000 });
+    const request = http.request({ socketPath: process.env.CTL_SOCKET_PATH, path: '/exec', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, response => {
+      let data = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => data += chunk);
+      response.on('end', () => process.stdout.write(JSON.stringify({ status: response.statusCode, body: JSON.parse(data) })));
+    });
+    request.on('error', error => { process.stderr.write(error.message); process.exitCode = 1; });
+    request.end(body);
+  `;
+  const { stdout } = await run("sudo", ["docker", "exec", runnerContainer("protonvpn"), "node", "-e", script]);
+  return JSON.parse(stdout) as { status: number; body: { error?: string; exitCode?: number } };
 }
+
 
 test.describe.serial("VPN アカウントと接続（stack・api）", () => {
   test.describe.configure({ timeout: 5 * 60 * 1000 });
@@ -81,22 +92,47 @@ test.describe.serial("VPN アカウントと接続（stack・api）", () => {
     expect(state.ok && state.body.plan?.id).toBeTruthy();
   });
 
-  test("3.1 / 3.2 / 3.4: 接続すると接続済み、切断すると切断、接続ログが得られる", async () => {
-    
+  test("3.1: 選択した都市へ接続すると接続済みとなり、接続ログが得られる", async () => {
+    try {
+      const id = await firstLocationId(client);
+      const connect = await client.put<ConnectionBody>("/v1/connection", { connect: true, locationId: id });
+      expect(connect.ok, `接続に失敗: ${JSON.stringify(connect)}`).toBe(true);
+      const connected = await client.get<ConnectionBody>("/v1/connection");
+      expect(connected.ok && connected.body.status).toBe("connected");
+
+      const log = await client.get<unknown[]>("/v1/connection/log");
+      expect(log.ok && Array.isArray(log.body) && log.body.length > 0).toBe(true);
+    } finally {
+      const disconnect = await client.put<ConnectionBody>("/v1/connection", { connect: false });
+      expect(disconnect.ok, "接続シナリオの後始末で切断できない").toBe(true);
+      const disconnected = await client.get<ConnectionBody>("/v1/connection");
+      expect(disconnected.ok && disconnected.body.status).toBe("disconnected");
+    }
+  });
+
+  test("3.2: 切断すると切断済みになる", async () => {
     const id = await firstLocationId(client);
-
     const connect = await client.put<ConnectionBody>("/v1/connection", { connect: true, locationId: id });
-    expect(connect.ok, "接続に失敗").toBe(true);
-    const connected = await client.get<ConnectionBody>("/v1/connection");
-    expect(connected.ok && connected.body.status).toBe("connected");
+    expect(connect.ok, "切断シナリオの事前接続に失敗").toBe(true);
+    try {
+      const disconnect = await client.put<ConnectionBody>("/v1/connection", { connect: false });
+      expect(disconnect.ok, "切断に失敗").toBe(true);
+      const disconnected = await client.get<ConnectionBody>("/v1/connection");
+      expect(disconnected.ok && disconnected.body.status).toBe("disconnected");
+    } finally {
+      const cleanup = await client.put<ConnectionBody>("/v1/connection", { connect: false });
+      expect(cleanup.ok, "切断シナリオの後始末に失敗").toBe(true);
+    }
+  });
 
-    const log = await client.get<unknown[]>("/v1/connection/log");
-    expect(log.ok && Array.isArray(log.body) && log.body.length > 0).toBe(true);
+  test("8.8: runner は許可バイナリを実行し、許可外バイナリを拒否する", async () => {
+    const allowedBinary = "/usr/bin/protonvpn";
+    const allowed = await requestRunnerExec(allowedBinary);
+    expect(allowed.status, "許可された runner コマンドが拒否された").toBe(200);
 
-    const disconnect = await client.put<ConnectionBody>("/v1/connection", { connect: false });
-    expect(disconnect.ok, "切断に失敗").toBe(true);
-    const disconnected = await client.get<ConnectionBody>("/v1/connection");
-    expect(disconnected.ok && disconnected.body.status).toBe("disconnected");
+    const rejected = await requestRunnerExec(`${allowedBinary}.not-allowed`);
+    expect(rejected.status, "許可外 runner コマンドが拒否されなかった").toBe(403);
+    expect(rejected.body.error).toBe("binary_not_allowed");
   });
 
   test("3.3: ランナーを止めた状態で接続すると 502 か 504 を返し、接続状態は変わらない", async () => {

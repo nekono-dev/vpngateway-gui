@@ -4,14 +4,23 @@
 // プロキシ未応答（ProxyUnavailableError/ProxyTimeoutError）はapp.tsのエラーハンドラで502/504になる。
 
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { ErrorResponseSchema } from "../schemas/connection.js";
+import { Type } from "@sinclair/typebox";
+import { ErrorResponseSchema, GatewayProtectionMismatchResponseSchema } from "../schemas/connection.js";
 import { GatewayStatusSchema } from "../schemas/gateway.js";
 import { fetchProxyStatus } from "../proxy-client/proxy-client.js";
 
 export const registerConnectionGatewayRoute: FastifyPluginAsyncTypebox = async (fastify) => {
   fastify.get(
     "/v1/connection/gateway",
-    { schema: { response: { 200: GatewayStatusSchema, 502: ErrorResponseSchema, 504: ErrorResponseSchema } } },
+    {
+      schema: {
+        response: {
+          200: GatewayStatusSchema,
+          502: Type.Union([ErrorResponseSchema, GatewayProtectionMismatchResponseSchema]),
+          504: ErrorResponseSchema,
+        },
+      },
+    },
     async () => fetchProxyStatus(),
   );
 };

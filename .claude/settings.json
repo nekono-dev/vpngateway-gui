@@ -1,7 +1,4 @@
 {
-  "enabledPlugins": {
-    "password-form-repair@nekono-dev": true
-  },
   "hooks": {
     "SessionStart": [
       {
@@ -9,12 +6,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && npx cc-sdd@latest --yes --claude-skills --lang ja",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/scripts/cc-sdd-session-start.sh\"",
             "timeout": 600
           }
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "password-form-repair@nekono-dev": true,
+    "branch-release-workflow@nekono-dev": true
   },
   "extraKnownMarketplaces": {
     "nekono-dev": {

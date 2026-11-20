@@ -1,0 +1,9 @@
+# 責務: Web HTTPS 有効時だけ証明書を読み取り専用で渡す。
+services:
+  web:
+    volumes:
+      - ${WEB_TLS_CERT_HOST_PATH:?WEB_TLS_CERT_HOST_PATH must point to the Web certificate}:/run/vpngwgui/web-tls/server.crt:ro
+      - ${WEB_TLS_KEY_HOST_PATH:?WEB_TLS_KEY_HOST_PATH must point to the Web private key}:/run/vpngwgui/web-tls/server.key:ro
+    environment:
+      WEB_TLS_CERT_FILE: /run/vpngwgui/web-tls/server.crt
+      WEB_TLS_KEY_FILE: /run/vpngwgui/web-tls/server.key
